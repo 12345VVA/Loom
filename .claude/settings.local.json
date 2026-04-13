@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create vue@latest . -- --typescript --pinia --router --eslint --force)",
+      "Bash(npm create vite@latest . -- --template vue-ts)",
+      "Bash(..\\\\backend\\\\Scripts\\\\pip install fastapi uvicorn[standard] sqlmodel alembic celery redis openai httpx python-dotenv python-multipart aiofiles)",
+      "Bash(./venv/Scripts/pip install fastapi uvicorn[standard] sqlmodel alembic celery redis openai httpx python-dotenv python-multipart aiofiles)"
+    ]
+  }
+}

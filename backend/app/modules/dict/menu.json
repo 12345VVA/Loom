@@ -1,0 +1,29 @@
+[
+  {
+    "code": "nav_data_dict",
+    "name": "字典管理",
+    "type": "menu",
+    "module": "dict",
+    "resource": "type",
+    "path": "/dict/list",
+    "component": "modules/dict/views/list.vue",
+    "icon": "collection",
+    "sort_order": 51,
+    "parent_code": "nav_data",
+    "role_codes": ["admin"],
+    "children": [
+      { "code": "dict_type_add", "name": "新增类型", "type": "button", "permission": "dict:type:add", "role_codes": ["admin"] },
+      { "code": "dict_type_delete", "name": "删除类型", "type": "button", "permission": "dict:type:delete", "role_codes": ["admin"] },
+      { "code": "dict_type_update", "name": "修改类型", "type": "button", "permission": "dict:type:update", "role_codes": ["admin"] },
+      { "code": "dict_type_page", "name": "分页查询", "type": "button", "permission": "dict:type:page", "role_codes": ["admin"] },
+      { "code": "dict_type_list", "name": "列表查询", "type": "button", "permission": "dict:type:list", "role_codes": ["admin"] },
+      { "code": "dict_type_info", "name": "详情", "type": "button", "permission": "dict:type:info", "role_codes": ["admin"] },
+      { "code": "dict_info_add", "name": "新增字典项", "type": "button", "permission": "dict:info:add", "role_codes": ["admin"] },
+      { "code": "dict_info_delete", "name": "删除字典项", "type": "button", "permission": "dict:info:delete", "role_codes": ["admin"] },
+      { "code": "dict_info_update", "name": "修改字典项", "type": "button", "permission": "dict:info:update", "role_codes": ["admin"] },
+      { "code": "dict_info_page", "name": "分页查询字典项", "type": "button", "permission": "dict:info:page", "role_codes": ["admin"] },
+      { "code": "dict_info_list", "name": "列表查询字典项", "type": "button", "permission": "dict:info:list", "role_codes": ["admin"] },
+      { "code": "dict_info_info", "name": "字典项详情", "type": "button", "permission": "dict:info:info", "role_codes": ["admin"] }
+    ]
+  }
+]

@@ -1,0 +1,282 @@
+# Loom 模块式自动路由与管理端鉴权说明
+
+## 1. 目标
+
+后端已经取消原来的 `api/groups` 分组模式，统一改为参考 `cool-admin-midway` 的模块式目录约定，并补上管理端全局鉴权中间件。
+
+现在的目标是：
+
+- 所有业务接口都放到 `app.modules.<module>.controller.<scope>` 下
+- 自动根据模块名、控制器目录、文件名生成路由前缀
+- 登录、权限、用户上下文统一收口到 `base` 模块
+- `/admin`、`/app`、`/aiapi` 等不同接口域通过控制器作用域区分，而不是手工注册
+- 路由框架层与业务层分离，自动路由框架放在 `app.framework.router`
+- `/admin`、`/app`、`/aiapi` 统一由全局中间件处理 scope 识别、Tag 判断与鉴权
+
+## 2. 目录约定
+
+标准目录：
+
+```text
+backend/app/modules/<module>/controller/<scope>/<resource>.py
+```
+
+其中：
+
+- `<module>`：业务模块名，例如 `base`、`task`
+- `<scope>`：接口域，目前支持 `admin`、`app`、`aiapi`、`open`、`public`
+- `<resource>`：资源文件名，例如 `open.py`、`user.py`、`task.py`
+
+框架层目录：
+
+```text
+backend/app/framework/
+```
+
+这里负责：
+
+- 自动扫描模块控制器
+- 生成路由前缀
+- 装饰器式控制器元数据
+- URL Tag 与路由元数据装饰器
+- 多 scope 全局中间件
+
+## 3. 路由生成规则
+
+自动路由会把文件映射成：
+
+```text
+/<scope-prefix>/<module>/<resource>/*
+```
+
+例如：
+
+- `backend/app/modules/base/controller/admin/open.py`
+  -> `/admin/base/open/*`
+- `backend/app/modules/base/controller/admin/user.py`
+  -> `/admin/base/user/*`
+- `backend/app/modules/task/controller/admin/task.py`
+  -> `/admin/task/task/*`
+
+具体扫描逻辑在 [auto_router.py](/e:/project/Loom/backend/app/framework/router/auto_router.py:1)。
+
+## 4. 当前模块划分
+
+### 模块配置入口与自动发现
+
+每个模块现在都可以有自己的 `config.py`，用于声明模块元信息与启动初始化逻辑。
+
+当前示例：
+
+- [base/config.py](/e:/project/Loom/backend/app/modules/base/config.py:1)
+- [task/config.py](/e:/project/Loom/backend/app/modules/task/config.py:1)
+
+模块加载器位于：
+
+- [loader.py](/e:/project/Loom/backend/app/modules/loader.py:1)
+
+应用启动时会自动扫描 `app/modules/*/config.py` 并执行 bootstrap，而不是在 `main.py` 里手写模块名单。
+
+模块配置除了 `bootstrap` 之外，还可以声明：
+
+- `admin_whitelist`
+  管理端匿名白名单
+- `permissions`
+  权限点定义，包含菜单 `permission` 和对应的 `admin_patterns`
+- `admin_resources`
+  资源注册定义，按 `module:resource:action` 自动生成权限点和 URL 规则
+
+另外，框架层已经补了两套关键机制：
+
+- [controller_meta.py](/e:/project/Loom/backend/app/framework/controller_meta.py:1)
+- [route_meta.py](/e:/project/Loom/backend/app/framework/router/route_meta.py:1)
+
+其中：
+
+- `CoolController`、`BaseController` 用于声明装饰器式控制器
+- `Get`、`Post`、`cool_tag`、`allow_anonymous` 用于给方法打路由和 URL Tag
+
+`CoolController` 会为资源自动生成标准管理接口：
+
+- `/list`
+- `/page`
+- `/info`
+- `/add`
+- `/update`
+- `/delete`
+
+这意味着新增一个后台模块时，只要在模块 `config.py` 里声明资源或权限点，中间件 URL 授权和默认菜单初始化都会自动对齐。
+
+### base 模块
+
+负责认证、当前用户、基础健康检查、管理端缓存态与权限中心。
+
+当前已落地：
+
+- `POST /admin/base/open/login`
+- `POST /admin/base/open/refresh`
+- `POST /admin/base/open/logout`
+- `GET /admin/base/user/me`
+- `GET /admin/base/user/list`
+- `GET /admin/base/user/page`
+- `GET /admin/base/user/info`
+- `POST /admin/base/user/add`
+- `POST /admin/base/user/update`
+- `POST /admin/base/user/delete`
+- `POST /admin/base/user/assignRoles`
+- `GET /admin/base/role/list`
+- `GET /admin/base/role/page`
+- `GET /admin/base/role/info`
+- `POST /admin/base/role/add`
+- `POST /admin/base/role/update`
+- `POST /admin/base/role/delete`
+- `POST /admin/base/role/assignMenus`
+- `GET /admin/base/menu/list`
+- `GET /admin/base/menu/page`
+- `GET /admin/base/menu/info`
+- `POST /admin/base/menu/add`
+- `POST /admin/base/menu/update`
+- `POST /admin/base/menu/delete`
+- `GET /admin/base/menu/tree`
+- `GET /admin/base/menu/roleMenuIds`
+- `GET /admin/base/menu/currentTree`
+- `GET /admin/base/health/ping`
+- `GET /app/base/health/ping`
+- `GET /app/base/health/secure`
+- `GET /aiapi/base/health/ping`
+- `GET /aiapi/base/health/secure`
+
+### task 模块
+
+负责任务相关后台接口。
+
+当前已落地：
+
+- `GET /admin/task/task/`
+- `POST /admin/task/task/`
+- `GET /admin/task/task/{task_id}`
+- `POST /admin/task/task/{task_id}/cancel`
+
+## 5. 统一鉴权方式
+
+接口不再依赖 `APIRoute` 路由拦截，而是由全局中间件统一处理。
+
+规则如下：
+
+- `/admin`、`/app`、`/aiapi` 三个 scope 统一由中间件调度
+- 匿名接口优先由 URL Tag `IGNORE_TOKEN` 判断，`@allow_anonymous` 是它的兼容写法
+- `/admin` 继续执行完整权限判断
+- `/app`、`/aiapi` 当前先完成 token 解析与统一鉴权框架接入
+- 登录成功后写入服务端缓存键：
+  - `admin:token:{userId}`
+  - `admin:perms:{userId}`
+  - `admin:passwordVersion:{userId}`
+  - `admin:department:{userId}`
+- 中间件校验顺序：
+  - 白名单
+  - Bearer Token
+  - JWT 解码
+  - `passwordVersion` 缓存态
+  - 单点登录 token 缓存
+  - 菜单 `permission/perms` 映射后的 URL 权限
+- 当前用户通过 `get_current_user` 获取，但用户上下文通常已在中间件中提前挂到 `request.state`
+
+## 6. 资源注册方式
+
+对于已迁移到管理资源自动控制器的模块，推荐直接使用 `CoolControllerMeta`。  
+`admin_resources` 现在主要用于仍未迁移的接口做权限兼容，例如当前的 `task` 模块。
+
+示意结构：
+
+```python
+ResourceConfig(
+    module="task",
+    resource="task",
+    code_prefix="task_task",
+    name_prefix="任务",
+    actions=(
+        ResourceActionConfig(
+            suffix="read",
+            name="查看",
+            path_patterns=("GET /admin/task/task", "GET /admin/task/task/*"),
+        ),
+    ),
+)
+```
+
+它会自动生成：
+
+- 菜单权限点，例如 `task:task:read`
+- 默认菜单 code，例如 `task_task_read`
+- 管理端 URL 匹配规则
+- 角色默认授权关系
+
+而 `CoolControllerMeta` 会更进一步，直接生成标准 CRUD 路由和权限点。
+
+## 7. 动态菜单
+
+前端顶部导航已改为由后端菜单树驱动，不再手写系统管理入口。
+
+当前由：
+
+- `GET /admin/base/menu/currentTree`
+
+返回当前用户可见的导航菜单树，至少包含：
+
+- 控制台
+- 任务列表
+- 系统管理
+  - 用户管理
+  - 角色管理
+  - 菜单管理
+
+前端会把菜单树作为动态路由唯一来源：
+
+- 根据 `path` 注册页面路由
+- 根据 `component` 做动态组件导入
+- 组件未注册时进入 `MissingComponentView`
+- `/tasks/:id` 作为 `/tasks` 菜单的补充详情路由单独注册
+
+因此后端菜单数据至少要稳定提供：
+
+- `path`
+- `component`
+- `type`
+- `sort_order`
+- `parent_id`
+- `is_active`
+- `permission`
+
+## 8. 参考 cool-admin-midway 的对应关系
+
+参考项目的核心风格是：
+
+- `modules/<module>/controller/admin|app/...`
+- 按前缀统一中间件处理权限
+- 登录、权限、通用能力放在 `base` 模块
+
+Loom 现在已经对齐这三个关键点：
+
+- 已按 `modules/<module>/controller/<scope>` 组织代码
+- 已按 `/admin` 前缀做全局中间件鉴权
+- 登录、缓存态和权限已迁入 `base` 模块
+- 权限运行时判断已经切到 `perms -> URL` 模式，不再以接口装饰器为主
+- 前端导航与页面入口已经切到“菜单树驱动动态路由”
+
+## 9. 新增模块的方式
+
+如果后续要新增内容模块，比如 `content`：
+
+```text
+backend/app/modules/content/controller/admin/article.py
+```
+
+定义 `router` 后，系统会自动注册为：
+
+```text
+/admin/content/article/*
+```
+
+不需要再去 `main.py` 或 `api/__init__.py` 手工挂载。
+
+如果模块需要管理端匿名接口，可以在模块 `config.py` 的 `admin_whitelist` 中补充固定路径。

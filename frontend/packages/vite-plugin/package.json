@@ -1,0 +1,41 @@
+{
+	"name": "@cool-vue/vite-plugin",
+	"version": "8.2.20",
+	"description": "cool-admin、cool-uni builder",
+	"types": "./dist/index.d.ts",
+	"main": "/dist/index.js",
+	"scripts": {
+		"build": "rollup --c --bundleConfigAsCjs"
+	},
+	"keywords": [],
+	"author": "cool",
+	"license": "ISC",
+	"files": [
+		"types/*",
+		"dist/*",
+		"client.d.ts",
+		"package.json"
+	],
+	"devDependencies": {
+		"@rollup/plugin-typescript": "^11.1.6",
+		"@types/lodash": "^4.17.15",
+		"@types/node": "^20.12.7",
+		"@typescript-eslint/eslint-plugin": "^7.7.1",
+		"@typescript-eslint/parser": "^7.7.1",
+		"eslint": "^9.1.1",
+		"postcss-value-parser": "^4.2.0",
+		"rollup": "^4.16.2",
+		"tslib": "^2.6.2",
+		"typescript": "^5.4.5",
+		"vite": "^5.4.14"
+	},
+	"dependencies": {
+		"@vue/compiler-sfc": "^3.5.13",
+		"axios": "^1.6.8",
+		"glob": "^10.3.12",
+		"lodash": "^4.17.21",
+		"magic-string": "^0.30.17",
+		"prettier": "^3.4.2",
+		"svgo": "^3.3.2"
+	}
+}

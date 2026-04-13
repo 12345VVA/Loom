@@ -1,0 +1,130 @@
+services:
+  # Redis - 用于 Celery 消息队列和缓存
+  redis:
+    image: redis:7-alpine
+    container_name: loom-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # PostgreSQL - 数据库（可选，也可用 SQLite）
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: loom-postgres
+  #   environment:
+  #     POSTGRES_USER: loom
+  #     POSTGRES_PASSWORD: loom_password
+  #     POSTGRES_DB: loom_db
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U loom"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 5
+
+  # FastAPI 后端
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: loom-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./logs:/app/logs
+      - ./data:/app/data
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite:///./data/loom.db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    depends_on:
+      redis:
+        condition: service_healthy
+      # postgres:
+      #   condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker - 异步任务处理器
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: loom-celery-worker
+    volumes:
+      - ./backend:/app
+      - ./logs:/app/logs
+      - ./data:/app/data
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite:///./data/loom.db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app worker --loglevel=info
+
+  # Celery Beat - 定时任务调度器（可选）
+  # celery-beat:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: loom-celery-beat
+  #   volumes:
+  #     - ./backend:/app
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379/0
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   command: celery -A app.celery_app beat --loglevel=info
+
+  # Flower - Celery 监控面板（可选）
+  # flower:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: loom-flower
+  #   ports:
+  #     - "5555:5555"
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379/0
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   command: celery -A app.celery_app flower --port=5555
+
+  # Vue 3 前端（开发模式）
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: loom-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    command: npm run dev -- --host
+
+volumes:
+  redis_data:
+  # postgres_data:
+
+networks:
+  default:
+    name: loom-network

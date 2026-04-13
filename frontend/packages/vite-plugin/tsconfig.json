@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"rootDir": "./src",
+		"target": "ESNext",
+		"module": "CommonJS",
+		"declaration": true,
+		"outDir": "dist",
+		"strict": true,
+		"esModuleInterop": true,
+		"pretty": true,
+		"resolveJsonModule": true,
+		"types": ["node", "lodash"]
+	},
+	"include": ["src"],
+	"exclude": ["dist"]
+}

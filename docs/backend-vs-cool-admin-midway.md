@@ -1,0 +1,71 @@
+# Loom Backend vs. Cool-Admin-Midway 技术对比分析报告
+
+本报告旨在深入分析 Loom (FastAPI) 与 Cool-Admin-Midway (Node.js/Midway.js) 在核心架构设计上的异同，并为后续的架构对齐提供理论依据。
+
+## 1. 权限中间件处理 (Auth Middleware)
+
+| 维度 | Loom (FastAPI) | Cool-Admin-Midway |
+| :--- | :--- | :--- |
+| **工作机制** | **基于 Scope 的中间件隔离**。根据请求路径前缀（如 `/admin`）分发到不同的 `ScopeAuthorityMiddleware` 实例。 | **统一中间件 + 控制器元数据**。所有请求经过鉴权中间件，通过反射获取控制器上的权限标识。 |
+| **元数据解析** | 使用 `resolve_request_route` 匹配 FastAPI 路由，通过 `get_route_tags` 获取权限元数据。 | 利用 Midway.js 的 `getClassMetadata` 或 `getMethodMetadata` 读取装饰器信息。 |
+| **白名单管理** | 在 `app.state.scope_whitelists` 中集中管理。 | 通过缓存或组件配置 (`cool.config.ts`) 进行动态配置。 |
+
+> [!NOTE]
+> **分析建议**：Loom 的实现更符合 FastAPI 的异步中间件模型，由于 FastAPI 路由匹配在中间件之后，Loom 通过手动解析路由 (`resolve_request_route`) 提前获取元数据的做法模拟了 Midway.js 的拦截器效果。
+
+## 2. 权限体系设计 (Auth System Design)
+
+### 数据权限 (DataScope)
+*   **Cool-Midway**: 将数据权限逻辑注入到 `CoolBaseService` 中。通过在 Service 方法上使用内置逻辑，自动在 TypeORM 的 `QueryBuilder` 中注入 `dept_id` 或 `user_id` 的过滤条件。
+*   **Loom**: 采用 **QueryBuilder 模式**。在通用查询器 `QueryBuilder` 中封装了 `apply_data_scope` 方法。
+*   **现状对比**: Loom 目前需要 Service 手动调用 `builder.apply_data_scope(...)`，而 Cool-Midway 往往通过基类和约定实现更隐式的自动注入。
+
+### 功能权限 (RBAC)
+*   两者都采用了经典的 `User -> Role -> Menu/Permission` 模型。
+*   **对齐度**: 100%。权限字符串格式一致（例如 `base:sys:user:add`）。
+
+## 3. 模块化设计 (Modular Design)
+
+*   **Cool-Midway**: 采用 **模块目录 + @Module 装饰器**。模块内包含 `entity`, `controller`, `service`, `config`。
+*   **Loom**: 采用 **约定式模块目录**。`app/modules/{module_name}`。
+    *   控制器位于 `controller/{scope}/*.py`。
+    *   服务位于 `service/*.py`。
+    *   模型位于 `model/*.py`。
+*   **差异点**: Loom 缺乏一个显式的 `Module` 声明类来统筹模块内的依赖注入和初始化配置。目前的模块扫描仅限于路由层面。
+
+## 4. 自动路由技术 (Auto-Routing)
+
+*   **Loom 技术选型**: **文件路径约定 + 装饰器合并**。
+    *   路径前缀 = 分组 Prefix (`/admin`) + 模块名 (`/base`) + 文件相对路径 (`/sys/user`)。
+    *   路由方法 = `@CoolController` 中的 CRUD 自动生成 + 自定义路由方法。
+*   **Cool-Midway**: **完全装饰器驱动**。由 Midway.js 的路由扫描器完成，通常直接由 `@CoolController(prefix)` 定义。
+
+> [!IMPORTANT]
+> **Loom 的优势**：文件路径即路由的约定减少了在每个控制器中重复书写冗长路由前缀的工作，且结构更清晰。
+
+## 5. EPS 技术 (Entity-Permission-Service)
+
+EPS 是 Cool-Admin 的灵魂，用于实现前后端元数据的完全对齐。
+
+| 功能 | Loom 实现 (scanner.py) | Cool-Midway 实现 (cool-eps) |
+| :--- | :--- | :--- |
+| **字段映射** | 通过 `SQLModel` 字段反射，自动识别类型并映射。 | 通过 `TypeORM` 实体装饰器，读取更多 UI 细节（如字段备注、默认值）。 |
+| **枚举处理** | **已实现**。自动将 Python `Enum` 转换为前端下拉选项数据。 | 处理 TypeScript Enum 较复杂，通常需要额外配置。 |
+| **CRUD 操作** | 自动输出 `list/page/info/add/update/delete` 元数据。 | 类似，且包含返回体/参数的模型校验转换。 |
+| **查询元数据** | **已对齐**。将 `QueryConfig` 的过滤字段（Eq, Like）注入到列元数据中。 | 使用内置的 DTO/Entity 类型分析。 |
+
+---
+
+# Phase 4 后续对齐建议计划（待讨论）
+
+根据以上分析，我建议在下一步进行以下“深度对齐”操作：
+
+## 1. 自动 DataScope 注入 [优化]
+*   **方案**：在 `BaseAdminCrudService` 的 `page` 和 `list` 方法中，通过反向查找 `self.model` 的字段（是否存在 `user_id` 或 `department_id`），自动应用 `QueryBuilder.apply_data_scope`。
+*   **目标**：让开发者在编写常规 CRUD 业务时，彻底感知不到权限代码。
+
+## 2. 模块级配置化 [增强]
+*   **具体方案**：在每个模块建立 `module_config.py`，允许定义该模块的专属权限钩子、白名单或初始化逻辑。
+
+## 3. EPS 精度提升 [增强]
+*   **具体方案**：在 `scanner.py` 中增加对字段约束（如 `max_length`, `pattern`）的识别，并反馈到 EPS JSON 中，使前端能自动生成校验规则。
