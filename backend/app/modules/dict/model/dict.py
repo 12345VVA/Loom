@@ -7,32 +7,27 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Field, SQLModel
+from app.framework.models.entity import BaseEntity
 
 
-class DictType(SQLModel, table=True):
+class DictType(BaseEntity, table=True):
     """字典类型表"""
     __tablename__ = "dict_type"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)  # 名称
     key: str = Field(index=True, unique=True)  # 标识
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class DictInfo(SQLModel, table=True):
+class DictInfo(BaseEntity, table=True):
     """字典数据表"""
     __tablename__ = "dict_info"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     type_id: int = Field(index=True)  # 关联 dict_type.id
     parent_id: Optional[int] = Field(default=None, index=True)
     name: str  # 展示文本
     value: str  # 存储值
     order_num: int = Field(default=0)  # 排序
     remark: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class DictTypeRead(BaseModel):

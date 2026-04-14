@@ -50,6 +50,7 @@ def scan_model_columns(model: Any) -> list[dict[str, Any]]:
         columns.append(
             {
                 "propertyName": name,
+                "source": name,
                 "prop": name,  # 对齐 Cool-Admin 的 prop 字段
                 "type": eps_type,
                 "comment": field.description or name,
@@ -104,5 +105,16 @@ def _map_python_type_to_eps(py_type: Any) -> str:
         return "datetime"
     if isinstance(py_type, type) and issubclass(py_type, Enum):
         return "select"  # 枚举通常映射为选择器
+    
+    # 获取类型名称进行字符串判断，增加容错
+    type_name = str(py_type).lower()
+    if "int" in type_name or "float" in type_name or "decimal" in type_name:
+        return "number"
+    if "bool" in type_name:
+        return "boolean"
+    if "date" in type_name or "time" in type_name:
+        return "datetime"
+        
     # 默认作为字符串处理
     return "string"
+

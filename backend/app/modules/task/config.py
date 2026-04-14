@@ -12,4 +12,5 @@ MODULE_CONFIG = ModuleConfig(
     scopes=("admin",),
     middlewares=(ModuleAccessMiddleware,),
     config_namespace="TASK",
+    init_menu_file="menu.json",
 )

@@ -5,21 +5,31 @@ from fastapi import Depends
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
-from app.framework.router.route_meta import Get, Post
 from app.modules.base.model.auth import (
     CoolUserInfo,
+    Department,
+    PageResult,
     User,
-    UserCreateRequest,
-    UserInfoItem,
     UserListItem,
-    UserMoveRequest,
-    UserRoleAssignRequest,
+    UserInfoItem,
+    UserCreateRequest,
     UserUpdateRequest,
+    UserRoleAssignRequest,
+    UserMoveRequest,
+)
+from app.framework.controller_meta import (
+    BaseController,
+    CoolController,
+    CoolControllerMeta,
+    OrderByConfig,
+    QueryConfig,
+    QueryFieldConfig,
+    RelationConfig,
 )
 from app.modules.base.service.admin_service import UserAdminService
 from app.modules.base.service.auth_service import AuthService
 from app.modules.base.service.security_service import get_current_user
+from app.framework.router.route_meta import Get, Post
 
 
 @CoolController(
@@ -55,6 +65,15 @@ from app.modules.base.service.security_service import get_current_user
             order_fields=("created_at", "updated_at", "username"),
             add_order_by=(OrderByConfig("created_at", "desc"),),
         ),
+        soft_delete=True,
+        relations=(
+            RelationConfig(
+                model=Department,
+                column="department_id",
+                target_column="name",
+                alias="departmentName"
+            ),
+        )
     )
 )
 class BaseUserController(BaseController):

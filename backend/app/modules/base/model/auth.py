@@ -8,45 +8,39 @@ from typing import Generic, Optional, TypeVar
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field as PydanticField
 from sqlmodel import Field, SQLModel
+from app.framework.models.entity import BaseEntity
 
 
-class Department(SQLModel, table=True):
+class Department(BaseEntity, table=True):
     """部门表"""
 
     __tablename__ = "sys_department"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
-    parent_id: Optional[int] = Field(default=None, foreign_key="sys_department.id")
+    parent_id: Optional[int] = Field(default=None)
     sort_order: int = Field(default=0)
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class Role(SQLModel, table=True):
+class Role(BaseEntity, table=True):
     """角色表"""
 
     __tablename__ = "sys_role"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
     code: str = Field(index=True, unique=True)
     label: str = Field(index=True, unique=True)
     remark: Optional[str] = None
     data_scope: str = Field(default="self")
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class Menu(SQLModel, table=True):
+class Menu(BaseEntity, table=True):
     """菜单与权限资源表"""
 
     __tablename__ = "sys_menu"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    parent_id: Optional[int] = Field(default=None, foreign_key="sys_menu.id")
+    parent_id: Optional[int] = Field(default=None)
     name: str
     code: str = Field(index=True, unique=True)
     type: str = Field(default="button")
@@ -58,16 +52,13 @@ class Menu(SQLModel, table=True):
     permission: Optional[str] = Field(default=None, index=True)
     sort_order: int = Field(default=0)
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class User(SQLModel, table=True):
+class User(BaseEntity, table=True):
     """用户表"""
 
     __tablename__ = "sys_user"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(index=True, unique=True)
     full_name: str
     nick_name: Optional[str] = None
@@ -77,41 +68,39 @@ class User(SQLModel, table=True):
     remark: Optional[str] = None
     password_hash: str
     password_version: int = Field(default=1)
-    department_id: Optional[int] = Field(default=None, foreign_key="sys_department.id")
+    department_id: Optional[int] = Field(default=None)
     is_super_admin: bool = Field(default=False)
     is_manager: bool = Field(default=False)
     is_department_leader: bool = Field(default=False)
     is_active: bool = Field(default=True)
     last_login_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class UserRoleLink(SQLModel, table=True):
+class UserRoleLink(BaseEntity, table=True):
     """用户角色关联表"""
 
     __tablename__ = "sys_user_role"
 
-    user_id: int = Field(foreign_key="sys_user.id", primary_key=True)
-    role_id: int = Field(foreign_key="sys_role.id", primary_key=True)
+    user_id: int = Field(index=True)
+    role_id: int = Field(index=True)
 
 
-class RoleMenuLink(SQLModel, table=True):
+class RoleMenuLink(BaseEntity, table=True):
     """角色菜单关联表"""
 
     __tablename__ = "sys_role_menu"
 
-    role_id: int = Field(foreign_key="sys_role.id", primary_key=True)
-    menu_id: int = Field(foreign_key="sys_menu.id", primary_key=True)
+    role_id: int = Field(index=True)
+    menu_id: int = Field(index=True)
 
 
-class RoleDepartmentLink(SQLModel, table=True):
+class RoleDepartmentLink(BaseEntity, table=True):
     """角色部门关联表"""
 
     __tablename__ = "sys_role_department"
 
-    role_id: int = Field(foreign_key="sys_role.id", primary_key=True)
-    department_id: int = Field(foreign_key="sys_department.id", primary_key=True)
+    role_id: int = Field(index=True)
+    department_id: int = Field(index=True)
 
 
 class LoginRequest(BaseModel):

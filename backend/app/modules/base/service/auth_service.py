@@ -546,19 +546,21 @@ class AuthService:
         clear_login_caches_for_users(all_user_ids)
 
     def _ensure_user_role_link(self, user_id: int, role_id: int) -> None:
-        link = self.session.get(UserRoleLink, (user_id, role_id))
+        link = self.session.exec(select(UserRoleLink).where(UserRoleLink.user_id == user_id, UserRoleLink.role_id == role_id)).first()
         if not link:
             self.session.add(UserRoleLink(user_id=user_id, role_id=role_id))
             self.session.commit()
 
     def _ensure_role_menu_link(self, role_id: int, menu_id: int) -> None:
-        link = self.session.get(RoleMenuLink, (role_id, menu_id))
+        link = self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == role_id, RoleMenuLink.menu_id == menu_id)).first()
         if not link:
             self.session.add(RoleMenuLink(role_id=role_id, menu_id=menu_id))
             self.session.commit()
 
     def _ensure_role_department_link(self, role_id: int, department_id: int) -> None:
-        link = self.session.get(RoleDepartmentLink, (role_id, department_id))
+        link = self.session.exec(
+            select(RoleDepartmentLink).where(RoleDepartmentLink.role_id == role_id, RoleDepartmentLink.department_id == department_id)
+        ).first()
         if not link:
             self.session.add(RoleDepartmentLink(role_id=role_id, department_id=department_id))
             self.session.commit()

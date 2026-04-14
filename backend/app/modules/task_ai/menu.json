@@ -7,7 +7,7 @@
     "resource": "info",
     "path": "/task/list",
     "component": "modules/task/views/list.vue",
-    "icon": "operation",
+    "icon": "icon-task",
     "sort_order": 61,
     "parent_code": "nav_task",
     "role_codes": ["admin", "task_operator"],

@@ -7,7 +7,7 @@
     "resource": "type",
     "path": "/dict/list",
     "component": "modules/dict/views/list.vue",
-    "icon": "collection",
+    "icon": "icon-dict",
     "sort_order": 51,
     "parent_code": "nav_data",
     "role_codes": ["admin"],

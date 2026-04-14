@@ -7,7 +7,7 @@
     "resource": "info",
     "path": "/task/info",
     "component": "modules/task/views/index.vue",
-    "icon": "alarm-clock",
+    "icon": "icon-time",
     "sort_order": 41,
     "parent_code": "nav_system",
     "children": [

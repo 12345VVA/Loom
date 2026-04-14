@@ -7,31 +7,28 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field as PydanticField
 from sqlmodel import Field, SQLModel
+from app.framework.models.entity import BaseEntity
 
 
 
 
-class SysParam(SQLModel, table=True):
+class SysParam(BaseEntity, table=True):
     """系统参数配置"""
 
     __tablename__ = "sys_param"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     key_name: str = Field(index=True, unique=True)
     data: Optional[str] = None
     data_type: int = Field(default=0)  # 0: 字符串 1: 富文本 2: 文件
     remark: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 
-class SysLog(SQLModel, table=True):
+class SysLog(BaseEntity, table=True):
     """审计日志表"""
     __tablename__ = "sys_log"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, index=True)
     action: str = Field(index=True)  # 接口路径
     method: str = Field(index=True)  # 请求方法
@@ -40,15 +37,13 @@ class SysLog(SQLModel, table=True):
     ip_addr: Optional[str] = None
     status: int = Field(default=1)  # 0: 失败, 1: 成功
     message: Optional[str] = None  # 结果细节
-    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class SysLoginLog(SQLModel, table=True):
+class SysLoginLog(BaseEntity, table=True):
     """登录日志表"""
 
     __tablename__ = "sys_login_log"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, index=True)
     name: Optional[str] = None
     account: Optional[str] = Field(default=None, index=True)
@@ -61,8 +56,6 @@ class SysLoginLog(SQLModel, table=True):
     device_id: Optional[str] = None
     source_system: Optional[str] = None
     user_agent: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 

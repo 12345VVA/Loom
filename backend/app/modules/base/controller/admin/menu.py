@@ -33,7 +33,7 @@ from app.modules.base.service.security_service import get_current_user
         tags=("base", "menu"),
         name_prefix="菜单",
         code_prefix="base_sys_menu",
-        list_response_model=MenuRead,
+        list_response_model=MenuTreeItem,
         page_item_model=MenuRead,
         info_response_model=MenuRead,
         add_request_model=MenuCreateRequest | list[MenuCreateRequest],
@@ -54,6 +54,9 @@ from app.modules.base.service.security_service import get_current_user
             order_fields=("sort_order", "created_at", "updated_at", "name"),
             add_order_by=(OrderByConfig("sort_order", "asc"), OrderByConfig("created_at", "asc")),
         ),
+        is_tree=True,
+        parent_field="parent_id",
+        soft_delete=True,
     )
 )
 class BaseMenuController(BaseController):

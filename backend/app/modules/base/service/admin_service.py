@@ -12,7 +12,7 @@ from sqlalchemy.orm import load_only
 from sqlmodel import Session, select
 
 from app.core.security import hash_password
-from app.framework.controller_meta import CrudQuery
+from app.framework.controller_meta import CrudQuery, RelationConfig
 from app.modules.base.compat import get_menu_parent_code, get_resource_compat
 from app.modules.base.model.auth import (
     Department,
@@ -67,9 +67,13 @@ from typing import Any, Type
 class BaseAdminCrudService:
     """管理资源通用服务基类"""
 
-    def __init__(self, session: Session, model: Type[Any] | None = None):
+    def __init__(self, session: Session, model: Type[Any] | None = None, **kwargs):
         self.session = session
         self.model = model
+        self.soft_delete = kwargs.get("soft_delete", False)
+        self.relations = kwargs.get("relations", ())
+        self.is_tree = kwargs.get("is_tree", False)
+        self.parent_field = kwargs.get("parent_field", "parentId")
 
     def _apply_query(
         self,
@@ -78,33 +82,145 @@ class BaseAdminCrudService:
         query: CrudQuery | None,
         current_user: User | None = None,
         fallback_field: str = "created_at",
+        relations: tuple[RelationConfig, ...] = (),
     ):
         """统一应用所有查询规则 (过滤、关键字、范围、排序、数据权限)"""
         from app.framework.router.query_builder import QueryBuilder
         builder = QueryBuilder(model, query)
-        
-        # 处理数据权限
-        data_scope = resolve_data_scope(self.session, current_user) if current_user else None
-        current_user_id = current_user.id if current_user else None
-        
-        # 链式应用
-        statement = builder.apply_data_scope(statement, data_scope, current_user_id)
-        statement = builder.apply_filters(statement)
-        statement = builder.apply_keyword(statement)
-        statement = builder.apply_ranges(statement)
-        statement = builder.apply_sort(statement, fallback_field=fallback_field)
-        
-        return statement
 
-    def info(self, id: Any, current_user: User | None = None) -> Any:
+        # 获取当前用户ID用于数据权限过滤
+        current_user_id = current_user.id if current_user else None
+
+        # 链式应用所有规则 (包括软删除过滤和关系 Join)
+        return builder.apply_all(statement, data_scope=None, current_user_id=current_user_id, relations=relations)
+
+    def info(self, id: Any, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> Any:
         """获取资源详情"""
-        entity = self.session.get(self.model, id)
-        if not entity:
+        statement = select(self.model).where(self.model.id == id)
+        statement = self._apply_query(statement, self.model, None, current_user, relations=relations)
+        
+        result = self.session.exec(statement).first()
+        if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
-        return entity
+        
+        # 处理可能的 Tuple 结果 (Model + Relation Columns)
+        return self._row_to_dict(result)
+
+    def list(
+        self, 
+        query: CrudQuery | None = None, 
+        current_user: User | None = None, 
+        relations: tuple[RelationConfig, ...] | None = None,
+        is_tree: bool | None = None,
+        parent_field: str | None = None
+    ) -> list[dict]:
+        """通用获取列表"""
+        # 使用传入参数或实例属性（来自元数据注入）
+        active_relations = relations if relations is not None else self.relations
+        active_is_tree = is_tree if is_tree is not None else self.is_tree
+        active_parent_field = parent_field if parent_field is not None else self.parent_field
+        
+        statement = select(self.model)
+        statement = self._apply_query(statement, self.model, query, current_user, relations=active_relations)
+        results = list(self.session.exec(statement).all())
+        data = [self._row_to_dict(r) for r in results]
+        
+        if active_is_tree:
+            return self._to_tree(data, parent_field=active_parent_field)
+        return data
+
+    def page(self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> PageResult[dict]:
+        """通用获取分页"""
+        page = query.page or 1
+        page_size = query.size or 10
+        
+        statement = select(self.model)
+        statement = self._apply_query(statement, self.model, query, current_user, relations=relations)
+        
+        count_statement = select(func.count()).select_from(statement.subquery())
+        total = int(self.session.exec(count_statement).one())
+        
+        results = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
+        
+        return PageResult(
+            items=[self._row_to_dict(r) for r in results],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+    # 声明生命周期钩子签名，子类可按需覆盖 (支持 data/payload 参数)
+    def _before_add(self, data: dict) -> dict: return data
+    def _after_add(self, entity: Any, payload: Any = None) -> None: pass
+    def _before_update(self, data: dict, entity: Any) -> dict: return data
+    def _after_update(self, entity: Any, payload: Any = None) -> None: pass
+    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]: return ids
+    def _after_delete(self, ids: list[int], payload: Any = None) -> None: pass
+
+    def _row_to_dict(self, row: Any) -> dict:
+        """将查询结果（可能是 Row, Tuple, Model 或 Scalar）转换为字典"""
+        if row is None:
+            return {}
+
+        data = {}
+        # 1. 如果直接就是模型实例
+        if isinstance(row, self.model):
+            data = row.model_dump()
+        # 2. 如果是 SQLAlchemy Row (2.0+ 推荐使用 _mapping)
+        elif hasattr(row, "_mapping"):
+            mapping = dict(row._mapping)
+            # 如果第一项是主体模型，则展开它
+            if isinstance(row[0], self.model):
+                data = row[0].model_dump()
+                data.update(mapping)
+                # 移除模型占位符（如 "User": <Model>）
+                data.pop(self.model.__name__, None)
+            else:
+                data = mapping
+        # 3. 如果是旧版 Row 或 Tuple
+        elif hasattr(row, "_asdict"):
+            data_map = row._asdict()
+            if isinstance(row[0], self.model):
+                data = row[0].model_dump()
+                data.update(data_map)
+                data.pop(self.model.__name__, None)
+            else:
+                data = data_map
+        # 4. 如果是普通的元组
+        elif isinstance(row, tuple):
+            if len(row) > 0 and isinstance(row[0], self.model):
+                data = row[0].model_dump()
+                if hasattr(row, "_fields"):
+                    for i, field in enumerate(row._fields):
+                        if i == 0: continue
+                        data[field] = row[i]
+            else:
+                data = {"id": row[0]} if len(row) > 0 else {}
+        # 5. 如果是字典直接返回
+        elif isinstance(row, dict):
+            data = row
+        # 6. 兜底处理（如 Scalar 整数 ID）
+        elif hasattr(self.model, "id") and isinstance(row, (int, str)):
+            data = {"id": row}
+
+        # 统一映射时间戳字段，对齐 cool-admin 规范
+        if data:
+            if "created_at" in data:
+                data.setdefault("createTime", data["created_at"])
+            if "updated_at" in data:
+                data.setdefault("updateTime", data["updated_at"])
+            if "delete_time" in data:
+                data.setdefault("deleteTime", data["delete_time"])
+            if "is_active" in data:
+                data.setdefault("status", 1 if data["is_active"] else 0)
+            
+        return data
 
     def add(self, payload: Any) -> Any:
-        """通用新增资源"""
+        """通用新增资源 (支持单条或列表)"""
+        if isinstance(payload, list):
+            return [self.add(item) for item in payload]
+            
         data = payload.model_dump() if hasattr(payload, "model_dump") else payload
         data = self._before_add(data)
         
@@ -113,7 +229,7 @@ class BaseAdminCrudService:
         self.session.commit()
         self.session.refresh(entity)
         
-        self._after_add(entity)
+        self._after_add(entity, payload)
         return entity
 
     def update(self, payload: Any) -> Any:
@@ -134,22 +250,76 @@ class BaseAdminCrudService:
         self.session.commit()
         self.session.refresh(entity)
         
-        self._after_update(entity)
+        self._after_update(entity, payload)
         return entity
 
-    def delete(self, ids: list[int]) -> dict:
+    def delete(self, ids: list[int], payload: Any = None, soft_delete: bool | None = None) -> dict:
         """通用删除资源"""
         if not ids:
             return {"success": True, "deleted_ids": []}
             
-        self._before_delete(ids)
+        ids = self._before_delete(ids, payload)
         
-        entities = list(self.session.exec(select(self.model).where(self.model.id.in_(ids))).all())
-        for entity in entities:
-            self.session.delete(entity)
+        # 使用传入参数或实例属性（来自元数据注入）
+        active_soft_delete = soft_delete if soft_delete is not None else self.soft_delete
+        
+        target_ids = set(ids)
+        if active_soft_delete:
+            # 尝试查找所有后代 IDs (递归逻辑已包含在 _collect_descendant_ids 中)
+            all_ids = self._collect_descendant_ids(ids)
+            target_ids.update(all_ids)
+
+            from sqlalchemy import update
+            statement = (
+                update(self.model)
+                .where(self.model.id.in_(list(target_ids)))
+                .where(self.model.delete_time == None) # 避免重复软删除
+                .values(delete_time=datetime.utcnow())
+            )
+            self.session.execute(statement)
+        else:
+            # 物理删除逻辑
+            entities = list(self.session.exec(select(self.model).where(self.model.id.in_(ids))).all())
+            for entity in entities:
+                self.session.delete(entity)
             
         self.session.commit()
-        return {"success": True, "deleted_ids": ids}
+        return {"success": True, "deleted_ids": sorted(list(target_ids))}
+
+    def _to_tree(self, data: list[dict], parent_field: str = "parentId", id_field: str = "id") -> list[dict]:
+        """将扁平列表转换为树形结构"""
+        item_dict = {item[id_field]: {**item, "children": []} for item in data}
+        tree = []
+        for item in item_dict.values():
+            parent_id = item.get(parent_field)
+            if parent_id and parent_id in item_dict:
+                item_dict[parent_id]["children"].append(item)
+            else:
+                tree.append(item)
+        return tree
+
+    def _collect_descendant_ids(self, root_ids: list[int]) -> list[int]:
+        """递归收集所有后代 ID"""
+        if not hasattr(self.model, "parent_id"):
+            return []
+            
+        # 简单实现：一次性查出所有数据在内存中构建（适用于字典、菜单等小规模树）
+        # 对于超大规模树，应改用递归 SQL 或闭包表
+        all_rows = list(self.session.exec(select(self.model.id, self.model.parent_id)).all())
+        children_map = {}
+        for row in all_rows:
+            children_map.setdefault(row.parent_id, []).append(row.id)
+            
+        result = set()
+        stack = list(root_ids)
+        while stack:
+            curr = stack.pop()
+            if curr in result: continue
+            result.add(curr)
+            if curr in children_map:
+                stack.extend(children_map[curr])
+        
+        return list(result)
 
     # 生命周期钩子 (Lifecycle Hooks)
     def _before_add(self, data: dict) -> dict: return data
@@ -165,30 +335,35 @@ class UserAdminService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, User)
 
-    def list(self, query: CrudQuery | None = None, current_user: User | None = None) -> list[UserListItem]:
-        statement = select(User)
-        statement = self._apply_query(statement, User, query, current_user, fallback_field="created_at")
-        users = list(self.session.exec(statement).all())
-        return [self._build_user_list_item(user) for user in users]
+    def list(self, query: CrudQuery | None = None, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> list[UserListItem]:
+        items = super().list(query, current_user, relations)
+        return [self._build_user_list_item_from_dict(item) for item in items]
 
-    def page(self, query: CrudQuery, current_user: User | None = None) -> PageResult[UserListItem]:
-        page = query.page or 1
-        page_size = query.size or 10
-        
-        statement = select(User)
-        statement = self._apply_query(statement, User, query, current_user, fallback_field="created_at")
-        
-        count_statement = select(func.count()).select_from(statement.subquery())
-        total = int(self.session.exec(count_statement).one())
-        
-        users = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
-        
-        return PageResult(
-            items=[self._build_user_list_item(user) for user in users],
-            total=total,
-            page=page,
-            page_size=page_size,
-        )
+    def _row_to_dict(self, row: Any) -> dict:
+        # 获取基础数据字典
+        data = super()._row_to_dict(row)
+        if not data:
+            return {}
+
+        # 兼容前端字段名并补充信息 (注: createTime/updateTime/status 已在基类处理)
+        # 统一从字典中提取值，避免直接访问 row 对象
+        data.setdefault("username", data.get("username", ""))
+        data["name"] = data.get("full_name") or data.get("username", "")
+        data["nickName"] = data.get("nick_name") or data.get("full_name") or data.get("username", "")
+        data["headImg"] = data.get("head_img")
+        data["departmentId"] = data.get("department_id")
+
+        # 获取用户 ID 用于查询角色
+        user_id = data.get("id")
+        if user_id:
+            roles = get_user_roles(self.session, user_id)
+            data["roleIdList"] = [role.id for role in roles if role.id is not None]
+            data["roleName"] = ",".join(role.name for role in roles if role.name)
+        else:
+            data["roleIdList"] = []
+            data["roleName"] = ""
+            
+        return data
 
     # 钩子实现 (Hooks)
     def _before_add(self, data: dict) -> dict:
@@ -206,14 +381,11 @@ class UserAdminService(BaseAdminCrudService):
         data["department_id"] = data.pop("departmentId", None)
         data["is_active"] = int(data.pop("status", 1)) == 1
         data.pop("roleIdList", None)
-        data.setdefault("updated_at", datetime.utcnow())
         return data
 
-    def _after_add(self, entity: User) -> None:
-        # 获取原始 payload 中的 role_ids (这里需要特殊处理，因为 payload 可能不在钩子参数里)
-        # 或者约定 payload 总是包含在某种上下文中。
-        # 简单起见，如果是在 UserAdminService 内部，我们可以通过某种方式获取
-        pass
+    def _after_add(self, entity: User, payload: Any) -> None:
+        if hasattr(payload, "roleIdList"):
+            self._replace_user_roles(entity.id, payload.roleIdList)
 
     def _before_update(self, data: dict, entity: User) -> dict:
         if data.get("password"):
@@ -227,58 +399,23 @@ class UserAdminService(BaseAdminCrudService):
         data["department_id"] = data.pop("departmentId", None)
         data["is_active"] = int(data.pop("status", 1)) == 1
         data.pop("roleIdList", None)
-        data["updated_at"] = datetime.utcnow()
         return data
 
-    def _after_update(self, entity: User) -> None:
+    def _after_update(self, entity: User, payload: Any) -> None:
+        if hasattr(payload, "roleIdList"):
+            self._replace_user_roles(entity.id, payload.roleIdList)
         clear_login_caches(entity.id)
 
-    # 重写 add/update 以处理特定的 Role 逻辑 (或者在基类中完善 payload 透传)
-    def add(self, payload: UserCreateRequest) -> UserListItem:
-        user = super().add(payload)
-        self._replace_user_roles(user.id, payload.roleIdList)
-        return self._build_user_list_item(user)
-
-    def update(self, payload: UserUpdateRequest) -> UserListItem:
-        user = super().update(payload)
-        self._replace_user_roles(user.id, payload.roleIdList)
-        return self._build_user_list_item(user)
-
-    def info(self, id: int, current_user: User | None = None) -> UserInfoItem:
-        user = super().info(id, current_user=current_user)
-        item = self._build_user_list_item(user)
-        return UserInfoItem(**item.model_dump(), passwordVersion=user.password_version)
-
-    def delete(self, ids: list[int]) -> dict:
+    def _before_delete(self, ids: list[int]) -> list[int]:
         users = list(self.session.exec(select(User).where(User.id.in_(ids))).all())
         protected_users = [user.username for user in users if user.is_super_admin]
         if protected_users:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不能删除超级管理员")
-            
-        clear_login_caches_for_users(ids)
-            
-        return super().delete(ids)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"不能删除超级管理员: {', '.join(protected_users)}")
+        return ids
 
-    def _build_user_list_item(self, user: User) -> UserListItem:
-        roles = get_user_roles(self.session, user.id)
-        department = self.session.get(Department, user.department_id) if user.department_id else None
-        return UserListItem(
-            id=user.id,
-            username=user.username,
-            name=user.full_name,
-            nickName=user.nick_name or user.full_name,
-            headImg=user.head_img,
-            email=user.email,
-            phone=user.phone,
-            remark=user.remark,
-            departmentId=user.department_id,
-            departmentName=department.name if department else None,
-            roleIdList=[role.id for role in roles if role.id is not None],
-            roleName=",".join(role.name for role in roles),
-            status=1 if user.is_active else 0,
-            createTime=user.created_at,
-            updateTime=user.updated_at or user.created_at,
-        )
+    def _after_delete(self, ids: list[int]) -> None:
+        clear_login_caches_for_users(ids)
+
 
     def _replace_user_roles(self, user_id: int, role_ids: list[int]) -> None:
         existing_links = list(self.session.exec(select(UserRoleLink).where(UserRoleLink.user_id == user_id)).all())
@@ -313,7 +450,6 @@ class UserAdminService(BaseAdminCrudService):
         users = list(self.session.exec(select(User).where(User.id.in_(payload.userIds))).all())
         for user in users:
             user.department_id = payload.departmentId
-            user.updated_at = datetime.utcnow()
             self.session.add(user)
         self.session.commit()
         for user in users:
@@ -324,102 +460,72 @@ class UserAdminService(BaseAdminCrudService):
 class RoleAdminService(BaseAdminCrudService):
     """角色资源管理服务"""
 
-    def list(self, query: CrudQuery | None = None) -> list[RoleRead]:
-        statement = select(Role)
-        statement = self._apply_query(statement, Role, query, fallback_field="created_at")
-        roles = list(self.session.exec(statement).all())
-        return [self._build_role_read(role) for role in roles]
+    def __init__(self, session: Session):
+        super().__init__(session, Role)
 
-    def page(self, query: CrudQuery) -> PageResult[RoleRead]:
-        page = query.page or 1
-        page_size = query.size or 10
-        statement = select(Role)
-        statement = self._apply_query(statement, Role, query, fallback_field="created_at")
-        
-        count_statement = select(func.count()).select_from(statement.subquery())
-        total = int(self.session.exec(count_statement).one())
-        
-        roles = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
-        return PageResult(
-            items=[self._build_role_read(role) for role in roles],
-            total=total,
-            page=page,
-            page_size=page_size,
-        )
+    def _row_to_dict(self, row: Any) -> dict:
+        data = super()._row_to_dict(row)
+        # 补充关联列表
+        data["menuIdList"] = [link.menu_id for link in self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == row.id)).all()]
+        data["departmentIdList"] = [link.department_id for link in self.session.exec(select(RoleDepartmentLink).where(RoleDepartmentLink.role_id == row.id)).all()]
+        data["status"] = 1 if data.get("is_active", True) else 0
+        return data
 
-    def info(self, id: int) -> RoleRead:
-        role = self.session.get(Role, id)
-        if not role:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="角色不存在")
-        return self._build_role_read(role)
-
-    def add(self, payload: RoleCreateRequest) -> RoleRead:
-        role_code = payload.code or payload.label
-        existing = self.session.exec(select(Role).where((Role.code == role_code) | (Role.label == payload.label))).first()
+    def _before_add(self, data: dict) -> dict:
+        label = data.get("label")
+        code = data.get("code") or label
+        existing = self.session.exec(select(Role).where((Role.code == code) | (Role.label == label))).first()
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="角色编码或标识已存在")
-        role = Role(
-            name=payload.name,
-            code=role_code,
-            label=payload.label,
-            remark=payload.remark,
-            data_scope="department" if payload.departmentIdList else "self",
-            is_active=payload.status == 1,
-            updated_at=datetime.utcnow(),
-        )
-        self.session.add(role)
-        self.session.commit()
-        self.session.refresh(role)
-        self._replace_role_menus(role.id, payload.menuIdList)
-        self._replace_role_departments(role.id, payload.departmentIdList)
-        return self._build_role_read(role)
+        
+        data["code"] = code
+        data["is_active"] = int(data.pop("status", 1)) == 1
+        data["data_scope"] = "department" if data.get("departmentIdList") else "self"
+        return data
 
-    def update(self, payload: RoleUpdateRequest) -> RoleRead:
-        role = self.session.get(Role, payload.id)
-        if not role:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="角色不存在")
+    def _after_add(self, entity: Role, payload: Any) -> None:
+        if hasattr(payload, "menuIdList"):
+            self._replace_role_menus(entity.id, payload.menuIdList)
+        if hasattr(payload, "departmentIdList"):
+            self._replace_role_departments(entity.id, payload.departmentIdList)
 
+    def _before_update(self, data: dict, entity: Role) -> dict:
+        label = data.get("label") or entity.label
+        code = data.get("code") or data.get("label") or entity.code
+        
         duplicate = self.session.exec(
-            select(Role).where((Role.id != payload.id) & ((Role.code == (payload.code or payload.label)) | (Role.label == payload.label)))
+            select(Role).where((Role.id != entity.id) & ((Role.code == code) | (Role.label == label)))
         ).first()
         if duplicate:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="角色编码或标识已存在")
 
-        role.name = payload.name
-        role.code = payload.code or payload.label
-        role.label = payload.label
-        role.remark = payload.remark
-        role.data_scope = "department" if payload.departmentIdList else "self"
-        role.is_active = payload.status == 1
-        role.updated_at = datetime.utcnow()
-        self.session.add(role)
-        self.session.commit()
-        self.session.refresh(role)
-        self._replace_role_menus(role.id, payload.menuIdList)
-        self._replace_role_departments(role.id, payload.departmentIdList)
-        self._clear_role_related_caches([role.id])
-        return self._build_role_read(role)
+        if "status" in data:
+            data["is_active"] = int(data.pop("status")) == 1
+        if "departmentIdList" in data:
+            data["data_scope"] = "department" if data["departmentIdList"] else "self"
+        return data
 
-    def delete(self, ids: list[int]) -> dict:
-        if not ids:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少待删除的角色 ID")
+    def _after_update(self, entity: Role, payload: Any) -> None:
+        if hasattr(payload, "menuIdList"):
+            self._replace_role_menus(entity.id, payload.menuIdList)
+        if hasattr(payload, "departmentIdList"):
+            self._replace_role_departments(entity.id, payload.departmentIdList)
+        self._clear_role_related_caches([entity.id])
 
+    def _before_delete(self, ids: list[int]) -> list[int]:
         roles = list(self.session.exec(select(Role).where(Role.id.in_(ids))).all())
         if any(role.code == "admin" for role in roles):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不能删除系统管理员角色")
-
+        
+        # 收集受影响的用户 ID 以便后续清理缓存
         affected_user_ids = [link.user_id for link in self.session.exec(select(UserRoleLink).where(UserRoleLink.role_id.in_(ids))).all()]
-        for link in list(self.session.exec(select(UserRoleLink).where(UserRoleLink.role_id.in_(ids))).all()):
-            self.session.delete(link)
-        for link in list(self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id.in_(ids))).all()):
-            self.session.delete(link)
-        for link in list(self.session.exec(select(RoleDepartmentLink).where(RoleDepartmentLink.role_id.in_(ids))).all()):
-            self.session.delete(link)
-        for role in roles:
-            self.session.delete(role)
-        self.session.commit()
-        clear_login_caches_for_users(affected_user_ids)
-        return {"success": True, "deleted_ids": ids}
+        self._affected_user_ids_storage = affected_user_ids  # 临时存储
+        return ids
+
+    def _after_delete(self, ids: list[int]) -> None:
+        if hasattr(self, "_affected_user_ids_storage"):
+            clear_login_caches_for_users(self._affected_user_ids_storage)
+            del self._affected_user_ids_storage
 
     def assign_menus(self, payload: RoleMenuAssignRequest) -> dict:
         role = self.session.get(Role, payload.role_id)
@@ -429,24 +535,6 @@ class RoleAdminService(BaseAdminCrudService):
         self._clear_role_related_caches([payload.role_id])
         return {"success": True, "role_id": payload.role_id, "menu_ids": payload.menu_ids}
 
-    def _build_role_read(self, role: Role) -> RoleRead:
-        menu_ids = [link.menu_id for link in self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == role.id)).all()]
-        department_ids = [
-            link.department_id for link in self.session.exec(select(RoleDepartmentLink).where(RoleDepartmentLink.role_id == role.id)).all()
-        ]
-        return RoleRead(
-            id=role.id,
-            name=role.name,
-            label=role.label,
-            code=role.code,
-            remark=role.remark,
-            status=1 if role.is_active else 0,
-            relevance=1,
-            menuIdList=menu_ids,
-            departmentIdList=department_ids,
-            createTime=role.created_at,
-            updateTime=role.updated_at or role.created_at,
-        )
 
     def _replace_role_menus(self, role_id: int, menu_ids: list[int]) -> None:
         for link in list(self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == role_id)).all()):
@@ -486,60 +574,20 @@ class DepartmentAdminService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, Department)
 
-    def list(self, query: CrudQuery | None = None) -> list[DepartmentRead]:
-        statement = select(Department)
-        statement = self._apply_query(statement, Department, query, fallback_field="sort_order")
-        departments = list(self.session.exec(statement).all())
-        return [self._build_department_read(item) for item in departments]
+    def _before_add(self, data: dict) -> dict:
+        data["parent_id"] = data.pop("parentId", None)
+        data["sort_order"] = data.pop("orderNum", 0)
+        data["is_active"] = True
+        return data
 
-    def page(self, query: CrudQuery) -> PageResult[DepartmentRead]:
-        page = query.page or 1
-        page_size = query.size or 10
-        statement = select(Department)
-        statement = self._apply_query(statement, Department, query, fallback_field="sort_order")
-        count_statement = select(func.count()).select_from(statement.subquery())
-        total = int(self.session.exec(count_statement).one())
-        departments = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
-        return PageResult(
-            items=[self._build_department_read(item) for item in departments],
-            total=total,
-            page=page,
-            page_size=page_size,
-        )
+    def _before_update(self, data: dict, entity: Any) -> dict:
+        if "parentId" in data:
+            data["parent_id"] = data.pop("parentId")
+        if "orderNum" in data:
+            data["sort_order"] = data.pop("orderNum")
+        return data
 
-    def info(self, id: int) -> DepartmentRead:
-        department = self.session.get(Department, id)
-        if not department:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="部门不存在")
-        return self._build_department_read(department)
-
-    def add(self, payload: DepartmentCreateRequest) -> DepartmentRead:
-        department = Department(
-            parent_id=payload.parentId,
-            name=payload.name,
-            sort_order=payload.orderNum,
-            is_active=True,
-            updated_at=datetime.utcnow(),
-        )
-        self.session.add(department)
-        self.session.commit()
-        self.session.refresh(department)
-        return self._build_department_read(department)
-
-    def update(self, payload: DepartmentUpdateRequest) -> DepartmentRead:
-        department = self.session.get(Department, payload.id)
-        if not department:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="部门不存在")
-        department.parent_id = payload.parentId
-        department.name = payload.name
-        department.sort_order = payload.orderNum
-        department.updated_at = datetime.utcnow()
-        self.session.add(department)
-        self.session.commit()
-        self.session.refresh(department)
-        return self._build_department_read(department)
-
-    def delete(self, ids: list[int], payload: DepartmentDeleteRequest | None = None) -> dict:
+    def delete(self, ids: list[int], payload: Any = None, soft_delete: bool | None = None) -> dict:
         if not ids:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少待删除的部门 ID")
         delete_user = bool(payload.deleteUser) if payload else False
@@ -554,7 +602,6 @@ class DepartmentAdminService(BaseAdminCrudService):
                 if department_id in root_ids and fallback_department_id is not None:
                     for user in list(self.session.exec(select(User).where(User.department_id == department_id)).all()):
                         user.department_id = fallback_department_id
-                        user.updated_at = datetime.utcnow()
                         self.session.add(user)
             else:
                 for user in list(self.session.exec(select(User).where(User.department_id == department_id)).all()):
@@ -574,168 +621,100 @@ class DepartmentAdminService(BaseAdminCrudService):
                 continue
             department.parent_id = data.parentId
             department.sort_order = data.orderNum
-            department.updated_at = datetime.utcnow()
             self.session.add(department)
         self.session.commit()
         return {"success": True}
 
-    def _build_department_read(self, department: Department) -> DepartmentRead:
-        parent = self.session.get(Department, department.parent_id) if department.parent_id else None
-        return DepartmentRead(
-            id=department.id,
-            parentId=department.parent_id,
-            name=department.name,
-            parentName=parent.name if parent else None,
-            orderNum=department.sort_order,
-            status=1 if department.is_active else 0,
-            createTime=department.created_at,
-            updateTime=department.updated_at or department.created_at,
-        )
+    def _row_to_dict(self, row: Any) -> dict:
+        data = super()._row_to_dict(row)
+        # 兼容前端对部门名称和排序字段的预期
+        data["orderNum"] = data.get("sort_order", 0)
+        data["parentId"] = data.get("parent_id")
+        data["status"] = 1 if data.get("is_active", True) else 0
 
-    def _collect_descendant_department_ids(self, root_ids: list[int]) -> list[int]:
-        all_departments = list(self.session.exec(select(Department)).all())
-        children_map: dict[int | None, list[int]] = defaultdict(list)
-        for department in all_departments:
-            children_map[department.parent_id].append(department.id)
-        result: set[int] = set()
-        stack = list(root_ids)
-        while stack:
-            current = stack.pop()
-            if current in result:
-                continue
-            result.add(current)
-            stack.extend(children_map.get(current, []))
-        return sorted(result)
+        # 补充 parentName
+        if data.get("parent_id"):
+            parent = self.session.get(Department, data["parent_id"])
+            if parent:
+                data["parentName"] = parent.name
+        return data
+
 
 
 class MenuAdminService(BaseAdminCrudService):
     """菜单资源管理服务"""
 
-    def list(self, query: CrudQuery | None = None) -> list[MenuRead]:
-        statement = select(Menu)
-        statement = self._apply_query(statement, Menu, query, fallback_field="sort_order")
-        menus = list(self.session.exec(statement).all())
-        
-        # 预加载父级名称
-        parent_ids = {menu.parent_id for menu in menus if menu.parent_id is not None}
-        parent_map = {}
-        if parent_ids:
-            parents = list(self.session.exec(select(Menu).where(Menu.id.in_(list(parent_ids)))).all())
-            parent_map = {p.id: p.name for p in parents}
-            
-        return [self._build_menu_read(menu, parent_name=parent_map.get(menu.parent_id)) for menu in menus]
+    def __init__(self, session: Session):
+        super().__init__(session, Menu)
 
-    def page(self, query: CrudQuery) -> PageResult[MenuRead]:
-        page = query.page or 1
-        page_size = query.size or 10
-        statement = select(Menu)
-        statement = self._apply_query(statement, Menu, query, fallback_field="sort_order")
-        
-        count_statement = select(func.count()).select_from(statement.subquery())
-        total = int(self.session.exec(count_statement).one())
-        
-        menus = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
-        
-        # 预加载父级名称
-        parent_ids = {menu.parent_id for menu in menus if menu.parent_id is not None}
-        parent_map = {}
-        if parent_ids:
-            parents = list(self.session.exec(select(Menu).where(Menu.id.in_(list(parent_ids)))).all())
-            parent_map = {p.id: p.name for p in parents}
-            
-        return PageResult(
-            items=[self._build_menu_read(menu, parent_name=parent_map.get(menu.parent_id)) for menu in menus],
-            total=total,
-            page=page,
-            page_size=page_size,
-        )
+    def _row_to_dict(self, row: Any) -> dict:
+        data = super()._row_to_dict(row)
+        # 兼容前端字段
+        data["parentId"] = data.get("parent_id")
+        data["router"] = data.get("path")
+        data["viewPath"] = data.get("component")
+        data["keepAlive"] = data.get("keep_alive", True)
+        data["isShow"] = data.get("is_show", True)
+        data["perms"] = data.get("permission")
+        data["orderNum"] = data.get("sort_order", 0)
+        data["status"] = 1 if data.get("is_active", True) else 0
+        data["type"] = self._normalize_menu_type_int(data.get("type", "button"))
 
-    def info(self, id: int) -> MenuRead:
-        menu = self.session.get(Menu, id)
-        if not menu:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="菜单不存在")
-        parent_name = None
-        if menu.parent_id:
-            parent = self.session.get(Menu, menu.parent_id)
-            parent_name = parent.name if parent else None
-        return self._build_menu_read(menu, parent_name=parent_name)
+        # 补充 parentName
+        if data.get("parent_id"):
+            parent = self.session.get(Menu, data["parent_id"])
+            if parent:
+                data["parentName"] = parent.name
+        return data
 
-    def add(self, payload: MenuCreateRequest | list[MenuCreateRequest] | list[dict] | dict) -> MenuRead | list[MenuRead]:
-        if isinstance(payload, list):
-            created: list[MenuRead] = []
-            for item in payload:
-                data = item if isinstance(item, MenuCreateRequest) else MenuCreateRequest(**item)
-                created.append(self.add(data))
-            return created
-        if isinstance(payload, dict):
-            payload = MenuCreateRequest(**payload)
-        code = payload.code or self._generate_menu_code(payload)
+    def _before_add(self, data: dict) -> dict:
+        code = data.get("code") or self._generate_menu_code(data)
         existing = self.session.exec(select(Menu).where(Menu.code == code)).first()
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="菜单编码已存在")
-        menu = Menu(
-            parent_id=payload.parentId,
-            name=payload.name,
-            code=code,
-            type=self._normalize_menu_type(payload.type),
-            path=payload.router,
-            component=payload.viewPath,
-            icon=payload.icon,
-            keep_alive=payload.keepAlive,
-            is_show=payload.isShow,
-            permission=payload.perms,
-            sort_order=payload.orderNum,
-            is_active=payload.status == 1,
-            updated_at=datetime.utcnow(),
-        )
-        self.session.add(menu)
-        self.session.commit()
-        self.session.refresh(menu)
-        self._clear_menu_related_caches([menu.id])
-        return self._build_menu_read(menu)
+        
+        data["code"] = code
+        data["parent_id"] = data.pop("parentId", None)
+        data["path"] = data.pop("router", None)
+        data["component"] = data.pop("viewPath", None)
+        data["keep_alive"] = data.pop("keepAlive", True)
+        data["is_show"] = data.pop("isShow", True)
+        data["permission"] = data.pop("perms", None)
+        data["sort_order"] = data.pop("orderNum", 0)
+        data["is_active"] = int(data.pop("status", 1)) == 1
+        data["type"] = self._normalize_menu_type(data.get("type"))
+        return data
 
-    def update(self, payload: MenuUpdateRequest) -> MenuRead:
-        menu = self.session.get(Menu, payload.id)
-        if not menu:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="菜单不存在")
-        normalized_code = payload.code or menu.code or self._generate_menu_code(payload)
-        duplicate = self.session.exec(select(Menu).where((Menu.id != payload.id) & (Menu.code == normalized_code))).first()
-        if duplicate and duplicate.code == normalized_code:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="菜单编码已存在")
-        menu.parent_id = payload.parentId
-        menu.name = payload.name
-        menu.code = normalized_code
-        menu.type = self._normalize_menu_type(payload.type)
-        menu.path = payload.router
-        menu.component = payload.viewPath
-        menu.icon = payload.icon
-        menu.keep_alive = payload.keepAlive
-        menu.is_show = payload.isShow
-        menu.permission = payload.perms
-        menu.sort_order = payload.orderNum
-        menu.is_active = payload.status == 1
-        menu.updated_at = datetime.utcnow()
-        self.session.add(menu)
-        self.session.commit()
-        self.session.refresh(menu)
-        self._clear_menu_related_caches([menu.id])
-        return self._build_menu_read(menu)
+    def _before_update(self, data: dict, entity: Menu) -> dict:
+        if "code" in data:
+            code = data["code"]
+            duplicate = self.session.exec(select(Menu).where((Menu.id != entity.id) & (Menu.code == code))).first()
+            if duplicate:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="菜单编码已存在")
 
-    def delete(self, ids: list[int]) -> dict:
-        if not ids:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少待删除的菜单 ID")
-        menu_ids = self._collect_descendant_menu_ids(ids)
-        for link in list(self.session.exec(select(RoleMenuLink).where(RoleMenuLink.menu_id.in_(menu_ids))).all()):
-            self.session.delete(link)
-        for menu in list(self.session.exec(select(Menu).where(Menu.id.in_(menu_ids))).all()):
-            self.session.delete(menu)
-        self.session.commit()
-        self._clear_menu_related_caches(menu_ids)
-        return {"success": True, "deleted_ids": menu_ids}
+        if "parentId" in data: data["parent_id"] = data.pop("parentId")
+        if "router" in data: data["path"] = data.pop("router")
+        if "viewPath" in data: data["component"] = data.pop("viewPath")
+        if "keepAlive" in data: data["keep_alive"] = data.pop("keepAlive")
+        if "isShow" in data: data["is_show"] = data.pop("isShow")
+        if "perms" in data: data["permission"] = data.pop("perms")
+        if "orderNum" in data: data["sort_order"] = data.pop("orderNum")
+        if "status" in data: data["is_active"] = int(data.pop("status")) == 1
+        if "type" in data: data["type"] = self._normalize_menu_type(data["type"])
+        return data
 
-    def tree(self) -> list[MenuTreeItem]:
-        menus = list(self.session.exec(select(Menu).order_by(Menu.sort_order.asc(), Menu.created_at.asc())).all())
-        return self._build_tree(menus)
+    def _after_add(self, entity: Menu, payload: Any = None) -> None:
+        self._clear_menu_related_caches([entity.id])
+
+    def _after_update(self, entity: Menu, payload: Any = None) -> None:
+        self._clear_menu_related_caches([entity.id])
+
+    def _after_delete(self, ids: list[int], payload: Any = None) -> None:
+        self._clear_menu_related_caches(ids)
+
+
+    def tree(self) -> list[dict]:
+        return self.list(is_tree=True)
 
     def role_menu_ids(self, role_id: int) -> list[int]:
         return [link.menu_id for link in self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == role_id)).all()]
@@ -803,6 +782,35 @@ class MenuAdminService(BaseAdminCrudService):
                 )
         items.sort(key=lambda entry: (entry["module"], entry["resource"], entry["router"]))
         return {"list": items}
+
+    def _build_menu_read(self, menu: Menu, parent_name: str | None = None) -> MenuRead:
+        """构建菜单响应对象"""
+        return MenuRead(
+            id=menu.id,
+            parentId=menu.parent_id,
+            parentName=parent_name,
+            name=menu.name,
+            code=menu.code,
+            type=self._normalize_menu_type_int(menu.type),
+            router=menu.path,
+            viewPath=menu.component,
+            icon=menu.icon,
+            keepAlive=menu.keep_alive,
+            isShow=menu.is_show,
+            perms=menu.permission,
+            orderNum=menu.sort_order,
+            status=1 if menu.is_active else 0,
+            createTime=menu.created_at,
+            updateTime=menu.updated_at,
+        )
+
+    @staticmethod
+    def _normalize_menu_type_int(value: str | int) -> int:
+        if value in (0, "0", "group", "dir"):
+            return 0
+        if value in (1, "1", "menu"):
+            return 1
+        return 2
 
     def current_tree(self, current_user: User) -> list[MenuTreeItem]:
         statement = select(Menu).where(Menu.is_active == True)  # noqa: E712
@@ -877,107 +885,7 @@ class MenuAdminService(BaseAdminCrudService):
         
         return [self._build_menu_read(menu, parent_name=menu_map[menu.parent_id].name if menu.parent_id in menu_map else None) for menu in menus]
 
-    def _build_tree(self, menus: list[Menu]) -> list[MenuTreeItem]:
-        nodes = {
-            menu.id: MenuTreeItem(**self._build_menu_read(menu).model_dump())
-            for menu in menus
-        }
-        children_map: dict[int | None, list[MenuTreeItem]] = defaultdict(list)
-        for menu in menus:
-            children_map[menu.parent_id].append(nodes[menu.id])
-        for parent_id, children in children_map.items():
-            children.sort(key=lambda item: (item.orderNum, item.createTime))
-            if parent_id in nodes:
-                nodes[parent_id].children = children
-        return children_map.get(None, [])
 
-    def _collect_descendant_menu_ids(self, root_ids: list[int]) -> list[int]:
-        all_menus = list(self.session.exec(select(Menu)).all())
-        children_map: dict[int | None, list[int]] = defaultdict(list)
-        for menu in all_menus:
-            children_map[menu.parent_id].append(menu.id)
-
-        result: set[int] = set()
-        stack = list(root_ids)
-        while stack:
-            current = stack.pop()
-            if current in result:
-                continue
-            result.add(current)
-            stack.extend(children_map.get(current, []))
-        return sorted(result)
-
-    def _clear_menu_related_caches(self, menu_ids: list[int]) -> None:
-        clear_login_caches_for_menus(self.session, menu_ids)
-
-    def _menu_tree_to_import_node(self, node: MenuTreeItem) -> MenuImportNode:
-        return MenuImportNode(
-            id=node.id,
-            parentId=node.parentId,
-            name=node.name,
-            router=node.router,
-            viewPath=node.viewPath,
-            perms=node.perms,
-            type=node.type,
-            icon=node.icon,
-            orderNum=node.orderNum,
-            keepAlive=node.keepAlive,
-            isShow=node.isShow,
-            childMenus=[self._menu_tree_to_import_node(child) for child in node.children],
-        )
-
-    def _upsert_import_node(self, node: MenuImportNode, parent_id: int | None) -> Menu:
-        target = None
-        if node.id:
-            target = self.session.get(Menu, node.id)
-        if target is None and node.router:
-            target = self.session.exec(select(Menu).where(Menu.path == node.router, Menu.type == self._normalize_menu_type(node.type))).first()
-        if target is None and node.perms:
-            target = self.session.exec(select(Menu).where(Menu.permission == node.perms)).first()
-        if target is None:
-            target = Menu(code=self._generate_import_code(node), name=node.name)
-
-        target.parent_id = parent_id
-        target.name = node.name
-        target.type = self._normalize_menu_type(node.type)
-        target.path = node.router
-        target.component = node.viewPath
-        target.permission = node.perms
-        target.icon = node.icon
-        target.keep_alive = node.keepAlive
-        target.is_show = node.isShow
-        target.sort_order = node.orderNum
-        target.is_active = True
-        target.updated_at = datetime.utcnow()
-        if not target.code:
-            target.code = self._generate_import_code(node)
-        self.session.add(target)
-        self.session.flush()
-
-        for child in node.childMenus:
-            self._upsert_import_node(child, target.id)
-        return target
-
-    def _build_menu_read(self, menu: Menu, parent_name: str | None = None) -> MenuRead:
-        type_mapping = {"group": 0, "menu": 1, "button": 2}
-        return MenuRead(
-            id=menu.id,
-            parentId=menu.parent_id,
-            parentName=parent_name,
-            name=menu.name,
-            code=menu.code,
-            type=type_mapping.get(menu.type, 2),
-            router=menu.path,
-            viewPath=menu.component,
-            icon=menu.icon,
-            keepAlive=menu.keep_alive,
-            isShow=menu.is_show,
-            perms=menu.permission,
-            orderNum=menu.sort_order,
-            status=1 if menu.is_active else 0,
-            createTime=menu.created_at,
-            updateTime=menu.updated_at or menu.created_at,
-        )
 
     @staticmethod
     def _normalize_menu_type(value: int | str) -> str:

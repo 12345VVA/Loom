@@ -50,6 +50,9 @@ from app.modules.base.service.security_service import get_current_user
             order_fields=("sort_order", "created_at", "updated_at", "name"),
             add_order_by=(OrderByConfig("sort_order", "asc"), OrderByConfig("created_at", "asc")),
         ),
+        is_tree=True,
+        parent_field="parent_id",
+        soft_delete=True,
     )
 )
 class BaseDepartmentController(BaseController):

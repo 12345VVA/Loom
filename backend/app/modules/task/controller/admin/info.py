@@ -32,6 +32,7 @@ from app.modules.task.service.task_service import TaskInfoService
             order_fields=("created_at", "updated_at", "name"),
             add_order_by=(OrderByConfig("created_at", "desc"),),
         ),
+        soft_delete=True,
     )
 )
 class TaskInfoController(BaseController):

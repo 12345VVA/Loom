@@ -8,6 +8,10 @@ celery_app = Celery(
     "loom",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
+    include=[
+        "app.modules.task.tasks.system_tasks",
+        "app.modules.task_ai.tasks.ai_tasks",
+    ],
 )
 
 celery_app.conf.update(

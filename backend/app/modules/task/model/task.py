@@ -7,13 +7,13 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Field, SQLModel
+from app.framework.models.entity import BaseEntity
 
 
-class TaskInfo(SQLModel, table=True):
+class TaskInfo(BaseEntity, table=True):
     """任务信息表"""
     __tablename__ = "task_info"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     jobId: Optional[str] = Field(default=None, index=True)  # 对应 Midway 的 jobId
     repeatConf: Optional[str] = Field(default=None)  # 重复配置 (JSON)
     name: str = Field(index=True)  # 任务名称
@@ -30,20 +30,16 @@ class TaskInfo(SQLModel, table=True):
     nextRunTime: Optional[datetime] = None  # 下次运行时间
     taskType: int = Field(default=0)  # 任务类型 0: cron, 1: 时间间隔
     lastExecuteTime: Optional[datetime] = None  # 最后执行时间
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class TaskLog(SQLModel, table=True):
+class TaskLog(BaseEntity, table=True):
     """任务执行日志表"""
     __tablename__ = "task_log"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
     taskId: int = Field(index=True)  # 关联 task_info.id
     status: int = Field(default=1)  # 0: 失败, 1: 成功
     detail: Optional[str] = None  # 结果细节或错误信息
     consumeTime: int = Field(default=0)  # 消耗时长 (ms)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class TaskInfoRead(BaseModel):
@@ -95,4 +91,4 @@ class TaskLogRead(BaseModel):
     status: int
     detail: Optional[str] = None
     consumeTime: int
-    createTime: datetime = Field(alias="created_at")
+    createTime: datetime

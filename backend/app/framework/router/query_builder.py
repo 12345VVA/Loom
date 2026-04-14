@@ -16,15 +16,28 @@ class QueryBuilder:
         self.model = model
         self.query = query
 
-    def apply_all(self, statement, data_scope: DataScopeContext | None = None, current_user_id: int | None = None):
+    def apply_all(self, statement, data_scope: DataScopeContext | None = None, current_user_id: int | None = None, relations: tuple[RelationConfig, ...] = ()):
         """链式应用所有查询规则"""
+        statement = self.apply_soft_delete(statement)
         statement = self.apply_data_scope(statement, data_scope, current_user_id)
         statement = self.apply_filters(statement)
         statement = self.apply_keyword(statement)
         statement = self.apply_ranges(statement)
         statement = self.apply_where(statement)
+        
+        # 字段与关联处理
+        # 1. 基础字段选择
         statement = self.apply_select(statement)
+        # 2. 自动关联与额外列（放在 select 之后，用 add_columns 补全）
+        statement = self.apply_relations(statement, relations)
+        
         statement = self.apply_sort(statement)
+        return statement
+
+    def apply_soft_delete(self, statement):
+        """应用软删除过滤"""
+        if hasattr(self.model, "delete_time"):
+            statement = statement.where(getattr(self.model, "delete_time") == None)
         return statement
 
     def apply_filters(self, statement):
@@ -100,13 +113,35 @@ class QueryBuilder:
         # 兼容原本的 where_handler(statement, model, query) 签名
         return self.query.where_handler(statement, self.model, self.query)
 
-    def apply_select(self, statement):
-        if not self.query or not self.query.select_fields:
+    def apply_relations(self, statement, relations: tuple[RelationConfig, ...]):
+        """自动关联处理 (Relation)"""
+        if not relations:
             return statement
-        from sqlalchemy.orm import load_only
-        columns = [getattr(self.model, field) for field in self.query.select_fields if hasattr(self.model, field)]
-        if columns:
-            return statement.options(load_only(*columns))
+
+        for rel in relations:
+            # 确保当前模型有关联字段
+            if not hasattr(self.model, rel.column):
+                continue
+
+            # 执行 Outer Join: select(User).outerjoin(Dept, User.dept_id == Dept.id)
+            statement = statement.outerjoin(rel.model, getattr(self.model, rel.column) == rel.model.id)
+
+            # 添加选取的列: .add_columns(Dept.name.label("departmentName"))
+            if hasattr(rel.model, rel.target_column):
+                target_col = getattr(rel.model, rel.target_column)
+                statement = statement.add_columns(target_col.label(rel.alias))
+
+        return statement
+
+    def apply_select(self, statement):
+        """应用字段选择
+
+        注意: 当前实现不执行 SQL 层面的列筛选。
+        - with_only_columns 会将实体级 Select 转换为列级结果，导致 _row_to_dict
+          的 model_dump() 路径失效（字段丢失如 username）
+        - load_only 会在 model_dump() 访问延迟列时触发 N+1 懒加载
+        select 配置仍作为 EPS 元数据导出使用，分页查询加载全部列的开销可忽略。
+        """
         return statement
 
     def apply_sort(self, statement, fallback_field: str = "created_at"):

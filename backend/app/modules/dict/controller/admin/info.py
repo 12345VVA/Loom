@@ -39,6 +39,8 @@ from app.modules.dict.service.dict_service import DictInfoService
             order_fields=("order_num", "created_at", "updated_at", "name"),
             add_order_by=(OrderByConfig("order_num", "asc"), OrderByConfig("created_at", "asc")),
         ),
+        soft_delete=True,
+        is_tree=True,
     )
 )
 class DictInfoController(BaseController):

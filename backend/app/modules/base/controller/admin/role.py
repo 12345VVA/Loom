@@ -42,6 +42,7 @@ from app.modules.base.service.security_service import get_current_user
             order_fields=("created_at", "updated_at", "name", "code"),
             add_order_by=(OrderByConfig("created_at", "asc"),),
         ),
+        soft_delete=True,
     )
 )
 class BaseRoleController(BaseController):

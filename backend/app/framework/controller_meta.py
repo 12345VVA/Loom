@@ -95,6 +95,16 @@ class CrudQuery:
     like_filters: dict[str, Any] = field(default_factory=dict)
     raw_params: dict[str, Any] = field(default_factory=dict)
 
+    @classmethod
+    def from_request(cls, request: Request, config: QueryConfig | None = None) -> CrudQuery:
+        """从 FastAPI Request 对象解析并创建 CrudQuery"""
+        return _build_crud_query(request=request, config=config)
+
+    @property
+    def params(self) -> dict[str, Any]:
+        """raw_params 的别名，提高兼容性"""
+        return self.raw_params
+
 
 @dataclass(frozen=True)
 class BeforeHookConfig:
@@ -109,9 +119,18 @@ class InsertParamConfig:
     action: str | None = None
 
 
+@dataclass(frozen=True)
+class RelationConfig:
+    """自动关联配置"""
+    model: Any          # 目标模型类，例如 Department
+    column: str         # 当前模型的关联字段，例如 department_id
+    target_column: str  # 目标模型中要选取的字段，例如 name
+    alias: str          # 输出到 JSON 的别名，例如 departmentName
+
+
 DEFAULT_CRUD_ACTIONS: tuple[CrudAction, ...] = (
-    CrudAction(name="list", method="GET", path="/list", permission_suffix="list", summary="获取列表"),
-    CrudAction(name="page", method="GET", path="/page", permission_suffix="page", summary="获取分页"),
+    CrudAction(name="list", method="POST", path="/list", permission_suffix="list", summary="获取列表"),
+    CrudAction(name="page", method="POST", path="/page", permission_suffix="page", summary="获取分页"),
     CrudAction(name="info", method="GET", path="/info", permission_suffix="info", summary="获取详情"),
     CrudAction(name="add", method="POST", path="/add", permission_suffix="add", summary="新增"),
     CrudAction(name="update", method="POST", path="/update", permission_suffix="update", summary="更新"),
@@ -149,6 +168,10 @@ class CoolControllerMeta:
     service_apis: tuple[ServiceApiConfig | str, ...] = field(default_factory=tuple)
     api: tuple[CrudAction | str, ...] | None = None
     entity: Any | None = None
+    soft_delete: bool = False
+    relations: tuple[RelationConfig, ...] = field(default_factory=tuple)
+    is_tree: bool = False
+    parent_field: str = "parentId"
 
 
 class BaseController:
@@ -609,6 +632,13 @@ def _build_service_kwargs(meta: CoolControllerMeta, action_name: str, **availabl
             continue
         _assign_path(kwargs, item.target, source_value)
     kwargs["action_name"] = action_name
+    
+    # 自动注入框架配置
+    kwargs["soft_delete"] = meta.soft_delete
+    kwargs["relations"] = meta.relations
+    kwargs["is_tree"] = meta.is_tree
+    kwargs["parent_field"] = meta.parent_field
+    
     return kwargs
 
 

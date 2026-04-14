@@ -33,6 +33,7 @@ from app.modules.dict.model.dict import DictTypeRead, DictTypeCreateRequest, Dic
             order_fields=("created_at", "updated_at", "name", "key"),
             add_order_by=(OrderByConfig("created_at", "asc"),),
         ),
+        soft_delete=True,
     )
 )
 class DictTypeController(BaseController):

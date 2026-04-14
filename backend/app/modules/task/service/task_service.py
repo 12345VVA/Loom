@@ -29,86 +29,20 @@ class TaskInfoService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, TaskInfo)
 
-    def list(self, query: CrudQuery | None = None) -> list[TaskInfoRead]:
-        statement = select(TaskInfo)
-        statement = self._apply_query(statement, TaskInfo, query, fallback_field="created_at")
-        rows = list(self.session.exec(statement).all())
-        return [self._build_read(row) for row in rows]
-
-    def page(self, query: CrudQuery) -> PageResult[TaskInfoRead]:
-        page = query.page or 1
-        page_size = query.size or 10
-        statement = select(TaskInfo)
-        statement = self._apply_query(statement, TaskInfo, query, fallback_field="created_at")
-        count_statement = select(func.count()).select_from(statement.subquery())
-        total = int(self.session.exec(count_statement).one())
-        rows = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
-        return PageResult(
-            items=[self._build_read(row) for row in rows],
-            total=total,
-            page=page,
-            page_size=page_size,
-        )
-
-    def info(self, id: int) -> TaskInfoRead:
-        row = self.session.get(TaskInfo, id)
-        if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
-        return self._build_read(row)
-
-    def add(self, payload: TaskInfoCreateRequest) -> TaskInfoRead:
-        row = TaskInfo(
-            name=payload.name,
-            cron=payload.cron,
-            every=payload.every,
-            remark=payload.remark,
-            status=payload.status,
-            startDate=payload.startDate,
-            endDate=payload.endDate,
-            data=payload.data,
-            service=payload.service,
-            type=payload.type,
-            taskType=payload.taskType,
-            updated_at=datetime.utcnow(),
-        )
-        self.session.add(row)
-        self.session.commit()
-        self.session.refresh(row)
+    def _after_add(self, data: dict, entity: Any) -> Any:
         # TODO: 注册调度任务到引擎
-        return self._build_read(row)
+        pass
+        return entity
 
-    def update(self, payload: TaskInfoUpdateRequest) -> TaskInfoRead:
-        row = self.session.get(TaskInfo, payload.id)
-        if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
-        
-        row.name = payload.name
-        row.cron = payload.cron
-        row.every = payload.every
-        row.remark = payload.remark
-        row.status = payload.status
-        row.startDate = payload.startDate
-        row.endDate = payload.endDate
-        row.data = payload.data
-        row.service = payload.service
-        row.type = payload.type
-        row.taskType = payload.taskType
-        row.updated_at = datetime.utcnow()
-        
-        self.session.add(row)
-        self.session.commit()
-        self.session.refresh(row)
+    def _after_update(self, data: dict, entity: Any) -> Any:
         # TODO: 重置调度任务
-        return self._build_read(row)
+        pass
+        return entity
 
-    def delete(self, ids: list[int]) -> dict[str, Any]:
-        if not ids:
-            return {"success": True, "deleted_ids": []}
+    def _before_delete(self, ids: list[int]) -> None:
         for row in list(self.session.exec(select(TaskInfo).where(TaskInfo.id.in_(ids))).all()):
             # TODO: 从引擎移除调度
-            self.session.delete(row)
-        self.session.commit()
-        return {"success": True, "deleted_ids": ids}
+            pass
 
     def log(self, query: CrudQuery) -> PageResult[TaskLogRead]:
         """查询任务日志"""
@@ -141,7 +75,7 @@ class TaskInfoService(BaseAdminCrudService):
                 status=log_row.status,
                 detail=log_row.detail,
                 consumeTime=log_row.consumeTime,
-                created_at=log_row.created_at
+                createTime=log_row.created_at
             ))
 
         return PageResult(items=items, total=total, page=page, page_size=page_size)
@@ -170,9 +104,14 @@ class TaskInfoService(BaseAdminCrudService):
 
     async def once(self, id: int):
         """立即执行一次"""
-        # TODO: 触发立即执行
+        row = self.session.get(TaskInfo, id)
+        if not row:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 异步触发 Celery 任务
+        from app.modules.task.tasks.system_tasks import execute_system_task
+        print(f"Dispatching task {id} to Celery...")
+        execute_system_task.delay(id)
+        
         return {"success": True}
 
-    @staticmethod
-    def _build_read(row: TaskInfo) -> TaskInfoRead:
-        return TaskInfoRead.model_validate(row)
