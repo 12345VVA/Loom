@@ -1,6 +1,21 @@
 # Loom - AI 内容生成平台
 
-基于 Vue 3 + FastAPI + Celery 的全栈 AI 内容生成平台。
+> Loom 一个很酷的全栈 AI 内容生成平台。基于 Vue 3 + FastAPI + Celery 深度定制，在 Python 生态下还原了类似 **Cool-Admin** 的极速开发体验。
+
+## 特点
+
+- **模块化架构**: 模块之间高度解耦，支持独立的中间件、路由、数据初始化及权限白名单。
+- **极速 CRUD**: 仅需定义模型与装饰器，一行代码即可实现全量管理后端接口。
+- **EPS 指令集**: 自动扫描并导出后端模型元数据，驱动前端表单、验证与表格的自动生成。
+- **企业级数据权限**: 内置 `DataScope` 机制，支持“本人、本部门、本部门及下属”等多种粒度的数据自动过滤。
+- **AI 异步引擎**: 深度集成 Celery + Redis，完美支持大规模、高并发的长耗时 AI 生成任务。
+- **动态路由与权限**: 基于 JWT 与服务端二级缓存，支持动态菜单同步与精确到 Action 的权限校验。
+
+## 参考项目
+
+本项目在开发过程中参考并使用了以下优秀开源项目的架构设计与 UI 规范：
+- **后端架构设计参考**: [cool-admin-midway](https://github.com/cool-team-official/cool-admin-midway)
+- **前端风格与逻辑参考**: [cool-admin-vue](https://github.com/cool-team-official/cool-admin-vue)
 
 ## 技术栈
 
@@ -109,53 +124,101 @@ npm install
 npm run dev
 ```
 
-## 功能特性
+## 核心机制
 
-- **登录与权限**: 管理端采用 `JWT + 服务端缓存态 + URL 权限匹配`
-- **动态菜单与动态路由**: 登录后按后端菜单树动态生成前端导航与页面入口
-- **基础数据权限**: 已按角色 `data_scope` 在用户列表与任务列表层面收敛查询范围
-- **异步 AI 生成**: 使用 Celery 处理耗时的 AI 生成任务
-- **实时进度跟踪**: 任务状态实时更新
-- **任务管理**: 创建、查看、取消 AI 生成任务
-- **多种 AI 模型支持**: 支持 OpenAI API 和本地 Ollama
+### 自动建表 (Auto Table Creation)
 
-## API 端点
+项目采用 **SQLModel (SQLAlchemy)** 实现全自动数据库建模：
+- **启动即建表**: 应用在每次通过 `uvicorn` 启动时，会在 `main.py` 的 `lifespan` 生命周期中调用 `init_db()`。
+- **元数据同步**: 自动扫描所有已加载模块中的 `model` 定义，并创建对应的数据表。
+- **兼容性补丁**: 针对 SQLite 环境，框架在 `app/core/database.py` 中实现了 schema 自动修补机制，能够自动为旧表补充缺失的字段（如 `delete_time` 等），降低开发阶段的迁移成本。
 
-| 方法 | 端点 | 描述 |
+### 自动路由与 EPS (Auto Routing & EPS)
+
+项目基于装饰器元数据实现高度自动化的路由聚合与元数据导出：
+- **CoolController**: 通过在该控制器类上使用 `@CoolController` 装饰器，自动将类方法注册为 API 接口。
+- **URL 结构**: 遵循 `/{scope}/{module}/{resource}/{action}` 的标准命名规范，例如：`/admin/base/sys/user/page`。
+- **EPS (Entity-Permission-System)**: 框架会自动扫描 Pydantic/SQLModel 模型定义，提取字段类型、枚举值、验证规则及描述，导出为前端识别的元数据。这使得前端可以根据后端定义自动渲染表单、表格和验证逻辑。
+
+### 数据权限 (Data Scope)
+
+内置企业级的数据权限隔离机制：
+- **声明式控制**: 在 `Role` 模型中定义 `data_scope`（全部、本人、本部门、本部门及下属、自定义）。
+- **无感注入**: `QueryBuilder` 会在执行查询前自动注入当前用户的权限过滤 SQL（如 `WHERE department_id IN (...)`），无需在业务代码中手动处理隔离逻辑。
+- **字段约定**: 默认识别模型中的 `user_id` 和 `department_id` 字段进行隔离。
+
+### CRUD 增强与生命周期钩子 (CRUD & Hooks)
+
+通过 `BaseAdminCrudService` 提供标准化的业务抽象：
+- **通用能力**: 自动实现分页、列表、详情、增删改等标准接口。
+- **生命周期钩子**: 子类可以通过覆盖 `_before_add`, `_after_add`, `_before_update` 等方法，在不破坏通用流程的情况下植入业务特有的逻辑（如密码加密、关联表同步、缓存清理等）。
+- **字段转换**: 自动处理 `snake_case` (DB) 与 `camelCase` (API) 的字段映射。
+
+### 菜单初始化 (Menu Initialization)
+
+系统支持通过声明式配置文件初始化系统菜单与角色权限：
+- **menu.json**: 每个业务模块均可在其目录下维护 `menu.json`，定义该模块所需的菜单树、路由组件路径及权限标识。
+- **自动同步**: 启动时 `bootstrap_modules` 会扫描所有模块的菜单配置，并调用 `AuthService.bootstrap_defaults()` 将其持久化至 `sys_menu` 表。
+- **角色分配**: 支持在 JSON 中配置 `role_codes`，系统会自动建立菜单与对应角色（如 `admin`）的关联关系。
+- **使用示例**: 在模块根目录创建 `menu.json`：
+  ```json
+  [
+    {
+      "name": "任务管理",
+      "code": "task_manage",
+      "type": "menu",
+      "path": "/task",
+      "component": "/task/index",
+      "icon": "icon-task",
+      "role_codes": ["admin"],
+      "children": [
+        { "name": "任务列表", "code": "task_list", "type": "menu", "path": "/task/list", "permission": "task:task:page" }
+      ]
+    }
+  ]
+  ```
+
+### 模块化与中间件隔离 (Modularity)
+
+为了支持高内聚、低耦合的模块化开发，框架提供了以下特性：
+- **前缀作用域中间件**: 支持通过 `PrefixScopedMiddleware` 将中间件绑定到特定的模块或 URL 前缀，使得认证、日志等逻辑可以按需差异化配置，互不干扰。
+- **模块自治**: 模块配置（`config.py`）可以声明自己的白名单、全局或局部中间件、数据初始化脚本等。
+
+### 软删除支持 (Soft Delete)
+
+框架对业务建模中的物理删除与软删除提供了透明支持：
+- **自动识别**: 只要模型中定义了 `delete_time` 字段，`QueryBuilder` 会在所有的查询操作中自动过滤掉已删除的记录。
+- **统一 API**: 在 Service 层调用 `delete` 时，系统会根据元数据配置自动选择执行 `UPDATE`（置空 `delete_time`）还是 `DELETE` 操作。
+
+
+
+## API 规范与兼容性
+
+本项目后端 API 设计深度兼容 [Cool-Admin](https://cool-js.com/) 生态，确保前端脚手架与组件可以无缝对接。
+
+### 命名规范
+路由遵循 `/{scope}/{module}/{resource}/{action}` 结构：
+- **scope**: 访问域隔离。`admin` 为管理后台，`app` 为移动端/用户端，`aiapi` 为 AI 开放接口。
+- **module**: 业务模块名称。如 `base` (权限), `task` (任务), `dict` (字典)。
+- **resource**: 资源标识。如 `sys/user`, `sys/role`。
+- **action**: 动作指令。对应 `BaseAdminCrudService` 提供的标准操作。
+
+### 标准 CRUD 动作
+所有基于 `BaseController` 开发的资源默认具备以下动作：
+| 动作 | 方法 | 描述 |
 |------|------|------|
-| POST | `/admin/base/open/login` | 管理端登录 |
-| POST | `/admin/base/open/refresh` | 刷新访问令牌 |
-| POST | `/admin/base/open/logout` | 退出登录 |
-| GET | `/admin/base/user/me` | 获取当前用户 |
-| GET | `/admin/base/user/list` | 获取用户列表 |
-| GET | `/admin/base/user/page` | 获取用户分页 |
-| POST | `/admin/base/user/add` | 创建用户 |
-| POST | `/admin/base/user/update` | 更新用户 |
-| POST | `/admin/base/user/delete` | 删除用户 |
-| POST | `/admin/base/user/assignRoles` | 分配用户角色 |
-| GET | `/admin/base/role/list` | 获取角色列表 |
-| GET | `/admin/base/role/page` | 获取角色分页 |
-| POST | `/admin/base/role/add` | 创建角色 |
-| POST | `/admin/base/role/update` | 更新角色 |
-| POST | `/admin/base/role/delete` | 删除角色 |
-| POST | `/admin/base/role/assignMenus` | 分配角色菜单 |
-| GET | `/admin/base/menu/list` | 获取菜单列表 |
-| GET | `/admin/base/menu/page` | 获取菜单分页 |
-| POST | `/admin/base/menu/add` | 创建菜单 |
-| POST | `/admin/base/menu/update` | 更新菜单 |
-| POST | `/admin/base/menu/delete` | 删除菜单 |
-| GET | `/admin/base/menu/tree` | 获取菜单树 |
-| GET | `/admin/base/menu/currentTree` | 获取当前用户动态菜单树 |
-| GET | `/admin/base/health/ping` | 管理端健康检查 |
-| GET | `/app/base/health/ping` | App 作用域健康检查 |
-| GET | `/aiapi/base/health/ping` | AI API 作用域健康检查 |
-| POST | `/admin/task/task/add` | 创建新任务 |
-| GET | `/admin/task/task/list` | 获取任务列表 |
-| GET | `/admin/task/task/page` | 获取任务分页 |
-| GET | `/admin/task/task/info?id=...` | 获取任务详情 |
-| POST | `/admin/task/task/update` | 更新任务 |
-| POST | `/admin/task/task/delete` | 删除任务 |
-| POST | `/admin/task/task/cancel` | 取消任务 |
+| `add` | POST | 新增记录 |
+| `delete` | POST | 批量删除记录 |
+| `update` | POST | 更新记录 |
+| `info` | GET | 获取单条详情 |
+| `list` | GET | 获取全量列表 |
+| `page` | GET | 获取分页列表 (支持高级搜索) |
+
+### 完整文档
+项目启动后，请访问以下路径查看实时互动的完整 API 文档：
+- **API 文档**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Redoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
 
 ## 环境变量
 
@@ -177,3 +240,7 @@ npm run dev
 - `/tasks/:id` 作为任务详情补充路由，依赖 `/tasks` 菜单权限
 - 自动路由说明见 [docs/module-routing-guide.md](./docs/module-routing-guide.md)
 - 本地若未启动 Redis，开发模式会自动回退到进程内缓存；生产环境应使用真实 Redis
+
+## 开源协议
+
+本项目采用 [MIT License](./LICENSE) 协议开源。
