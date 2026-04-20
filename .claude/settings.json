@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv auth-permission-design.md 权限管理与登录模块设计.md)",
+      "Bash(mv backend-vs-cool-admin-midway.md 后端技术对比分析报告.md)",
+      "Bash(mv cool_auth_middleware.md Cool权限中间件原理与操作指南.md)",
+      "Bash(mv eps_specification.md EPS规范原理与操作指南.md)",
+      "Bash(mv migration_to_cool_admin_guide.md 后端核心机制差异与迁移指南.md)",
+      "Read(//d/NodeFiles/Projects/xw.manage-midway/**)"
+    ]
+  }
+}

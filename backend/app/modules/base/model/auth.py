@@ -6,9 +6,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Generic, Optional, TypeVar
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field as PydanticField
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field as PydanticField, field_validator, field_serializer
 from sqlmodel import Field, SQLModel
 from app.framework.models.entity import BaseEntity
+from app.framework.api.naming import resolve_alias
 
 
 class Department(BaseEntity, table=True):
@@ -106,60 +107,69 @@ class RoleDepartmentLink(BaseEntity, table=True):
 class LoginRequest(BaseModel):
     """登录请求"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     username: str
     password: str
-    captchaId: Optional[str] = None
-    verifyCode: Optional[str] = None
+    captcha_id: Optional[str] = None
+    verify_code: Optional[str] = None
 
 
 class RefreshTokenRequest(BaseModel):
     """刷新令牌请求"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     refresh_token: Optional[str] = None
-    refreshToken: Optional[str] = None
 
     @property
     def token_value(self) -> str | None:
-        return self.refresh_token or self.refreshToken
+        return self.refresh_token
 
 
 class UserPersonRead(BaseModel):
     """个人信息响应模型（对齐 Cool-Admin）"""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    createTime: datetime
-    updateTime: datetime
-    departmentId: Optional[int] = None
-    name: str
+    created_at: datetime
+    updated_at: datetime
+    department_id: Optional[int] = None
+    full_name: str
     username: str
-    passwordV: int = 1
-    nickName: Optional[str] = None
-    headImg: Optional[str] = None
+    password_version: int = 1
+    nick_name: Optional[str] = None
+    head_img: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     remark: Optional[str] = None
-    status: int = 1
-    isSuperAdmin: int = 0
-    isManager: int = 0
-    isDepartmentLeader: int = 0
-    orderNum: int = 0
-    openId: Optional[str] = None
-    unionId: Optional[str] = None
-    socketId: Optional[str] = None
+    is_active: bool = True
+    is_super_admin: int = 0
+    is_manager: int = 0
+    is_department_leader: int = 0
+    sort_order: int = 0
+    open_id: Optional[str] = None
+    union_id: Optional[str] = None
+    socket_id: Optional[str] = None
+
+    @field_serializer("is_active")
+    def serialize_status(self, v: bool) -> int:
+        return 1 if v else 0
 
 
 class UserPersonUpdateRequest(BaseModel):
     """当前用户资料修改请求"""
 
-    nickName: Optional[str] = None
-    headImg: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    nick_name: Optional[str] = None
+    head_img: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     remark: Optional[str] = None
     password: Optional[str] = None
-    oldPassword: Optional[str] = None
+    old_password: Optional[str] = None
 
 
 class UserProfile(BaseModel):
@@ -179,13 +189,15 @@ class UserProfile(BaseModel):
 class CoolUserInfo(BaseModel):
     """Cool 风格用户信息"""
 
-    userId: int
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    user_id: int
     username: str
-    nickName: str
-    departmentId: Optional[int]
-    roleCodes: list[str]
-    perms: list[str]
-    isSuperAdmin: bool
+    nick_name: str
+    department_id: Optional[int]
+    role_codes: list[str]
+    permission: list[str]
+    is_super_admin: bool
 
 
 T = TypeVar("T")
@@ -209,116 +221,164 @@ class DeleteRequest(BaseModel):
 class UserListItem(BaseModel):
     """用户管理列表项"""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
     username: str
-    name: str
-    nickName: str
-    headImg: Optional[str] = None
+    full_name: str
+    nick_name: str
+    head_img: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     remark: Optional[str] = None
-    departmentId: Optional[int] = None
-    departmentName: Optional[str] = None
-    roleIdList: list[int] = PydanticField(default_factory=list)
-    roleName: Optional[str] = None
-    status: int
-    createTime: datetime
-    updateTime: datetime
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    role_ids: list[int] = PydanticField(default_factory=list)
+    role_name: Optional[str] = None
+    is_active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("is_active")
+    def serialize_status(self, v: bool) -> int:
+        return 1 if v else 0
 
 
 class UserInfoItem(UserListItem):
-    passwordVersion: Optional[int] = PydanticField(default=None)
+    password_version: Optional[int] = PydanticField(default=None)
 
 
 class UserCreateRequest(BaseModel):
     """创建用户请求"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     username: str
-    name: str = PydanticField(validation_alias=AliasChoices("name", "full_name"))
-    nickName: str = PydanticField(default="", validation_alias=AliasChoices("nickName", "nick_name"))
+    full_name: str
+    nick_name: str = ""
     password: str
-    headImg: Optional[str] = PydanticField(default=None, validation_alias=AliasChoices("headImg", "head_img"))
+    head_img: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     remark: Optional[str] = None
-    departmentId: Optional[int] = PydanticField(default=None, validation_alias=AliasChoices("departmentId", "department_id"))
-    roleIdList: list[int] = PydanticField(default_factory=list, validation_alias=AliasChoices("roleIdList", "role_ids"))
-    status: int = PydanticField(default=1, validation_alias=AliasChoices("status", "is_active"))
+    department_id: Optional[int] = None
+    role_ids: list[int] = PydanticField(default_factory=list)
+    is_active: bool = True
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def parse_status(cls, v):
+        if isinstance(v, int):
+            return v == 1
+        return bool(v)
 
 
 class UserUpdateRequest(BaseModel):
     """更新用户请求"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     id: int
-    name: str = PydanticField(validation_alias=AliasChoices("name", "full_name"))
-    nickName: str = PydanticField(default="", validation_alias=AliasChoices("nickName", "nick_name"))
-    headImg: Optional[str] = PydanticField(default=None, validation_alias=AliasChoices("headImg", "head_img"))
+    full_name: str
+    nick_name: str = ""
+    head_img: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     remark: Optional[str] = None
-    departmentId: Optional[int] = PydanticField(default=None, validation_alias=AliasChoices("departmentId", "department_id"))
-    roleIdList: list[int] = PydanticField(default_factory=list, validation_alias=AliasChoices("roleIdList", "role_ids"))
-    status: int = PydanticField(default=1, validation_alias=AliasChoices("status", "is_active"))
+    department_id: Optional[int] = None
+    role_ids: list[int] = PydanticField(default_factory=list)
+    is_active: bool = True
     password: Optional[str] = None
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def parse_status(cls, v):
+        if isinstance(v, int):
+            return v == 1
+        return bool(v)
 
 
 class UserRoleAssignRequest(BaseModel):
     """用户角色分配请求"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+    
     user_id: int
     role_ids: list[int] = PydanticField(default_factory=list)
 
 
 class UserMoveRequest(BaseModel):
-    departmentId: int
-    userIds: list[int] = PydanticField(default_factory=list)
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+    
+    department_id: int
+    user_ids: list[int] = PydanticField(default_factory=list)
 
 
 class RoleRead(BaseModel):
     """角色响应"""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
     name: str
     label: str
     code: str
     remark: Optional[str] = None
-    status: int
+    is_active: bool = True
     relevance: int = 1
-    menuIdList: list[int] = PydanticField(default_factory=list)
-    departmentIdList: list[int] = PydanticField(default_factory=list)
-    createTime: datetime
-    updateTime: datetime
+    menu_ids: list[int] = PydanticField(default_factory=list)
+    department_ids: list[int] = PydanticField(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("is_active")
+    def serialize_status(self, v: bool) -> int:
+        return 1 if v else 0
 
 
 class RoleCreateRequest(BaseModel):
     """角色创建请求"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     name: str
     label: str
     code: Optional[str] = None
     remark: Optional[str] = None
-    status: int = 1
+    is_active: bool = True
     relevance: int = 1
-    menuIdList: list[int] = PydanticField(default_factory=list)
-    departmentIdList: list[int] = PydanticField(default_factory=list)
+    menu_ids: list[int] = PydanticField(default_factory=list)
+    department_ids: list[int] = PydanticField(default_factory=list)
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def parse_status(cls, v):
+        if isinstance(v, int):
+            return v == 1
+        return bool(v)
 
 
 class RoleUpdateRequest(BaseModel):
     """角色更新请求"""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
     name: str
     label: str
     code: Optional[str] = None
     remark: Optional[str] = None
-    status: int = 1
+    is_active: bool = True
     relevance: int = 1
-    menuIdList: list[int] = PydanticField(default_factory=list)
-    departmentIdList: list[int] = PydanticField(default_factory=list)
+    menu_ids: list[int] = PydanticField(default_factory=list)
+    department_ids: list[int] = PydanticField(default_factory=list)
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def parse_status(cls, v):
+        if isinstance(v, int):
+            return v == 1
+        return bool(v)
 
 
 class RoleMenuAssignRequest(BaseModel):
@@ -331,59 +391,81 @@ class RoleMenuAssignRequest(BaseModel):
 class MenuRead(BaseModel):
     """菜单响应"""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    parentId: Optional[int] = None
-    parentName: Optional[str] = None
+    parent_id: Optional[int] = None
+    parent_name: Optional[str] = None
     name: str
     code: str
     type: int
-    router: Optional[str] = None
-    viewPath: Optional[str] = None
+    path: Optional[str] = None
+    component: Optional[str] = None
     icon: Optional[str] = None
-    keepAlive: bool = True
-    isShow: bool = True
-    perms: Optional[str] = None
-    orderNum: int
-    status: int
-    createTime: datetime
-    updateTime: datetime
+    keep_alive: bool = True
+    is_show: bool = True
+    permission: Optional[str] = None
+    sort_order: int
+    is_active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("is_active")
+    def serialize_status(self, v: bool) -> int:
+        return 1 if v else 0
 
 
 class MenuCreateRequest(BaseModel):
     """菜单创建请求"""
 
-    parentId: Optional[int] = PydanticField(default=None, validation_alias=AliasChoices("parentId", "parent_id"))
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    parent_id: Optional[int] = None
     name: str
     code: Optional[str] = None
     type: int | str = 2
-    router: Optional[str] = PydanticField(default=None, validation_alias=AliasChoices("router", "path"))
-    viewPath: Optional[str] = PydanticField(default=None, validation_alias=AliasChoices("viewPath", "component"))
+    path: Optional[str] = None
+    component: Optional[str] = None
     icon: Optional[str] = None
-    keepAlive: bool = PydanticField(default=True, validation_alias=AliasChoices("keepAlive", "keep_alive"))
-    isShow: bool = PydanticField(default=True, validation_alias=AliasChoices("isShow", "is_show"))
-    perms: Optional[str] = PydanticField(default=None, validation_alias=AliasChoices("perms", "permission"))
-    orderNum: int = PydanticField(default=0, validation_alias=AliasChoices("orderNum", "sort_order"))
-    status: int = PydanticField(default=1, validation_alias=AliasChoices("status", "is_active"))
+    keep_alive: bool = True
+    is_show: bool = True
+    permission: Optional[str] = None
+    sort_order: int = 0
+    is_active: bool = True
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def parse_status(cls, v):
+        if isinstance(v, int):
+            return v == 1
+        return bool(v)
 
 
 class MenuUpdateRequest(BaseModel):
     """菜单更新请求"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     id: int
-    parentId: Optional[int] = PydanticField(default=None, validation_alias=AliasChoices("parentId", "parent_id"))
+    parent_id: Optional[int] = None
     name: str
     code: Optional[str] = None
     type: int | str = 2
-    router: Optional[str] = PydanticField(default=None, validation_alias=AliasChoices("router", "path"))
-    viewPath: Optional[str] = PydanticField(default=None, validation_alias=AliasChoices("viewPath", "component"))
+    path: Optional[str] = None
+    component: Optional[str] = None
     icon: Optional[str] = None
-    keepAlive: bool = PydanticField(default=True, validation_alias=AliasChoices("keepAlive", "keep_alive"))
-    isShow: bool = PydanticField(default=True, validation_alias=AliasChoices("isShow", "is_show"))
-    perms: Optional[str] = PydanticField(default=None, validation_alias=AliasChoices("perms", "permission"))
-    orderNum: int = PydanticField(default=0, validation_alias=AliasChoices("orderNum", "sort_order"))
-    status: int = PydanticField(default=1, validation_alias=AliasChoices("status", "is_active"))
+    keep_alive: bool = True
+    is_show: bool = True
+    permission: Optional[str] = None
+    sort_order: int = 0
+    is_active: bool = True
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def parse_status(cls, v):
+        if isinstance(v, int):
+            return v == 1
+        return bool(v)
 
 
 class MenuTreeItem(MenuRead):
@@ -393,22 +475,28 @@ class MenuTreeItem(MenuRead):
 
 
 class DepartmentRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    parentId: Optional[int] = None
+    parent_id: Optional[int] = None
     name: str
-    parentName: Optional[str] = None
-    orderNum: int
-    status: int
-    createTime: datetime
-    updateTime: datetime
+    parent_name: Optional[str] = None
+    sort_order: int
+    is_active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("is_active")
+    def serialize_status(self, v: bool) -> int:
+        return 1 if v else 0
 
 
 class DepartmentCreateRequest(BaseModel):
-    parentId: Optional[int] = PydanticField(default=None, validation_alias=AliasChoices("parentId", "parent_id"))
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+    
+    parent_id: Optional[int] = None
     name: str
-    orderNum: int = PydanticField(default=0, validation_alias=AliasChoices("orderNum", "sort_order"))
+    sort_order: int = 0
 
 
 class DepartmentUpdateRequest(DepartmentCreateRequest):
@@ -416,13 +504,17 @@ class DepartmentUpdateRequest(DepartmentCreateRequest):
 
 
 class DepartmentOrderItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     id: int
-    parentId: Optional[int] = None
-    orderNum: int = 0
+    parent_id: Optional[int] = None
+    sort_order: int = 0
 
 
 class DepartmentDeleteRequest(DeleteRequest):
-    deleteUser: bool = False
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    delete_user: bool = False
 
 
 class MenuExportRequest(DeleteRequest):
@@ -430,18 +522,20 @@ class MenuExportRequest(DeleteRequest):
 
 
 class MenuImportNode(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     id: Optional[int] = None
-    parentId: Optional[int] = None
+    parent_id: Optional[int] = None
     name: str
-    router: Optional[str] = None
-    viewPath: Optional[str] = None
-    perms: Optional[str] = None
+    path: Optional[str] = None
+    component: Optional[str] = None
+    permission: Optional[str] = None
     type: int = 1
     icon: Optional[str] = None
-    orderNum: int = 0
-    keepAlive: bool = True
-    isShow: bool = True
-    childMenus: list["MenuImportNode"] = PydanticField(default_factory=list)
+    sort_order: int = 0
+    keep_alive: bool = True
+    is_show: bool = True
+    child_menus: list["MenuImportNode"] = PydanticField(default_factory=list)
 
 
 class MenuImportRequest(BaseModel):
@@ -453,33 +547,39 @@ class MenuParseRequest(BaseModel):
 
 
 class MenuParseItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     module: str
     resource: str
     prefix: str
     controller: str
     name: str
-    router: str
-    viewPath: Optional[str] = None
+    path: str
+    component: Optional[str] = None
     icon: Optional[str] = None
-    parentCode: Optional[str] = None
+    parent_code: Optional[str] = None
     api: list[dict] = PydanticField(default_factory=list)
 
 
 class MenuParseResponse(BaseModel):
-    items: list[MenuParseItem] = PydanticField(default_factory=list, alias="list")
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    items: list[MenuParseItem] = PydanticField(default_factory=list, validation_alias=AliasChoices("items", "list"), serialization_alias="list")
 
 
 class MenuCreateAutoItem(BaseModel):
-    parentId: Optional[int] = None
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    parent_id: Optional[int] = None
     name: str
-    router: str
+    path: str
     module: Optional[str] = None
     prefix: Optional[str] = None
     icon: Optional[str] = None
-    orderNum: int = 0
-    keepAlive: bool = True
+    sort_order: int = 0
+    keep_alive: bool = True
     api: list[dict] = PydanticField(default_factory=list)
-    viewPath: Optional[str] = None
+    component: Optional[str] = None
 
 
 class MenuCreateAutoRequest(BaseModel):
@@ -488,6 +588,8 @@ class MenuCreateAutoRequest(BaseModel):
 
 class TokenPair(BaseModel):
     """登录响应"""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     access_token: str
     refresh_token: str
@@ -501,45 +603,57 @@ class TokenPair(BaseModel):
 class CoolLoginResponse(BaseModel):
     """Cool 风格登录响应"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     token: str
-    refreshToken: str
+    refresh_token: str
     expire: int
-    refreshExpire: int
-    userInfo: CoolUserInfo
-    perms: list[str]
+    refresh_expire: int
+    user_info: CoolUserInfo
+    permission: list[str]
 
 
 class CaptchaResponse(BaseModel):
     """验证码响应"""
 
-    captchaId: str
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    captcha_id: str
     data: str
 
 
 class CoolMenuItem(BaseModel):
     """Cool 风格菜单节点"""
 
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     id: int
-    parentId: Optional[int] = None
-    parentName: Optional[str] = None
+    parent_id: Optional[int] = None
+    parent_name: Optional[str] = None
     name: str
-    router: Optional[str] = None
-    viewPath: Optional[str] = None
-    perms: Optional[str] = None
+    path: Optional[str] = None
+    component: Optional[str] = None
+    permission: Optional[str] = None
     type: int = 1
     icon: Optional[str] = None
-    orderNum: int = 0
-    keepAlive: bool = True
-    isShow: bool = True
-    status: int = 1
-    childMenus: list["CoolMenuItem"] = PydanticField(default_factory=list)
+    sort_order: int = 0
+    keep_alive: bool = True
+    is_show: bool = True
+    is_active: bool = True
+    child_menus: list["CoolMenuItem"] = PydanticField(default_factory=list)
+
+    @field_serializer("is_active")
+    def serialize_status(self, v: bool) -> int:
+        return 1 if v else 0
 
 
 class CoolPersonResponse(BaseModel):
     """Cool 风格个人信息接口响应"""
 
-    userInfo: CoolUserInfo
-    perms: list[str]
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    user_info: CoolUserInfo
+    permission: list[str]
     menus: list[CoolMenuItem]
 
 

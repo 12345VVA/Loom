@@ -74,7 +74,7 @@ class AuthService:
 
         if settings.ADMIN_CAPTCHA_ENABLED:
             try:
-                self.captcha_check(payload.captchaId, payload.verifyCode)
+                self.captcha_check(payload.captcha_id, payload.verify_code)
             except HTTPException as exc:
                 self._mark_login_failure(payload.username, login_ip)
                 self._record_login_log(
@@ -166,11 +166,11 @@ class AuthService:
     ) -> CoolLoginResponse:
         return CoolLoginResponse(
             token=access_token,
-            refreshToken=refresh_token,
+            refresh_token=refresh_token,
             expire=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            refreshExpire=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-            userInfo=self.build_user_info(user, roles=roles, permissions=permissions),
-            perms=permissions,
+            refresh_expire=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+            user_info=self.build_user_info(user, roles=roles, permissions=permissions),
+            permission=permissions,
         )
 
     def refresh_token(self, payload: RefreshTokenRequest) -> CoolLoginResponse:
@@ -187,8 +187,6 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在或已禁用")
 
         token_password_version = token_payload.get("password_version")
-        if token_password_version is None:
-            token_password_version = token_payload.get("passwordVersion")
         if user.password_version != token_password_version:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效")
 
@@ -232,7 +230,7 @@ class AuthService:
         captcha_id = uuid4().hex
         cache_set(self._build_captcha_cache_key(captcha_id), chars.lower(), settings.CAPTCHA_EXPIRE_SECONDS)
         return CaptchaResponse(
-            captchaId=captcha_id,
+            captcha_id=captcha_id,
             data=f"data:image/svg+xml;base64,{base64_data}",
         )
 
@@ -252,33 +250,33 @@ class AuthService:
 
     def build_user_info(self, user: User, roles: list[Role], permissions: list[str]) -> CoolUserInfo:
         return CoolUserInfo(
-            userId=user.id,
+            user_id=user.id,
             username=user.username,
-            nickName=user.full_name,
-            departmentId=user.department_id,
-            roleCodes=[role.code for role in roles],
-            perms=permissions,
-            isSuperAdmin=user.is_super_admin,
+            nick_name=user.full_name,
+            department_id=user.department_id,
+            role_codes=[role.code for role in roles],
+            permission=permissions,
+            is_super_admin=user.is_super_admin,
         )
 
     def person(self, user: User) -> UserPersonRead:
         return UserPersonRead(
             id=user.id,
-            createTime=user.created_at,
-            updateTime=user.updated_at or user.created_at,
-            departmentId=user.department_id,
-            name=user.full_name,
+            created_at=user.created_at,
+            updated_at=user.updated_at or user.created_at,
+            department_id=user.department_id,
+            full_name=user.full_name,
             username=user.username,
-            passwordV=user.password_version,
-            nickName=user.nick_name,
-            headImg=user.head_img,
+            password_version=user.password_version,
+            nick_name=user.nick_name,
+            head_img=user.head_img,
             phone=user.phone,
             email=user.email,
             remark=user.remark,
-            status=1 if user.is_active else 0,
-            isSuperAdmin=1 if user.is_super_admin else 0,
-            isManager=1 if user.is_manager else 0,
-            isDepartmentLeader=1 if user.is_department_leader else 0,
+            is_active=user.is_active,
+            is_super_admin=1 if user.is_super_admin else 0,
+            is_manager=1 if user.is_manager else 0,
+            is_department_leader=1 if user.is_department_leader else 0,
         )
 
     def person_update(self, user: User, payload: UserPersonUpdateRequest) -> dict:
@@ -287,17 +285,17 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
         if payload.password:
-            if not payload.oldPassword:
+            if not payload.old_password:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="原密码不能为空")
-            if not verify_password(payload.oldPassword, target.password_hash):
+            if not verify_password(payload.old_password, target.password_hash):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="原密码错误")
             target.password_hash = hash_password(payload.password)
             target.password_version += 1
 
-        if payload.nickName is not None:
-            target.nick_name = payload.nickName
-        if payload.headImg is not None:
-            target.head_img = payload.headImg
+        if payload.nick_name is not None:
+            target.nick_name = payload.nick_name
+        if payload.head_img is not None:
+            target.head_img = payload.head_img
         if payload.phone is not None:
             target.phone = payload.phone
         if payload.email is not None:
@@ -316,7 +314,7 @@ class AuthService:
         permissions = get_user_permissions(self.session, user.id)
         menus = MenuAdminService(self.session).current_list(user)
         return {
-            "perms": permissions,
+            "permission": permissions,
             "menus": [
                 self._build_cool_menu_item(menu).model_dump(mode="json")
                 for menu in menus
@@ -328,40 +326,40 @@ class AuthService:
         
         # 处理可能的模型对象或字典
         m_id = getattr(menu, "id", None)
-        parent_id = getattr(menu, "parent_id", getattr(menu, "parentId", None))
+        parent_id = getattr(menu, "parent_id", None)
         name = getattr(menu, "name", "")
-        path = getattr(menu, "path", getattr(menu, "router", None))
-        permission = getattr(menu, "permission", getattr(menu, "perms", None))
+        path = getattr(menu, "path", None)
+        permission = getattr(menu, "permission", None)
         menu_type = getattr(menu, "type", 1)
-        sort_order = getattr(menu, "sort_order", getattr(menu, "orderNum", 0))
-        component = getattr(menu, "component", getattr(menu, "viewPath", None))
-        keep_alive = getattr(menu, "keep_alive", getattr(menu, "keepAlive", True))
-        is_show = getattr(menu, "is_show", getattr(menu, "isShow", True))
+        sort_order = getattr(menu, "sort_order", 0)
+        component = getattr(menu, "component", None)
+        keep_alive = getattr(menu, "keep_alive", True)
+        is_show = getattr(menu, "is_show", True)
         is_active = getattr(menu, "is_active", True)
-        children = getattr(menu, "children", [])
+        children = getattr(menu, "children", getattr(menu, "child_menus", []))
         
         parent_name = None
         if name_map and parent_id in name_map:
             parent_name = name_map[parent_id]
         elif parent_id:
             # 如果没有传入 map，尝试从对象本身获取（如果是经过 _build_menu_read 处理的 MenuRead 对象）
-            parent_name = getattr(menu, "parentName", None)
+            parent_name = getattr(menu, "parent_name", None)
 
         return CoolMenuItem(
             id=m_id,
-            parentId=parent_id,
-            parentName=parent_name,
+            parent_id=parent_id,
+            parent_name=parent_name,
             name=name,
-            router=path,
-            perms=permission,
+            path=path,
+            permission=permission,
             type=type_mapping.get(menu_type, menu_type if isinstance(menu_type, int) else 1),
-            orderNum=sort_order,
-            viewPath=component,
+            sort_order=sort_order,
+            component=component,
             icon=getattr(menu, "icon", None),
-            keepAlive=keep_alive,
-            isShow=is_show,
-            status=1 if is_active else 0,
-            childMenus=[self._build_cool_menu_item(child, name_map=name_map) for child in children],
+            keep_alive=keep_alive,
+            is_show=is_show,
+            is_active=is_active,
+            child_menus=[self._build_cool_menu_item(child, name_map=name_map) for child in children],
         )
 
     def _flatten_cool_menus(self, menus: list[CoolMenuItem]) -> list[CoolMenuItem]:
@@ -369,8 +367,8 @@ class AuthService:
 
         def walk(items: list[CoolMenuItem]) -> None:
             for item in items:
-                children = item.childMenus
-                result.append(item.model_copy(update={"childMenus": []}))
+                children = item.child_menus
+                result.append(item.model_copy(update={"child_menus": []}))
                 if children:
                     walk(children)
 

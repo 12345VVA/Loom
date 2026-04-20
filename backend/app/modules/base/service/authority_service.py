@@ -242,8 +242,6 @@ def get_user_from_access_token(session: Session, token: str) -> tuple[User, dict
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在或已禁用")
 
     password_version = payload.get("password_version")
-    if password_version is None:
-        password_version = payload.get("passwordVersion")
         
     # 强制校验数据库真实的密码版本号（最高权重，一旦密码修改，旧 Token 必须立刻失效）
     if user.password_version != password_version:
