@@ -69,6 +69,7 @@ class User(BaseEntity, table=True):
     remark: Optional[str] = None
     password_hash: str
     password_version: int = Field(default=1)
+    password_changed_at: Optional[datetime] = Field(default=None)  # 密码最后修改时间
     department_id: Optional[int] = Field(default=None)
     is_super_admin: bool = Field(default=False)
     is_manager: bool = Field(default=False)
@@ -113,6 +114,14 @@ class LoginRequest(BaseModel):
     password: str
     captcha_id: Optional[str] = None
     verify_code: Optional[str] = None
+
+    @field_validator("username", "password", mode="before")
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        """去除用户名和密码的前后空格"""
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
 
 class RefreshTokenRequest(BaseModel):
@@ -171,6 +180,14 @@ class UserPersonUpdateRequest(BaseModel):
     password: Optional[str] = None
     old_password: Optional[str] = None
 
+    @field_validator("password", "old_password", mode="before")
+    @classmethod
+    def strip_passwords(cls, v: Optional[str]) -> Optional[str]:
+        """去除密码的前后空格"""
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
 
 class UserProfile(BaseModel):
     """当前用户信息"""
@@ -193,11 +210,12 @@ class CoolUserInfo(BaseModel):
 
     user_id: int
     username: str
-    nick_name: str
+    nick_name: Optional[str] = None
     department_id: Optional[int]
     role_codes: list[str]
     permission: list[str]
     is_super_admin: bool
+    force_password_change: bool = False  # 是否强制修改密码
 
 
 T = TypeVar("T")
@@ -226,7 +244,7 @@ class UserListItem(BaseModel):
     id: int
     username: str
     full_name: str
-    nick_name: str
+    nick_name: Optional[str] = None
     head_img: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -265,6 +283,14 @@ class UserCreateRequest(BaseModel):
     role_ids: list[int] = PydanticField(default_factory=list)
     is_active: bool = True
 
+    @field_validator("username", "password", mode="before")
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        """去除用户名和密码的前后空格"""
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
     @field_validator("is_active", mode="before")
     @classmethod
     def parse_status(cls, v):
@@ -289,6 +315,14 @@ class UserUpdateRequest(BaseModel):
     role_ids: list[int] = PydanticField(default_factory=list)
     is_active: bool = True
     password: Optional[str] = None
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def strip_password(cls, v: Optional[str]) -> Optional[str]:
+        """去除密码的前后空格"""
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
     @field_validator("is_active", mode="before")
     @classmethod
@@ -409,6 +443,17 @@ class MenuRead(BaseModel):
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, v: Any) -> int:
+        if v in (0, "0", "group", "dir"):
+            return 0
+        if v in (1, "1", "menu"):
+            return 1
+        if v in (2, "2", "button"):
+            return 2
+        return v # 让 pydantic 自己报 int 转换错误，如果不匹配以上
 
     @field_serializer("is_active")
     def serialize_status(self, v: bool) -> int:
@@ -640,7 +685,10 @@ class CoolMenuItem(BaseModel):
     keep_alive: bool = True
     is_show: bool = True
     is_active: bool = True
-    child_menus: list["CoolMenuItem"] = PydanticField(default_factory=list)
+    child_menus: list["CoolMenuItem"] = PydanticField(
+        default_factory=list,
+        serialization_alias="children"
+    )
 
     @field_serializer("is_active")
     def serialize_status(self, v: bool) -> int:

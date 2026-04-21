@@ -57,30 +57,17 @@ class DictInfoService(BaseAdminCrudService):
 
     def _row_to_dict(self, row: Any) -> dict:
         data = super()._row_to_dict(row)
-        data["typeId"] = data.get("type_id")
-        data["parentId"] = data.get("parent_id")
-        data["orderNum"] = data.get("order_num", 0)
+        # 补充前端需要的 label 字段
+        data["label"] = data.get("name")
         return data
 
     def _before_add(self, data: dict) -> dict:
-        if "typeId" in data:
-            data["type_id"] = data.pop("typeId")
-        if "parentId" in data:
-            data["parent_id"] = data.pop("parentId")
-        if "orderNum" in data:
-            data["order_num"] = data.pop("orderNum")
-            
+        # 已由 Pydantic 自动处理类型映射，此处仅保留业务校验
         self._ensure_type_exists(data.get("type_id"))
         return data
 
     def _before_update(self, data: dict, entity: Any) -> dict:
-        if "typeId" in data:
-            data["type_id"] = data.pop("typeId")
-        if "parentId" in data:
-            data["parent_id"] = data.pop("parentId")
-        if "orderNum" in data:
-            data["order_num"] = data.pop("orderNum")
-            
+        # 已由 Pydantic 自动处理类型映射，此处仅保留业务校验
         self._ensure_type_exists(data.get("type_id"))
         return data
 
@@ -95,31 +82,30 @@ class DictInfoService(BaseAdminCrudService):
             type_rows = [item for item in type_rows if item.key in types]
         if not type_rows:
             return result
+        
         type_map = {row.id: row for row in type_rows if row.id is not None}
         rows = list(
             self.session.exec(
                 select(DictInfo)
                 .where(DictInfo.type_id.in_(type_map.keys()))
-                .order_by(DictInfo.order_num.asc(), DictInfo.created_at.asc())
+                .order_by(DictInfo.sort_order.asc(), DictInfo.created_at.asc())
             ).all()
         )
         for type_row in type_rows:
             result[type_row.key] = []
+            
         for row in rows:
             type_row = type_map.get(row.type_id)
             if not type_row:
                 continue
-            result[type_row.key].append(
-                {
-                    "id": row.id,
-                    "typeId": row.type_id,
-                    "parentId": row.parent_id,
-                    "name": row.name,
-                    "label": row.name,
-                    "value": _coerce_value(row.value),
-                    "orderNum": row.order_num,
-                }
-            )
+            
+            # 使用 _row_to_dict 获取经过基本转换的数据，再手动处理 value
+            item_data = self._row_to_dict(row)
+            item_data["value"] = _coerce_value(row.value)
+            
+            # 使用基类的 _finalize_data 统一处理驼峰转换
+            result[type_row.key].append(self._finalize_data(item_data))
+            
         return result
 
     def types(self) -> list[dict[str, Any]]:

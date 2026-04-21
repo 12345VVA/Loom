@@ -3,6 +3,7 @@ Celery 应用配置
 """
 from celery import Celery
 from app.core.config import settings
+from celery.schedules import crontab
 
 celery_app = Celery(
     "loom",
@@ -10,7 +11,6 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         "app.modules.task.tasks.system_tasks",
-        "app.modules.task_ai.tasks.ai_tasks",
     ],
 )
 
@@ -23,3 +23,12 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=30 * 60,  # 30分钟超时
 )
+
+# Celery Beat 定时任务配置
+celery_app.conf.beat_schedule = {
+    # 每天凌晨2点清理过期日志
+    "clean-expired-logs-daily": {
+        "task": "task.clean_expired_logs",
+        "schedule": crontab(hour=2, minute=0),
+    },
+}

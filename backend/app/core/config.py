@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_PASSWORD: str  # 启动时自动从 .env 中读取
     DEFAULT_ADMIN_NAME: str  # 启动时自动从 .env 中读取
 
+    # 文件上传安全配置
+    UPLOAD_MAX_SIZE_MB: int = 10                       # 单文件最大 MB
+    UPLOAD_ALLOWED_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.csv,.json,.mp4,.mp3"
+
+    # API 限流配置
+    RATE_LIMIT_ENABLED: bool = True                    # 是否启用全局限流
+    RATE_LIMIT_DEFAULT: int = 120                      # 默认每分钟请求数上限
+    RATE_LIMIT_ADMIN: int = 60                         # /admin 前缀每分钟上限
+    RATE_LIMIT_OPEN: int = 30                          # 公开接口（登录等）每分钟上限
+    RATE_LIMIT_WHITELIST_PATHS: str = "/docs,/redoc,/openapi.json,/health"  # 豁免限流的路径
+
     # CORS 配置
     CORS_ORIGINS: str  # 启动时自动从 .env 中读取
 

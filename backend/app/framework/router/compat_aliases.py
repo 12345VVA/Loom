@@ -18,7 +18,6 @@ ROUTER_ALIASES: tuple[tuple[str, str], ...] = (
     ("app.modules.base.controller.admin.department", "/admin/base/sys/department"),
     ("app.modules.dict.controller.admin.type", "/admin/dict/type"),
     ("app.modules.dict.controller.admin.info", "/admin/dict/info"),
-    ("app.modules.task_ai.controller.admin.task", "/admin/task/info"),
 )
 
 

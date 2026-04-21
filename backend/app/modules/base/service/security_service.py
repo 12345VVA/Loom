@@ -19,6 +19,7 @@ from app.modules.base.service.authority_service import (
     get_user_permissions,
     get_user_roles,
     has_url_permission,
+    get_user_token_version,
 )
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -26,6 +27,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def create_access_token(user: User) -> str:
     role_codes = get_user_roles_cached(user)
+    token_version = get_user_token_version(user.id)
     return create_token(
         {
             "sub": str(user.id),
@@ -34,6 +36,7 @@ def create_access_token(user: User) -> str:
             "username": user.username,
             "roleIds": role_codes["role_ids"],
             "password_version": user.password_version,
+            "token_version": token_version,
             "isRefresh": False,
             "jti": uuid4().hex,
         },
@@ -43,6 +46,7 @@ def create_access_token(user: User) -> str:
 
 def create_refresh_token(user: User) -> str:
     role_codes = get_user_roles_cached(user)
+    token_version = get_user_token_version(user.id)
     return create_token(
         {
             "sub": str(user.id),
@@ -51,6 +55,7 @@ def create_refresh_token(user: User) -> str:
             "username": user.username,
             "roleIds": role_codes["role_ids"],
             "password_version": user.password_version,
+            "token_version": token_version,
             "isRefresh": True,
             "jti": uuid4().hex,
         },

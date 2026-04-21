@@ -24,3 +24,10 @@ def clear_cache_pattern(pattern: str):
     keys = r.keys(pattern)
     if keys:
         r.delete(*keys)
+
+# 便于直接导入使用的实例 (单例包装)
+class RedisClientProxy:
+    def __getattr__(self, name):
+        return getattr(get_redis(), name)
+
+redis_client = RedisClientProxy()

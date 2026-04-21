@@ -6,7 +6,15 @@
       "Bash(mv cool_auth_middleware.md Cool权限中间件原理与操作指南.md)",
       "Bash(mv eps_specification.md EPS规范原理与操作指南.md)",
       "Bash(mv migration_to_cool_admin_guide.md 后端核心机制差异与迁移指南.md)",
-      "Read(//d/NodeFiles/Projects/xw.manage-midway/**)"
+      "Read(//d/NodeFiles/Projects/xw.manage-midway/**)",
+      "Bash(git commit -m ' *)",
+      "Bash(python -c \"from app.modules.base.service.admin_service import UserAdminService\")",
+      "Bash(python -c \"from app.framework.middleware.admin_authority import AdminAuthorityMiddleware\")",
+      "Bash(python -c ' *)",
+      "Read(//d/NodeFiles/Projects/**)",
+      "Bash(python -m pytest tests/test_auth_alignment.py::AuthAlignmentTests::test_permmenu_contains_flat_system_management_routes -v)",
+      "Bash(python -m unittest tests.test_auth_alignment.AuthAlignmentTests.test_permmenu_contains_flat_system_management_routes)",
+      "Bash(python -m unittest tests.test_auth_alignment)"
     ]
   }
 }

@@ -5,6 +5,7 @@ from sqlmodel import Session
 
 from app.framework.middleware.module_access import ModuleAccessMiddleware
 from app.framework.middleware.operation_log import OperationLogMiddleware
+from app.framework.middleware.rate_limit import RateLimitMiddleware
 from app.framework.middleware.response_envelope import ResponseEnvelopeMiddleware
 from app.framework.middleware.scope_authority import AdminAuthorityMiddleware, AiApiAuthorityMiddleware, AppAuthorityMiddleware
 from app.modules.base.service.auth_service import AuthService
@@ -19,6 +20,7 @@ MODULE_CONFIG = ModuleConfig(
     bootstrap="app.modules.base.config.bootstrap",
     middlewares=(ModuleAccessMiddleware,),
     global_middlewares=(
+        RateLimitMiddleware,
         ResponseEnvelopeMiddleware,
         OperationLogMiddleware,
         AiApiAuthorityMiddleware,

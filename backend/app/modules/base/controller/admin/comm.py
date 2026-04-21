@@ -69,12 +69,16 @@ class BaseCommController(BaseController):
     async def upload(
         self,
         file: UploadFile = File(...),
-    ) -> str:
-        from app.framework.storage import StorageService
-        
+    ) -> dict:
+        from fastapi import HTTPException
+        from app.framework.storage import StorageService, UploadRejectedError
+
         file_content = await file.read()
-        path = StorageService.get_instance().upload(file_content, file.filename)
-        return path
+        try:
+            path = StorageService.get_instance().upload(file_content, file.filename)
+        except UploadRejectedError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"url": path, "name": file.filename}
 
 
 router = BaseCommController.router

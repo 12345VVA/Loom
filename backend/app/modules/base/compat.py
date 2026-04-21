@@ -34,7 +34,6 @@ ADMIN_PATH_ALIASES: dict[str, str] = {
     "/admin/base/sys/dict": "/admin/dict/type",
     "/admin/base/sys/dict_data": "/admin/dict/info",
     "/admin/task/task": "/admin/task/info",
-    "/admin/task_ai/info": "/admin/task/info",
 }
 
 SYSTEM_MANAGED_CODE_PREFIXES: tuple[str, ...] = (
@@ -42,7 +41,6 @@ SYSTEM_MANAGED_CODE_PREFIXES: tuple[str, ...] = (
     "base_",
     "dict_",
     "task_",
-    "task_ai_",
     "sys_",
     "common_",
     "data_",
@@ -73,7 +71,6 @@ RESOURCE_COMPATS: tuple[ResourceCompat, ...] = (
     ResourceCompat("base", "open", "base", "open", "/admin/base/open"),
     ResourceCompat("dict", "type", "dict", "type", "/admin/dict/type", "nav_data_dict"),
     ResourceCompat("dict", "info", "dict", "info", "/admin/dict/info", "nav_data_dict"),
-    ResourceCompat("task_ai", "info", "task", "info", "/admin/task/info", "nav_task_list", route_aliases=("/admin/task_ai/info",)),
     ResourceCompat("task", "info", "task", "info", "/admin/task/info", "nav_task_list"),
 )
 

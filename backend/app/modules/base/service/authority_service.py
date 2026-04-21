@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request, status
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.core.security import decode_token
+from app.core.security import decode_token, is_token_blacklisted
 from app.framework.router.route_meta import TagTypes, get_permission_meta
 from app.modules.base.compat import ADMIN_PATH_ALIASES, DEFAULT_AUTHENTICATED_PERMISSIONS, DEFAULT_PUBLIC_PERMISSION_PATHS
 from app.modules.base.model.auth import Menu, Role, RoleMenuLink, User, UserRoleLink
@@ -40,6 +40,45 @@ def build_permission_paths_cache_key(user_id: int) -> str:
 
 def build_password_version_cache_key(user_id: int) -> str:
     return f"admin:passwordVersion:{user_id}"
+
+
+def build_token_version_cache_key(user_id: int) -> str:
+    """构建用户Token版本号缓存键"""
+    return f"admin:tokenVersion:{user_id}"
+
+
+def get_user_token_version(user_id: int) -> int:
+    """获取用户当前Token版本号"""
+    from app.modules.base.service.cache_service import cache_get
+    version = cache_get(build_token_version_cache_key(user_id))
+    return int(version) if version else 0
+
+
+def increment_user_token_version(user_id: int) -> int:
+    """
+    递增用户Token版本号，使所有旧Token失效
+
+    Returns:
+        新的Token版本号
+    """
+    from app.modules.base.service.cache_service import cache_get, cache_set
+    import redis
+
+    cache_key = build_token_version_cache_key(user_id)
+    current = cache_get(cache_key)
+
+    # 使用Redis原子递增操作
+    from app.core.redis import redis_client
+    try:
+        new_version = redis_client.incr(cache_key)
+        # 设置TTL为较长的时间（如30天），避免版本号过早过期
+        redis_client.expire(cache_key, 30 * 24 * 60 * 60)
+    except Exception:
+        # Redis不可用时回退到普通方式
+        new_version = (int(current) if current else 0) + 1
+        cache_set(cache_key, str(new_version), 30 * 24 * 60 * 60)
+
+    return new_version
 
 
 def build_department_cache_key(user_id: int) -> str:
@@ -233,6 +272,11 @@ def get_user_from_access_token(session: Session, token: str) -> tuple[User, dict
     if payload.get("type") != TOKEN_TYPE_ACCESS:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌类型错误")
 
+    # 检查Token是否在黑名单中（主动吊销）
+    jti = payload.get("jti")
+    if jti and is_token_blacklisted(jti):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
+
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌缺少用户标识")
@@ -242,10 +286,16 @@ def get_user_from_access_token(session: Session, token: str) -> tuple[User, dict
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在或已禁用")
 
     password_version = payload.get("password_version")
-        
+    token_version = payload.get("token_version") or 0
+
     # 强制校验数据库真实的密码版本号（最高权重，一旦密码修改，旧 Token 必须立刻失效）
     if user.password_version != password_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，密码已修改")
+
+    # 校验Token版本号，用于强制吊销用户所有Token
+    current_token_version = get_user_token_version(user.id)
+    if token_version < current_token_version:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
 
     cached_password_version = cache_get(build_password_version_cache_key(user.id))
     if cached_password_version is not None and str(password_version) != cached_password_version:

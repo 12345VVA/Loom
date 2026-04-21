@@ -58,6 +58,41 @@ class SysLoginLog(BaseEntity, table=True):
     user_agent: Optional[str] = None
 
 
+class SysSecurityLog(BaseEntity, table=True):
+    """安全审计日志表 - 用于记录用户、角色、权限相关的敏感操作"""
+
+    __tablename__ = "sys_security_log"
+
+    # 操作者信息
+    operator_id: int = Field(index=True)  # 操作者用户ID
+    operator_name: str = Field(index=True)  # 操作者用户名
+    operator_ip: Optional[str] = None  # 操作者IP地址
+
+    # 操作对象信息
+    target_type: str = Field(index=True)  # 操作对象类型: user/role/menu/department
+    target_id: Optional[int] = Field(default=None, index=True)  # 操作对象ID
+    target_name: Optional[str] = None  # 操作对象名称（用于快速查询）
+
+    # 操作详情
+    operation: str = Field(index=True)  # 操作类型: create/update/delete/reset_password/assign_role/grant_permission
+    module: str = Field(index=True)  # 所属模块: user/role/menu/department
+    resource_path: Optional[str] = None  # 资源路径
+
+    # 变更数据（JSON格式）
+    old_value: Optional[str] = None  # 变更前的数据（脱敏后）
+    new_value: Optional[str] = None  # 变更后的数据（脱敏后）
+    diff_data: Optional[str] = None  # 变更差异（JSON格式）
+
+    # 审计信息
+    business_type: Optional[str] = None  # 业务类型（用于分类查询）
+    request_id: Optional[str] = Field(default=None, index=True)  # 关联请求ID
+    status: int = Field(default=1, index=True)  # 操作状态: 0=失败, 1=成功
+    error_message: Optional[str] = None  # 失败时的错误信息
+
+    # 审计备注（操作者填写的理由）
+    remark: Optional[str] = None
+
+
 
 
 class SysParamRead(BaseModel):
@@ -141,3 +176,48 @@ class SysLoginLogCreateRequest(BaseModel):
 
 class SysLoginLogUpdateRequest(SysLoginLogCreateRequest):
     id: int
+
+
+class SysSecurityLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    operatorId: int
+    operatorName: str
+    operatorIp: Optional[str] = None
+    targetType: str
+    targetId: Optional[int] = None
+    targetName: Optional[str] = None
+    operation: str
+    module: str
+    resourcePath: Optional[str] = None
+    oldValue: Optional[str] = None
+    newValue: Optional[str] = None
+    diffData: Optional[str] = None
+    businessType: Optional[str] = None
+    requestId: Optional[str] = None
+    status: int
+    errorMessage: Optional[str] = None
+    remark: Optional[str] = None
+    createTime: datetime
+    updateTime: datetime
+
+
+class SysSecurityLogCreateRequest(BaseModel):
+    operatorId: int
+    operatorName: str
+    operatorIp: Optional[str] = None
+    targetType: str
+    targetId: Optional[int] = None
+    targetName: Optional[str] = None
+    operation: str
+    module: str
+    resourcePath: Optional[str] = None
+    oldValue: Optional[str] = None
+    newValue: Optional[str] = None
+    diffData: Optional[str] = None
+    businessType: Optional[str] = None
+    requestId: Optional[str] = None
+    status: int = 1
+    errorMessage: Optional[str] = None
+    remark: Optional[str] = None

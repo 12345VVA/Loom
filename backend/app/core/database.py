@@ -95,6 +95,8 @@ def _ensure_sqlite_compatible_schema() -> None:
             "head_img": "ALTER TABLE sys_user ADD COLUMN head_img VARCHAR",
             "phone": "ALTER TABLE sys_user ADD COLUMN phone VARCHAR",
             "remark": "ALTER TABLE sys_user ADD COLUMN remark VARCHAR",
+            "password_version": "ALTER TABLE sys_user ADD COLUMN password_version INTEGER DEFAULT 1",
+            "password_changed_at": "ALTER TABLE sys_user ADD COLUMN password_changed_at DATETIME",
         },
     }
 
@@ -102,7 +104,7 @@ def _ensure_sqlite_compatible_schema() -> None:
     tables_to_check = [
         "sys_department", "sys_role", "sys_menu", "sys_user",
         "sys_param", "sys_log", "sys_login_log", 
-        "dict_type", "dict_info", "sys_task",
+        "dict_type", "dict_info", "task_info", "task_log",
         "sys_user_role", "sys_role_menu", "sys_role_department"
     ]
 

@@ -29,33 +29,33 @@ class TaskInfoService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, TaskInfo)
 
-    def _after_add(self, data: dict, entity: Any) -> Any:
+    def _after_add(self, entity: TaskInfo, payload: Any = None) -> None:
         # TODO: 注册调度任务到引擎
         pass
-        return entity
 
-    def _after_update(self, data: dict, entity: Any) -> Any:
+    def _after_update(self, entity: TaskInfo, payload: Any = None) -> None:
         # TODO: 重置调度任务
         pass
-        return entity
 
-    def _before_delete(self, ids: list[int]) -> None:
+    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
         for row in list(self.session.exec(select(TaskInfo).where(TaskInfo.id.in_(ids))).all()):
             # TODO: 从引擎移除调度
             pass
+        return ids
 
-    def log(self, query: CrudQuery) -> PageResult[TaskLogRead]:
+    def log(self, query: CrudQuery) -> PageResult[dict]:
         """查询任务日志"""
         page = query.page or 1
         page_size = query.size or 10
         id_val = query.params.get("id")
         status_val = query.params.get("status")
 
-        statement = select(TaskLog, TaskInfo.name.label("taskName")).join(
-            TaskInfo, TaskLog.taskId == TaskInfo.id
+        # 联表查询：获取日志和任务名称
+        statement = select(TaskLog, TaskInfo.name.label("task_name")).join(
+            TaskInfo, TaskLog.task_id == TaskInfo.id
         )
         if id_val:
-            statement = statement.where(TaskLog.taskId == id_val)
+            statement = statement.where(TaskLog.task_id == id_val)
         if status_val is not None:
             statement = statement.where(TaskLog.status == status_val)
         
@@ -66,19 +66,14 @@ class TaskInfoService(BaseAdminCrudService):
         
         results = self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all()
         
-        items = []
+        data_list = []
         for log_row, task_name in results:
-            items.append(TaskLogRead(
-                id=log_row.id,
-                taskId=log_row.taskId,
-                taskName=task_name,
-                status=log_row.status,
-                detail=log_row.detail,
-                consumeTime=log_row.consumeTime,
-                createTime=log_row.created_at
-            ))
+            # 使用基类转换逻辑
+            item_data = self._row_to_dict(log_row)
+            item_data["task_name"] = task_name
+            data_list.append(self._finalize_data(item_data))
 
-        return PageResult(items=items, total=total, page=page, page_size=page_size)
+        return PageResult(items=data_list, total=total, page=page, page_size=page_size)
 
     async def start(self, id: int):
         """启动任务"""
@@ -110,8 +105,6 @@ class TaskInfoService(BaseAdminCrudService):
         
         # 异步触发 Celery 任务
         from app.modules.task.tasks.system_tasks import execute_system_task
-        print(f"Dispatching task {id} to Celery...")
         execute_system_task.delay(id)
         
         return {"success": True}
-

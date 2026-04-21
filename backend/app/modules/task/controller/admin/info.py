@@ -4,7 +4,7 @@
 from fastapi import Depends, Request
 from sqlmodel import Session
 from app.core.database import get_session
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, CrudQuery, OrderByConfig, QueryConfig
+from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, CrudQuery, OrderByConfig, QueryConfig, QueryFieldConfig
 from app.framework.router.route_meta import Get, Post
 from app.modules.task.model.task import TaskInfoCreateRequest, TaskInfoRead, TaskInfoUpdateRequest
 from app.modules.task.service.task_service import TaskInfoService
@@ -27,7 +27,7 @@ from app.modules.task.service.task_service import TaskInfoService
         actions=("add", "delete", "update", "page", "info", "list"),
         page_query=QueryConfig(
             keyword_like_fields=("name",),
-            field_eq=("status", "type", "taskType"),
+            field_eq=("status", "type", QueryFieldConfig("task_type", "taskType")),
             field_like=("name",),
             order_fields=("created_at", "updated_at", "name"),
             add_order_by=(OrderByConfig("created_at", "desc"),),

@@ -24,6 +24,9 @@ from app.modules.base.model.sys import (
     SysParamCreateRequest,
     SysParamRead,
     SysParamUpdateRequest,
+    SysSecurityLog,
+    SysSecurityLogRead,
+    SysSecurityLogCreateRequest,
 )
 from app.modules.base.service.admin_service import BaseAdminCrudService
 
@@ -345,3 +348,135 @@ class SysLoginLogService(BaseAdminCrudService):
         )
         self.session.add(row)
         self.session.commit()
+
+
+class SysSecurityLogService(BaseAdminCrudService):
+    """安全审计日志服务"""
+
+    def __init__(self, session: Session):
+        super().__init__(session, SysSecurityLog)
+
+    def list(self, query: CrudQuery | None = None) -> list[SysSecurityLogRead]:
+        statement = select(SysSecurityLog)
+        statement = self._apply_query(statement, SysSecurityLog, query, fallback_field="created_at")
+        # 按时间倒序排列（最新的在前）
+        statement = statement.order_by(SysSecurityLog.created_at.desc())
+        rows = list(self.session.exec(statement).all())
+        return [self._build_read(row) for row in rows]
+
+    def page(self, query: CrudQuery) -> PageResult[SysSecurityLogRead]:
+        page = query.page or 1
+        page_size = query.size or 10
+        statement = select(SysSecurityLog)
+        statement = self._apply_query(statement, SysSecurityLog, query, fallback_field="created_at")
+        # 按时间倒序排列（最新的在前）
+        statement = statement.order_by(SysSecurityLog.created_at.desc())
+
+        count_statement = select(func.count()).select_from(statement.subquery())
+        total = int(self.session.exec(count_statement).one())
+        rows = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
+        return PageResult(
+            items=[self._build_read(row) for row in rows],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+    def info(self, id: int) -> SysSecurityLogRead:
+        row = self.session.get(SysSecurityLog, id)
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="安全审计日志不存在")
+        return self._build_read(row)
+
+    @staticmethod
+    def _build_read(row: SysSecurityLog) -> SysSecurityLogRead:
+        return SysSecurityLogRead(
+            id=row.id,
+            operatorId=row.operator_id,
+            operatorName=row.operator_name,
+            operatorIp=row.operator_ip,
+            targetType=row.target_type,
+            targetId=row.target_id,
+            targetName=row.target_name,
+            operation=row.operation,
+            module=row.module,
+            resourcePath=row.resource_path,
+            oldValue=row.old_value,
+            newValue=row.new_value,
+            diffData=row.diff_data,
+            businessType=row.business_type,
+            requestId=row.request_id,
+            status=row.status,
+            errorMessage=row.error_message,
+            remark=row.remark,
+            createTime=row.created_at,
+            updateTime=row.updated_at or row.created_at,
+        )
+
+    def create_entry(
+        self,
+        *,
+        operator_id: int,
+        operator_name: str,
+        operator_ip: str | None = None,
+        target_type: str,
+        target_id: int | None = None,
+        target_name: str | None = None,
+        operation: str,
+        module: str,
+        resource_path: str | None = None,
+        old_value: str | None = None,
+        new_value: str | None = None,
+        diff_data: str | None = None,
+        business_type: str | None = None,
+        request_id: str | None = None,
+        status: int = 1,
+        error_message: str | None = None,
+        remark: str | None = None,
+    ) -> SysSecurityLog:
+        """
+        创建安全审计日志记录
+
+        Args:
+            operator_id: 操作者用户ID
+            operator_name: 操作者用户名
+            operator_ip: 操作者IP地址
+            target_type: 操作对象类型 (user/role/menu/department)
+            target_id: 操作对象ID
+            target_name: 操作对象名称
+            operation: 操作类型 (create/update/delete/reset_password/assign_role/grant_permission)
+            module: 所属模块 (user/role/menu/department)
+            resource_path: 资源路径
+            old_value: 变更前的数据（脱敏后）
+            new_value: 变更后的数据（脱敏后）
+            diff_data: 变更差异（JSON格式）
+            business_type: 业务类型（用于分类查询）
+            request_id: 关联请求ID
+            status: 操作状态 (0=失败, 1=成功)
+            error_message: 失败时的错误信息
+            remark: 审计备注
+        """
+        row = SysSecurityLog(
+            operator_id=operator_id,
+            operator_name=operator_name,
+            operator_ip=operator_ip,
+            target_type=target_type,
+            target_id=target_id,
+            target_name=target_name,
+            operation=operation,
+            module=module,
+            resource_path=resource_path,
+            old_value=old_value,
+            new_value=new_value,
+            diff_data=diff_data,
+            business_type=business_type,
+            request_id=request_id,
+            status=status,
+            error_message=error_message,
+            remark=remark,
+            updated_at=datetime.utcnow(),
+        )
+        self.session.add(row)
+        self.session.commit()
+        self.session.refresh(row)
+        return row
