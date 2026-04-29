@@ -277,12 +277,32 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 _action_name: str = action.name,
             ):
                 service = meta.service(session)
+
+                # 读取请求体参数（支持前端 JSON 请求）
+                body_params: dict[str, Any] = {}
+                if request and request.method == "POST":
+                    try:
+                        body_params = await request.json() or {}
+                    except Exception:
+                        body_params = {}
+
+                # 请求体参数优先（支持 keyWord 驼峰命名）
+                if "keyWord" in body_params and not keyword:
+                    keyword = body_params.pop("keyWord")
+                if "keyword" in body_params and not keyword:
+                    keyword = body_params.pop("keyword")
+                if "order" in body_params and not order:
+                    order = body_params.pop("order")
+                if "sort" in body_params and not sort:
+                    sort = body_params.pop("sort")
+
                 query = _build_crud_query(
                     request=request,
                     config=meta.list_query,
                     keyword=keyword,
                     order=order,
                     sort=sort,
+                    body_params=body_params,
                 )
                 available_kwargs = _build_service_kwargs(
                     meta=meta,
@@ -324,6 +344,29 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 _action_name: str = action.name,
             ):
                 service = meta.service(session)
+
+                # 读取请求体参数（支持前端 JSON 请求）
+                body_params: dict[str, Any] = {}
+                if request and request.method == "POST":
+                    try:
+                        body_params = await request.json() or {}
+                    except Exception:
+                        body_params = {}
+
+                # 请求体参数优先（支持 keyWord 驼峰命名）
+                if "keyWord" in body_params and not keyword:
+                    keyword = body_params.pop("keyWord")
+                if "keyword" in body_params and not keyword:
+                    keyword = body_params.pop("keyword")
+                if "page" in body_params:
+                    page = body_params.pop("page")
+                if "size" in body_params:
+                    size = body_params.pop("size")
+                if "order" in body_params and not order:
+                    order = body_params.pop("order")
+                if "sort" in body_params and not sort:
+                    sort = body_params.pop("sort")
+
                 query = _build_crud_query(
                     request=request,
                     config=meta.page_query or meta.list_query,
@@ -332,6 +375,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     keyword=keyword,
                     order=order,
                     sort=sort,
+                    body_params=body_params,
                 )
                 available_kwargs = _build_service_kwargs(
                     meta=meta,
@@ -651,38 +695,49 @@ def _build_crud_query(
     keyword: str | None = None,
     order: str | None = None,
     sort: str | None = None,
+    body_params: dict[str, Any] | None = None,
 ) -> CrudQuery:
     config = config or QueryConfig()
     eq_filters: dict[str, Any] = {}
     like_filters: dict[str, Any] = {}
     raw_params: dict[str, Any] = {}
-    reserved = {"page", "size", "pageSize", "page_size", "keyword", "order", "sort"}
+    # 保留字段：支持驼峰和下划线命名
+    reserved = {"page", "size", "pageSize", "page_size", "keyword", "keyWord", "order", "sort"}
     eq_mappings = _normalize_query_fields((*config.field_eq, *config.eq_filters))
     like_mappings = _normalize_query_fields((*config.field_like, *config.like_filters))
 
+    # 合并查询参数和请求体参数（请求体参数优先）
+    all_params: dict[str, Any] = {}
+
     if request is not None:
-        # 获取所有唯一参数名
+        # 1. 收集 URL 查询参数
         for key in set(request.query_params.keys()):
             if key in reserved:
                 continue
-            
-            # 使用 getlist 获取所有重复项的值，支持多个相同 key 的情况 (适配 IN 查询)
             values = request.query_params.getlist(key)
             if not values or (len(values) == 1 and values[0] == ""):
                 continue
-                
             val = values[0] if len(values) == 1 else values
-            raw_params[key] = val
-            
-            # 基础过滤映射
-            if key in eq_mappings:
-                eq_filters[eq_mappings[key]] = val
-            if key in like_mappings:
-                like_filters[like_mappings[key]] = val
+            all_params[key] = val
 
-    if request is not None:
-        raw_size = request.query_params.get("size") or request.query_params.get("pageSize") or request.query_params.get("page_size")
-        if raw_size and raw_size.isdigit():
+    # 2. 合并请求体参数
+    if body_params:
+        all_params.update(body_params)
+
+    # 处理过滤条件
+    for key, val in all_params.items():
+        raw_params[key] = val
+
+        # 基础过滤映射
+        if key in eq_mappings:
+            eq_filters[eq_mappings[key]] = val
+        if key in like_mappings:
+            like_filters[like_mappings[key]] = val
+
+    if request is not None or body_params:
+        # 优先从请求体获取，其次从查询参数获取
+        raw_size = all_params.get("size") or all_params.get("pageSize") or all_params.get("page_size")
+        if raw_size and str(raw_size).isdigit():
             size = int(raw_size)
 
     return CrudQuery(

@@ -5,7 +5,7 @@
     "type": "menu",
     "module": "base",
     "resource": "dashboard",
-    "path": "/base/info",
+    "path": "/",
     "component": "modules/base/views/info.vue",
     "icon": "icon-home",
     "keep_alive": true,
@@ -34,20 +34,104 @@
         "icon": "icon-user",
         "sort_order": 31,
         "children": [
-          { "code": "base_sys_department_list", "name": "部门列表", "type": "button", "permission": "base:sys:department:list", "role_codes": ["admin"] },
-          { "code": "base_sys_department_add", "name": "新增部门", "type": "button", "permission": "base:sys:department:add", "role_codes": ["admin"] },
-          { "code": "base_sys_department_update", "name": "修改部门", "type": "button", "permission": "base:sys:department:update", "role_codes": ["admin"] },
-          { "code": "base_sys_department_delete", "name": "删除部门", "type": "button", "permission": "base:sys:department:delete", "role_codes": ["admin"] },
-          { "code": "base_sys_department_order", "name": "部门排序", "type": "button", "permission": "base:sys:department:order", "role_codes": ["admin"] },
-          { "code": "base_sys_user_add", "name": "新增用户", "type": "button", "permission": "base:sys:user:add", "role_codes": ["admin"] },
-          { "code": "base_sys_user_delete", "name": "删除用户", "type": "button", "permission": "base:sys:user:delete", "role_codes": ["admin"] },
-          { "code": "base_sys_user_update", "name": "修改用户", "type": "button", "permission": "base:sys:user:update", "role_codes": ["admin"] },
-          { "code": "base_sys_user_page", "name": "分页查询", "type": "button", "permission": "base:sys:user:page", "role_codes": ["admin"] },
-          { "code": "base_sys_user_list", "name": "列表查询", "type": "button", "permission": "base:sys:user:list", "role_codes": ["admin"] },
-          { "code": "base_sys_user_info", "name": "详情", "type": "button", "permission": "base:sys:user:info", "role_codes": ["admin"] },
-          { "code": "base_sys_user_assign_roles", "name": "分配角色", "type": "button", "permission": "base:sys:user:assign_roles", "role_codes": ["admin"] },
-          { "code": "base_sys_user_move", "name": "移动部门", "type": "button", "permission": "base:sys:user:move", "role_codes": ["admin"] },
-          { "code": "base_sys_user_me", "name": "当前用户", "type": "button", "permission": "base:sys:user:me", "role_codes": ["admin", "task_operator"] }
+          {
+            "code": "base_sys_department_list",
+            "name": "部门列表",
+            "type": "button",
+            "permission": "base:sys:department:list",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_department_add",
+            "name": "新增部门",
+            "type": "button",
+            "permission": "base:sys:department:add",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_department_update",
+            "name": "修改部门",
+            "type": "button",
+            "permission": "base:sys:department:update",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_department_delete",
+            "name": "删除部门",
+            "type": "button",
+            "permission": "base:sys:department:delete",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_department_order",
+            "name": "部门排序",
+            "type": "button",
+            "permission": "base:sys:department:order",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_add",
+            "name": "新增用户",
+            "type": "button",
+            "permission": "base:sys:user:add",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_delete",
+            "name": "删除用户",
+            "type": "button",
+            "permission": "base:sys:user:delete",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_update",
+            "name": "修改用户",
+            "type": "button",
+            "permission": "base:sys:user:update",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_page",
+            "name": "分页查询",
+            "type": "button",
+            "permission": "base:sys:user:page",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_list",
+            "name": "列表查询",
+            "type": "button",
+            "permission": "base:sys:user:list",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_info",
+            "name": "详情",
+            "type": "button",
+            "permission": "base:sys:user:info",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_assign_roles",
+            "name": "分配角色",
+            "type": "button",
+            "permission": "base:sys:user:assign_roles",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_move",
+            "name": "移动部门",
+            "type": "button",
+            "permission": "base:sys:user:move",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_user_me",
+            "name": "当前用户",
+            "type": "button",
+            "permission": "base:sys:user:me",
+            "role_codes": ["admin", "task_operator"]
+          }
         ]
       },
       {
@@ -61,13 +145,55 @@
         "icon": "icon-auth",
         "sort_order": 32,
         "children": [
-          { "code": "base_sys_role_add", "name": "新增", "type": "button", "permission": "base:sys:role:add", "role_codes": ["admin"] },
-          { "code": "base_sys_role_delete", "name": "删除", "type": "button", "permission": "base:sys:role:delete", "role_codes": ["admin"] },
-          { "code": "base_sys_role_update", "name": "修改", "type": "button", "permission": "base:sys:role:update", "role_codes": ["admin"] },
-          { "code": "base_sys_role_page", "name": "分页查询", "type": "button", "permission": "base:sys:role:page", "role_codes": ["admin"] },
-          { "code": "base_sys_role_list", "name": "列表查询", "type": "button", "permission": "base:sys:role:list", "role_codes": ["admin"] },
-          { "code": "base_sys_role_info", "name": "详情", "type": "button", "permission": "base:sys:role:info", "role_codes": ["admin"] },
-          { "code": "base_sys_role_assign_menus", "name": "分配菜单", "type": "button", "permission": "base:sys:role:assign_menus", "role_codes": ["admin"] }
+          {
+            "code": "base_sys_role_add",
+            "name": "新增",
+            "type": "button",
+            "permission": "base:sys:role:add",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_role_delete",
+            "name": "删除",
+            "type": "button",
+            "permission": "base:sys:role:delete",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_role_update",
+            "name": "修改",
+            "type": "button",
+            "permission": "base:sys:role:update",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_role_page",
+            "name": "分页查询",
+            "type": "button",
+            "permission": "base:sys:role:page",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_role_list",
+            "name": "列表查询",
+            "type": "button",
+            "permission": "base:sys:role:list",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_role_info",
+            "name": "详情",
+            "type": "button",
+            "permission": "base:sys:role:info",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_role_assign_menus",
+            "name": "分配菜单",
+            "type": "button",
+            "permission": "base:sys:role:assign_menus",
+            "role_codes": ["admin"]
+          }
         ]
       },
       {
@@ -81,19 +207,97 @@
         "icon": "icon-menu",
         "sort_order": 33,
         "children": [
-          { "code": "base_sys_menu_add", "name": "新增", "type": "button", "permission": "base:sys:menu:add", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_delete", "name": "删除", "type": "button", "permission": "base:sys:menu:delete", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_update", "name": "修改", "type": "button", "permission": "base:sys:menu:update", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_page", "name": "分页查询", "type": "button", "permission": "base:sys:menu:page", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_list", "name": "列表查询", "type": "button", "permission": "base:sys:menu:list", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_info", "name": "详情", "type": "button", "permission": "base:sys:menu:info", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_tree", "name": "菜单树", "type": "button", "permission": "base:sys:menu:tree", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_role_menu_ids", "name": "角色菜单", "type": "button", "permission": "base:sys:menu:role_menu_ids", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_current_tree", "name": "当前菜单树", "type": "button", "permission": "base:sys:menu:current_tree", "role_codes": ["admin", "task_operator"] },
-          { "code": "base_sys_menu_export", "name": "导出", "type": "button", "permission": "base:sys:menu:export", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_import", "name": "导入", "type": "button", "permission": "base:sys:menu:import", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_parse", "name": "解析", "type": "button", "permission": "base:sys:menu:parse", "role_codes": ["admin"] },
-          { "code": "base_sys_menu_create", "name": "创建", "type": "button", "permission": "base:sys:menu:create", "role_codes": ["admin"] }
+          {
+            "code": "base_sys_menu_add",
+            "name": "新增",
+            "type": "button",
+            "permission": "base:sys:menu:add",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_delete",
+            "name": "删除",
+            "type": "button",
+            "permission": "base:sys:menu:delete",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_update",
+            "name": "修改",
+            "type": "button",
+            "permission": "base:sys:menu:update",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_page",
+            "name": "分页查询",
+            "type": "button",
+            "permission": "base:sys:menu:page",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_list",
+            "name": "列表查询",
+            "type": "button",
+            "permission": "base:sys:menu:list",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_info",
+            "name": "详情",
+            "type": "button",
+            "permission": "base:sys:menu:info",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_tree",
+            "name": "菜单树",
+            "type": "button",
+            "permission": "base:sys:menu:tree",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_role_menu_ids",
+            "name": "角色菜单",
+            "type": "button",
+            "permission": "base:sys:menu:role_menu_ids",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_current_tree",
+            "name": "当前菜单树",
+            "type": "button",
+            "permission": "base:sys:menu:current_tree",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "base_sys_menu_export",
+            "name": "导出",
+            "type": "button",
+            "permission": "base:sys:menu:export",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_import",
+            "name": "导入",
+            "type": "button",
+            "permission": "base:sys:menu:import",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_parse",
+            "name": "解析",
+            "type": "button",
+            "permission": "base:sys:menu:parse",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_menu_create",
+            "name": "创建",
+            "type": "button",
+            "permission": "base:sys:menu:create",
+            "role_codes": ["admin"]
+          }
         ]
       },
       {
@@ -104,15 +308,51 @@
         "resource": "sys/param",
         "path": "/base/sys/param",
         "component": "modules/base/views/param.vue",
-"icon": "icon-params",
+        "icon": "icon-params",
         "sort_order": 34,
         "children": [
-          { "code": "base_sys_param_add", "name": "新增", "type": "button", "permission": "base:sys:param:add", "role_codes": ["admin"] },
-          { "code": "base_sys_param_delete", "name": "删除", "type": "button", "permission": "base:sys:param:delete", "role_codes": ["admin"] },
-          { "code": "base_sys_param_update", "name": "修改", "type": "button", "permission": "base:sys:param:update", "role_codes": ["admin"] },
-          { "code": "base_sys_param_page", "name": "分页查询", "type": "button", "permission": "base:sys:param:page", "role_codes": ["admin"] },
-          { "code": "base_sys_param_info", "name": "详情", "type": "button", "permission": "base:sys:param:info", "role_codes": ["admin"] },
-          { "code": "base_sys_param_html", "name": "网页内容", "type": "button", "permission": "base:sys:param:html", "role_codes": ["admin"] }
+          {
+            "code": "base_sys_param_add",
+            "name": "新增",
+            "type": "button",
+            "permission": "base:sys:param:add",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_param_delete",
+            "name": "删除",
+            "type": "button",
+            "permission": "base:sys:param:delete",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_param_update",
+            "name": "修改",
+            "type": "button",
+            "permission": "base:sys:param:update",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_param_page",
+            "name": "分页查询",
+            "type": "button",
+            "permission": "base:sys:param:page",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_param_info",
+            "name": "详情",
+            "type": "button",
+            "permission": "base:sys:param:info",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_param_html",
+            "name": "网页内容",
+            "type": "button",
+            "permission": "base:sys:param:html",
+            "role_codes": ["admin"]
+          }
         ]
       }
     ]
@@ -138,10 +378,34 @@
         "icon": "icon-log",
         "sort_order": 41,
         "children": [
-          { "code": "base_sys_log_page", "name": "分页查询", "type": "button", "permission": "base:sys:log:page", "role_codes": ["admin"] },
-          { "code": "base_sys_log_clear", "name": "清理", "type": "button", "permission": "base:sys:log:clear", "role_codes": ["admin"] },
-          { "code": "base_sys_log_set_keep", "name": "设置保留时间", "type": "button", "permission": "base:sys:log:setKeep", "role_codes": ["admin"] },
-          { "code": "base_sys_log_get_keep", "name": "获取保留时间", "type": "button", "permission": "base:sys:log:getKeep", "role_codes": ["admin"] }
+          {
+            "code": "base_sys_log_page",
+            "name": "分页查询",
+            "type": "button",
+            "permission": "base:sys:log:page",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_log_clear",
+            "name": "清理",
+            "type": "button",
+            "permission": "base:sys:log:clear",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_log_set_keep",
+            "name": "设置保留时间",
+            "type": "button",
+            "permission": "base:sys:log:setKeep",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_log_get_keep",
+            "name": "获取保留时间",
+            "type": "button",
+            "permission": "base:sys:log:getKeep",
+            "role_codes": ["admin"]
+          }
         ]
       },
       {
@@ -155,12 +419,48 @@
         "icon": "icon-log",
         "sort_order": 42,
         "children": [
-          { "code": "base_sys_login_log_add", "name": "新增", "type": "button", "permission": "base:sys:login_log:add", "role_codes": ["admin"] },
-          { "code": "base_sys_login_log_delete", "name": "删除", "type": "button", "permission": "base:sys:login_log:delete", "role_codes": ["admin"] },
-          { "code": "base_sys_login_log_update", "name": "修改", "type": "button", "permission": "base:sys:login_log:update", "role_codes": ["admin"] },
-          { "code": "base_sys_login_log_page", "name": "分页查询", "type": "button", "permission": "base:sys:login_log:page", "role_codes": ["admin"] },
-          { "code": "base_sys_login_log_list", "name": "列表查询", "type": "button", "permission": "base:sys:login_log:list", "role_codes": ["admin"] },
-          { "code": "base_sys_login_log_info", "name": "详情", "type": "button", "permission": "base:sys:login_log:info", "role_codes": ["admin"] }
+          {
+            "code": "base_sys_login_log_add",
+            "name": "新增",
+            "type": "button",
+            "permission": "base:sys:login_log:add",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_login_log_delete",
+            "name": "删除",
+            "type": "button",
+            "permission": "base:sys:login_log:delete",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_login_log_update",
+            "name": "修改",
+            "type": "button",
+            "permission": "base:sys:login_log:update",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_login_log_page",
+            "name": "分页查询",
+            "type": "button",
+            "permission": "base:sys:login_log:page",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_login_log_list",
+            "name": "列表查询",
+            "type": "button",
+            "permission": "base:sys:login_log:list",
+            "role_codes": ["admin"]
+          },
+          {
+            "code": "base_sys_login_log_info",
+            "name": "详情",
+            "type": "button",
+            "permission": "base:sys:login_log:info",
+            "role_codes": ["admin"]
+          }
         ]
       }
     ]
@@ -174,16 +474,6 @@
     "is_show": true,
     "sort_order": 50,
     "role_codes": ["admin"]
-  },
-  {
-    "code": "nav_task",
-    "name": "任务管理",
-    "type": "group",
-"icon": "icon-task",
-    "keep_alive": true,
-    "is_show": true,
-    "sort_order": 60,
-    "role_codes": ["admin", "task_operator"]
   },
   {
     "code": "common_hidden",
@@ -204,12 +494,48 @@
         "sort_order": 100,
         "role_codes": ["admin", "task_operator"],
         "children": [
-          { "code": "base_comm_person", "name": "个人信息", "type": "button", "permission": "base:comm:person", "role_codes": ["admin", "task_operator"] },
-          { "code": "base_comm_person_update", "name": "修改个人信息", "type": "button", "permission": "base:comm:person_update", "role_codes": ["admin", "task_operator"] },
-          { "code": "base_comm_permmenu", "name": "权限菜单", "type": "button", "permission": "base:comm:permmenu", "role_codes": ["admin", "task_operator"] },
-          { "code": "base_comm_upload", "name": "文件上传", "type": "button", "permission": "base:comm:upload", "role_codes": ["admin", "task_operator"] },
-          { "code": "base_comm_upload_mode", "name": "上传模式", "type": "button", "permission": "base:comm:upload_mode", "role_codes": ["admin", "task_operator"] },
-          { "code": "base_session_logout", "name": "退出登录", "type": "button", "permission": "base:session:logout", "role_codes": ["admin", "task_operator"] }
+          {
+            "code": "base_comm_person",
+            "name": "个人信息",
+            "type": "button",
+            "permission": "base:comm:person",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "base_comm_person_update",
+            "name": "修改个人信息",
+            "type": "button",
+            "permission": "base:comm:person_update",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "base_comm_permmenu",
+            "name": "权限菜单",
+            "type": "button",
+            "permission": "base:comm:permmenu",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "base_comm_upload",
+            "name": "文件上传",
+            "type": "button",
+            "permission": "base:comm:upload",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "base_comm_upload_mode",
+            "name": "上传模式",
+            "type": "button",
+            "permission": "base:comm:upload_mode",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "base_session_logout",
+            "name": "退出登录",
+            "type": "button",
+            "permission": "base:session:logout",
+            "role_codes": ["admin", "task_operator"]
+          }
         ]
       }
     ]

@@ -1378,3 +1378,7 @@ class MenuAdminService(BaseAdminCrudService):
         if not action:
             return None
         return f"{module}:{resource.replace('/', ':')}:{action}"
+
+    def _clear_menu_related_caches(self, menu_ids: list[int]) -> None:
+        """从 AuthorityService 聚合清理菜单相关的权限缓存"""
+        clear_login_caches_for_menus(self.session, menu_ids)

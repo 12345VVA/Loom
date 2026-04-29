@@ -1,24 +1,64 @@
 [
   {
-    "code": "nav_system_task",
+    "code": "nav_task",
     "name": "任务管理",
     "type": "menu",
     "module": "task",
     "resource": "info",
     "path": "/task/info",
-    "component": "modules/task/views/index.vue",
+    "component": "modules/task/views/list.vue",
     "icon": "icon-time",
     "sort_order": 41,
     "parent_code": "nav_system",
     "children": [
-      {"code": "task_info_add", "name": "添加", "type": "button", "permission": "task:info:add"},
-      {"code": "task_info_delete", "name": "删除", "type": "button", "permission": "task:info:delete"},
-      {"code": "task_info_update", "name": "修改", "type": "button", "permission": "task:info:update"},
-      {"code": "task_info_page", "name": "分页查询", "type": "button", "permission": "task:info:page"},
-      {"code": "task_info_log", "name": "执行日志", "type": "button", "permission": "task:info:log"},
-      {"code": "task_info_start", "name": "启动", "type": "button", "permission": "task:info:start"},
-      {"code": "task_info_stop", "name": "停止", "type": "button", "permission": "task:info:stop"},
-      {"code": "task_info_once", "name": "执行一次", "type": "button", "permission": "task:info:once"}
+      {
+        "code": "task_info_add",
+        "name": "添加",
+        "type": "button",
+        "permission": "task:info:add"
+      },
+      {
+        "code": "task_info_delete",
+        "name": "删除",
+        "type": "button",
+        "permission": "task:info:delete"
+      },
+      {
+        "code": "task_info_update",
+        "name": "修改",
+        "type": "button",
+        "permission": "task:info:update"
+      },
+      {
+        "code": "task_info_page",
+        "name": "分页查询",
+        "type": "button",
+        "permission": "task:info:page"
+      },
+      {
+        "code": "task_info_log",
+        "name": "执行日志",
+        "type": "button",
+        "permission": "task:info:log"
+      },
+      {
+        "code": "task_info_start",
+        "name": "启动",
+        "type": "button",
+        "permission": "task:info:start"
+      },
+      {
+        "code": "task_info_stop",
+        "name": "停止",
+        "type": "button",
+        "permission": "task:info:stop"
+      },
+      {
+        "code": "task_info_once",
+        "name": "执行一次",
+        "type": "button",
+        "permission": "task:info:once"
+      }
     ]
   }
 ]
