@@ -30,7 +30,7 @@
 
 <script lang="ts" setup>
 defineOptions({
-	name: "base-sys-tenant_user",
+	name: "base-sys-tenant-user",
 });
 
 import { useCrud, useTable, useUpsert, useSearch } from "@cool-vue/crud";

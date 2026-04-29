@@ -19,7 +19,12 @@
 		:scrollbar="false"
 	>
 		<div v-loading="doc.loading" class="viewer-doc">
-			<iframe :ref="setRefs('docIframe')" :src="doc.url" />
+			<iframe
+				:ref="setRefs('docIframe')"
+				:src="doc.url"
+				sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-downloads"
+				referrerpolicy="no-referrer"
+			/>
 		</div>
 	</cl-dialog>
 </template>
@@ -80,7 +85,10 @@ function open(item: Upload.Item) {
 			return true;
 		}
 
-		window.open(item.url);
+		const win = window.open(item.url, '_blank', 'noopener,noreferrer');
+		if (win) {
+			win.opener = null;
+		}
 	}
 }
 

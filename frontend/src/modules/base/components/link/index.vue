@@ -1,6 +1,13 @@
 <template>
 	<div class="cl-link">
-		<a v-for="item in urls" :key="item" class="cl-link__item" :href="item" :target="target">
+		<a
+			v-for="item in urls"
+			:key="item"
+			class="cl-link__item"
+			:href="item"
+			:target="target"
+			:rel="rel"
+		>
 			<el-icon><icon-link /></el-icon>
 			<span>{{ text || filename(item) }}</span>
 		</a>
@@ -38,6 +45,10 @@ const urls = computed(() => {
 	}
 
 	return [];
+});
+
+const rel = computed(() => {
+	return props.target === '_blank' ? 'noopener noreferrer' : undefined;
 });
 
 function filename(url: string) {

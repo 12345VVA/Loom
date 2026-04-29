@@ -49,8 +49,8 @@
 								:class="item.status ? 'pause-btn' : 'play-btn'"
 								@click.stop="item.status ? stop(item) : start(item)"
 							>
-								<VideoPause v-if="item.status" />
-								<VideoPlay v-else />
+								<video-pause v-if="item.status" />
+								<video-play v-else />
 							</el-icon>
 						</el-tooltip>
 					</div>
@@ -64,7 +64,7 @@
 								@click.stop="once(item)"
 								v-permission="service.task.info.permission.once"
 							>
-								<CaretRight />
+								<caret-right />
 							</el-icon>
 						</el-tooltip>
 
@@ -74,7 +74,7 @@
 								@click.stop="log(item)"
 								v-permission="service.task.info.permission.log"
 							>
-								<Tickets />
+								<tickets />
 							</el-icon>
 						</el-tooltip>
 
@@ -84,7 +84,7 @@
 								@click.stop="remove(item)"
 								v-permission="service.task.info.permission.delete"
 							>
-								<Delete />
+								<delete />
 							</el-icon>
 						</el-tooltip>
 					</div>
@@ -97,7 +97,7 @@
 				v-permission="service.task.info.permission.add"
 			>
 				<div class="add-inner">
-					<el-icon><Plus /></el-icon>
+					<el-icon><plus /></el-icon>
 					<p>{{ $t('新建计划任务') }}</p>
 				</div>
 			</div>

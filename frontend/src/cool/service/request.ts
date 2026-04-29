@@ -19,11 +19,26 @@ NProgress.configure({
 	showSpinner: true // 显示加载指示器
 });
 
+interface RefreshQueueItem {
+	resolve: (token: string) => void;
+	reject: (error: any) => void;
+}
+
 // 请求队列，用于存储待处理的请求
-let queue: Array<(token: string) => void> = [];
+let queue: RefreshQueueItem[] = [];
 
 // 标识是否正在刷新 token
 let isRefreshing = false;
+
+function resolveQueue(token: string) {
+	queue.forEach(({ resolve }) => resolve(token));
+	queue = [];
+}
+
+function rejectQueue(error: any) {
+	queue.forEach(({ reject }) => reject(error));
+	queue = [];
+}
 
 // 请求拦截器
 request.interceptors.request.use(
@@ -73,8 +88,12 @@ request.interceptors.request.use(
 			if (storage.isExpired('token')) {
 				// 判断 refreshToken 是否过期
 				if (storage.isExpired('refreshToken')) {
-					ElMessage.error('登录状态已失效，请重新登录');
+					const error = { message: '登录状态已失效，请重新登录' };
+					ElMessage.error(error.message);
+					rejectQueue(error);
+					isRefreshing = false;
 					user.logout();
+					return Promise.reject(error);
 				} else {
 					// 如果不在刷新中，则刷新 token
 					if (!isRefreshing) {
@@ -82,22 +101,26 @@ request.interceptors.request.use(
 
 						user.refreshToken()
 							.then(token => {
-								queue.forEach(cb => cb(token)); // 处理队列中的请求
-								queue = [];
+								resolveQueue(token); // 处理队列中的请求
 								isRefreshing = false;
 							})
-							.catch(() => {
+							.catch(err => {
+								rejectQueue(err);
+								isRefreshing = false;
 								user.logout();
 							});
 					}
 
 					// 返回一个新的 Promise，等待 token 刷新完成
-					return new Promise(resolve => {
-						queue.push(token => {
-							if (req.headers) {
-								req.headers['Authorization'] = token; // 重新设置 token
-							}
-							resolve(req);
+					return new Promise((resolve, reject) => {
+						queue.push({
+							resolve: token => {
+								if (req.headers) {
+									req.headers['Authorization'] = token; // 重新设置 token
+								}
+								resolve(req);
+							},
+							reject
 						});
 					});
 				}

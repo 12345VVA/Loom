@@ -100,7 +100,7 @@
 						"
 						:before-upload="
 							file => {
-								onBeforeUpload(file, item);
+								return onBeforeUpload(file, item);
 							}
 						"
 						:headers="headers"
@@ -139,7 +139,7 @@ defineOptions({
 	name: 'cl-upload'
 });
 
-import { computed, ref, watch, type PropType, nextTick } from 'vue';
+import { computed, ref, watch, type PropType, nextTick, onBeforeUnmount } from 'vue';
 import { assign, isArray, isEmpty, isNumber } from 'lodash-es';
 import VueDraggable from 'vuedraggable';
 import { ElMessage } from 'element-plus';
@@ -266,6 +266,19 @@ const headers = computed(() => {
 // 列表
 const list = ref<Upload.Item[]>([]);
 
+function isBlobUrl(url: unknown): url is string {
+	return typeof url == 'string' && url.startsWith('blob:');
+}
+
+function releasePreview(item?: Upload.Item) {
+	const preload = item?.preload;
+
+	if (isBlobUrl(preload)) {
+		URL.revokeObjectURL(preload);
+		item!.preload = '';
+	}
+}
+
 // 显示上传列表
 const showList = computed(() => {
 	if (props.type == 'file') {
@@ -308,7 +321,7 @@ async function onBeforeUpload(file: any, item?: Upload.Item) {
 		// 图片预览地址
 		if (d.type == 'image') {
 			if (file instanceof File) {
-				d.preload = window.webkitURL.createObjectURL(file);
+				d.preload = URL.createObjectURL(file);
 			}
 		}
 
@@ -317,16 +330,19 @@ async function onBeforeUpload(file: any, item?: Upload.Item) {
 
 		// 赋值
 		if (item) {
+			releasePreview(item);
 			assign(item, d);
 		} else {
 			if (props.multiple) {
 				if (!isAdd.value) {
+					releasePreview(d);
 					ElMessage.warning(t('最多只能上传{n}个文件', { n: limit }));
 					return false;
 				} else {
 					list.value.push(d);
 				}
 			} else {
+				list.value.forEach(releasePreview);
 				list.value = [d];
 			}
 		}
@@ -360,12 +376,14 @@ async function onBeforeUpload(file: any, item?: Upload.Item) {
 
 // 移除
 function remove(index: number) {
+	releasePreview(list.value[index]);
 	list.value.splice(index, 1);
 	update();
 }
 
 // 清空
 function clear() {
+	list.value.forEach(releasePreview);
 	list.value = [];
 }
 
@@ -446,8 +464,7 @@ watch(
 		}
 
 		const urls = (isArray(val) ? val : [val]).filter(Boolean);
-
-		list.value = urls
+		const nextList: Upload.Item[] = urls
 			.map((url, index) => {
 				const old = list.value[index] || {};
 
@@ -462,16 +479,28 @@ watch(
 						url,
 						preload: old.url == url ? old.preload : url // 防止重复预览
 					}
-				);
+				) as Upload.Item;
 			})
 			.filter((_, i) => {
 				return props.multiple ? true : i == 0;
 			});
+
+		list.value.forEach(item => {
+			if (!nextList.includes(item)) {
+				releasePreview(item);
+			}
+		});
+
+		list.value = nextList;
 	},
 	{
 		immediate: true
 	}
 );
+
+onBeforeUnmount(() => {
+	list.value.forEach(releasePreview);
+});
 
 // 导出
 defineExpose({

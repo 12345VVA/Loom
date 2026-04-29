@@ -44,7 +44,13 @@ export function getType(path: string) {
 
 // 拼接数组下的url
 export function getUrls(list: any[]) {
-	return list.map(e => e.url.replace(/,/g, encodeURIComponent(',')));
+	return list.map(e => {
+		if (typeof e.url != 'string') {
+			throw new Error('上传列表中的 url 必须是字符串');
+		}
+
+		return e.url.replace(/,/g, encodeURIComponent(','));
+	});
 }
 
 // 路径拼接

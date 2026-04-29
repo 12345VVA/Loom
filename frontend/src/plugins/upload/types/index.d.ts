@@ -28,6 +28,14 @@ declare namespace Upload {
 		fileId: string;
 	}>;
 
+	type LocalResponse =
+		| string
+		| {
+				url?: unknown;
+				name?: unknown;
+				[key: string]: unknown;
+		  };
+
 	interface Request {
 		host: string;
 		preview?: string;

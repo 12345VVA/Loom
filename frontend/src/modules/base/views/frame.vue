@@ -1,6 +1,12 @@
 <template>
 	<div v-loading="loading" class="page-iframe" :element-loading-text="$t('拼命加载中')">
-		<iframe :ref="setRefs('iframe')" :src="url" frameborder="0"></iframe>
+		<iframe
+			:ref="setRefs('iframe')"
+			:src="url"
+			frameborder="0"
+			sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-downloads"
+			referrerpolicy="no-referrer"
+		></iframe>
 	</div>
 </template>
 

@@ -1,21 +1,23 @@
 <template>
 	<iframe
-		:src="`${base.index}${path}?lang=${ctx.serviceLang}`"
+		:src="iframeSrc"
 		class="iframe"
 		:class="{ 'is-hide': hide }"
 		ref="iframeRef"
+		sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-downloads"
+		referrerpolicy="no-referrer"
 	/>
 </template>
 
 <script setup lang="ts">
 defineOptions({ name: 'base-ai-code-dev' });
 
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { module } from '/@/cool';
 import { isString } from 'lodash-es';
 import { ctx } from 'virtual:ctx';
 
-defineProps({
+const props = defineProps({
 	path: String,
 	hide: Boolean
 });
@@ -26,12 +28,26 @@ const base = module.config('base');
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const event = new Map<string, (data: any) => void>();
 
+const iframeSrc = computed(() => `${base.index}${props.path || ''}?lang=${ctx.serviceLang}`);
+
+const targetOrigin = computed(() => {
+	try {
+		return new URL(iframeSrc.value, location.href).origin;
+	} catch {
+		return location.origin;
+	}
+});
+
 function send(name: string, data: any, cb?: (data: any) => void) {
 	if (cb) event.set(name, cb);
-	iframeRef.value?.contentWindow?.postMessage({ name, data }, '*');
+	iframeRef.value?.contentWindow?.postMessage({ name, data }, targetOrigin.value);
 }
 
 function onMessage(e: MessageEvent) {
+	if (e.source !== iframeRef.value?.contentWindow || e.origin !== targetOrigin.value) {
+		return;
+	}
+
 	try {
 		const { name, data } = isString(e.data) ? JSON.parse(e.data) : e.data;
 

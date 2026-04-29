@@ -17,7 +17,7 @@
 			<p class="title">未来执行时间点预览：</p>
 			<ul>
 				<li v-for="(time, index) in nextTimes" :key="index">
-					<el-icon><Timer /></el-icon>
+					<el-icon><timer /></el-icon>
 					<span>{{ time }}</span>
 				</li>
 			</ul>

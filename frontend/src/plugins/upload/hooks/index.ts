@@ -7,6 +7,18 @@ import { type AxiosProgressEvent } from 'axios';
 import { merge } from 'lodash-es';
 import { useI18n } from 'vue-i18n';
 
+function normalizeLocalUploadUrl(res: Upload.LocalResponse) {
+	if (typeof res == 'string') {
+		return res;
+	}
+
+	if (res && typeof res == 'object' && typeof res.url == 'string') {
+		return res.url;
+	}
+
+	throw new Error('上传接口返回数据缺少 url 字符串');
+}
+
 export function useUpload() {
 	const { options } = module.get('upload');
 	const { user } = useBase();
@@ -94,7 +106,7 @@ export function useUpload() {
 								let url = '';
 
 								if (isLocal) {
-									url = res;
+									url = normalizeLocalUploadUrl(res);
 								} else {
 									url = pathJoin(preview || host, key);
 								}

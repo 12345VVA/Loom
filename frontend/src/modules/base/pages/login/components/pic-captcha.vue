@@ -1,7 +1,6 @@
 <template>
 	<div class="pic-captcha" @click="refresh">
-		<div v-if="svg" class="svg" v-html="svg" />
-		<img v-else-if="base64" class="base64" :src="base64" alt="" />
+		<img v-if="captchaSrc" class="captcha-img" :src="captchaSrc" alt="" />
 
 		<template v-else>
 			<el-icon class="is-loading" :size="18">
@@ -16,7 +15,7 @@ defineOptions({
 	name: 'pic-captcha'
 });
 
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { Loading } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
@@ -33,10 +32,22 @@ const base64 = ref('');
 // svg
 const svg = ref('');
 
+const captchaSrc = ref('');
+let objectUrl = '';
+
+function releaseObjectUrl() {
+	if (objectUrl) {
+		URL.revokeObjectURL(objectUrl);
+		objectUrl = '';
+	}
+}
+
 // 刷新
 async function refresh() {
+	releaseObjectUrl();
 	svg.value = '';
 	base64.value = '';
+	captchaSrc.value = '';
 
 	await service.base.open
 		.captcha({
@@ -48,8 +59,11 @@ async function refresh() {
 			if (data) {
 				if (data.includes(';base64,')) {
 					base64.value = data;
+					captchaSrc.value = data;
 				} else {
 					svg.value = data;
+					objectUrl = URL.createObjectURL(new Blob([data], { type: 'image/svg+xml' }));
+					captchaSrc.value = objectUrl;
 				}
 
 				emit('update:modelValue', captchaId);
@@ -77,6 +91,10 @@ onMounted(() => {
 	refresh();
 });
 
+onBeforeUnmount(() => {
+	releaseObjectUrl();
+});
+
 defineExpose({
 	refresh
 });
@@ -93,12 +111,7 @@ defineExpose({
 	position: relative;
 	user-select: none;
 
-	.svg {
-		height: 100%;
-		position: relative;
-	}
-
-	.base64 {
+	.captcha-img {
 		height: 100%;
 	}
 
