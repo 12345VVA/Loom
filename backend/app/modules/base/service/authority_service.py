@@ -4,6 +4,7 @@ Base 模块管理端鉴权服务
 from __future__ import annotations
 
 from fnmatch import fnmatch
+import hashlib
 from typing import Any
 
 from fastapi import HTTPException, Request, status
@@ -45,6 +46,10 @@ def build_password_version_cache_key(user_id: int) -> str:
 def build_token_version_cache_key(user_id: int) -> str:
     """构建用户Token版本号缓存键"""
     return f"admin:tokenVersion:{user_id}"
+
+
+def build_session_tokens_cache_key(user_id: int) -> str:
+    return f"admin:sessions:{user_id}"
 
 
 def get_user_token_version(user_id: int) -> int:
@@ -204,6 +209,7 @@ def prime_login_caches(session: Session, user: User, access_token: str) -> list[
     )
     if user.department_id is not None:
         cache_set(build_department_cache_key(user.id), str(user.department_id), get_refresh_token_ttl())
+    register_user_session(user.id, access_token)
     return permissions
 
 
@@ -220,6 +226,7 @@ def clear_login_caches(user_id: int) -> None:
         build_permission_paths_cache_key(user_id),
         build_password_version_cache_key(user_id),
         build_department_cache_key(user_id),
+        build_session_tokens_cache_key(user_id),
     )
 
 
@@ -297,6 +304,9 @@ def get_user_from_access_token(session: Session, token: str) -> tuple[User, dict
     if token_version < current_token_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
 
+    if not is_user_session_allowed(user.id, token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号会话数量超过限制，请重新登录")
+
     cached_password_version = cache_get(build_password_version_cache_key(user.id))
     if cached_password_version is not None and str(password_version) != cached_password_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
@@ -311,6 +321,33 @@ def get_user_from_access_token(session: Session, token: str) -> tuple[User, dict
         prime_login_caches(session, user, token)
 
     return user, payload
+
+
+def register_user_session(user_id: int, token: str) -> None:
+    max_sessions = settings.ADMIN_SESSION_MAX_CONCURRENT
+    if max_sessions <= 0:
+        return
+    cache_key = build_session_tokens_cache_key(user_id)
+    sessions = [item for item in (cache_get_json(cache_key) or []) if isinstance(item, str)]
+    fingerprint = _token_fingerprint(token)
+    sessions = [item for item in sessions if item != fingerprint]
+    sessions.append(fingerprint)
+    sessions = sessions[-max_sessions:]
+    cache_set_json(cache_key, sessions, get_refresh_token_ttl())
+
+
+def is_user_session_allowed(user_id: int, token: str) -> bool:
+    max_sessions = settings.ADMIN_SESSION_MAX_CONCURRENT
+    if max_sessions <= 0:
+        return True
+    sessions = cache_get_json(build_session_tokens_cache_key(user_id))
+    if not sessions:
+        return True
+    return _token_fingerprint(token) in set(sessions)
+
+
+def _token_fingerprint(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def get_cached_user_permissions(session: Session, user: User) -> list[str]:

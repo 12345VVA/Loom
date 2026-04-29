@@ -272,7 +272,7 @@ router.beforeEach(async (to, from, next) => {
 			? {
 					name: route.name,
 					path: route.path,
-					viewPath: route.viewPath,
+					viewPath: (route as any).viewPath,
 					redirect: route.redirect,
 					isHome: route.meta?.isHome
 				}
@@ -296,7 +296,7 @@ router.beforeEach(async (to, from, next) => {
 			route: {
 				name: route.name,
 				path: route.path,
-				viewPath: route.viewPath
+				viewPath: (route as any).viewPath
 			}
 		});
 		router.append(route); // 注册路由

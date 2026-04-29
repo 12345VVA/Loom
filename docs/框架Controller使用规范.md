@@ -105,14 +105,16 @@ router = BaseUserController.router  # 导出路由
 **默认 CRUD 动作**：
 ```python
 DEFAULT_CRUD_ACTIONS = (
-    "list",   # 获取列表 (POST /list)
-    "page",   # 获取分页 (POST /page)
+    "list",   # 获取列表 (POST /list，兼容 GET /list)
+    "page",   # 获取分页 (POST /page，兼容 GET /page)
     "info",   # 获取详情 (GET /info)
     "add",    # 新增 (POST /add)
     "update", # 更新 (POST /update)
     "delete", # 删除 (POST /delete)
 )
 ```
+
+`list` / `page` 的权限 URL 会同时登记 `POST` 和 `GET`，EPS 与前端服务仍以 `POST` 为主协议。
 
 #### 2.2.4 模型配置
 
@@ -479,6 +481,8 @@ class CoolRouteMeta:
     tags: tuple[str, ...] = ()       # API 文档标签
     anonymous: bool = False          # 是否匿名访问
 ```
+
+自定义动作如果出现在 `menu.json` 的按钮权限中，必须在 `@Get` / `@Post` 上声明同一个 `permission`。这样权限注册表、EPS 导出和前端 `v-permission` 才会引用同一个权限点。
 
 ### 5.3 匿名接口
 

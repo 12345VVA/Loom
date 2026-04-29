@@ -1,0 +1,6 @@
+{
+  "error.unauthorized": "登录状态无效或已过期",
+  "error.forbidden": "无权访问当前接口",
+  "error.validation": "请求参数不正确",
+  "error.rate_limit": "请求过于频繁，请稍后再试"
+}

@@ -42,17 +42,17 @@ class SysParamService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, SysParam)
 
-    def list(self, query: CrudQuery | None = None) -> list[SysParamRead]:
+    def list(self, query: CrudQuery | None = None, current_user: User | None = None) -> list[SysParamRead]:
         statement = select(SysParam)
-        statement = self._apply_query(statement, SysParam, query, fallback_field="created_at")
+        statement = self._apply_query(statement, SysParam, query, current_user=current_user, fallback_field="created_at")
         rows = list(self.session.exec(statement).all())
         return [self._build_read(row) for row in rows]
 
-    def page(self, query: CrudQuery) -> PageResult[SysParamRead]:
+    def page(self, query: CrudQuery, current_user: User | None = None) -> PageResult[SysParamRead]:
         page = query.page or 1
         page_size = query.size or 10
         statement = select(SysParam)
-        statement = self._apply_query(statement, SysParam, query, fallback_field="created_at")
+        statement = self._apply_query(statement, SysParam, query, current_user=current_user, fallback_field="created_at")
         count_statement = select(func.count()).select_from(statement.subquery())
         total = int(self.session.exec(count_statement).one())
         rows = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
@@ -70,14 +70,14 @@ class SysParamService(BaseAdminCrudService):
         return self._build_read(row)
 
     def add(self, payload: SysParamCreateRequest) -> SysParamRead:
-        exists = self.session.exec(select(SysParam).where(SysParam.key_name == payload.keyName)).first()
+        exists = self.session.exec(select(SysParam).where(SysParam.key_name == payload.key_name)).first()
         if exists:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="参数键已存在")
         row = SysParam(
             name=payload.name,
-            key_name=payload.keyName,
+            key_name=payload.key_name,
             data=payload.data,
-            data_type=payload.dataType,
+            data_type=payload.data_type,
             remark=payload.remark,
             updated_at=datetime.utcnow(),
         )
@@ -91,14 +91,14 @@ class SysParamService(BaseAdminCrudService):
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="参数不存在")
         duplicate = self.session.exec(
-            select(SysParam).where((SysParam.id != payload.id) & (SysParam.key_name == payload.keyName))
+            select(SysParam).where((SysParam.id != payload.id) & (SysParam.key_name == payload.key_name))
         ).first()
         if duplicate:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="参数键已存在")
         row.name = payload.name
-        row.key_name = payload.keyName
+        row.key_name = payload.key_name
         row.data = payload.data
-        row.data_type = payload.dataType
+        row.data_type = payload.data_type
         row.remark = payload.remark
         row.updated_at = datetime.utcnow()
         self.session.add(row)
@@ -138,16 +138,7 @@ class SysParamService(BaseAdminCrudService):
 
     @staticmethod
     def _build_read(row: SysParam) -> SysParamRead:
-        return SysParamRead(
-            id=row.id,
-            name=row.name,
-            keyName=row.key_name,
-            data=row.data,
-            dataType=row.data_type,
-            remark=row.remark,
-            createTime=row.created_at,
-            updateTime=row.updated_at or row.created_at,
-        )
+        return SysParamRead.model_validate(row)
 
 
 class SysLogService(BaseAdminCrudService):
@@ -156,17 +147,17 @@ class SysLogService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, SysLog)
 
-    def list(self, query: CrudQuery | None = None) -> list[SysLogRead]:
+    def list(self, query: CrudQuery | None = None, current_user: User | None = None) -> list[SysLogRead]:
         statement = select(SysLog)
-        statement = self._apply_query(statement, SysLog, query, fallback_field="created_at")
+        statement = self._apply_query(statement, SysLog, query, current_user=current_user, fallback_field="created_at")
         rows = list(self.session.exec(statement).all())
         return self._build_reads(rows)
 
-    def page(self, query: CrudQuery) -> PageResult[SysLogRead]:
+    def page(self, query: CrudQuery, current_user: User | None = None) -> PageResult[SysLogRead]:
         page = query.page or 1
         page_size = query.size or 10
         statement = select(SysLog)
-        statement = self._apply_query(statement, SysLog, query, fallback_field="created_at")
+        statement = self._apply_query(statement, SysLog, query, current_user=current_user, fallback_field="created_at")
         count_statement = select(func.count()).select_from(statement.subquery())
         total = int(self.session.exec(count_statement).one())
         rows = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
@@ -203,7 +194,7 @@ class SysLogService(BaseAdminCrudService):
         return [
             SysLogRead(
                 id=row.id,
-                userId=row.user_id,
+                user_id=row.user_id,
                 name=users.get(row.user_id).full_name if row.user_id in users else None,
                 action=row.action,
                 method=row.method,
@@ -211,7 +202,7 @@ class SysLogService(BaseAdminCrudService):
                 ip=row.ip,
                 status=row.status,
                 message=row.message,
-                createTime=row.created_at,
+                created_at=row.created_at,
             )
             for row in rows
         ]
@@ -223,17 +214,17 @@ class SysLoginLogService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, SysLoginLog)
 
-    def list(self, query: CrudQuery | None = None) -> list[SysLoginLogRead]:
+    def list(self, query: CrudQuery | None = None, current_user: User | None = None) -> list[SysLoginLogRead]:
         statement = select(SysLoginLog)
-        statement = self._apply_query(statement, SysLoginLog, query, fallback_field="created_at")
+        statement = self._apply_query(statement, SysLoginLog, query, current_user=current_user, fallback_field="created_at")
         rows = list(self.session.exec(statement).all())
         return [self._build_read(row) for row in rows]
 
-    def page(self, query: CrudQuery) -> PageResult[SysLoginLogRead]:
+    def page(self, query: CrudQuery, current_user: User | None = None) -> PageResult[SysLoginLogRead]:
         page = query.page or 1
         page_size = query.size or 10
         statement = select(SysLoginLog)
-        statement = self._apply_query(statement, SysLoginLog, query, fallback_field="created_at")
+        statement = self._apply_query(statement, SysLoginLog, query, current_user=current_user, fallback_field="created_at")
         count_statement = select(func.count()).select_from(statement.subquery())
         total = int(self.session.exec(count_statement).one())
         rows = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
@@ -253,18 +244,18 @@ class SysLoginLogService(BaseAdminCrudService):
     def add(self, payload: SysLoginLogCreateRequest | dict[str, Any]) -> SysLoginLogRead:
         data = payload if isinstance(payload, SysLoginLogCreateRequest) else SysLoginLogCreateRequest(**payload)
         row = SysLoginLog(
-            user_id=data.userId,
+            user_id=data.user_id,
             name=data.name,
             account=data.account,
-            login_type=data.loginType,
+            login_type=data.login_type,
             status=data.status,
             ip=data.ip,
-            risk_hit=data.riskHit,
+            risk_hit=data.risk_hit,
             reason=data.reason,
-            client_type=data.clientType,
-            device_id=data.deviceId,
-            source_system=data.sourceSystem,
-            user_agent=data.userAgent,
+            client_type=data.client_type,
+            device_id=data.device_id,
+            source_system=data.source_system,
+            user_agent=data.user_agent,
             updated_at=datetime.utcnow(),
         )
         self.session.add(row)
@@ -277,18 +268,18 @@ class SysLoginLogService(BaseAdminCrudService):
         row = self.session.get(SysLoginLog, data.id)
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="登录日志不存在")
-        row.user_id = data.userId
+        row.user_id = data.user_id
         row.name = data.name
         row.account = data.account
-        row.login_type = data.loginType
+        row.login_type = data.login_type
         row.status = data.status
         row.ip = data.ip
-        row.risk_hit = data.riskHit
+        row.risk_hit = data.risk_hit
         row.reason = data.reason
-        row.client_type = data.clientType
-        row.device_id = data.deviceId
-        row.source_system = data.sourceSystem
-        row.user_agent = data.userAgent
+        row.client_type = data.client_type
+        row.device_id = data.device_id
+        row.source_system = data.source_system
+        row.user_agent = data.user_agent
         row.updated_at = datetime.utcnow()
         self.session.add(row)
         self.session.commit()
@@ -297,23 +288,7 @@ class SysLoginLogService(BaseAdminCrudService):
 
     @staticmethod
     def _build_read(row: SysLoginLog) -> SysLoginLogRead:
-        return SysLoginLogRead(
-            id=row.id,
-            userId=row.user_id,
-            name=row.name,
-            account=row.account,
-            loginType=row.login_type,
-            status=row.status,
-            ip=row.ip,
-            riskHit=row.risk_hit,
-            reason=row.reason,
-            clientType=row.client_type,
-            deviceId=row.device_id,
-            sourceSystem=row.source_system,
-            userAgent=row.user_agent,
-            createTime=row.created_at,
-            updateTime=row.updated_at or row.created_at,
-        )
+        return SysLoginLogRead.model_validate(row)
 
     def create_entry(
         self,
@@ -356,19 +331,19 @@ class SysSecurityLogService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, SysSecurityLog)
 
-    def list(self, query: CrudQuery | None = None) -> list[SysSecurityLogRead]:
+    def list(self, query: CrudQuery | None = None, current_user: User | None = None) -> list[SysSecurityLogRead]:
         statement = select(SysSecurityLog)
-        statement = self._apply_query(statement, SysSecurityLog, query, fallback_field="created_at")
+        statement = self._apply_query(statement, SysSecurityLog, query, current_user=current_user, fallback_field="created_at")
         # 按时间倒序排列（最新的在前）
         statement = statement.order_by(SysSecurityLog.created_at.desc())
         rows = list(self.session.exec(statement).all())
         return [self._build_read(row) for row in rows]
 
-    def page(self, query: CrudQuery) -> PageResult[SysSecurityLogRead]:
+    def page(self, query: CrudQuery, current_user: User | None = None) -> PageResult[SysSecurityLogRead]:
         page = query.page or 1
         page_size = query.size or 10
         statement = select(SysSecurityLog)
-        statement = self._apply_query(statement, SysSecurityLog, query, fallback_field="created_at")
+        statement = self._apply_query(statement, SysSecurityLog, query, current_user=current_user, fallback_field="created_at")
         # 按时间倒序排列（最新的在前）
         statement = statement.order_by(SysSecurityLog.created_at.desc())
 
@@ -390,28 +365,7 @@ class SysSecurityLogService(BaseAdminCrudService):
 
     @staticmethod
     def _build_read(row: SysSecurityLog) -> SysSecurityLogRead:
-        return SysSecurityLogRead(
-            id=row.id,
-            operatorId=row.operator_id,
-            operatorName=row.operator_name,
-            operatorIp=row.operator_ip,
-            targetType=row.target_type,
-            targetId=row.target_id,
-            targetName=row.target_name,
-            operation=row.operation,
-            module=row.module,
-            resourcePath=row.resource_path,
-            oldValue=row.old_value,
-            newValue=row.new_value,
-            diffData=row.diff_data,
-            businessType=row.business_type,
-            requestId=row.request_id,
-            status=row.status,
-            errorMessage=row.error_message,
-            remark=row.remark,
-            createTime=row.created_at,
-            updateTime=row.updated_at or row.created_at,
-        )
+        return SysSecurityLogRead.model_validate(row)
 
     def create_entry(
         self,

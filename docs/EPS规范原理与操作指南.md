@@ -68,6 +68,12 @@ EPS 服务给出的标准 JSON 数据大致结构必须符合以下规约（以 
 ```
 只有在满足类似以上的嵌套规范时，`cool-admin-vue` 的前置解析逻辑组件才会成功运作，认为服务器符合自身的 EPS 标准。
 
+Loom 当前列元数据约定：
+
+- `source`：后端模型字段名，保持 `snake_case`，例如 `task_type`
+- `prop` / `propertyName`：前端公开字段名，例如 `taskType`
+- `pageQueryOp`：使用前端请求参数名，例如 `taskType`、`status`
+
 ---
 
 ## 四、 具体使用示例
@@ -121,12 +127,19 @@ console.log(users.data);
 
 ---
 
-## 五、 若是 Python(FastAPI) 的 Loom 如何实现这类效果
+## 五、 Python(FastAPI) 的 Loom 如何实现这类效果
 
-FastAPI 中存在 OpenAPI / Swagger。若要在 Python 中使用此类体验，你具备两条可选策略。
+FastAPI 中存在 OpenAPI / Swagger，但 Loom 当前并不是简单把 Swagger “伪装”为 EPS。实际实现会组合以下来源：
 
-**策略一 (伪造 EPS 代理接口桥接)：**  
-编写一个将 FastAPI 生成的原生 Schema (`app.openapi()`) 结构经过循环和解析函数重新组合成上述 EPS 规范要求的 JSON 格式。将它暴露在该接口（ `/admin/base/open/eps`） 上，前端直接开箱即可获得使用。
+- `CoolControllerMeta` 导出的控制器、CRUD、权限和查询元数据
+- `scan_model_columns()` 扫描 Pydantic / SQLModel 字段
+- `resolve_alias()` 输出前端公开字段名
+- FastAPI OpenAPI 信息作为补充
 
-**策略二 (使用 Swagger 代替实现类型生成策略)：**  
-完全无视 EPS；放弃 cool-admin-vue 特有的基于 proxy 构建的 service 集成树。转而采用流行的 `openapi-typescript-codegen` 等工具扫描 FastAPI 的 Swagger 端点（ `/openapi.json` ），这依然能为你将全部的 HTTP API 生成为带强类型的 axios 请求类。随后开发者手工在前端通过导入这套工具层去发送请求。
+最终由 `/admin/base/open/eps` 输出 Cool Admin 前端可识别的数据结构。字段语义保持：
+
+- `source`：后端模型字段名
+- `prop` / `propertyName`：前端公开字段名
+- `pageQueryOp` / `listQueryOp`：前端请求参数
+
+Swagger 仍然保留给 `/docs`、`/redoc` 和通用 OpenAPI 工具使用；Cool Admin 前端优先消费 EPS。

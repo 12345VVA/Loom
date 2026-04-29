@@ -8,6 +8,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field as PydanticField
 from sqlmodel import Field, SQLModel
 from app.framework.models.entity import BaseEntity
+from app.framework.api.naming import resolve_alias
 
 
 
@@ -96,23 +97,25 @@ class SysSecurityLog(BaseEntity, table=True):
 
 
 class SysParamRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
     name: str
-    keyName: str
+    key_name: str
     data: Optional[str] = None
-    dataType: int = 0
+    data_type: int = 0
     remark: Optional[str] = None
-    createTime: datetime
-    updateTime: datetime
+    created_at: datetime
+    updated_at: datetime
 
 
 class SysParamCreateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     name: str
-    keyName: str
+    key_name: str
     data: Optional[str] = None
-    dataType: int = 0
+    data_type: int = 0
     remark: Optional[str] = None
 
 
@@ -121,10 +124,10 @@ class SysParamUpdateRequest(SysParamCreateRequest):
 
 
 class SysLogRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    userId: Optional[int] = None
+    user_id: Optional[int] = None
     name: Optional[str] = None
     action: str
     method: str
@@ -132,7 +135,7 @@ class SysLogRead(BaseModel):
     ip: Optional[str] = None
     status: int
     message: Optional[str] = None
-    createTime: datetime
+    created_at: datetime
 
 
 class SysLogKeepRequest(BaseModel):
@@ -140,38 +143,40 @@ class SysLogKeepRequest(BaseModel):
 
 
 class SysLoginLogRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    userId: Optional[int] = None
+    user_id: Optional[int] = None
     name: Optional[str] = None
     account: Optional[str] = None
-    loginType: str
+    login_type: str
     status: int
     ip: Optional[str] = None
-    riskHit: int = 0
+    risk_hit: int = 0
     reason: Optional[str] = None
-    clientType: Optional[str] = None
-    deviceId: Optional[str] = None
-    sourceSystem: Optional[str] = None
-    userAgent: Optional[str] = None
-    createTime: datetime
-    updateTime: datetime
+    client_type: Optional[str] = None
+    device_id: Optional[str] = None
+    source_system: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class SysLoginLogCreateRequest(BaseModel):
-    userId: Optional[int] = None
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    user_id: Optional[int] = None
     name: Optional[str] = None
     account: Optional[str] = None
-    loginType: str = "password"
+    login_type: str = "password"
     status: int = 1
     ip: Optional[str] = None
-    riskHit: int = 0
+    risk_hit: int = 0
     reason: Optional[str] = None
-    clientType: Optional[str] = None
-    deviceId: Optional[str] = None
-    sourceSystem: Optional[str] = None
-    userAgent: Optional[str] = None
+    client_type: Optional[str] = None
+    device_id: Optional[str] = None
+    source_system: Optional[str] = None
+    user_agent: Optional[str] = None
 
 
 class SysLoginLogUpdateRequest(SysLoginLogCreateRequest):
@@ -179,45 +184,47 @@ class SysLoginLogUpdateRequest(SysLoginLogCreateRequest):
 
 
 class SysSecurityLogRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    operatorId: int
-    operatorName: str
-    operatorIp: Optional[str] = None
-    targetType: str
-    targetId: Optional[int] = None
-    targetName: Optional[str] = None
+    operator_id: int
+    operator_name: str
+    operator_ip: Optional[str] = None
+    target_type: str
+    target_id: Optional[int] = None
+    target_name: Optional[str] = None
     operation: str
     module: str
-    resourcePath: Optional[str] = None
-    oldValue: Optional[str] = None
-    newValue: Optional[str] = None
-    diffData: Optional[str] = None
-    businessType: Optional[str] = None
-    requestId: Optional[str] = None
+    resource_path: Optional[str] = None
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    diff_data: Optional[str] = None
+    business_type: Optional[str] = None
+    request_id: Optional[str] = None
     status: int
-    errorMessage: Optional[str] = None
+    error_message: Optional[str] = None
     remark: Optional[str] = None
-    createTime: datetime
-    updateTime: datetime
+    created_at: datetime
+    updated_at: datetime
 
 
 class SysSecurityLogCreateRequest(BaseModel):
-    operatorId: int
-    operatorName: str
-    operatorIp: Optional[str] = None
-    targetType: str
-    targetId: Optional[int] = None
-    targetName: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    operator_id: int
+    operator_name: str
+    operator_ip: Optional[str] = None
+    target_type: str
+    target_id: Optional[int] = None
+    target_name: Optional[str] = None
     operation: str
     module: str
-    resourcePath: Optional[str] = None
-    oldValue: Optional[str] = None
-    newValue: Optional[str] = None
-    diffData: Optional[str] = None
-    businessType: Optional[str] = None
-    requestId: Optional[str] = None
+    resource_path: Optional[str] = None
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    diff_data: Optional[str] = None
+    business_type: Optional[str] = None
+    request_id: Optional[str] = None
     status: int = 1
-    errorMessage: Optional[str] = None
+    error_message: Optional[str] = None
     remark: Optional[str] = None

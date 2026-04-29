@@ -9,6 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from app.core.config import settings
 from app.framework.api.response import is_enveloped, ok
 
 SKIP_PREFIXES = ("/docs", "/redoc", "/openapi.json")
@@ -20,9 +21,24 @@ class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
         if _should_skip(request, response):
             return response
 
+        content_length = response.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > settings.RESPONSE_ENVELOPE_MAX_BYTES:
+            return response
+
         raw_body = b""
+        body_too_large = False
         async for chunk in response.body_iterator:
             raw_body += chunk
+            if len(raw_body) > settings.RESPONSE_ENVELOPE_MAX_BYTES:
+                body_too_large = True
+
+        if body_too_large:
+            return Response(
+                content=raw_body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type,
+            )
 
         if not raw_body:
             payload = None

@@ -22,8 +22,8 @@
     判断当前路由路径是否处在框架声明的“公开白名单（如 `/admin/base/open/login`）”中，如果符合直接 `return await next();` 跳过后面的检查流程。
 *   **Step 2: 凭证提取解码**
     统一从请求头提取 `Authorization: Bearer <Token>` 结构的内容。如果没有则立刻触发拦截外抛 `HTTP 401（状态错误被拦截，前端将触发退回登录页逻辑）`。
-*   **Step 3: 状态检查（Redis比对）**
-    为防止修改密码后失效、单一地登录挤占，系统内部利用包含在 Token 中的 `passwordVersion` 或直接用 Redis 对照该 token 字符串本身是否失效，从而验证被篡改的或是被多端顶号注销掉的 Token。
+*   **Step 3: 状态检查（Redis 比对）**
+    为防止修改密码后失效、主动登出后继续访问、或会话并发超限，系统会校验 Token 中的 `password_version`、`token_version`、`jti`，并与 Redis 中的登录态、黑名单和会话缓存进行比对。API JSON 字段可以映射为 `passwordVersion`，但 Token 载荷内部统一使用 `snake_case`。
 *   **Step 4: 具体功能比对（权限检查）**
     利用上面提到的提取出本请求“所需期望达成的权限标志位”，直接比对系统对该 Token 预存在缓存中的“具有完全权限列表字符串”。如果是超管可以直接跳过所有比对，如果普通用户未命中此字符串，抛出 `HTTP 403 (无越权访问)`。
 *   **Step 5: Context 信息植入**
@@ -115,5 +115,8 @@ async sync() {
 </el-button>
 ```
 
-#### 引申提醒
-当前 Loom 的 FastAPI 中的 `AdminAuthorityMiddleware` (见 `app/framework/middleware/admin_authority.py`) 实现上通过硬写 Token 解析与 Redis 缓存比对和判断全局挂载 `request.state.current_user` 已经有 **70% 的相似度完成平移对接了上述的核心作用机理**。 您现有的 `fnmatch` 校验就是对应的白名单判断逻辑。您仅需统一把 Loom 向外展示给前置访问异常状态码包装成 `Cool-Vue` 前端识别的 401 及配套包裹 Json 结构就可以对标成功。
+#### Loom 当前实现
+
+当前 Loom 的 FastAPI 中由 `ScopeAuthorityMiddleware`（见 `app/framework/middleware/scope_authority.py`）统一处理 `/admin`、`/app`、`/aiapi` scope。它会完成白名单、Token、Redis 登录态、URL pattern 权限和 `request.state.current_user` 注入。
+
+响应包装已经由 `ResponseEnvelopeMiddleware` 统一输出 Cool Admin 前端可识别的 `{ code, message, data }` 结构；权限点则由 `CoolControllerMeta`、自定义路由 `permission` 和 `menu.json` 共同对齐。

@@ -164,5 +164,6 @@ def _mark_search_columns(columns: list[dict[str, Any]], page_query_op: dict[str,
         return
     for column in columns:
         source = column.get("source") or column.get("propertyName")
-        if source in search_sources:
+        public_name = column.get("prop") or column.get("propertyName")
+        if source in search_sources or public_name in search_sources:
             column["search"] = {"value": True}

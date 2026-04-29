@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # 文件上传安全配置
     UPLOAD_MAX_SIZE_MB: int = 10                       # 单文件最大 MB
     UPLOAD_ALLOWED_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.csv,.json,.mp4,.mp3"
+    STORAGE_PROVIDER: str = "local"
+    S3_ENDPOINT_URL: str = ""
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    S3_BUCKET: str = ""
+    S3_REGION: str = "auto"
+    S3_PUBLIC_BASE_URL: str = ""
 
     # API 限流配置
     RATE_LIMIT_ENABLED: bool = True                    # 是否启用全局限流
@@ -66,6 +73,26 @@ class Settings(BaseSettings):
 
     # CORS 配置
     CORS_ORIGINS: str  # 启动时自动从 .env 中读取
+    CORS_ALLOW_METHODS: str = "GET,POST,PUT,DELETE,OPTIONS"
+    CORS_ALLOW_HEADERS: str = "Authorization,Content-Type,X-Requested-With,X-Device-Id,X-Request-Id,token,x-token"
+    ADMIN_CSRF_ORIGIN_CHECK_ENABLED: bool = False
+
+    # 中间件/启动配置
+    RESPONSE_ENVELOPE_MAX_BYTES: int = 2 * 1024 * 1024
+    MODULE_LOAD_STRICT: bool = True
+    METRICS_ENABLED: bool = False
+    API_VERSION_PREFIX_ENABLED: bool = False
+    API_VERSION_PREFIX: str = "/api/v1"
+
+    # 密码与会话
+    PASSWORD_PBKDF2_ITERATIONS: int = 210_000
+    ADMIN_SESSION_MAX_CONCURRENT: int = 0
+
+    # 数据库连接池
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_RECYCLE: int = 1800
+    DB_POOL_PRE_PING: bool = True
 
     @field_validator("DEBUG", mode="before")
     @classmethod
@@ -90,12 +117,36 @@ class Settings(BaseSettings):
             return ["http://localhost:5173"]
 
     @property
+    def cors_methods_list(self) -> List[str]:
+        return self._parse_csv_or_json(self.CORS_ALLOW_METHODS, ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+
+    @property
+    def cors_headers_list(self) -> List[str]:
+        return self._parse_csv_or_json(
+            self.CORS_ALLOW_HEADERS,
+            ["Authorization", "Content-Type", "X-Requested-With", "X-Device-Id", "X-Request-Id", "token", "x-token"],
+        )
+
+    @property
     def eps_enabled(self) -> bool:
         raw = self.EPS_ENABLED
         if raw == "":
             return self.DEBUG
         lowered = str(raw).strip().lower()
         return lowered in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _parse_csv_or_json(value: str, fallback: list[str]) -> list[str]:
+        if not value:
+            return fallback
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        except Exception:
+            pass
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        return items or fallback
 
     class Config:
         env_file = ".env"

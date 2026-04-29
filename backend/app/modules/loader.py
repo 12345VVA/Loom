@@ -5,11 +5,13 @@ from __future__ import annotations
 
 from importlib import import_module
 import json
+import logging
 from pathlib import Path
 import os
 
 from sqlmodel import Session
 
+from app.core.config import settings
 from app.framework.router.grouping import get_group_config
 from app.modules.module_config import (
     MenuManifestItem,
@@ -21,6 +23,8 @@ from app.modules.module_config import (
     resolve_module_root,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def load_module_configs() -> list[ModuleConfig]:
     """自动发现并加载模块配置"""
@@ -31,8 +35,11 @@ def load_module_configs() -> list[ModuleConfig]:
         config_file = module_dir / "config.py"
         if not config_file.exists():
             continue
-        module = import_module(f"app.modules.{module_dir.name}.config")
-        configs.append(module.MODULE_CONFIG)
+        try:
+            module = import_module(f"app.modules.{module_dir.name}.config")
+            configs.append(module.MODULE_CONFIG)
+        except Exception as exc:
+            _handle_module_error(f"加载模块配置失败: {module_dir.name}", exc)
 
     return sorted(configs, key=lambda item: item.order, reverse=True)
 
@@ -40,12 +47,15 @@ def load_module_configs() -> list[ModuleConfig]:
 def bootstrap_modules(session: Session) -> None:
     """执行模块启动初始化"""
     for config in load_module_configs():
-        _execute_module_init_resources(config, session)
-        if not config.bootstrap:
-            continue
-        module_path, _, attr_name = config.bootstrap.rpartition(".")
-        target = getattr(import_module(module_path), attr_name)
-        target(session)
+        try:
+            _execute_module_init_resources(config, session)
+            if not config.bootstrap:
+                continue
+            module_path, _, attr_name = config.bootstrap.rpartition(".")
+            target = getattr(import_module(module_path), attr_name)
+            target(session)
+        except Exception as exc:
+            _handle_module_error(f"模块启动初始化失败: {config.name}", exc)
 
 
 def load_scope_whitelists() -> dict[str, set[str]]:
@@ -122,8 +132,11 @@ def load_menu_manifest_items() -> list[MenuManifestItem]:
     for config in load_module_configs():
         if not config.init_menu_file:
             continue
-        manifest = _load_menu_manifest(config)
-        items.extend(manifest)
+        try:
+            manifest = _load_menu_manifest(config)
+            items.extend(manifest)
+        except Exception as exc:
+            _handle_module_error(f"加载菜单清单失败: {config.name}", exc)
     return items
 
 
@@ -251,7 +264,16 @@ def _execute_module_init_resources(config: ModuleConfig, session: Session) -> No
         if suffix != ".py":
             continue
         module_path = f"app.modules.{config.name}.{Path(resource.configured_path).with_suffix('').as_posix().replace('/', '.')}"
-        module = import_module(module_path)
-        runner = getattr(module, "run", None) or getattr(module, "bootstrap", None)
-        if runner:
-            runner(session)
+        try:
+            module = import_module(module_path)
+            runner = getattr(module, "run", None) or getattr(module, "bootstrap", None)
+            if runner:
+                runner(session)
+        except Exception as exc:
+            _handle_module_error(f"执行模块初始化资源失败: {config.name}:{resource.configured_path}", exc)
+
+
+def _handle_module_error(message: str, exc: Exception) -> None:
+    if settings.MODULE_LOAD_STRICT:
+        raise exc
+    logger.error(message, exc_info=(type(exc), exc, exc.__traceback__))

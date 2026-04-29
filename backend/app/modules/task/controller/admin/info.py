@@ -36,7 +36,7 @@ from app.modules.task.service.task_service import TaskInfoService
     )
 )
 class TaskInfoController(BaseController):
-    @Get("/log", summary="任务日志")
+    @Get("/log", summary="任务日志", permission="task:info:log")
     async def log(
         self,
         request: Request,
@@ -45,7 +45,7 @@ class TaskInfoController(BaseController):
         query = CrudQuery.from_request(request)
         return TaskInfoService(session).log(query)
 
-    @Post("/start", summary="开始任务")
+    @Post("/start", summary="开始任务", permission="task:info:start")
     async def start(
         self,
         payload: dict,
@@ -54,7 +54,7 @@ class TaskInfoController(BaseController):
         task_id = payload.get("id")
         return await TaskInfoService(session).start(task_id)
 
-    @Post("/stop", summary="停止任务")
+    @Post("/stop", summary="停止任务", permission="task:info:stop")
     async def stop(
         self,
         payload: dict,
@@ -63,7 +63,7 @@ class TaskInfoController(BaseController):
         task_id = payload.get("id")
         return await TaskInfoService(session).stop(task_id)
 
-    @Post("/once", summary="立即执行一次")
+    @Post("/once", summary="立即执行一次", permission="task:info:once")
     async def once(
         self,
         payload: dict,

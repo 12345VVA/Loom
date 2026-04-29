@@ -59,7 +59,7 @@ def validate_password_strength(password: str) -> None:
 
 def hash_password(password: str) -> str:
     """使用 PBKDF2 生成密码哈希"""
-    iterations = 100_000
+    iterations = settings.PASSWORD_PBKDF2_ITERATIONS
     salt = os.urandom(16)
     derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
     return (
@@ -81,6 +81,15 @@ def verify_password(password: str, password_hash: str) -> bool:
 
     derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
     return hmac.compare_digest(derived, expected_hash)
+
+
+def password_needs_rehash(password_hash: str) -> bool:
+    """判断密码哈希是否需要按当前策略升级。"""
+    try:
+        algorithm, iteration_text, *_ = password_hash.split("$", 3)
+        return algorithm != "pbkdf2_sha256" or int(iteration_text) < settings.PASSWORD_PBKDF2_ITERATIONS
+    except (ValueError, TypeError):
+        return True
 
 
 def create_token(payload: dict[str, Any], expires_delta: timedelta) -> str:

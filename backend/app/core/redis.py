@@ -21,9 +21,14 @@ def clear_cache(key: str):
 def clear_cache_pattern(pattern: str):
     """根据模式清除缓存"""
     r = get_redis()
-    keys = r.keys(pattern)
-    if keys:
-        r.delete(*keys)
+    batch: list[str] = []
+    for key in r.scan_iter(match=pattern, count=500):
+        batch.append(key)
+        if len(batch) >= 500:
+            r.delete(*batch)
+            batch.clear()
+    if batch:
+        r.delete(*batch)
 
 # 便于直接导入使用的实例 (单例包装)
 class RedisClientProxy:

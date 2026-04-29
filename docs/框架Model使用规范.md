@@ -223,6 +223,8 @@ class UserCreateRequest(BaseModel):
     isActive: bool       # ❌ 不要用 camelCase
 ```
 
+这个规则同样适用于系统参数、日志等兼容 Cool Admin 的模型。即使前端字段是 `keyName`、`dataType`、`createTime`，模型内部也应定义为 `key_name`、`data_type`、`created_at`，由 `alias_generator=resolve_alias` 负责输入输出转换。
+
 ### 3.3 字段验证
 
 使用 `@field_validator` 进行数据验证：

@@ -86,6 +86,32 @@ def cache_delete(*keys: str) -> None:
         logger.warning("Redis 删除失败 %s: %s", ",".join(keys), exc)
 
 
+def cache_delete_pattern(pattern: str) -> int:
+    """按模式删除缓存，Redis 使用 SCAN，内存降级使用 fnmatch。"""
+    from fnmatch import fnmatch
+
+    client = get_redis_client()
+    deleted = 0
+    if client is None:
+        for key in list(_memory_cache.keys()):
+            if fnmatch(key, pattern):
+                _memory_cache.pop(key, None)
+                deleted += 1
+        return deleted
+    try:
+        batch: list[str] = []
+        for key in client.scan_iter(match=pattern, count=500):
+            batch.append(key)
+            if len(batch) >= 500:
+                deleted += client.delete(*batch)
+                batch.clear()
+        if batch:
+            deleted += client.delete(*batch)
+    except RedisError as exc:
+        logger.warning("Redis 按模式删除失败 %s: %s", pattern, exc)
+    return deleted
+
+
 def cache_set_json(key: str, value: Any, ttl_seconds: int | None = None) -> bool:
     return cache_set(key, json.dumps(value, ensure_ascii=True), ttl_seconds)
 

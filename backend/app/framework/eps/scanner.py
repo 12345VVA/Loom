@@ -8,6 +8,8 @@ from typing import Any, get_args, get_origin, Union
 
 from pydantic import BaseModel
 
+from app.framework.api.naming import resolve_alias
+
 
 def scan_model_columns(model: Any) -> list[dict[str, Any]]:
     """
@@ -20,6 +22,7 @@ def scan_model_columns(model: Any) -> list[dict[str, Any]]:
     fields = model.model_fields
 
     for name, field in fields.items():
+        public_name = resolve_alias(name)
         # 处理类型
         annotation = field.annotation
         origin = get_origin(annotation)
@@ -49,12 +52,12 @@ def scan_model_columns(model: Any) -> list[dict[str, Any]]:
 
         columns.append(
             {
-                "propertyName": name,
+                "propertyName": public_name,
                 "source": name,
-                "prop": name,  # 对齐 Cool-Admin 的 prop 字段
+                "prop": public_name,  # 对齐 Cool-Admin 的 prop 字段
                 "type": eps_type,
                 "comment": field.description or name,
-                "label": field.description or name,  # 对齐 Cool-Admin 的 label 字段
+                "label": field.description or public_name,  # 对齐 Cool-Admin 的 label 字段
                 "nullable": is_nullable or not field.is_required(),
                 "required": field.is_required() and not is_nullable,
                 "dict": enum_options if enum_options else None,
@@ -117,4 +120,3 @@ def _map_python_type_to_eps(py_type: Any) -> str:
         
     # 默认作为字符串处理
     return "string"
-

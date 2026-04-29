@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import inspect
+import threading
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
@@ -187,14 +188,37 @@ class BaseCrudService:
 
 _registered_permission_configs: list[PermissionConfig] = []
 _registered_exported_routes: list[ExportedRouteMeta] = []
+_registry_lock = threading.RLock()
+_registered_permission_keys: set[str] = set()
+_registered_route_keys: set[tuple[str, str, str]] = set()
 
 
 def get_registered_permission_configs() -> list[PermissionConfig]:
-    return list(_registered_permission_configs)
+    with _registry_lock:
+        return list(_registered_permission_configs)
 
 
 def get_registered_exported_routes() -> list[ExportedRouteMeta]:
-    return list(_registered_exported_routes)
+    with _registry_lock:
+        return list(_registered_exported_routes)
+
+
+def _register_permission_config(config: PermissionConfig) -> None:
+    key = config.permission or config.code
+    with _registry_lock:
+        if key in _registered_permission_keys:
+            return
+        _registered_permission_keys.add(key)
+        _registered_permission_configs.append(config)
+
+
+def _register_exported_route(route: ExportedRouteMeta) -> None:
+    key = (route.method.upper(), route.path.rstrip("/") or "/", route.source)
+    with _registry_lock:
+        if key in _registered_route_keys:
+            return
+        _registered_route_keys.add(key)
+        _registered_exported_routes.append(route)
 
 
 def CoolController(meta: CoolControllerMeta):
@@ -237,16 +261,20 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
         # 确定该资源对应的核心模型，用于 EPS 扫描列
         core_model = meta.page_item_model or meta.list_response_model or meta.info_response_model
 
-        _registered_permission_configs.append(
+        method_patterns = tuple(
+            f"{method} {full_path}"
+            for method in _crud_route_methods(action)
+        )
+        _register_permission_config(
             PermissionConfig(
                 name=f"{meta.name_prefix}{action.summary}",
                 code=f"{meta.code_prefix}_{action.permission_suffix}",
                 permission=permission,
-                admin_patterns=(f"{action.method} {full_path}",),
+                admin_patterns=method_patterns,
                 role_codes=meta.role_codes,
             )
         )
-        _registered_exported_routes.append(
+        _register_exported_route(
             ExportedRouteMeta(
                 scope=meta.scope,
                 module=meta.module,
@@ -323,7 +351,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
             router.add_api_route(
                 action.path,
                 endpoint,
-                methods=[action.method],
+                methods=list(_crud_route_methods(action)),
                 response_model=response_model,
                 response_model_exclude_none=bool(meta.info_ignore_property),
                 summary=action.summary,
@@ -393,7 +421,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 return await _resolve_result(result)
 
             _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary)
+            router.add_api_route(action.path, endpoint, methods=list(_crud_route_methods(action)), response_model=response_model, summary=action.summary)
         elif action.name == "info":
             response_model = meta.info_response_model
             if meta.info_param_type is int:
@@ -554,7 +582,7 @@ def _register_custom_routes(router: APIRouter, controller: BaseController, meta:
         if route_meta is None:
             continue
         _register_custom_permission(meta, route_meta)
-        _registered_exported_routes.append(
+        _register_exported_route(
             ExportedRouteMeta(
                 scope=meta.scope,
                 module=meta.module,
@@ -580,7 +608,7 @@ def _register_custom_routes(router: APIRouter, controller: BaseController, meta:
 def _register_custom_permission(controller_meta: CoolControllerMeta, route_meta: CoolRouteMeta) -> None:
     if not route_meta.permission:
         return
-    _registered_permission_configs.append(
+    _register_permission_config(
         PermissionConfig(
             name=route_meta.summary or route_meta.permission,
             code=route_meta.permission.replace(":", "_").replace("/", "_"),
@@ -597,7 +625,7 @@ def _register_service_routes(router: APIRouter, meta: CoolControllerMeta) -> Non
         config = item if isinstance(item, ServiceApiConfig) else ServiceApiConfig(method=item)
         permission = config.permission or f"{meta.module}:{meta.resource.replace('/', ':')}:{config.method}"
         full_path = f"/{meta.scope}/{meta.module}/{meta.resource}/{config.method}"
-        _registered_permission_configs.append(
+        _register_permission_config(
             PermissionConfig(
                 name=config.summary or config.method,
                 code=permission.replace(":", "_").replace("/", "_"),
@@ -606,7 +634,7 @@ def _register_service_routes(router: APIRouter, meta: CoolControllerMeta) -> Non
                 role_codes=config.role_codes,
             )
         )
-        _registered_exported_routes.append(
+        _register_exported_route(
             ExportedRouteMeta(
                 scope=meta.scope,
                 module=meta.module,
@@ -853,3 +881,10 @@ async def _resolve_result(result):
     if inspect.isawaitable(result):
         return await result
     return result
+
+
+def _crud_route_methods(action: CrudAction) -> tuple[str, ...]:
+    methods = [action.method]
+    if action.name in {"list", "page"} and action.method != "GET":
+        methods.append("GET")
+    return tuple(methods)

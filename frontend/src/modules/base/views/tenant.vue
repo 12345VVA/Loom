@@ -194,7 +194,7 @@ const Search = useSearch();
 // cl-crud
 const Crud = useCrud(
 	{
-		service: service.base.sys.tenant,
+		service: (service.base.sys as any).tenant,
 	},
 	(app) => {
 		app.refresh();

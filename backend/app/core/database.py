@@ -41,11 +41,22 @@ def normalize_database_url(database_url: str) -> str:
 
 DATABASE_URL = normalize_database_url(settings.DATABASE_URL)
 
-engine = create_engine(
-    DATABASE_URL,
-    echo=settings.DEBUG,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-)
+engine_kwargs = {
+    "echo": settings.DEBUG,
+    "pool_pre_ping": settings.DB_POOL_PRE_PING,
+}
+if "sqlite" in DATABASE_URL:
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    engine_kwargs.update(
+        {
+            "pool_size": settings.DB_POOL_SIZE,
+            "max_overflow": settings.DB_MAX_OVERFLOW,
+            "pool_recycle": settings.DB_POOL_RECYCLE,
+        }
+    )
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 
 
 def init_db():

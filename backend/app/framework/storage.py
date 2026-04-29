@@ -58,6 +58,16 @@ class LocalStorageProvider(BaseStorageProvider):
         if not os.path.exists(self.upload_dir):
             os.makedirs(self.upload_dir)
 
+    def _resolve_safe_path(self, relative_path: str) -> str:
+        full_path = os.path.abspath(os.path.join(self.upload_dir, relative_path))
+        try:
+            common = os.path.commonpath([self.upload_dir, full_path])
+        except ValueError as exc:
+            raise UploadRejectedError("非法文件路径") from exc
+        if common != self.upload_dir:
+            raise UploadRejectedError("非法文件路径")
+        return full_path
+
     def upload(self, file_content: bytes, filename: str) -> str:
         ext = validate_upload(file_content, filename)
 
@@ -68,12 +78,7 @@ class LocalStorageProvider(BaseStorageProvider):
             os.makedirs(dest_dir)
 
         unique_filename = f"{uuid.uuid4().hex}{ext}"
-        dest_path = os.path.join(dest_dir, unique_filename)
-
-        # 路径遍历防护：确保写入目标仍在上传根目录下
-        dest_path = os.path.abspath(dest_path)
-        if not dest_path.startswith(self.upload_dir + os.sep):
-            raise UploadRejectedError("非法文件路径")
+        dest_path = self._resolve_safe_path(os.path.join(date_folder, unique_filename))
 
         with open(dest_path, "wb") as f:
             f.write(file_content)
@@ -82,16 +87,53 @@ class LocalStorageProvider(BaseStorageProvider):
 
     def delete(self, path: str) -> bool:
         relative_path = path.replace(self.base_url, "").lstrip("/")
-        full_path = os.path.abspath(os.path.join(self.upload_dir, relative_path))
-
-        # 路径遍历防护：确保删除目标在上传根目录下
-        if not full_path.startswith(self.upload_dir + os.sep):
+        try:
+            full_path = self._resolve_safe_path(relative_path)
+        except UploadRejectedError:
             return False
 
         if os.path.exists(full_path):
             os.remove(full_path)
             return True
         return False
+
+
+class S3StorageProvider(BaseStorageProvider):
+    """S3-compatible 对象存储提供者。"""
+
+    def __init__(self):
+        try:
+            import boto3
+        except ImportError as exc:
+            raise RuntimeError("使用 S3 存储需要安装 boto3") from exc
+
+        if not settings.S3_BUCKET:
+            raise RuntimeError("S3_BUCKET 未配置")
+        self.bucket = settings.S3_BUCKET
+        self.public_base_url = (settings.S3_PUBLIC_BASE_URL or "").rstrip("/")
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=settings.S3_ENDPOINT_URL or None,
+            aws_access_key_id=settings.S3_ACCESS_KEY_ID or None,
+            aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY or None,
+            region_name=settings.S3_REGION or None,
+        )
+
+    def upload(self, file_content: bytes, filename: str) -> str:
+        ext = validate_upload(file_content, filename)
+        date_folder = datetime.now().strftime("%Y%m%d")
+        object_key = f"uploads/{date_folder}/{uuid.uuid4().hex}{ext}"
+        self.client.put_object(Bucket=self.bucket, Key=object_key, Body=file_content)
+        if self.public_base_url:
+            return f"{self.public_base_url}/{object_key}"
+        return f"s3://{self.bucket}/{object_key}"
+
+    def delete(self, path: str) -> bool:
+        object_key = _extract_s3_key(path, self.bucket, self.public_base_url)
+        if not object_key:
+            return False
+        self.client.delete_object(Bucket=self.bucket, Key=object_key)
+        return True
 
 
 class StorageService:
@@ -105,7 +147,9 @@ class StorageService:
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
-            cls._instance = cls(LocalStorageProvider())
+            provider_name = settings.STORAGE_PROVIDER.strip().lower()
+            provider = S3StorageProvider() if provider_name in {"s3", "oss"} else LocalStorageProvider()
+            cls._instance = cls(provider)
         return cls._instance
 
     def upload(self, file_content: bytes, filename: str) -> str:
@@ -113,3 +157,14 @@ class StorageService:
 
     def delete(self, path: str) -> bool:
         return self.provider.delete(path)
+
+
+def _extract_s3_key(path: str, bucket: str, public_base_url: str) -> str | None:
+    if public_base_url and path.startswith(public_base_url):
+        return path.removeprefix(public_base_url).lstrip("/")
+    prefix = f"s3://{bucket}/"
+    if path.startswith(prefix):
+        return path.removeprefix(prefix)
+    if path.startswith("uploads/"):
+        return path
+    return None

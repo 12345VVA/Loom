@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import time
 import inspect
+import asyncio
+import threading
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, Type
@@ -133,7 +135,29 @@ class TaskInvoker:
 
             # 执行
             if inspect.iscoroutinefunction(method):
-                import asyncio
-                return asyncio.run(method(*invoke_args))
+                return _run_coroutine_sync(method(*invoke_args))
             else:
                 return method(*invoke_args)
+
+
+def _run_coroutine_sync(coro):
+    """在同步任务入口里安全执行协程。"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, Any] = {}
+
+    def runner():
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as exc:
+            result["error"] = exc
+
+    thread = threading.Thread(target=runner, daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")

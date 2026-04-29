@@ -298,6 +298,19 @@ _finalize_data() (camelCase)
 前端 (camelCase)
 ```
 
+### 4.4 查询与数据权限
+
+通用 `list/page/info` 会通过 `_apply_query()` 进入 `QueryBuilder`。当服务方法签名接收 `current_user` 时，控制器会自动注入当前用户，基类会解析 `DataScopeContext` 并应用到查询：
+
+```python
+def page(self, query: CrudQuery, current_user: User | None = None):
+    statement = select(self.model)
+    statement = self._apply_query(statement, self.model, query, current_user=current_user)
+    ...
+```
+
+数据权限只识别模型上的 `user_id`、`department_id` 字段；没有这些字段的模型不会被误过滤。
+
 ---
 
 ## 五、自定义业务方法规范

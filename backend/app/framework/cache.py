@@ -1,14 +1,15 @@
-import functools
-import json
 import hashlib
+import json
+import functools
 from typing import Any, Callable, TypeVar
 
 from app.core.redis import get_redis
+from app.modules.base.service.cache_service import cache_delete_pattern
 
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-def CoolCache(ttl: int = 3600, key_prefix: str = "cache"):
+def CoolCache(ttl: int = 3600, key_prefix: str = "cache", namespace: str | None = None):
     """
     通用 Redis 缓存装饰器。
     用法:
@@ -32,7 +33,8 @@ def CoolCache(ttl: int = 3600, key_prefix: str = "cache"):
                 sort_keys=True
             )
             arg_hash = hashlib.md5(arg_str.encode()).hexdigest()
-            cache_key = f"{key_prefix}:{func.__module__}:{func.__name__}:{arg_hash}"
+            cache_namespace = namespace or f"{func.__module__}.{func.__qualname__}"
+            cache_key = f"{key_prefix}:{cache_namespace}:{arg_hash}"
             
             # 尝试从缓存获取
             cached_val = redis_client.get(cache_key)
@@ -61,3 +63,8 @@ def CoolCache(ttl: int = 3600, key_prefix: str = "cache"):
         return wrapper
 
     return decorator
+
+
+def clear_cool_cache(namespace: str = "*", key_prefix: str = "cache") -> int:
+    """清理 CoolCache 命名空间缓存。"""
+    return cache_delete_pattern(f"{key_prefix}:{namespace}:*")

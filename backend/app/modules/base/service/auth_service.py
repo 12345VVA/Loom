@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import base64
+import hashlib
 import html
 import re
 
@@ -19,6 +20,7 @@ from app.core.security import (
     validate_password_strength,
     decode_token,
     add_token_to_blacklist,
+    password_needs_rehash,
 )
 
 from app.modules.base.compat import SYSTEM_MANAGED_CODE_PREFIXES, get_menu_parent_code
@@ -108,6 +110,10 @@ class AuthService:
                 risk_hit=risk_hit,
             )
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
+
+        if password_needs_rehash(user.password_hash):
+            user.password_hash = hash_password(payload.password)
+            self.session.add(user)
 
         if not user.is_active:
             risk_hit = self._mark_login_failure(payload.username, login_ip)
@@ -745,4 +751,12 @@ def _get_client_type(request: Request | None) -> str | None:
 def _get_device_id(request: Request | None) -> str | None:
     if request is None:
         return None
-    return request.headers.get("x-device-id") or request.headers.get("device-id")
+    explicit = request.headers.get("x-device-id") or request.headers.get("device-id")
+    if explicit:
+        return explicit
+    source = "|".join([
+        _get_request_ip(request) or "",
+        _get_user_agent(request) or "",
+        request.headers.get("accept-language", ""),
+    ])
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()[:24] if source.strip("|") else None

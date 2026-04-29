@@ -181,11 +181,12 @@ class BaseAdminCrudService:
         from app.framework.router.query_builder import QueryBuilder
         builder = QueryBuilder(model, query)
 
-        # 获取当前用户ID用于数据权限过滤
+        # 获取当前用户ID和数据权限上下文，用于 QueryBuilder 自动注入隔离条件
         current_user_id = current_user.id if current_user else None
+        data_scope = resolve_data_scope(self.session, current_user) if current_user else None
 
-        # 链式应用所有规则 (包括软删除过滤和关系 Join)
-        return builder.apply_all(statement, data_scope=None, current_user_id=current_user_id, relations=relations)
+        # 链式应用所有规则 (包括软删除、数据权限过滤和关系 Join)
+        return builder.apply_all(statement, data_scope=data_scope, current_user_id=current_user_id, relations=relations)
 
     def info(self, id: Any, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> Any:
         """获取资源详情"""
@@ -439,10 +440,11 @@ class BaseAdminCrudService:
 
     # 生命周期钩子 (Lifecycle Hooks)
     def _before_add(self, data: dict) -> dict: return data
-    def _after_add(self, entity: Any) -> None: pass
+    def _after_add(self, entity: Any, payload: Any = None) -> None: pass
     def _before_update(self, data: dict, entity: Any) -> dict: return data
-    def _after_update(self, entity: Any) -> None: pass
-    def _before_delete(self, ids: list[int]) -> None: pass
+    def _after_update(self, entity: Any, payload: Any = None) -> None: pass
+    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]: return ids
+    def _after_delete(self, ids: list[int], payload: Any = None) -> None: pass
 
     def _log_entity_change(self, entity_id: int, operation: str, diff: dict, payload: Any = None) -> None:
         """
@@ -1061,11 +1063,11 @@ class MenuAdminService(BaseAdminCrudService):
     def export(self, payload: MenuExportRequest | dict) -> list[dict]:
         if isinstance(payload, dict):
             payload = MenuExportRequest(**payload)
-        menu_ids = self._collect_descendant_menu_ids(payload.ids)
+        menu_ids = self._collect_descendant_ids(payload.ids)
         menus = list(self.session.exec(select(Menu).where(Menu.id.in_(menu_ids)).order_by(Menu.sort_order.asc(), Menu.created_at.asc())).all())
-        tree = self._build_tree(menus)
+        tree = self._build_import_tree(menus)
         selected_ids = set(payload.ids)
-        result = [self._menu_tree_to_import_node(node) for node in tree if node.id in selected_ids]
+        result = [node for node in tree if node.id in selected_ids]
         return [item.model_dump(mode="json", by_alias=True) for item in result]
 
     def import_menu(self, payload: MenuImportRequest | dict) -> dict:
@@ -1224,6 +1226,63 @@ class MenuAdminService(BaseAdminCrudService):
     def _generate_import_code(self, node: MenuImportNode) -> str:
         seed = node.path or node.permission or node.name
         return self._next_unique_code(self._slugify(seed))
+
+    def _build_import_tree(self, menus: list[Menu]) -> list[MenuImportNode]:
+        nodes = {
+            menu.id: MenuImportNode(
+                id=menu.id,
+                parent_id=menu.parent_id,
+                name=menu.name,
+                path=menu.path,
+                component=menu.component,
+                permission=menu.permission,
+                type=self._normalize_menu_type_int(menu.type),
+                icon=menu.icon,
+                sort_order=menu.sort_order,
+                keep_alive=menu.keep_alive,
+                is_show=menu.is_show,
+            )
+            for menu in menus
+            if menu.id is not None
+        }
+        roots: list[MenuImportNode] = []
+        for menu in sorted(menus, key=lambda item: (item.sort_order, item.created_at)):
+            if menu.id is None or menu.id not in nodes:
+                continue
+            node = nodes[menu.id]
+            parent = nodes.get(menu.parent_id)
+            if parent is None:
+                roots.append(node)
+            else:
+                parent.child_menus.append(node)
+        return roots
+
+    def _upsert_import_node(self, node: MenuImportNode, parent_id: int | None) -> Menu:
+        menu = self.session.get(Menu, node.id) if node.id is not None else None
+        if menu is None and node.permission:
+            menu = self.session.exec(select(Menu).where(Menu.permission == node.permission)).first()
+        if menu is None and node.path:
+            menu = self.session.exec(select(Menu).where(Menu.path == node.path, Menu.type != "button")).first()
+        if menu is None:
+            menu = Menu(code=self._generate_import_code(node), name=node.name)
+
+        menu.parent_id = parent_id
+        menu.name = node.name
+        menu.path = node.path
+        menu.component = node.component
+        menu.permission = node.permission
+        menu.type = self._normalize_menu_type(node.type)
+        menu.icon = node.icon
+        menu.sort_order = node.sort_order
+        menu.keep_alive = node.keep_alive
+        menu.is_show = node.is_show
+        menu.is_active = True
+        self.session.add(menu)
+        self.session.flush()
+
+        for child in node.child_menus:
+            self._upsert_import_node(child, menu.id)
+        return menu
 
     @staticmethod
     def _build_view_path(item: MenuCreateAutoItem) -> str | None:

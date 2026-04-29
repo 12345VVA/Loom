@@ -169,7 +169,7 @@ const Search = useSearch();
 // cl-crud
 const Crud = useCrud(
 	{
-		service: service.base.sys.tenant_user,
+		service: (service.base.sys as any).tenant_user,
 	},
 	(app) => {
 		app.refresh();

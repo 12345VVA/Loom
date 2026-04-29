@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import asyncio
 from datetime import datetime
 from typing import Any
 from fastapi import Request, Response
@@ -140,24 +141,31 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
         current_user = getattr(request.state, "current_user", None)
         user_id = getattr(current_user, "id", None)
 
-        try:
-            with Session(engine) as session:
-                log = SysLog(
-                    user_id=user_id,
-                    action=request.url.path,
-                    method=request.method,
-                    params=json.dumps(params, ensure_ascii=False) if params else None,
-                    ip=request.client.host if request.client else None,
-                    status=1 if response.status_code < 400 else 0,
-                    message=f"Status: {response.status_code}"
-                )
-                session.add(log)
-                session.commit()
-        except Exception as exc:
-            # 日志写入失败记录到错误日志，不影响主流程
-            logger.error(
-                f"操作日志写入失败 - path: {request.url.path}, method: {request.method}, user_id: {user_id}",
-                exc_info=exc
-            )
+        log_payload = {
+            "user_id": user_id,
+            "action": request.url.path,
+            "method": request.method,
+            "params": json.dumps(params, ensure_ascii=False) if params else None,
+            "ip": request.client.host if request.client else None,
+            "status": 1 if response.status_code < 400 else 0,
+            "message": f"Status: {response.status_code}",
+        }
+        asyncio.create_task(asyncio.to_thread(_write_operation_log, log_payload))
 
         return response
+
+
+def _write_operation_log(payload: dict[str, Any]) -> None:
+    try:
+        with Session(engine) as session:
+            log = SysLog(**payload)
+            session.add(log)
+            session.commit()
+    except Exception as exc:
+        logger.error(
+            "操作日志写入失败 - path: %s, method: %s, user_id: %s",
+            payload.get("action"),
+            payload.get("method"),
+            payload.get("user_id"),
+            exc_info=exc,
+        )

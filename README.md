@@ -153,6 +153,7 @@ npm run dev
 - **通用能力**: 自动实现分页、列表、详情、增删改等标准接口。
 - **生命周期钩子**: 子类可以通过覆盖 `_before_add`, `_after_add`, `_before_update` 等方法，在不破坏通用流程的情况下植入业务特有的逻辑（如密码加密、关联表同步、缓存清理等）。
 - **字段转换**: 自动处理 `snake_case` (DB) 与 `camelCase` (API) 的字段映射。
+  约定为模型与 Service 内部使用 `snake_case`，响应与 EPS 中的 `prop/propertyName` 输出前端字段名，`source` 保留后端源字段名。
 
 ### 菜单初始化 (Menu Initialization)
 
@@ -211,13 +212,14 @@ npm run dev
 | `delete` | POST | 批量删除记录 |
 | `update` | POST | 更新记录 |
 | `info` | GET | 获取单条详情 |
-| `list` | GET | 获取全量列表 |
-| `page` | GET | 获取分页列表 (支持高级搜索) |
+| `list` | GET / POST | 获取全量列表，POST 为 Cool Admin 主协议，GET 为兼容入口 |
+| `page` | GET / POST | 获取分页列表 (支持高级搜索)，POST 为 Cool Admin 主协议，GET 为兼容入口 |
 
 ### 完整文档
 项目启动后，请访问以下路径查看实时互动的完整 API 文档：
 - **API 文档**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Redoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **项目说明文档索引**: [docs/README.md](./docs/README.md)
 
 
 ## 环境变量
@@ -228,6 +230,16 @@ npm run dev
 - `JWT_SECRET_KEY`: JWT 密钥，建议至少 32 字节
 - `OPENAI_API_KEY`: OpenAI API 密钥
 - `OPENAI_BASE_URL`: OpenAI API 基础 URL
+- `CORS_ORIGINS` / `CORS_ALLOW_METHODS` / `CORS_ALLOW_HEADERS`: CORS 来源、方法与头白名单
+- `ADMIN_CSRF_ORIGIN_CHECK_ENABLED`: 是否启用管理端变更请求 Origin/Referer 校验
+- `RESPONSE_ENVELOPE_MAX_BYTES`: 统一响应包装最大 JSON 体积，超出后跳过包装
+- `MODULE_LOAD_STRICT`: 模块加载失败时是否直接中断启动
+- `PASSWORD_PBKDF2_ITERATIONS`: PBKDF2 密码哈希迭代次数，登录成功后自动升级旧哈希
+- `ADMIN_SESSION_MAX_CONCURRENT`: 管理端同一用户最大并发会话数，`0` 表示不限制
+- `STORAGE_PROVIDER` 与 `S3_*`: 本地或 S3-compatible 文件存储配置
+- `METRICS_ENABLED`: 是否记录并开放 `/metrics` 文本指标
+- `DB_POOL_*`: 非 SQLite 数据库连接池参数
+- `API_VERSION_PREFIX_ENABLED`: 是否额外挂载 `/api/v1` 兼容前缀
 
 ### 前端 (.env)
 - `VITE_API_BASE_URL`: 后端 API 基础 URL
@@ -238,8 +250,9 @@ npm run dev
 - `base` 和 `task` 模块都已切到动作式管理接口风格
 - 前端业务页不再由静态路由表维护，而是根据 `/admin/base/menu/currentTree` 动态注册
 - `/tasks/:id` 作为任务详情补充路由，依赖 `/tasks` 菜单权限
-- 自动路由说明见 [docs/module-routing-guide.md](./docs/module-routing-guide.md)
+- 自动路由说明见 [docs/模块自动路由与管理端鉴权说明.md](./docs/模块自动路由与管理端鉴权说明.md)
 - 本地若未启动 Redis，开发模式会自动回退到进程内缓存；生产环境应使用真实 Redis
+- `/health` 返回数据库、Redis、Celery 配置检查；`/metrics` 默认关闭，可通过 `METRICS_ENABLED` 启用
 
 ## 开源协议
 
