@@ -2,8 +2,9 @@ import os
 import sys
 import unittest
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
@@ -14,6 +15,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from main import app  # noqa: E402
 from app.framework.router.query_builder import QueryBuilder  # noqa: E402
+from app.framework.controller_meta import CrudQuery  # noqa: E402
+from app.core.database import engine as app_engine  # noqa: E402
+from app.core.security import hash_password  # noqa: E402
 from app.modules.base.model.sys import (  # noqa: E402
     SysLoginLogCreateRequest,
     SysLoginLogRead,
@@ -22,8 +26,10 @@ from app.modules.base.model.sys import (  # noqa: E402
     SysSecurityLogCreateRequest,
     SysSecurityLogRead,
 )
+from app.modules.base.model.auth import User  # noqa: E402
 from app.modules.base.service.data_scope_service import DataScopeContext  # noqa: E402
 from app.modules.base.service.cache_service import cache_delete_pattern  # noqa: E402
+from app.modules.base.service.security_service import create_access_token  # noqa: E402
 from app.core.config import settings  # noqa: E402
 
 
@@ -41,6 +47,8 @@ class PlainRow(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
+    status: int = 1
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class FrameworkAlignmentTests(unittest.TestCase):
@@ -141,6 +149,63 @@ class FrameworkAlignmentTests(unittest.TestCase):
             self.assertEqual(len(session.exec(super_statement).all()), 2)
             self.assertEqual(len(session.exec(plain_statement).all()), 2)
 
+    def test_query_builder_keyword_filters_sort_and_page_boundaries(self):
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        SQLModel.metadata.create_all(engine, tables=[PlainRow.__table__])
+        now = datetime.utcnow()
+        with Session(engine) as session:
+            session.add_all(
+                [
+                    PlainRow(name="alpha", status=1, created_at=now - timedelta(days=3)),
+                    PlainRow(name="beta", status=1, created_at=now - timedelta(days=2)),
+                    PlainRow(name="alphabet", status=2, created_at=now - timedelta(days=1)),
+                    PlainRow(name="gamma", status=1, created_at=now),
+                ]
+            )
+            session.commit()
+
+            query = CrudQuery(
+                page=1,
+                size=1,
+                keyword="alpha",
+                keyword_fields=("name",),
+                order="name",
+                sort="asc",
+                order_fields=("name",),
+                eq_filters={"status": "1"},
+            )
+            statement = QueryBuilder(PlainRow, query).apply_all(select(PlainRow))
+            paged_rows = session.exec(statement.offset((query.page - 1) * query.size).limit(query.size)).all()
+            names = [row.name for row in paged_rows]
+
+        self.assertEqual(names, ["alpha"])
+
+    def test_query_builder_ignores_disallowed_order_and_uses_fallback(self):
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        SQLModel.metadata.create_all(engine, tables=[PlainRow.__table__])
+        now = datetime.utcnow()
+        with Session(engine) as session:
+            session.add_all(
+                [
+                    PlainRow(name="old", created_at=now - timedelta(days=1)),
+                    PlainRow(name="new", created_at=now),
+                ]
+            )
+            session.commit()
+
+            query = CrudQuery(order="name", sort="asc", order_fields=("status",))
+            rows = session.exec(QueryBuilder(PlainRow, query).apply_all(select(PlainRow))).all()
+
+        self.assertEqual([row.name for row in rows], ["new", "old"])
+
     def test_crud_page_and_list_support_get_and_post(self):
         headers = self._login_headers()
 
@@ -157,6 +222,31 @@ class FrameworkAlignmentTests(unittest.TestCase):
         self.assertEqual(post_list.status_code, 200)
         self.assertIsInstance(get_list.json()["data"], list)
         self.assertIsInstance(post_list.json()["data"], list)
+
+    def test_admin_crud_requires_authentication_and_permission(self):
+        anonymous = self.client.get("/admin/dict/type/page")
+        self.assertEqual(anonymous.status_code, 401)
+
+        username = f"limited_{uuid4().hex}"
+        with Session(app_engine) as session:
+            user = User(
+                username=username,
+                full_name="Limited User",
+                password_hash=hash_password("Passw0rd!"),
+                is_active=True,
+                is_super_admin=False,
+            )
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+            token = create_access_token(user)
+
+        forbidden = self.client.post(
+            "/admin/base/sys/menu/delete",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"ids": [999999]},
+        )
+        self.assertEqual(forbidden.status_code, 403)
 
     def test_sys_models_accept_and_serialize_camel_case(self):
         param = SysParamCreateRequest.model_validate({"name": "站点", "keyName": "siteName", "dataType": 1})
@@ -228,10 +318,13 @@ class FrameworkAlignmentTests(unittest.TestCase):
         key_name = next(item for item in sys_param["columns"] if item["source"] == "key_name")
         self.assertEqual(key_name["prop"], "keyName")
         self.assertEqual(key_name["propertyName"], "keyName")
+        self.assertIn("key_name", sys_param["pageQueryOp"]["keyWordLikeFields"])
+        self.assertEqual(key_name["search"], {"value": True})
 
         dict_info = next(item for item in data["dict"] if item["prefix"] == "/admin/dict/info")
         type_id = next(item for item in dict_info["columns"] if item["source"] == "type_id")
         self.assertEqual(type_id["prop"], "typeId")
+        self.assertIn("typeId", dict_info["pageQueryOp"]["fieldEq"])
 
 
 if __name__ == "__main__":
