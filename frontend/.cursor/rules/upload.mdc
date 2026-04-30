@@ -1,0 +1,90 @@
+---
+description: cl-upload 上传组件使用规范
+globs: src/**/*.vue,src/**/*.ts,src/**/*.tsx
+---
+
+# 上传规范
+
+业务上传优先使用上传插件提供的 `cl-upload`。如项目或模块已注册文件空间选择组件，可按现有封装使用 `cl-upload-space`。除上传插件内部实现外，不要直接使用 Element Plus `el-upload` 绕过项目封装。
+
+## 组件选择
+
+- 普通图片、附件字段：使用 `cl-upload`
+- 文件空间选择、富文本插图、素材库选择：如已注册 `cl-upload-space`，使用项目封装组件
+- CRUD 表单字段：使用 `component: { name: "cl-upload" }`
+
+```ts
+{
+  label: "附件",
+  prop: "fileUrl",
+  component: {
+    name: "cl-upload",
+    props: {
+      type: "file",
+      limit: 1
+    }
+  }
+}
+```
+
+## v-model 数据形态
+
+- 单文件：`v-model` 是字符串 URL
+- 多文件：配置 `multiple` 后，`v-model` 是字符串 URL 数组
+
+```vue
+<cl-upload v-model="coverUrl" />
+<cl-upload v-model="imageUrls" multiple :limit="9" />
+```
+
+不要把单文件字段设计成数组，也不要把多文件字段设计成逗号字符串；如后端字段不一致，在提交前显式转换。
+
+## 类型与限制
+
+- 默认 `type="image"`
+- 普通文件使用 `type="file"`
+- 可通过 `accept` 限制文件类型
+- 数量使用 `limit`
+- 大小使用 `limitSize`，单位 MB
+- 云端路径前缀使用 `prefixPath`
+- 只读禁用使用 `disabled`
+- 是否允许删除使用 `deletable`
+- 是否允许拖拽排序使用 `draggable`
+
+```vue
+<cl-upload
+  v-model="attachments"
+  type="file"
+  multiple
+  :limit="5"
+  :limit-size="20"
+  prefix-path="learning/material"
+  draggable
+  deletable
+/>
+```
+
+## 上传事件
+
+`cl-upload` 支持以下事件：
+
+- `upload`：文件进入上传队列
+- `success`：上传成功
+- `error`：上传失败
+- `progress`：上传进度
+
+需要自定义校验时使用 `beforeUpload`，返回 `false` 可阻止上传。
+
+## CRUD 表单注意事项
+
+- `cl-upload` 会在更新值后触发当前字段校验。
+- 文件字段如果后端可能返回空值，表单打开时要初始化为 `""` 或 `[]`。
+- 多文件字段的后端结构必须与 `multiple` 的数组结构一致，不一致时在提交前或 CRUD hook 中转换。
+
+## 检查清单
+
+- [ ] 业务上传使用 `cl-upload` 或项目已注册的上传封装
+- [ ] 单文件字段是字符串，多文件字段是字符串数组
+- [ ] 文件类型、数量、大小、路径前缀通过 props 配置
+- [ ] CRUD 多文件字段有必要的数据转换
+- [ ] 新业务页面没有直接使用 `el-upload`

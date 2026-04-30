@@ -1,0 +1,60 @@
+---
+description: 后端测试规范
+globs: tests/*.py,tests/**/*.py
+---
+
+# 后端测试规范
+
+后端测试位于 `backend/tests`，现有测试使用 `unittest` + FastAPI `TestClient`。新增后端能力时，优先补与行为、权限、EPS、响应结构相关的测试。
+
+## 运行命令
+
+在 `backend/` 下运行：
+
+```bash
+python -m pytest
+```
+
+也可针对单文件运行：
+
+```bash
+python -m pytest tests/test_framework_alignment.py
+```
+
+## TestClient
+
+现有测试模式：
+
+```py
+class SomeTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        self.client.__enter__()
+
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+```
+
+需要登录的接口复用或仿照现有 `_login_headers()`，不要在测试中硬编码临时 token。
+
+## 重点测试场景
+
+- 登录、刷新、验证码、权限菜单：参考 `test_auth_alignment.py`。
+- EPS 字段、字段别名、分页结构、GET/POST CRUD 兼容：参考 `test_framework_alignment.py`。
+- 新增模块：验证 `/admin/base/open/eps` 中出现目标 controller。
+- 新增菜单：验证 `/admin/base/comm/permmenu` 返回的 `router/viewPath/permission`。
+- 新增 CRUD：验证 `page/list/info/add/update/delete` 的响应结构和权限。
+
+## 测试数据
+
+- 局部模型测试可使用内存 SQLite 和 `StaticPool`。
+- 涉及应用启动、菜单、权限、EPS 的测试使用真实 `app` 和现有初始化机制。
+- 测试前清理相关缓存，现有示例使用 `cache_delete_pattern()`。
+
+## 检查清单
+
+- [ ] 覆盖成功路径和关键失败路径
+- [ ] 断言统一响应的 `data`
+- [ ] 分页断言 `list/pagination`
+- [ ] 权限菜单断言 `router/viewPath`
+- [ ] EPS 断言 `prop/propertyName/source`

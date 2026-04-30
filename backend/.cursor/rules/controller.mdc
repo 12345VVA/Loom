@@ -1,0 +1,102 @@
+---
+description: CoolController 自动路由与控制器规范
+globs: app/modules/**/controller/*.py,app/modules/**/controller/**/*.py
+---
+
+# 控制器规范
+
+后端管理接口优先使用 `app.framework.controller_meta.CoolController` 和 `CoolControllerMeta` 注册。URL、权限、EPS service 描述都从控制器元数据派生。
+
+## 基本结构
+
+```py
+from fastapi import Depends
+from sqlmodel import Session
+
+from app.core.database import get_session
+from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, QueryConfig
+from app.modules.demo.model.demo import DemoCreateRequest, DemoRead, DemoUpdateRequest
+from app.modules.demo.service.demo_service import DemoService
+
+
+@CoolController(
+    CoolControllerMeta(
+        module="demo",
+        resource="info",
+        scope="admin",
+        service=DemoService,
+        tags=("demo", "info"),
+        code_prefix="demo_info",
+        list_response_model=DemoRead,
+        page_item_model=DemoRead,
+        info_response_model=DemoRead,
+        add_request_model=DemoCreateRequest,
+        update_request_model=DemoUpdateRequest,
+        actions=("add", "delete", "update", "page", "info", "list"),
+        page_query=QueryConfig(keyword_like_fields=("name",)),
+        soft_delete=True,
+    )
+)
+class DemoInfoController(BaseController):
+    pass
+
+
+router = DemoInfoController.router
+```
+
+## URL 与权限
+
+- URL 结构为 `/{scope}/{module}/{resource}/{action}`。
+- `resource="sys/user"` 会生成 `/admin/base/sys/user/page`。
+- 默认权限为 `{module}:{resource.replace("/", ":")}:{action}`。
+- `code_prefix` 使用下划线，如 `base_sys_user`、`task_info`。
+
+不要手写重复的 APIRouter CRUD 路由，除非该接口不适合纳入 `CoolControllerMeta`。
+
+## QueryConfig
+
+筛选和排序放在 `list_query` / `page_query`：
+
+```py
+QueryConfig(
+    keyword_like_fields=("username", "email"),
+    field_eq=(QueryFieldConfig("department_id", "departmentIds"),),
+    field_like=("name",),
+    order_fields=("created_at", "updated_at"),
+    add_order_by=(OrderByConfig("created_at", "desc"),),
+)
+```
+
+规则：
+
+- 数据库字段使用 snake_case。
+- 前端参数名不同时使用 `QueryFieldConfig(column, request_param)`。
+- 可排序字段必须显式列入 `order_fields`。
+- 默认排序使用 `add_order_by`。
+
+## 自定义接口
+
+自定义接口使用 `app.framework.router.route_meta.Get` / `Post`：
+
+```py
+@Post("/start", summary="开始任务", permission="task:info:start")
+async def start(self, payload: dict, session: Session = Depends(get_session)):
+    return await TaskInfoService(session).start(payload.get("id"))
+```
+
+规则：
+
+- 写清 `summary`。
+- 需要进权限体系的接口必须写 `permission`。
+- 依赖注入使用 `Depends(get_session)`。
+- 业务逻辑放到 Service，Controller 只做参数接收和调用。
+- 匿名接口显式写 `anonymous=True`，并同步检查模块白名单或安全边界。
+
+## 检查清单
+
+- [ ] 使用 `CoolControllerMeta` 描述标准 CRUD
+- [ ] `module/resource/scope` 与目标 URL 一致
+- [ ] Request/Read DTO 已绑定到 meta
+- [ ] 查询字段映射用 `QueryFieldConfig`
+- [ ] 文件末尾导出 `router = XxxController.router`
+- [ ] 自定义接口权限与菜单按钮权限一致

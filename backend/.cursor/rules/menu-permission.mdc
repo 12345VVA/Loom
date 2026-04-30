@@ -1,0 +1,74 @@
+---
+description: 后端菜单初始化与权限规范
+globs: app/modules/**/menu.json,app/modules/**/init_menu.py,app/modules/**/controller/**/*.py,app/modules/**/config.py
+---
+
+# 菜单与权限规范
+
+模块菜单由 `menu.json` 或 Python 菜单清单声明，经 `app.modules.loader.load_menu_manifest_items()` 聚合，并由基础模块初始化到 `sys_menu`。权限点来自菜单按钮、`CoolControllerMeta` 默认 CRUD 权限和自定义接口权限。
+
+## menu.json
+
+```json
+[
+  {
+    "code": "nav_demo",
+    "name": "示例管理",
+    "type": "menu",
+    "module": "demo",
+    "resource": "info",
+    "path": "/demo/info",
+    "component": "modules/demo/views/list.vue",
+    "icon": "icon-demo",
+    "sort_order": 50,
+    "parent_code": "nav_system",
+    "role_codes": ["admin"],
+    "children": [
+      { "code": "demo_info_add", "name": "新增", "type": "button", "permission": "demo:info:add" }
+    ]
+  }
+]
+```
+
+规则：
+
+- `code` 全局稳定且唯一。
+- `path` 是前端路由 path。
+- `component` 写前端模块视图路径，例如 `modules/task/views/list.vue`。
+- `icon` 使用前端菜单 SVG 值，如 `icon-time`。
+- `parent_code` 指向已有分组或菜单。
+- `role_codes` 默认可用 `["admin"]`，需要普通角色时显式补充。
+
+## 权限命名
+
+标准 CRUD 权限：
+
+```text
+{module}:{resource}:{action}
+```
+
+示例：
+
+- `task:info:add`
+- `dict:type:page`
+- `base:sys:user:move`
+
+`resource` 中的 `/` 在权限中写成 `:`，如 `sys/user` -> `sys:user`。
+
+## Controller 对齐
+
+- `CoolControllerMeta(module, resource, actions)` 会注册标准 CRUD 权限。
+- 自定义接口的 `permission` 必须与菜单按钮 permission 一致。
+- 新增按钮权限时，同步检查前端是否使用 `service.xxx.permission.xxx` 或 `_permission.xxx`。
+
+## Python 菜单清单
+
+基础模块可使用 `MenuManifestItem` 声明菜单。普通业务模块优先使用 `menu.json`，更利于维护。
+
+## 检查清单
+
+- [ ] 菜单 `component` 能映射到前端真实 views 文件
+- [ ] 菜单 `path` 不与已有路由冲突
+- [ ] 按钮权限与 Controller 权限一致
+- [ ] `role_codes` 覆盖目标角色
+- [ ] 菜单图标使用 `icon-` 前缀值

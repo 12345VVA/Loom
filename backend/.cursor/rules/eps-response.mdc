@@ -1,0 +1,90 @@
+---
+description: EPS 输出与统一响应规范
+globs: app/framework/**/*.py,app/modules/**/controller/*.py,app/modules/**/controller/**/*.py,app/modules/**/model/*.py,app/modules/**/model/**/*.py
+---
+
+# EPS 与响应规范
+
+Loom 后端通过 EPS 驱动前端 service、表格、表单和权限描述；通过 `ResponseEnvelopeMiddleware` 输出统一响应结构。
+
+## API 文档入口
+
+编写 API 文档时，必须以 EPS、OpenAPI 和当前 Controller/Model 代码为准。接口内容写法、参数表格、请求/响应示例、文件上传和流式接口说明参考 `backend/.cursor/rules/api-documentation.mdc`。
+
+## EPS
+
+EPS 入口为：
+
+```text
+GET /admin/base/open/eps
+```
+
+关键实现：
+
+- `app.framework.eps.builder.build_eps_data`
+- `app.framework.eps.scanner.scan_model_columns`
+- `app.framework.controller_meta.get_registered_exported_routes`
+- `app.modules.base.service.eps_service.EpsService`
+
+规则：
+
+- 标准 CRUD 使用 `CoolControllerMeta` 暴露 EPS。
+- Read DTO 和模型字段决定 EPS columns。
+- `resolve_alias` 决定前端 `prop/propertyName`。
+- EPS columns 保留 `source`，表示后端 snake_case 源字段。
+- 后端 controller/resource 命名会影响前端 `service.{module}.{controller}` 路径，不要随意改动。
+
+## 统一响应
+
+JSON 响应由 `app.framework.middleware.response_envelope.ResponseEnvelopeMiddleware` 包装为：
+
+```json
+{
+  "code": 1000,
+  "message": "success",
+  "data": {}
+}
+```
+
+不要在普通接口中重复手写外层响应，除非已经明确需要返回完整 envelope。
+
+## 分页响应
+
+Service 返回 `PageResult(items, total, page, page_size)` 后，中间件会转换为前端结构：
+
+```json
+{
+  "list": [],
+  "pagination": {
+    "page": 1,
+    "size": 10,
+    "total": 0
+  }
+}
+```
+
+规则：
+
+- 自定义分页接口优先返回 `PageResult`。
+- 不要自定义另一套分页字段名。
+- list 接口返回数组，page 接口返回分页结构。
+
+## 跳过包装
+
+响应封装会跳过：
+
+- `/docs`
+- `/redoc`
+- `/openapi.json`
+- 非 JSON 响应
+- 超过配置大小限制的响应
+
+文件下载、流式响应、外部代理响应不要强行套统一 JSON。
+
+## 检查清单
+
+- [ ] 新接口可被 EPS 或显式路由元数据描述
+- [ ] 返回值不重复包 `{ code, message, data }`
+- [ ] 分页使用 `PageResult`
+- [ ] 字段别名通过 `resolve_alias` 输出
+- [ ] 文件/流响应不走普通 JSON 约定

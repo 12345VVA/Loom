@@ -1,0 +1,65 @@
+---
+description: 字典 useDict 使用规范
+globs: src/**/*.vue,src/**/*.ts,src/**/*.tsx
+---
+
+# 字典规范
+
+业务字典统一通过 `dict` 模块获取、缓存和刷新。不要在业务页面里重复请求字典接口，也不要在多个页面复制同一组静态枚举。
+
+## 获取字典
+
+组件、页面、composable 中使用 `useDict()`：
+
+```ts
+import { useDict } from "/$/dict";
+
+const { dict } = useDict();
+const statusOptions = dict.get("taskstatus");
+```
+
+`dict.get(name)` 返回 `computed`，脚本中直接读取列表时使用 `.value`：
+
+```ts
+const options = dict.get("taskimportance").value;
+```
+
+CRUD 配置中可直接传给 `dict` 或 `options`：
+
+```ts
+{
+  label: "状态",
+  prop: "status",
+  dict: dict.get("taskstatus")
+}
+```
+
+## 刷新机制
+
+- `src/modules/dict/config.ts` 会在模块 `onLoad({ hasToken })` 中调用 `dict.refresh()`。
+- `dict.refresh(types?)` 调用 `service.dict.info.data({ types })` 获取数据。
+- 字典管理页更新字典后，可调用 `dict.refresh([key])` 局部刷新。
+
+## 数据规范化
+
+`src/modules/dict/store/dict.ts` 会统一处理字典项：
+
+- `label = name`
+- `value` 为空、空字符串或 `null` 时，使用 `id`
+- 字典数据会经过 `deepTree(arr, "desc")` 转成树形数据
+
+业务页面不要重复做 `name -> label`、`id -> value` 转换，除非接口返回的不是标准字典数据。
+
+## 枚举选择
+
+- 后端可配置、需要复用、会出现在筛选/表单/表格中的选项，优先放入字典模块。
+- 只在单个组件内部使用、稳定不变的 UI 枚举，可以定义为组件内常量。
+- 不要在多个页面复制同一份静态数组；需要复用时改用字典或抽到模块常量。
+
+## 检查清单
+
+- [ ] 业务页面通过 `useDict()` 获取字典
+- [ ] 脚本中读取 computed 字典时使用 `.value`
+- [ ] CRUD 配置复用 `dict.get(name)`
+- [ ] 字典更新后调用 `dict.refresh([key])`
+- [ ] 普通业务页没有直接调用 `service.dict.info.data()`

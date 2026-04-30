@@ -1,0 +1,96 @@
+---
+description: 菜单 SVG 图标规范
+globs: src/modules/**/static/**/*.svg,src/modules/base/components/menu/icon.vue,src/modules/base/components/icon/svg.vue,src/modules/base/views/menu/index.vue
+---
+
+# 菜单 SVG 图标规范
+
+本规范用于后台菜单、侧栏菜单等导航类图标。详细图标清单见 `frontend/docs/菜单SVG图标使用说明.md`。
+
+## 放置目录
+
+菜单 SVG 图标必须放在模块的 `static` 目录下：
+
+- 通用菜单图标优先放在 `src/modules/base/static/svg/`
+- 模块专属菜单图标可放在 `src/modules/{module}/static/svg/`
+
+项目会扫描 `src/modules` 和 `src/plugins` 下的 SVG 文件。不要把菜单 SVG 放在 `assets`、`components`、`views` 等不会被扫描或不适合作为静态图标资产的目录中。
+
+## 文件命名
+
+菜单 SVG 文件名必须以 `icon-` 开头，并使用小写 kebab-case：
+
+```text
+icon-learning.svg
+icon-learning-report.svg
+icon-position-strategy.svg
+```
+
+不要使用：
+
+```text
+learning.svg
+IconLearning.svg
+icon_learning.svg
+menu-learning.svg
+```
+
+原因：`src/modules/base/components/menu/icon.vue` 只展示：
+
+```ts
+svgIcons.filter(e => e.indexOf("icon-") === 0)
+```
+
+## 菜单 icon 字段
+
+后端菜单的 `icon` 字段填写 SVG 文件名去掉 `.svg` 后的值。
+
+```text
+文件路径：src/modules/base/static/svg/icon-learning-report.svg
+菜单 icon：icon-learning-report
+```
+
+不要填写：
+
+```text
+learning-report
+icon-icon-learning-report
+/src/modules/base/static/svg/icon-learning-report.svg
+```
+
+当前渲染链路：
+
+1. `src/modules/base/components/menu/icon.vue` 从 `virtual:svg-icons` 读取图标名，并筛选 `icon-` 前缀。
+2. 菜单管理页维护菜单 `icon` 字段，菜单列表使用 `cl-svg` 展示图标。
+3. `src/modules/base/components/icon/svg.vue` 将 `name` 拼成 `#icon-${name}`。
+4. Vite SVG sprite 插件将 SVG 文件名注册成 symbol。
+
+`vite.config.ts` 当前配置了 `skipNames: ["base", "theme"]`。在 `base` 模块下，`icon-user.svg` 的菜单值就是 `icon-user`，渲染时由 `cl-svg` 引用 `#icon-icon-user`。
+
+## SVG 内容建议
+
+- 保留正确 `viewBox`，避免图标尺寸异常。
+- 尽量删除固定 `width`、`height`，让 `cl-svg` 通过 `font-size` 控制尺寸。
+- 优先使用单色图标，路径颜色使用 `currentColor` 或不写固定颜色。
+- 避免硬编码多色 `fill`、`stroke`，除非业务明确需要品牌色。
+- SVG 内容保持简洁，不要包含脚本、外链资源、复杂滤镜或不可控样式。
+
+```svg
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <path d="..." fill="currentColor" />
+</svg>
+```
+
+## 使用建议
+
+- 菜单、侧栏、导航入口使用本规范的 SVG sprite 图标。
+- 页面内按钮、表格操作、工具栏控件优先使用 Element Plus 图标或项目已有图标组件。
+- 不要在业务页面中为了临时展示菜单图标而绕过 `cl-svg` 手写 `<svg><use /></svg>`。
+
+## 排障清单
+
+- [ ] 文件在 `src/modules/*/static/**/*.svg` 或 `src/plugins/*/static/**/*.svg` 下
+- [ ] 文件名以 `icon-` 开头
+- [ ] 菜单 `icon` 字段填写文件名去掉 `.svg` 后的值
+- [ ] SVG 有正确 `viewBox`
+- [ ] 图标颜色未被固定 `fill="#xxx"` 或 `stroke="#xxx"` 覆盖

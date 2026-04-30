@@ -1,0 +1,127 @@
+---
+description: "@cool-vue/crud 使用规范与常见陷阱"
+globs: src/modules/**/*.vue,src/modules/**/*.ts,src/modules/**/*.tsx
+---
+
+# @cool-vue/crud 使用规范
+
+本项目使用 `@cool-vue/crud` 构建业务页。新增或修改 CRUD 页面时，优先沿用 `useCrud`、`useTable`、`useUpsert`、`useForm` 的既有模式。
+
+## useUpsert 自定义插槽
+
+`useUpsert` 的 `items` 中，每个 `prop` 必须对应真实数据字段。使用 `slot-` 自定义组件时，`component.name` 与模板 slot 名必须和 `prop` 精确匹配。
+
+```ts
+const Upsert = useUpsert({
+  items: [
+    { label: "名称", prop: "name", component: { name: "el-input" } },
+    { label: "分类权重", prop: "categoryWeights", component: { name: "slot-categoryWeights" } }
+  ]
+});
+```
+
+```vue
+<template #slot-categoryWeights="{ scope }">
+  <category-weight-editor v-model="scope.categoryWeights" />
+</template>
+```
+
+禁止把 `prop` 写成虚假的分组名，也不要在一个 slot 中塞多个独立表单字段。需要分组时使用 `type: "tabs"` 与 `group`，但 `prop` 仍然必须是真实字段。
+
+## 自定义组件 vm
+
+复杂字段推荐直接传组件引用，不要求全局注册。组件对象必须用 `markRaw` 包裹，避免被 Vue 响应式代理。
+
+```ts
+import { markRaw } from "vue";
+import CustomEditor from "./components/custom-editor.vue";
+
+{
+  label: "配置",
+  prop: "config",
+  component: {
+    name: "custom-editor",
+    vm: markRaw(CustomEditor)
+  }
+}
+```
+
+自定义组件优先实现 `modelValue` / `update:modelValue`，需要访问整表数据时再使用 `scope` 与 `prop`。
+
+## 表单数据初始化
+
+后端可能返回 `null`、JSON 字符串或缺失字段时，在 `onOpen` 中统一初始化。
+
+```ts
+const Upsert = useUpsert({
+  items: [],
+  onOpen() {
+    const data = Upsert.value?.form;
+    if (!data) return;
+
+    if (!Array.isArray(data.attachments)) data.attachments = [];
+    if (typeof data.options === "string") {
+      try {
+        data.options = JSON.parse(data.options);
+      } catch {
+        data.options = [];
+      }
+    }
+  }
+});
+```
+
+模板与工具函数要对可能为空的字段做安全访问，避免编辑旧数据时报错。
+
+## 表格列插槽
+
+表格自定义列使用 `#column-{prop}`，模板中通过 `scope?.row` 访问行数据。
+
+```vue
+<cl-table ref="Table">
+  <template #column-status="{ scope }">
+    <el-tag :type="scope?.row?.status === 1 ? 'success' : 'info'">
+      {{ scope?.row?.status === 1 ? "启用" : "停用" }}
+    </el-tag>
+  </template>
+</cl-table>
+```
+
+简单枚举优先使用列配置的 `dict` 与 `dictColor`，不要为每个枚举列都写 slot。
+
+## 独立弹窗表单
+
+审核、批量操作等非主 CRUD 编辑场景使用 `useForm()`。
+
+```ts
+const Form = useForm();
+
+function openReview(row: any) {
+  Form.value?.open({
+    title: "审核",
+    form: { status: 1, remark: "" },
+    items: [
+      { label: "状态", prop: "status", component: { name: "el-radio-group", options: [] }, required: true },
+      { label: "备注", prop: "remark", component: { name: "el-input", props: { type: "textarea" } } }
+    ],
+    on: {
+      async submit(data, { close, done }) {
+        try {
+          await service.xxx.review({ id: row.id, ...data });
+          close();
+        } finally {
+          done();
+        }
+      }
+    }
+  });
+}
+```
+
+## 检查清单
+
+- [ ] `prop` 是真实字段，slot 名为 `slot-{prop}`
+- [ ] 复杂组件使用 `vm: markRaw(Component)`
+- [ ] 旧数据、空数组、JSON 字符串在 `onOpen` 中初始化
+- [ ] 表格简单枚举优先用 `dict`
+- [ ] 额外弹窗表单使用 `useForm`

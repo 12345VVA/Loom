@@ -1,0 +1,90 @@
+---
+description: BaseAdminCrudService 与业务 Service 规范
+globs: app/modules/**/service/*.py,app/modules/**/service/**/*.py
+---
+
+# Service / CRUD 规范
+
+管理端标准 CRUD 优先继承 `app.modules.base.service.admin_service.BaseAdminCrudService`。它负责通用增删改查、软删除、树、关系、数据权限、字段输出转换和分页结构。
+
+## 基本结构
+
+```py
+from sqlmodel import Session
+
+from app.modules.base.service.admin_service import BaseAdminCrudService
+from app.modules.demo.model.demo import DemoInfo
+
+
+class DemoInfoService(BaseAdminCrudService):
+    def __init__(self, session: Session):
+        super().__init__(session, DemoInfo)
+```
+
+Controller 的 `CoolControllerMeta.service` 应指向这个 Service。
+
+## 生命周期钩子
+
+业务校验和关联维护优先放到钩子：
+
+```py
+def _before_add(self, data: dict) -> dict:
+    return data
+
+def _after_add(self, entity: DemoInfo, payload: Any = None) -> None:
+    pass
+
+def _before_update(self, data: dict, entity: DemoInfo) -> dict:
+    return data
+
+def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
+    return ids
+```
+
+规则：
+
+- `_before_*` 返回处理后的数据或 id 列表。
+- `_after_*` 用于缓存清理、关联表同步、任务注册等副作用。
+- 业务校验失败使用 `HTTPException`，并给出清晰 `detail`。
+
+## 查询与数据权限
+
+不要绕过 `_apply_query()` 重写通用分页，除非确实需要联表或特殊聚合。`_apply_query()` 会通过 `QueryBuilder` 应用：
+
+- 查询条件
+- 排序
+- 软删除过滤
+- 数据权限
+- 关系 Join
+
+自定义分页也应尽量复用 `CrudQuery`、`PageResult` 和 `_finalize_data()`。
+
+## 输出转换
+
+Service 内部和数据库字段使用 snake_case。返回给前端前使用基类出口：
+
+- `_row_to_dict(row)` 转实体为 dict。
+- `_finalize_data(data)` 转换为前端期望字段名。
+
+自定义联表字段先用 snake_case 加入 dict，再交给 `_finalize_data()` 转换。
+
+```py
+item_data = self._row_to_dict(log_row)
+item_data["task_name"] = task_name
+return self._finalize_data(item_data)
+```
+
+## 事务边界
+
+- 标准 CRUD 的提交逻辑由基类处理。
+- 自定义写操作中，修改实体后需要 `session.add()`、`session.commit()`，必要时 `session.refresh()`。
+- 多步骤写入要考虑失败回滚，不要在 Controller 中直接操作数据库。
+
+## 检查清单
+
+- [ ] 标准资源继承 `BaseAdminCrudService`
+- [ ] 业务逻辑在 Service，不堆在 Controller
+- [ ] 自定义查询复用 `CrudQuery` / `PageResult`
+- [ ] 返回前经过 `_finalize_data`
+- [ ] 校验失败使用 `HTTPException`
+- [ ] 写操作事务边界清晰

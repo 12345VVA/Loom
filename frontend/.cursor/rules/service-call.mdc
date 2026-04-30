@@ -1,0 +1,126 @@
+---
+description: Service / EPS 调用规范
+globs: src/**/*.vue,src/**/*.ts,src/**/*.tsx
+---
+
+# Service / EPS 调用规范
+
+开发或修改前端 API 调用时，优先使用项目 EPS 与模块 service 机制，不要在业务组件旁边私建 API wrapper。
+
+## 核心原则
+
+- 业务后端接口优先使用 EPS：`service.{模块}.{控制器}.{方法}`。
+- 组件、页面、composable 中优先通过 `useCool()` 获取 `service`。
+- store、普通 TS 文件、非 setup 上下文可直接 `import { service } from "/@/cool"`。
+- EPS 路径以实际后端注册为准，snake_case 不要改成 camelCase。
+- 参数统一传单个对象。
+- 已存在 EPS 的接口不要长期使用 `service.request` 手写 URL。
+
+## 获取 service
+
+```ts
+import { useCool } from "/@/cool";
+
+const { service } = useCool();
+
+await service.base.sys.user.page({ page: 1, size: 20 });
+```
+
+非组件上下文：
+
+```ts
+import { service } from "/@/cool";
+
+export function loadUserInfo() {
+  return service.base.sys.user.info();
+}
+```
+
+## CRUD 中使用
+
+CRUD 页面直接传入 EPS service 对象：
+
+```ts
+const Crud = useCrud({
+  service: service.base.sys.user
+});
+```
+
+标准 CRUD 方法优先使用 `page / list / info / add / update / delete`，不要重新拼 URL。
+
+## 参数规则
+
+统一传单个对象：
+
+```ts
+await service.hr.contact.search({
+  keyword: "张三",
+  page: 1,
+  size: 20
+});
+```
+
+不要写成：
+
+```ts
+await service.hr.contact.search("张三", 1, 20);
+```
+
+EPS 会按接口 method 自动放置参数。前端调用时仍只传一个对象，除非使用 `service.request` 例外场景。
+
+## 本地 service 边界
+
+确需本地 service 时，只能放在：
+
+```text
+src/modules/{module}/service/**
+src/plugins/{plugin}/service/**
+```
+
+并通过 `BaseService` 注册，使 `src/cool/bootstrap/module.ts` 自动扫描后注入全局 service。
+
+```ts
+import { BaseService } from "/@/cool";
+
+class DemoUserInfo extends BaseService {
+  constructor() {
+    super("demo/user/info");
+  }
+
+  detail(params: { id: number }) {
+    return this.request({
+      url: "/detail",
+      method: "GET",
+      params
+    });
+  }
+}
+
+export default DemoUserInfo;
+```
+
+## service.request 使用边界
+
+允许使用：
+
+- 框架内部逻辑
+- 外部 URL 或非项目后端接口
+- 临时未接入 EPS 的接口
+- 本地 service 内部通过 `this.request()` 封装模块 namespace 下的特殊接口
+
+如果接口已经由 EPS 生成，应直接调用 EPS：
+
+```ts
+await service.hr.contact.departmentTree();
+```
+
+临时使用 `service.request` 时，应在代码注释或任务记录中说明后续需要补 EPS。
+
+## 检查清单
+
+- [ ] 已存在 EPS 的接口使用 `service.xxx.xxx.xxx`
+- [ ] setup 中通过 `useCool()` 获取 service
+- [ ] 非 setup 文件直接 import 全局 `service`
+- [ ] 参数为单个对象
+- [ ] 本地 service 放在模块或插件 `service/` 目录下
+- [ ] 没有长期保留的手写 URL wrapper

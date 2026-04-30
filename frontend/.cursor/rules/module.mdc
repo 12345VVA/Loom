@@ -28,7 +28,15 @@ demo
 
 ## pages、views
 
-1. 页面参与权限控制，所以不主动注册目录下的路由，通过 `菜单列表` 中配置注册。或者在 `config.ts` 中手动配置：
+1. 当前仓库中，`src/cool/router/index.ts` 会预扫描 `src/modules/*/{views,pages}/**/*` 下的页面文件，但常规后台业务路由不是“仅靠文件自动生效”，而是通过后端菜单里的 `viewPath` 动态挂载。
+
+2. 推荐约定：
+
+- `views`：后台业务页面，默认走后端菜单配置。后端 `viewPath` 建议填写 `cool/modules/模块名/views/xxx.vue`
+- `pages`：登录页、错误页、独立访问页等，可在 `config.ts` 中直接注册
+- `config.ts` 中的 `views/pages` 仍然有效，但更适合公共页、兜底页或不经过菜单系统的页面
+
+3. 示例，手动在 `config.ts` 注册页面：
 
 ```js
 import { type ModuleConfig } from "/@/cool";
@@ -57,7 +65,7 @@ export default (): ModuleConfig => {
 };
 ```
 
-2. 使页面参与路由缓存，配置 `name` 参数
+4. 使页面参与路由缓存，配置 `name` 参数
 
 :::warning
 
@@ -77,6 +85,13 @@ export default (): ModuleConfig => {
   });
 </script>
 ```
+
+5. 如果是常规后台菜单页，新增页面时优先只做两件事：
+
+- 在 `src/modules/模块名/views` 下创建页面文件
+- 在后端菜单中配置正确的 `router` 和 `viewPath`
+
+只有在该页面需要脱离菜单系统独立访问时，再补 `config.ts` 里的 `views/pages` 路由。
 
 方式 2：
 
@@ -409,6 +424,22 @@ export default (): ModuleConfig => {
   };
 };
 ```
+
+## 当前仓库补充说明
+
+`src/cool/bootstrap/module.ts` 会自动扫描并注册：
+
+- `src/{modules,plugins}/*/config.ts`
+- `src/{modules,plugins}/*/service/**`
+- `src/{modules,plugins}/*/directives/**`
+
+因此新增模块时，最少应保证：
+
+- 存在 `config.ts`
+- 页面放在 `views` 或 `pages`
+- 自定义 service 放在 `service/` 目录下，才能自动注入 `useCool().service`
+
+若模块只是纯页面承载层，`config.ts` 可以很薄，例如仅保留 `order` 或基础元信息，由后端菜单控制具体页面挂载。
 
 其他模块中接收 `hasToken` 方法：
 

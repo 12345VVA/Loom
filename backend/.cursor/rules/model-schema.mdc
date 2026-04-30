@@ -1,0 +1,95 @@
+---
+description: SQLModel 模型与 Pydantic Schema 规范
+globs: app/modules/**/model/*.py,app/modules/**/model/**/*.py
+---
+
+# 模型与 Schema 规范
+
+Loom 后端实体使用 SQLModel，接口 DTO 使用 Pydantic `BaseModel`。内部字段以 snake_case 为准，对前端通过 `app.framework.api.naming.resolve_alias` 输出 camelCase 或语义别名。
+
+## SQLModel 实体
+
+```py
+from typing import Optional
+from sqlmodel import Field
+
+from app.framework.models.entity import BaseEntity
+
+
+class DemoInfo(BaseEntity, table=True):
+    __tablename__ = "demo_info"
+
+    name: str = Field(index=True)
+    sort_order: int = Field(default=0)
+    parent_id: Optional[int] = Field(default=None, index=True)
+```
+
+规则：
+
+- 表实体继承 `BaseEntity`。
+- `__tablename__` 使用 snake_case。
+- 数据库字段使用 snake_case。
+- 常查字段按需加 `index=True`。
+- 需要软删除时保持 `BaseEntity` 的 `delete_time` 约定，并在 Controller meta 中设置 `soft_delete=True`。
+
+## Request / Read DTO
+
+```py
+from pydantic import BaseModel, ConfigDict
+from app.framework.api.naming import resolve_alias
+
+
+class DemoInfoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    name: str
+    sort_order: int = 0
+
+
+class DemoInfoCreateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    name: str
+    sort_order: int = 0
+
+
+class DemoInfoUpdateRequest(DemoInfoCreateRequest):
+    id: int
+```
+
+规则：
+
+- Read DTO 使用 `from_attributes=True`。
+- Request DTO 使用 `populate_by_name=True` 和 `alias_generator=resolve_alias`。
+- Update DTO 继承 Create DTO 并补 `id`。
+- 不要在 Controller 中接收裸 dict 作为标准 CRUD 请求体；自定义轻量动作可以例外。
+
+## 字段别名
+
+`resolve_alias` 包含全局语义映射：
+
+- `created_at` -> `createTime`
+- `updated_at` -> `updateTime`
+- `sort_order` -> `orderNum`
+- `is_active` -> `status`
+- `component` -> `viewPath`
+- `path` -> `router`
+
+新增通用语义字段时优先评估是否需要加入全局别名；模块私有字段默认走 snake_case -> camelCase。
+
+## EPS 对齐
+
+EPS 会使用公开字段名作为前端 `prop/propertyName`，并保留 `source` 表示后端源字段。新增模型字段时要确认：
+
+- Read DTO 中包含前端需要展示的字段。
+- Request DTO 支持前端提交字段别名。
+- `QueryConfig` 中的筛选字段与别名映射一致。
+
+## 检查清单
+
+- [ ] 实体字段使用 snake_case
+- [ ] DTO 配置了 `resolve_alias`
+- [ ] Update DTO 包含 `id`
+- [ ] 时间、排序、状态字段遵循全局别名
+- [ ] EPS 展示字段在 Read DTO 中存在

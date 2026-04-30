@@ -1,0 +1,81 @@
+---
+description: 菜单路由与 viewPath 配置规范
+globs: src/modules/**/views/**/*.vue,src/modules/**/pages/**/*.vue,src/modules/**/config.ts,src/cool/router/index.ts
+---
+
+# 菜单路由 / viewPath 规范
+
+项目后台业务页面主要通过后端菜单动态挂载。新增页面时先确定它是菜单业务页、独立页，还是公共页，再选择放置目录和路由方式。
+
+## 页面放置
+
+- 后台菜单业务页：放在 `src/modules/{module}/views/**`
+- 登录页、错误页、独立访问页：放在 `src/modules/{module}/pages/**` 或显式静态路由
+- 普通后台页面优先走 `views` + 后端菜单，不要为了让页面能访问就在 `config.ts` 重复注册路由
+
+## 动态扫描规则
+
+`src/cool/router/index.ts` 会预扫描：
+
+```ts
+/src/modules/*/{views,pages}/**/*
+```
+
+菜单路由注册时，如果菜单项提供 `viewPath`：
+
+- 外链 `http` 开头：渲染 iframe 页面
+- 非外链：通过 `"/src/" + viewPath.replace("cool/", "")` 找到对应组件
+
+推荐格式：
+
+```text
+cool/modules/hr/views/learning/portal.vue
+cool/modules/hr/views/learning/personal-report.vue
+```
+
+不要填写：
+
+```text
+src/modules/hr/views/learning/portal.vue
+/hr/learning/portal
+modules/hr/views/missing.vue
+```
+
+## router / path
+
+- 菜单 `router` 最终会被规范化为前端路由 path。
+- 推荐以 `/` 开头，例如 `/hr/learning/portal`。
+- 避免与静态路由冲突，例如 `/login`、`/404`。
+- 同一业务页面不要同时配置多个菜单路径，除非明确需要多个入口。
+
+## config.ts 路由边界
+
+`config.ts` 中的 `views` / `pages` 仍然有效，但更适合公共页、兜底页、非菜单独立页、插件 demo 或开发辅助页。
+
+常规后台业务页只需要：
+
+1. 在 `src/modules/{module}/views/**` 创建页面。
+2. 在后端菜单中配置 `router` 和 `viewPath`。
+
+## keepAlive 与页面 name
+
+- 菜单字段 `keepAlive` 会写入路由 `meta.keepAlive`。
+- 缓存页面需要稳定组件 `name`，避免切换或刷新时缓存失效。
+- 组件 `name` 建议与路由 path 对应，例如 `/hr/learning/portal` 使用 `hr-learning-portal`。
+
+```vue
+<script setup lang="ts">
+defineOptions({
+  name: "hr-learning-portal"
+});
+</script>
+```
+
+## 检查清单
+
+- [ ] 后台业务页放在 `views`
+- [ ] 独立访问页放在 `pages` 或显式静态路由
+- [ ] 常规菜单页没有重复写入 `config.ts` 路由
+- [ ] 后端菜单 `viewPath` 能映射到真实 Vue 文件
+- [ ] 菜单 `router` 以 `/` 开头且不与静态路由冲突
+- [ ] 需要缓存的页面配置了稳定组件 `name`

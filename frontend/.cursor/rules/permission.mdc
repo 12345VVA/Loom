@@ -1,0 +1,83 @@
+---
+description: 权限判断与 v-permission 使用规范
+globs: src/**/*.vue,src/**/*.ts,src/**/*.tsx
+---
+
+# 权限规范
+
+本项目权限由后端菜单权限、EPS service 权限描述和 `v-permission` 指令共同驱动。新增按钮、操作列、右键菜单或业务入口时，优先使用项目已有权限链路。
+
+## 权限来源
+
+- 登录后 `src/modules/base/store/menu.ts` 获取 `permmenu` 返回的 `perms`。
+- 权限列表缓存到 `base.menuPerms`。
+- `setPerms()` 会遍历全局 `service`，根据 EPS 的 `permission` 字段注入 `_permission`。
+- 模板权限指令位于 `src/modules/base/directives/permission.ts`。
+- 底层判断逻辑位于 `src/modules/base/utils/permission.ts`。
+
+## 模板中控制显示
+
+模板按钮、批量操作、入口按钮优先使用 `v-permission`：
+
+```vue
+<el-button v-permission="service.base.sys.user.permission.move">
+  转移用户
+</el-button>
+```
+
+`v-permission` 支持三种值：
+
+```vue
+<!-- 单个权限 -->
+<el-button v-permission="service.base.sys.menu.permission.add" />
+
+<!-- 任一权限满足即可 -->
+<el-button
+  v-permission="{
+    or: [service.task.info.permission.start, service.task.info.permission.stop]
+  }"
+/>
+
+<!-- 所有权限都满足才显示 -->
+<el-button
+  v-permission="{
+    and: [service.base.sys.menu.permission.add, scope.row.type != 2]
+  }"
+/>
+```
+
+对象里的 `or` / `and` 可以混合权限字符串和布尔表达式，底层会分别解析。
+
+## JS 中控制显示
+
+表格操作列、右键菜单、弹窗入口等 JS 配置中使用 `_permission`：
+
+```ts
+const Table = useTable({
+  contextMenu: [
+    {
+      label: "删除",
+      hidden: !service.task.info._permission.delete,
+      callback(done) {
+        done();
+      }
+    }
+  ]
+});
+```
+
+`service.xxx.permission.xxx` 适合给模板指令绑定；`service.xxx._permission.xxx` 适合 JS 中得到布尔值。
+
+## 禁止与例外
+
+- 不要在新代码中散落读取 `base.menuPerms` 做权限判断。
+- 不要硬编码权限字符串后自行判断，优先使用 EPS 注入的 `service.xxx.permission.xxx` 和 `_permission`。
+- 历史页面、独立页、非 EPS 能力入口如果暂时无法拿到 service 权限，可以短期使用 `checkPerm()`，但应加注释说明原因。
+
+## 检查清单
+
+- [ ] 模板按钮使用 `v-permission`
+- [ ] JS 配置使用 `service.xxx._permission.xxx`
+- [ ] 权限路径来自 EPS service，不手写猜测
+- [ ] 批量操作、右键菜单、操作列都做了权限控制
+- [ ] 新代码没有散落的本地缓存权限判断

@@ -1,0 +1,228 @@
+---
+description: 后端 API 文档内容规范
+globs: docs/*.md,docs/**/*.md,app/modules/**/docs/*.md,app/modules/**/docs/**/*.md,app/modules/**/controller/*.py,app/modules/**/controller/**/*.py,app/modules/**/model/*.py,app/modules/**/model/**/*.py
+---
+
+# API 文档内容规范
+
+编写或更新 Loom 后端 API 文档时，必须以当前代码、EPS 和 OpenAPI 为准。本文只规定文档内容写法，不改变运行时代码。
+
+## 路由与调用规则
+
+Loom 后端管理端路由由 `CoolControllerMeta` 决定，标准结构为：
+
+```text
+/{scope}/{module}/{resource}/{action}
+```
+
+示例：
+
+| 元数据 | 接口路径 |
+| --- | --- |
+| `scope="admin", module="task", resource="info", action="page"` | `/admin/task/info/page` |
+| `scope="admin", module="base", resource="sys/user", action="move"` | `/admin/base/sys/user/move` |
+
+不要按控制器文件名猜路径。文档中的路径必须从 `CoolControllerMeta`、自定义 `@Get/@Post`、OpenAPI 或 EPS 中确认。
+
+普通接口的前端调用示例使用 Cool service：
+
+```ts
+await service.task.info.page({
+  page: 1,
+  size: 20
+});
+```
+
+规则：
+
+- 所有参数统一放在一个对象里。
+- 不要使用多个位置参数。
+- service 路径以实际 EPS 生成结果为准，不要把 snake_case 自行改成 camelCase。
+
+## 接口详情顺序
+
+重要接口按以下顺序编写：
+
+````markdown
+### POST /admin/module/resource/action - 接口名称
+
+**说明**：一句话说明接口用途。
+
+**前端调用**：
+```ts
+await service.module.resource.action({...})
+```
+
+**请求参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+
+**请求示例**：
+```json
+{}
+```
+
+**响应示例**：
+```json
+{}
+```
+
+**错误处理**：
+
+| 场景 | 错误表现 | 处理建议 |
+| --- | --- | --- |
+````
+
+标准 CRUD 可以在模块完整清单中简写，但新增、更新、分页、详情和自定义动作应说明主要字段。
+
+## 参数表格
+
+参数表统一使用四列：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| field | string | 是 | 字段说明 |
+
+规则：
+
+- `参数` 使用前端提交字段名，即 EPS/DTO 暴露的公开字段名。
+- `类型` 使用 `string`、`number`、`boolean`、`object`、`string[]`、`number[]`、`object[]`、`File` 等。
+- `必填` 只能写 `是` 或 `否`。
+- 可选参数必须标注默认值。
+- 枚举、范围、格式、数组长度、对象结构必须写清楚。
+
+示例：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| page | number | 否 | 页码，从 1 开始，默认 1 |
+| size | number | 否 | 每页条数，默认 20 |
+| status | number | 否 | 状态：`0`-停用，`1`-启用 |
+| ids | number[] | 是 | ID 列表，最多 100 个 |
+
+复杂对象必须拆成子表说明字段结构。
+
+## 请求与响应示例
+
+请求示例必须是合法 JSON，不要在 JSON 代码块中写注释：
+
+```json
+{
+  "page": 1,
+  "size": 20,
+  "status": 1
+}
+```
+
+普通 JSON 接口响应示例使用统一结构：
+
+```json
+{
+  "code": 1000,
+  "message": "success",
+  "data": {
+    "id": 1
+  }
+}
+```
+
+分页响应使用 `list/pagination`：
+
+```json
+{
+  "code": 1000,
+  "message": "success",
+  "data": {
+    "list": [],
+    "pagination": {
+      "page": 1,
+      "size": 20,
+      "total": 0
+    }
+  }
+}
+```
+
+如前端拦截器会直接返回 `data`，可额外说明“业务代码实际拿到的是 data 内容”。
+
+## 错误处理
+
+有明确失败场景时，写错误处理表：
+
+| 场景 | 错误表现 | 处理建议 |
+| --- | --- | --- |
+| 参数缺失 | 返回参数校验错误 | 前端补齐必填字段 |
+| 未登录 | 401 | 重新登录 |
+| 无权限 | 403 | 检查角色和菜单权限 |
+| 资源不存在 | 404 或业务错误提示 | 检查 ID 是否有效 |
+
+错误说明要写触发条件、返回表现和调用方处理方式，不要只写“失败”。
+
+## 文件上传
+
+文件上传文档必须说明：
+
+- 文件字段名。
+- 额外表单字段。
+- 文件大小和格式限制。
+- 返回的访问地址、文件 ID 或业务字段。
+
+上传示例使用 `FormData`：
+
+```ts
+const formData = new FormData();
+formData.append("file", file);
+formData.append("category", "avatar");
+
+await service.base.comm.upload(formData);
+```
+
+## 流式接口
+
+SSE 或其他流式接口不能写成普通 Cool service 调用。文档必须说明：
+
+- 使用 `fetch` 或支持流式响应的客户端。
+- 响应不是标准 JSON envelope。
+- 响应头和事件格式。
+- 如何取消请求，例如 `AbortController`。
+- 主要事件类型和错误事件。
+
+示例：
+
+```ts
+const controller = new AbortController();
+const response = await fetch("/admin/demo/stream/chat", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`
+  },
+  body: JSON.stringify({ question: "你好" }),
+  signal: controller.signal
+});
+```
+
+事件类型必须以实际接口实现为准，不要复制无关事件。
+
+## 内容检查清单
+
+- [ ] 路径符合 `/{scope}/{module}/{resource}/{action}` 或真实自定义路由
+- [ ] 普通接口提供 Cool service 调用示例
+- [ ] 参数表使用 `参数 / 类型 / 必填 / 说明`
+- [ ] 可选参数写默认值
+- [ ] 枚举、范围、格式、数组和对象结构说明完整
+- [ ] 请求示例是合法 JSON
+- [ ] 响应示例符合 `{ code: 1000, message: "success", data }`
+- [ ] 分页响应使用 `list/pagination`
+- [ ] 关键失败场景有错误处理说明
+- [ ] 文件上传和流式接口有专项说明
+
+## 禁止事项
+
+- 不要写未经代码确认的路径。
+- 不要按控制器文件路径猜 service 路径。
+- 不要使用多个位置参数示例。
+- 不要在 JSON 示例中写注释。
+- 不要把流式接口写成普通 JSON 接口。
+- 不要复制与当前接口无关的事件类型、参数或字段。

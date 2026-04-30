@@ -1,0 +1,97 @@
+---
+description: 后端模块开发规范
+globs: app/modules/**/config.py,app/modules/**/init_db.py,app/modules/**/menu.json,app/modules/**/init_menu.py
+---
+
+# 后端模块规范
+
+Loom 后端模块位于 `backend/app/modules/{module}`。模块发现与启动由 `app.modules.loader.load_module_configs()` 和 `bootstrap_modules()` 驱动，配置入口是每个模块的 `config.py` 中的 `MODULE_CONFIG`。
+
+## 推荐目录
+
+```text
+app/modules/{module}/
+  config.py
+  menu.json
+  init_db.py
+  model/
+  service/
+  controller/
+  tasks/
+```
+
+按需创建目录，不要为了空目录而添加占位逻辑。
+
+## MODULE_CONFIG
+
+模块必须通过 `app.modules.module_config.ModuleConfig` 声明元信息：
+
+```py
+from app.framework.middleware.module_access import ModuleAccessMiddleware
+from app.modules.module_config import ModuleConfig
+
+MODULE_CONFIG = ModuleConfig(
+    name="demo",
+    label="示例模块",
+    description="示例模块说明",
+    order=5,
+    scopes=("admin",),
+    middlewares=(ModuleAccessMiddleware,),
+    config_namespace="DEMO",
+    init_db_file="init_db.py",
+    init_menu_file="menu.json",
+)
+```
+
+规则：
+
+- `name` 必须与模块目录名一致。
+- `order` 越大越先加载。
+- 管理端模块通常声明 `scopes=("admin",)`。
+- 模块级中间件放在 `middlewares`；全局中间件只应由基础模块等框架模块声明。
+- 环境变量读取使用 `config_namespace`，会聚合 `DEMO_*` 为模块运行时配置。
+
+## 初始化资源
+
+- `init_db_file` 指向模块内初始化脚本，脚本可暴露 `run(session)` 或 `bootstrap(session)`。
+- `init_menu_file` 可指向 `menu.json` 或 Python 菜单清单。
+- 初始化文件路径相对模块根目录，由 `resolve_module_root()` 解析。
+
+`init_db.py` 只做幂等初始化，不要在其中写不可重复执行的破坏性逻辑。
+
+## 白名单
+
+按 scope 使用对应白名单：
+
+```py
+admin_whitelist=(
+    "/admin/demo/open/ping",
+)
+```
+
+白名单路径写完整后端路径，和实际路由保持一致。不要用前端 path 或菜单 path 代替接口路径。
+
+## Bootstrap
+
+需要启动时初始化业务数据时，可设置：
+
+```py
+bootstrap="app.modules.demo.config.bootstrap"
+```
+
+并实现：
+
+```py
+def bootstrap(session: Session) -> None:
+    DemoService(session).bootstrap_defaults()
+```
+
+Bootstrap 应保持幂等，失败行为受 `MODULE_LOAD_STRICT` 控制。
+
+## 检查清单
+
+- [ ] 模块目录名与 `MODULE_CONFIG.name` 一致
+- [ ] 管理端模块声明了正确 `scopes`
+- [ ] 初始化脚本幂等
+- [ ] 白名单使用后端接口路径
+- [ ] 菜单初始化通过 `init_menu_file` 管理

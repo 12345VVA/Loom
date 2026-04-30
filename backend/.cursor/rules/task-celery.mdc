@@ -1,0 +1,68 @@
+---
+description: Celery 任务与异步调度规范
+globs: app/**/tasks/**/*.py,app/celery_app.py,app/modules/task/**/*.py
+---
+
+# Celery 与任务规范
+
+Loom 使用 Celery + Redis 执行异步任务。Celery 应用定义在 `backend/app/celery_app.py`，系统任务模块位于 `app/modules/task`。
+
+## 任务定义
+
+模块任务放在：
+
+```text
+app/modules/{module}/tasks/*.py
+```
+
+示例：
+
+```py
+from app.celery_app import celery_app
+
+
+@celery_app.task(name="demo.execute_job")
+def execute_job(job_id: int) -> dict:
+    return {"success": True, "jobId": job_id}
+```
+
+规则：
+
+- 任务名使用 `{module}.{action}` 或现有模块约定，保持稳定。
+- 任务函数参数必须可序列化。
+- 任务模块必须能被 worker 导入，不要依赖请求上下文。
+- 长耗时任务内自行记录状态、日志或回调结果。
+
+## 调用任务
+
+业务 Service 中通过 `.delay()` 或 Celery 签名触发：
+
+```py
+from app.modules.task.tasks.system_tasks import execute_system_task
+
+execute_system_task.delay(task_id)
+```
+
+Controller 不直接堆调度逻辑，优先调用 Service。
+
+## 定时任务
+
+系统定时任务数据由 `task` 模块维护。涉及调度引擎注册、停止、立即执行时，业务入口放在 `TaskInfoService`，并通过任务日志记录执行结果。
+
+## 运行命令
+
+在 `backend/` 下运行：
+
+```bash
+celery -A app.celery_app worker --loglevel=info
+```
+
+如启用定时调度，再按项目配置启动 beat。
+
+## 检查清单
+
+- [ ] 任务函数可被 worker 导入
+- [ ] 参数可 JSON 序列化
+- [ ] Service 负责触发任务
+- [ ] 任务名稳定且包含模块语义
+- [ ] 任务执行结果或异常有日志记录
