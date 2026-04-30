@@ -54,7 +54,7 @@ export function test() {
 			}"
 			title="更快速"
 			date="2025-06-28 10:00:00"
-			content="通过集成 cool-admin 的用户登录、版本管理、消息通知以及订单管理等基础模块。有效降低了开发成本，进而增强了市场竞争力。"
+			content="通过集成 Loom 的用户登录、版本管理、消息通知以及订单管理等基础模块。有效降低了开发成本，进而增强了市场竞争力。"
 		>
 		</cl-timeline-item>
 		17<text class="title dark:!text-surface-50"></text>

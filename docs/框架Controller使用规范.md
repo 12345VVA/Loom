@@ -8,7 +8,7 @@
 
 ## 一、概述
 
-本项目采用类似 Cool-Admin-Midway 的装饰器式控制器框架，通过 `@CoolController` 装饰器自动生成标准 CRUD 接口，并支持自定义业务接口。
+本项目采用类似 Loom 的装饰器式控制器框架，通过 `@CoolController` 装饰器自动生成标准 CRUD 接口，并支持自定义业务接口。
 
 ### 1.1 核心特性
 

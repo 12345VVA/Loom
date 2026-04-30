@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import json
 from copy import deepcopy
 
 from fastapi.testclient import TestClient
@@ -10,23 +11,58 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from main import app  # noqa: E402
 from app.core.config import settings  # noqa: E402
-from app.modules.base.service.cache_service import cache_get  # noqa: E402
+from app.modules.base.service.cache_service import cache_delete_pattern  # noqa: E402
 
 
 class AuthAlignmentTests(unittest.TestCase):
     def setUp(self):
+        cache_delete_pattern("login:fail:*")
+        cache_delete_pattern("login:lock:*")
         self.client = TestClient(app)
         self.client.__enter__()
 
     def tearDown(self):
         self.client.__exit__(None, None, None)
 
-    def _login_headers(self) -> dict[str, str]:
-        captcha_res = self.client.get("/admin/base/open/captcha")
-        captcha_data = captcha_res.json()["data"]
-        verify_code = cache_get(f"verify:img:{captcha_data['captchaId']}")
+    def _slider_verify_code(
+        self,
+        captcha_data: dict,
+        *,
+        x_offset: int = 0,
+        duration: int = 720,
+        empty_track: bool = False,
+        track: list[dict] | None = None,
+    ) -> str:
+        challenge = captcha_data["data"]
+        target_x = int(challenge["targetX"]) + x_offset
 
-        login_res = self.client.post(
+        if track is None and not empty_track:
+            track = [
+                {"x": round(target_x * step / 6, 2), "t": step * 120}
+                for step in range(1, 7)
+            ]
+        elif track is None:
+            track = []
+
+        return json.dumps(
+            {
+                "x": target_x,
+                "duration": duration,
+                "track": track,
+            }
+        )
+
+    def _captcha_challenge(self) -> dict:
+        captcha_res = self.client.get("/admin/base/open/captcha")
+        self.assertEqual(captcha_res.status_code, 200)
+        captcha_data = captcha_res.json()["data"]
+        self.assertEqual(captcha_data["data"]["type"], "slider")
+        self.assertIn("targetX", captcha_data["data"])
+        self.assertIn("tolerance", captcha_data["data"])
+        return captcha_data
+
+    def _login_with_captcha(self, captcha_data: dict, verify_code: str):
+        return self.client.post(
             "/admin/base/open/login",
             json={
                 "username": settings.DEFAULT_ADMIN_USERNAME,
@@ -35,26 +71,19 @@ class AuthAlignmentTests(unittest.TestCase):
                 "verifyCode": verify_code,
             },
         )
+
+    def _login_headers(self) -> dict[str, str]:
+        captcha_data = self._captcha_challenge()
+        login_res = self._login_with_captcha(captcha_data, self._slider_verify_code(captcha_data))
         self.assertEqual(login_res.status_code, 200)
         token = login_res.json()["data"]["token"]
         return {"Authorization": f"Bearer {token}"}
 
     def test_captcha_login_and_refresh(self):
-        captcha_res = self.client.get("/admin/base/open/captcha")
-        self.assertEqual(captcha_res.status_code, 200)
-        captcha_data = captcha_res.json()["data"]
-        verify_code = cache_get(f"verify:img:{captcha_data['captchaId']}")
-        self.assertIsNotNone(verify_code)
+        captcha_data = self._captcha_challenge()
+        verify_code = self._slider_verify_code(captcha_data)
 
-        login_res = self.client.post(
-            "/admin/base/open/login",
-            json={
-                "username": settings.DEFAULT_ADMIN_USERNAME,
-                "password": settings.DEFAULT_ADMIN_PASSWORD,
-                "captchaId": captcha_data["captchaId"],
-                "verifyCode": verify_code,
-            },
-        )
+        login_res = self._login_with_captcha(captcha_data, verify_code)
         self.assertEqual(login_res.status_code, 200)
         login_data = login_res.json()["data"]
         self.assertIn("token", login_data)
@@ -76,6 +105,75 @@ class AuthAlignmentTests(unittest.TestCase):
         )
         self.assertEqual(refresh_res.status_code, 200)
         self.assertIn("token", refresh_res.json()["data"])
+
+    def test_slider_captcha_is_single_use(self):
+        captcha_data = self._captcha_challenge()
+        verify_code = self._slider_verify_code(captcha_data)
+
+        first_res = self._login_with_captcha(captcha_data, verify_code)
+        self.assertEqual(first_res.status_code, 200)
+
+        second_res = self._login_with_captcha(captcha_data, verify_code)
+        self.assertEqual(second_res.status_code, 401)
+
+    def test_slider_captcha_rejects_invalid_track(self):
+        wrong_position = self._captcha_challenge()
+        tolerance = int(wrong_position["data"]["tolerance"])
+        wrong_position_res = self._login_with_captcha(
+            wrong_position,
+            self._slider_verify_code(wrong_position, x_offset=tolerance + 20),
+        )
+        self.assertEqual(wrong_position_res.status_code, 401)
+
+        too_fast = self._captcha_challenge()
+        too_fast_res = self._login_with_captcha(
+            too_fast,
+            self._slider_verify_code(too_fast, duration=100),
+        )
+        self.assertEqual(too_fast_res.status_code, 401)
+
+        empty_track = self._captcha_challenge()
+        empty_track_res = self._login_with_captcha(
+            empty_track,
+            self._slider_verify_code(empty_track, empty_track=True),
+        )
+        self.assertEqual(empty_track_res.status_code, 401)
+
+    def test_slider_captcha_allows_small_pointer_jitter(self):
+        captcha_data = self._captcha_challenge()
+        target_x = int(captcha_data["data"]["targetX"])
+        jitter_track = [
+            {"x": target_x * 0.18, "t": 120},
+            {"x": target_x * 0.34, "t": 240},
+            {"x": target_x * 0.34 - 2, "t": 300},
+            {"x": target_x * 0.58, "t": 420},
+            {"x": target_x * 0.78, "t": 560},
+            {"x": target_x, "t": 720},
+        ]
+
+        login_res = self._login_with_captcha(
+            captcha_data,
+            self._slider_verify_code(captcha_data, track=jitter_track),
+        )
+        self.assertEqual(login_res.status_code, 200)
+
+    def test_slider_captcha_rejects_large_backtrack(self):
+        captcha_data = self._captcha_challenge()
+        target_x = int(captcha_data["data"]["targetX"])
+        backtrack_track = [
+            {"x": target_x * 0.2, "t": 120},
+            {"x": target_x * 0.65, "t": 240},
+            {"x": target_x * 0.65 - settings.CAPTCHA_SLIDER_MAX_BACKTRACK_PX - 4, "t": 360},
+            {"x": target_x * 0.75, "t": 480},
+            {"x": target_x * 0.9, "t": 600},
+            {"x": target_x, "t": 720},
+        ]
+
+        login_res = self._login_with_captcha(
+            captcha_data,
+            self._slider_verify_code(captcha_data, track=backtrack_track),
+        )
+        self.assertEqual(login_res.status_code, 401)
 
     def test_eps_shape_when_enabled(self):
         response = self.client.get("/admin/base/open/eps")

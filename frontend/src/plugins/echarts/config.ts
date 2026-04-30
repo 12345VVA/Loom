@@ -12,7 +12,7 @@ export default (): ModuleConfig => {
 
 		label: 'ECharts 图表',
 		description: 'echarts、vue-echarts 配置',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.0.0',
 		updateTime: '2024-07-22',
 		doc: 'https://echarts.apache.org/examples/zh/index.html'

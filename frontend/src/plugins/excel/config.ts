@@ -10,7 +10,7 @@ export default (): ModuleConfig => {
 
 		label: 'Excel',
 		description: '表格的导入、导出组件',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.0.1',
 		updateTime: '2024-03-28',
 		demo: [

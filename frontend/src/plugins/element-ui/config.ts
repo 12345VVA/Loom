@@ -25,7 +25,7 @@ export default (): ModuleConfig => {
 
 		label: 'Element Ui',
 		description: 'Element Plus 变量、样式配置',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.0.0',
 		updateTime: '2024-07-22',
 		doc: 'https://element-plus.org/zh-CN/component/overview.html'

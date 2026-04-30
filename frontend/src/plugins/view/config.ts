@@ -7,7 +7,7 @@ export default (): ModuleConfig => {
 
 		label: '视图组件',
 		description: '左右侧布局、顶部详情等',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.0.4',
 		updateTime: '2024-03-25',
 		demo: [

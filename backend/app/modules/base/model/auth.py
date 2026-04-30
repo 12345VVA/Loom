@@ -4,7 +4,7 @@ Base 模块认证与权限相关模型
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, Optional, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field as PydanticField, field_validator, field_serializer
 from sqlmodel import Field, SQLModel
@@ -137,7 +137,7 @@ class RefreshTokenRequest(BaseModel):
 
 
 class UserPersonRead(BaseModel):
-    """个人信息响应模型（对齐 Cool-Admin）"""
+    """个人信息响应模型（对齐 Loom）"""
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
@@ -204,7 +204,7 @@ class UserProfile(BaseModel):
 
 
 class CoolUserInfo(BaseModel):
-    """Cool 风格用户信息"""
+    """Loom 兼容用户信息"""
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
@@ -646,7 +646,7 @@ class TokenPair(BaseModel):
 
 
 class CoolLoginResponse(BaseModel):
-    """Cool 风格登录响应"""
+    """Loom 兼容登录响应"""
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
@@ -664,11 +664,11 @@ class CaptchaResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     captcha_id: str
-    data: str
+    data: dict[str, Any]
 
 
 class CoolMenuItem(BaseModel):
-    """Cool 风格菜单节点"""
+    """Loom 兼容菜单节点"""
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
@@ -696,7 +696,7 @@ class CoolMenuItem(BaseModel):
 
 
 class CoolPersonResponse(BaseModel):
-    """Cool 风格个人信息接口响应"""
+    """Loom 兼容个人信息接口响应"""
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 

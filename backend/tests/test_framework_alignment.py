@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -21,8 +22,8 @@ from app.modules.base.model.sys import (  # noqa: E402
     SysSecurityLogCreateRequest,
     SysSecurityLogRead,
 )
-from app.modules.base.service.cache_service import cache_get  # noqa: E402
 from app.modules.base.service.data_scope_service import DataScopeContext  # noqa: E402
+from app.modules.base.service.cache_service import cache_delete_pattern  # noqa: E402
 from app.core.config import settings  # noqa: E402
 
 
@@ -44,23 +45,39 @@ class PlainRow(SQLModel, table=True):
 
 class FrameworkAlignmentTests(unittest.TestCase):
     def setUp(self):
+        cache_delete_pattern("login:fail:*")
+        cache_delete_pattern("login:lock:*")
         self.client = TestClient(app)
         self.client.__enter__()
 
     def tearDown(self):
         self.client.__exit__(None, None, None)
 
+    def _slider_verify_code(self, captcha_data: dict) -> str:
+        target_x = int(captcha_data["data"]["targetX"])
+        return json.dumps(
+            {
+                "x": target_x,
+                "duration": 720,
+                "track": [
+                    {"x": round(target_x * step / 6, 2), "t": step * 120}
+                    for step in range(1, 7)
+                ],
+            }
+        )
+
     def _login_headers(self) -> dict[str, str]:
         captcha_res = self.client.get("/admin/base/open/captcha")
+        self.assertEqual(captcha_res.status_code, 200)
         captcha_data = captcha_res.json()["data"]
-        verify_code = cache_get(f"verify:img:{captcha_data['captchaId']}")
+        self.assertEqual(captcha_data["data"]["type"], "slider")
         login_res = self.client.post(
             "/admin/base/open/login",
             json={
                 "username": settings.DEFAULT_ADMIN_USERNAME,
                 "password": settings.DEFAULT_ADMIN_PASSWORD,
                 "captchaId": captcha_data["captchaId"],
-                "verifyCode": verify_code,
+                "verifyCode": self._slider_verify_code(captcha_data),
             },
         )
         self.assertEqual(login_res.status_code, 200)

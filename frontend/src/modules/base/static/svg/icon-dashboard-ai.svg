@@ -1,0 +1,10 @@
+<svg class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+	<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="66">
+		<rect x="116" y="148" width="792" height="728" rx="92" />
+		<path d="M238 326h190M238 478h190M238 630h118" />
+		<path d="M650 340l48 132 132 48-132 48-48 132-48-132-132-48 132-48 48-132z" />
+		<circle cx="250" cy="744" r="22" fill="currentColor" stroke="none" />
+		<circle cx="346" cy="744" r="22" fill="currentColor" stroke="none" />
+		<circle cx="442" cy="744" r="22" fill="currentColor" stroke="none" />
+	</g>
+</svg>

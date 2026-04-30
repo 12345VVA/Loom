@@ -9,7 +9,7 @@
 				<span>{{ app.info.name }}</span>
 			</div>
 
-			<p class="desc">{{ $t('快速开发后台权限管理系统') }}</p>
+			<p class="desc">{{ $t('Loom 后台管理系统') }}</p>
 
 			<div class="form">
 				<el-form label-position="top" class="form" :disabled="saving">
@@ -33,24 +33,11 @@
 					</el-form-item>
 
 					<el-form-item :label="$t('验证码')">
-						<el-input
-							v-model="form.verifyCode"
-							:placeholder="$t('验证码')"
-							maxlength="4"
-							@keyup.enter="toLogin"
-						>
-							<template #suffix>
-								<pic-captcha
-									:ref="setRefs('picCaptcha')"
-									v-model="form.captchaId"
-									@change="
-										() => {
-											form.verifyCode = '';
-										}
-									"
-								/>
-							</template>
-						</el-input>
+						<pic-captcha
+							:ref="setRefs('picCaptcha')"
+							v-model="form.captchaId"
+							@change="onCaptchaChange"
+						/>
 					</el-form-item>
 
 					<div class="op">
@@ -66,7 +53,7 @@
 			<cl-svg name="bg"></cl-svg>
 		</div>
 
-		<a href="https://cool-js.com" class="copyright"> Copyright © COOL </a>
+		<span class="copyright"> Copyright © Loom </span>
 	</div>
 </template>
 
@@ -98,6 +85,10 @@ const form = reactive({
 	verifyCode: ''
 });
 
+function onCaptchaChange(payload: { verifyCode?: string }) {
+	form.verifyCode = payload.verifyCode || '';
+}
+
 // 演示模式
 if (import.meta.env.MODE == 'demo') {
 	form.username = 'admin';
@@ -115,7 +106,7 @@ async function toLogin() {
 	}
 
 	if (!form.verifyCode) {
-		return ElMessage.error(t('图片验证码不能为空'));
+		return ElMessage.error(t('请完成滑块验证'));
 	}
 
 	saving.value = true;
@@ -272,12 +263,6 @@ $color: #2c3142;
 						box-shadow: 0 0 0 1000px #f8f8f8 inset;
 					}
 				}
-			}
-
-			:deep(.pic-captcha) {
-				position: absolute;
-				right: -5px;
-				top: 0;
 			}
 		}
 

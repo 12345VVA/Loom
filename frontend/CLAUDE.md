@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-cool-admin-vue 8.x - A modular Vue 3 + TypeScript + Vite admin framework with plugin-based architecture and rapid CRUD development.
+Loom-vue 8.x - A modular Vue 3 + TypeScript + Vite admin framework with plugin-based architecture and rapid CRUD development.
 
 ## Commands
 
@@ -516,4 +516,4 @@ export default (): ModuleConfig => ({
 ## References
 
 - Official docs: https://cool-js.com
-- Demo: https://show.cool-admin.com (admin/123456)
+- Demo: https://show.Loom.com (admin/123456)

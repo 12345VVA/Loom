@@ -1,5 +1,5 @@
 """
-cool-admin-vue 兼容路由别名
+Loom-vue 兼容路由别名
 """
 from __future__ import annotations
 

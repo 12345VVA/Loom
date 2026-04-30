@@ -8,8 +8,8 @@ export default (): ModuleConfig => {
 	return {
 		order: 99,
 		options: {
-			index: 'https://cool-js.com',
-			api: 'https://service.cool-js.com/api'
+			index: '',
+			api: ''
 		},
 		ignore: {
 			NProgress: [

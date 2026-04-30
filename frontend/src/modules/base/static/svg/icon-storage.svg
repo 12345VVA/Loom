@@ -1,0 +1,7 @@
+<svg class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+	<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="66">
+		<ellipse cx="512" cy="214" rx="330" ry="112" />
+		<path d="M182 214v596c0 62 148 112 330 112s330-50 330-112V214" />
+		<path d="M182 412c0 62 148 112 330 112s330-50 330-112M182 612c0 62 148 112 330 112s330-50 330-112" />
+	</g>
+</svg>

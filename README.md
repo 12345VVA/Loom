@@ -1,6 +1,6 @@
 # Loom - AI 内容生成平台
 
-> Loom 一个很酷的全栈 AI 内容生成平台。基于 Vue 3 + FastAPI + Celery 深度定制，在 Python 生态下还原了类似 **Cool-Admin** 的极速开发体验。
+> Loom 一个很酷的全栈 AI 内容生成平台。基于 Vue 3 + FastAPI + Celery 深度定制，提供模块化后台管理、自动路由、权限、EPS 元数据和 AI 异步任务能力。
 
 ## 特点
 
@@ -10,12 +10,6 @@
 - **企业级数据权限**: 内置 `DataScope` 机制，支持“本人、本部门、本部门及下属”等多种粒度的数据自动过滤。
 - **AI 异步引擎**: 深度集成 Celery + Redis，完美支持大规模、高并发的长耗时 AI 生成任务。
 - **动态路由与权限**: 基于 JWT 与服务端二级缓存，支持动态菜单同步与精确到 Action 的权限校验。
-
-## 参考项目
-
-本项目在开发过程中参考并使用了以下优秀开源项目的架构设计与 UI 规范：
-- **后端架构设计参考**: [cool-admin-midway](https://github.com/cool-team-official/cool-admin-midway)
-- **前端风格与逻辑参考**: [cool-admin-vue](https://github.com/cool-team-official/cool-admin-vue)
 
 ## 技术栈
 
@@ -195,7 +189,7 @@ npm run dev
 
 ## API 规范与兼容性
 
-本项目后端 API 设计深度兼容 [Cool-Admin](https://cool-js.com/) 生态，确保前端脚手架与组件可以无缝对接。
+本项目后端 API 面向 Loom 管理端前端设计，统一输出 `{ code, message, data }` 响应结构，并通过 EPS 元数据驱动前端 service、表格和表单。
 
 ### 命名规范
 路由遵循 `/{scope}/{module}/{resource}/{action}` 结构：
@@ -212,8 +206,8 @@ npm run dev
 | `delete` | POST | 批量删除记录 |
 | `update` | POST | 更新记录 |
 | `info` | GET | 获取单条详情 |
-| `list` | GET / POST | 获取全量列表，POST 为 Cool Admin 主协议，GET 为兼容入口 |
-| `page` | GET / POST | 获取分页列表 (支持高级搜索)，POST 为 Cool Admin 主协议，GET 为兼容入口 |
+| `list` | GET / POST | 获取全量列表，POST 为 Loom 主协议，GET 为兼容入口 |
+| `page` | GET / POST | 获取分页列表 (支持高级搜索)，POST 为 Loom 主协议，GET 为兼容入口 |
 
 ### 完整文档
 项目启动后，请访问以下路径查看实时互动的完整 API 文档：

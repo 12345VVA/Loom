@@ -1,0 +1,47 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="84" y1="52" x2="428" y2="460" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#121827"/>
+      <stop offset="0.56" stop-color="#17233A"/>
+      <stop offset="1" stop-color="#111423"/>
+    </linearGradient>
+    <linearGradient id="threadA" x1="150" y1="116" x2="388" y2="398" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5EEAD4"/>
+      <stop offset="0.5" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="threadB" x1="111" y1="379" x2="404" y2="135" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A7F3D0"/>
+      <stop offset="0.48" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#C084FC"/>
+    </linearGradient>
+    <filter id="softGlow" x="48" y="48" width="416" height="416" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.23 0 0 0 0 0.76 0 0 0 0 0.94 0 0 0 0.35 0"/>
+      <feBlend in="SourceGraphic"/>
+    </filter>
+  </defs>
+
+  <rect x="48" y="48" width="416" height="416" rx="108" fill="url(#bg)"/>
+  <rect x="60" y="60" width="392" height="392" rx="96" stroke="white" stroke-opacity="0.08" stroke-width="2"/>
+
+  <g opacity="0.22">
+    <path d="M145 150H342C373.48 150 399 175.52 399 207C399 238.48 373.48 264 342 264H170" stroke="#9BE8FF" stroke-width="12" stroke-linecap="round"/>
+    <path d="M366 362H170C138.52 362 113 336.48 113 305C113 273.52 138.52 248 170 248H342" stroke="#C4B5FD" stroke-width="12" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#softGlow)">
+    <path d="M159 126V322C159 358.45 188.55 388 225 388H363" stroke="url(#threadA)" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M209 126V286C209 300.36 220.64 312 235 312H363" stroke="#0F172A" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M209 126V286C209 300.36 220.64 312 235 312H363" stroke="url(#threadB)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M144 206H300C338.66 206 370 237.34 370 276C370 314.66 338.66 346 300 346H166" stroke="url(#threadB)" stroke-width="18" stroke-linecap="round"/>
+    <path d="M144 254H332" stroke="#0F172A" stroke-width="24" stroke-linecap="round"/>
+    <path d="M144 254H332" stroke="url(#threadA)" stroke-width="14" stroke-linecap="round"/>
+  </g>
+
+  <circle cx="159" cy="126" r="18" fill="#5EEAD4"/>
+  <circle cx="209" cy="126" r="14" fill="#93C5FD"/>
+  <circle cx="363" cy="312" r="15" fill="#C084FC"/>
+  <circle cx="363" cy="388" r="18" fill="#8B5CF6"/>
+  <circle cx="144" cy="254" r="13" fill="#67E8F9"/>
+</svg>

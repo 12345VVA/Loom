@@ -4,10 +4,10 @@ Base 模块认证与权限服务
 from __future__ import annotations
 
 from datetime import datetime
-import base64
 import hashlib
-import html
-import re
+import json
+import secrets
+import time
 
 from fastapi import HTTPException, Request, status
 from sqlmodel import Session, select
@@ -252,22 +252,37 @@ class AuthService:
         clear_login_caches(user.id)
 
     def captcha(self, width: int = 150, height: int = 50, color: str = "#333") -> CaptchaResponse:
-        chars = uuid4().hex[:4].upper()
-        safe_text = html.escape(chars)
-        safe_color = html.escape(color or "#333", quote=True)
-        svg_data = (
-            f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>"
-            f"<rect width='{width}' height='{height}' fill='#f5f5f5' rx='4' ry='4'/>"
-            f"<text x='{width * 0.18}' y='{height * 0.68}' fill='{safe_color}' "
-            f"font-size='{height * 0.56}' font-family='monospace'>{safe_text}</text>"
-            "</svg>"
-        )
-        base64_data = base64.b64encode(svg_data.encode("utf-8")).decode("ascii")
+        track_width = max(240, min(int(width or 300), 360))
+        handle_width = 42
+        tolerance = settings.CAPTCHA_SLIDER_TOLERANCE
+        min_target = 56
+        max_target = track_width - handle_width - 16
+        target_x = min_target + secrets.randbelow(max_target - min_target + 1)
         captcha_id = uuid4().hex
-        cache_set(self._build_captcha_cache_key(captcha_id), chars.lower(), settings.CAPTCHA_EXPIRE_SECONDS)
+        cache_set(
+            self._build_captcha_cache_key(captcha_id),
+            json.dumps(
+                {
+                    "type": "slider",
+                    "target_x": target_x,
+                    "tolerance": tolerance,
+                    "created_at": int(time.time() * 1000),
+                },
+                ensure_ascii=True,
+            ),
+            settings.CAPTCHA_EXPIRE_SECONDS,
+        )
         return CaptchaResponse(
             captcha_id=captcha_id,
-            data=f"data:image/svg+xml;base64,{base64_data}",
+            data={
+                "type": "slider",
+                "trackWidth": track_width,
+                "handleWidth": handle_width,
+                "targetX": target_x,
+                "tolerance": tolerance,
+                "expireSeconds": settings.CAPTCHA_EXPIRE_SECONDS,
+                "label": "拖动滑块完成验证",
+            },
         )
 
     def captcha_check(self, captcha_id: str | None, verify_code: str | None) -> None:
@@ -277,8 +292,53 @@ class AuthService:
         cached = cache_get(cache_key)
         # 防重放：立即删除验证码，确保只能使用一次
         cache_delete(cache_key)
-        if not cached or cached != verify_code.lower():
+        if not cached:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        try:
+            challenge = json.loads(cached)
+            payload = json.loads(verify_code)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+
+        if challenge.get("type") != "slider":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+
+        try:
+            target_x = float(challenge["target_x"])
+            tolerance = float(challenge["tolerance"])
+            final_x = float(payload["x"])
+            duration_ms = int(payload["duration"])
+            track = payload["track"]
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+
+        if abs(final_x - target_x) > tolerance:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        if duration_ms < settings.CAPTCHA_SLIDER_MIN_DURATION_MS:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证速度过快，请重试")
+        if not isinstance(track, list) or len(track) < settings.CAPTCHA_SLIDER_MIN_TRACK_POINTS:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+
+        previous_x = -1.0
+        backtrack_total = 0.0
+        for point in track:
+            if not isinstance(point, dict):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+            try:
+                current_x = float(point["x"])
+            except (KeyError, TypeError, ValueError):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+            if current_x < previous_x:
+                backtrack = previous_x - current_x
+                backtrack_total += backtrack
+                if backtrack > settings.CAPTCHA_SLIDER_MAX_BACKTRACK_PX:
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+            previous_x = current_x
+
+        if backtrack_total > settings.CAPTCHA_SLIDER_MAX_BACKTRACK_PX * 2:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+        if abs(previous_x - final_x) > tolerance:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
 
     def get_current_profile(self, user: User) -> CoolUserInfo:
         roles = get_user_roles(self.session, user.id)
@@ -355,12 +415,12 @@ class AuthService:
 
     def permmenu(self, user: User) -> dict:
         """
-        获取权限与菜单（Cool 兼容格式）
+        获取权限与菜单（Loom 兼容格式）
 
         返回格式: {"perms": list[str], "menus": list[dict]}
 
         重要: 菜单必须返回扁平数组结构，而非树形嵌套结构！
-        - Cool 前端期望所有菜单项在同一层级，通过 parentId 字段建立父子关系
+        - Loom 前端期望所有菜单项在同一层级，通过 parentId 字段建立父子关系
         - 每个菜单项的 children 数组必须为空 []
         - 测试用例 test_permmenu_contains_flat_system_management_routes 依赖此结构
         - 不要修改为树形结构，否则会导致前端无法正确渲染菜单
@@ -377,7 +437,7 @@ class AuthService:
         # 获取树形结构的菜单
         menu_tree = MenuAdminService(self.session).current_tree(user)
 
-        # 转换为 CoolMenuItem 并扁平化，符合 cool 前端期望的扁平数组格式
+        # 转换为 CoolMenuItem 并扁平化，符合 Loom 前端期望的扁平数组格式
         cool_menus = [self._build_cool_menu_item(menu) for menu in menu_tree]
         flat_menus = self._flatten_cool_menus(cool_menus)
 
@@ -448,7 +508,7 @@ class AuthService:
         将树形菜单结构扁平化
 
         将嵌套的树形菜单结构转换为扁平数组，每个菜单项的 child_menus 被清空。
-        这是 Cool 前端框架的硬性要求，前端需要通过 parentId 字段自行构建树形结构。
+        这是 Loom 前端框架的硬性要求，前端需要通过 parentId 字段自行构建树形结构。
 
         注意: 不要修改此方法的返回格式，否则会导致前端菜单无法正确渲染。
 
@@ -472,7 +532,7 @@ class AuthService:
 
     @staticmethod
     def _build_captcha_cache_key(captcha_id: str) -> str:
-        return f"verify:img:{captcha_id}"
+        return f"verify:slider:{captcha_id}"
 
     def _record_login_log(
         self,
@@ -484,6 +544,7 @@ class AuthService:
         user_id: int | None = None,
         name: str | None = None,
         login_type: str = "password",
+        risk_hit: int = 0,
     ) -> None:
         try:
             SysLoginLogService(self.session).create_entry(
@@ -494,6 +555,7 @@ class AuthService:
                 status=status,
                 ip=_get_request_ip(request),
                 reason=reason,
+                risk_hit=risk_hit,
                 user_agent=_get_user_agent(request),
                 client_type=_get_client_type(request),
                 device_id=_get_device_id(request),

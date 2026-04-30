@@ -15,7 +15,7 @@
    EPS 输出结构、字段语义、前端 service 衔接方式。
 
 5. [字段映射使用规范](./字段映射使用规范.md)
-   后端 `snake_case` 与前端 Cool Admin 字段别名的边界。
+   后端 `snake_case` 与前端 Loom 字段别名的边界。
 
 ## 开发规范
 
@@ -26,10 +26,10 @@
 ## 对齐与升级记录
 
 - [框架待升级与补丁清单](./框架待升级与补丁清单.md)
-- [后端与 Cool-Admin 核心机制差异及当前对齐状态](./后端核心机制差异与迁移指南.md)
+- [后端与 Loom 核心机制差异及当前对齐状态](./后端核心机制差异与迁移指南.md)
 - [后端技术对比分析报告](./后端技术对比分析报告.md)
 - [兼容写法深度分析与解决方案](./兼容写法深度分析与解决方案.md)
-- [Cool权限中间件原理与操作指南](./Cool权限中间件原理与操作指南.md)
+- [Loom权限中间件原理与操作指南](./Loom权限中间件原理与操作指南.md)
 
 ## 模块文档
 
@@ -38,7 +38,7 @@
 ## 当前框架口径
 
 - 管理端路径统一使用 `/admin/{module}/{resource}/{action}`。
-- 标准 CRUD 的 `list/page` 同时支持 GET 和 POST，POST 是 Cool Admin 与 EPS 主协议。
+- 标准 CRUD 的 `list/page` 同时支持 GET 和 POST，POST 是 Loom 与 EPS 主协议。
 - 响应 JSON 保持 `{ code, message, data }` 包装。
 - 模型和 Service 内部使用 `snake_case`；API 响应与 EPS 的 `prop/propertyName` 输出前端字段名；`source` 保留后端字段名。
 - 权限点统一使用 `{module}:{resource}:{action}`，后端中间件和前端 `v-permission` 使用同一字符串。

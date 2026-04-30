@@ -1,14 +1,14 @@
 {
 	"name": "@cool-vue/vite-plugin",
 	"version": "8.2.20",
-	"description": "cool-admin、cool-uni builder",
+	"description": "Loom builder",
 	"types": "./dist/index.d.ts",
 	"main": "/dist/index.js",
 	"scripts": {
 		"build": "rollup --c --bundleConfigAsCjs"
 	},
 	"keywords": [],
-	"author": "cool",
+	"author": "Loom",
 	"license": "ISC",
 	"files": [
 		"types/*",

@@ -1,0 +1,7 @@
+<svg class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+	<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="66">
+		<path d="M186 882V206a72 72 0 0 1 72-72h344a72 72 0 0 1 72 72v676" />
+		<path d="M674 382h94a72 72 0 0 1 72 72v428M118 882h788" />
+		<path d="M314 294h88M314 454h88M314 614h88M536 294h1M536 454h1M536 614h1" />
+	</g>
+</svg>

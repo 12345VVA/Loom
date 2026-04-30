@@ -1,5 +1,5 @@
 """
-类似 cool-admin-midway 的装饰器式控制器元数据
+类似 Loom 的装饰器式控制器元数据
 """
 from __future__ import annotations
 

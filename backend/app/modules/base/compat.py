@@ -1,5 +1,5 @@
 """
-Cool 兼容配置
+Loom 兼容配置
 """
 from __future__ import annotations
 

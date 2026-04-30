@@ -7,7 +7,7 @@ export default (): ModuleConfig => {
 
 		label: '编辑器内容预览',
 		description: '基于 monaco、wang 等编辑器的内容预览组件',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.0.1',
 		updateTime: '2024-02-27',
 		demo: [

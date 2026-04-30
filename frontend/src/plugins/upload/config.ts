@@ -91,7 +91,7 @@ export default (): ModuleConfig => {
 
 		label: '文件上传',
 		description: '文件上传组件，支持多种文件类型的上传，包括图片、视频、音频、文档等',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.2.2',
 		updateTime: '2024-03-25',
 		demo: [

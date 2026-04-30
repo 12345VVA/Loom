@@ -7,7 +7,7 @@ export default (): ModuleConfig => {
 
 		label: 'Wang 编辑器',
 		description: '基于 wangEditor 封装的富文本编辑器',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.0.0',
 		updateTime: '2024-02-01',
 		demo: [

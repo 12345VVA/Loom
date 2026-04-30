@@ -20,7 +20,6 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import Cool from '../static/cool.png';
 import Vue from '../static/vue.png';
 import Echarts from '../static/echarts.png';
 import Tailwindcss from '../static/tailwindcss.png';
@@ -30,21 +29,6 @@ import Pinia from '../static/pinia.png';
 import Lodash from '../static/lodash.png';
 
 const list = ref([
-	{
-		label: 'cool',
-		icon: Cool,
-		link: 'https://cool-js.com/'
-	},
-	{
-		label: 'vue',
-		icon: Cool,
-		link: 'https://vue.cool-admin.com/'
-	},
-	{
-		label: 'node',
-		icon: Cool,
-		link: 'https://node.cool-admin.com/'
-	},
 	{
 		label: 'vue',
 		icon: Vue,

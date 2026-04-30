@@ -13,7 +13,7 @@ export default (): ModuleConfig => {
 
 		label: 'Iconfont',
 		description: '图标字体插件，提供多种图标字体的支持',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.0.0',
 		updateTime: '2025-01-11',
 		doc: 'https://www.iconfont.cn'

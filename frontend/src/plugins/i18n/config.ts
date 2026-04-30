@@ -23,7 +23,7 @@ export default (): ModuleConfig => {
 
 		label: 'i18n',
 		description: '国际化组件',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.0.0',
 		updateTime: '2025-01-11',
 		doc: 'https://github.com/intlify/vue-i18n'

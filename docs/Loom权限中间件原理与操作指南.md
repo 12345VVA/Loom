@@ -1,10 +1,10 @@
-# Cool-Admin 权限中间件原理与操作指南
+# Loom 权限中间件原理与操作指南
 
-## 一、 什么是 Cool 权限中间件？
+## 一、 什么是 Loom 权限中间件？
 
-在 `cool-admin-midway` （基于 NodeJS 系列）的架构中，权限中间件是安全访问中枢。它串联了在后端拦截请求时的“身份认证 (Authentication)” 与 “行为授权 (Authorization)” 两个部分。
+在 `Loom` （基于 NodeJS 系列）的架构中，权限中间件是安全访问中枢。它串联了在后端拦截请求时的“身份认证 (Authentication)” 与 “行为授权 (Authorization)” 两个部分。
 
-不同于传统 Python Web 框架将鉴权仅仅作为一个纯粹的阻断层，依赖 Midway.js IoC 机制构建的 Cool 权限中间件在处理拦截鉴权的同时，与应用依赖注入的“上下文 (Context)”深度整合，随时通过 AOP 对后续经过权限层的方法赋予操作者（用户）数据信息。
+不同于传统 Python Web 框架将鉴权仅仅作为一个纯粹的阻断层，依赖 Midway.js IoC 机制构建的 Loom 权限中间件在处理拦截鉴权的同时，与应用依赖注入的“上下文 (Context)”深度整合，随时通过 AOP 对后续经过权限层的方法赋予操作者（用户）数据信息。
 
 ---
 
@@ -42,12 +42,12 @@ Authorization: Bearer eyJhbGciOiJI.........(token_body)...............
 ```
 
 ### 2. 响应阻断 Code 规范（核心）
-中间件阻断行为不仅返回给浏览器，必须适配 `cool-admin-vue` 前端内部硬编码好（可配置改）的响应识别条件。
+中间件阻断行为不仅返回给浏览器，必须适配 `Loom-vue` 前端内部硬编码好（可配置改）的响应识别条件。
 - 当 `code === 401` 或业务代号包含约定的非法请求代号时，意味着 Token 破晓，前端会强制弹回至包含 `/login` 的登录大屏页，并清理本地缓存。
 - 当 `code === 403` 返回时，前台将保留原地组件视图，通常会弹窗红框 Alert（"您暂无访问该资源的权限，请求被服务器拒绝"）。
 
 ### 3. URL 与权限字符绑定的隐性映射标准
-`cool-admin` 内置有一个极简的前后端约束规范。路由路径的动作往往和权限字符串有高度的语义绑定。
+`Loom` 内置有一个极简的前后端约束规范。路由路径的动作往往和权限字符串有高度的语义绑定。
 - 例如模块名叫 `sys`，资源名叫 `user`，前端所配的一级权限可能叫 `base:sys:user`。
 - 如果请求了 `/admin/base/sys/user/add`，中间件一般会映射期望用户拥有 `base:sys:user:add` 的细粒度权限串才能通过放行。
 
@@ -119,4 +119,4 @@ async sync() {
 
 当前 Loom 的 FastAPI 中由 `ScopeAuthorityMiddleware`（见 `app/framework/middleware/scope_authority.py`）统一处理 `/admin`、`/app`、`/aiapi` scope。它会完成白名单、Token、Redis 登录态、URL pattern 权限和 `request.state.current_user` 注入。
 
-响应包装已经由 `ResponseEnvelopeMiddleware` 统一输出 Cool Admin 前端可识别的 `{ code, message, data }` 结构；权限点则由 `CoolControllerMeta`、自定义路由 `permission` 和 `menu.json` 共同对齐。
+响应包装已经由 `ResponseEnvelopeMiddleware` 统一输出 Loom 前端可识别的 `{ code, message, data }` 结构；权限点则由 `CoolControllerMeta`、自定义路由 `permission` 和 `menu.json` 共同对齐。

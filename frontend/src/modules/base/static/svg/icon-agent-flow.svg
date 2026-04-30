@@ -1,0 +1,10 @@
+<svg class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+	<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="68">
+		<rect x="110" y="376" width="210" height="210" rx="72" />
+		<rect x="704" y="376" width="210" height="210" rx="72" />
+		<rect x="407" y="118" width="210" height="210" rx="72" />
+		<rect x="407" y="696" width="210" height="210" rx="72" />
+		<path d="M320 481h112M592 481h112M512 328v104M512 592v104" />
+		<path d="M405 238c-84 22-148 74-178 138M797 376c-30-64-94-116-178-138M227 586c30 64 94 116 178 138M619 724c84-22 148-74 178-138" />
+	</g>
+</svg>

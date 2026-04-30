@@ -1,5 +1,5 @@
 """
-Cool 风格响应包装
+Loom 兼容响应包装
 """
 from __future__ import annotations
 

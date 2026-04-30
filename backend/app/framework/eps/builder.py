@@ -31,7 +31,7 @@ def build_eps_data(app: FastAPI) -> dict[str, Any]:
         module_node = tree[module]
         
         # 资源层级转换：将 base:user 这种资源名拆解为层级对象
-        # 对应 Cool-Admin 的 service.base.user.page()
+        # 对应 Loom 的 service.base.user.page()
         normalized_resource = str(resource).replace("/", ":").replace(".", ":")
         resource_parts = [part for part in normalized_resource.split(":") if part]
         current_node = module_node

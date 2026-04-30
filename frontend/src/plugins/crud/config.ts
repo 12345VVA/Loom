@@ -59,9 +59,9 @@ export default (): Merge<ModuleConfig, CrudOptions> => {
 
 		label: 'CRUD',
 		description: '快速增删改查及一系列辅助组件',
-		author: 'COOL',
+		author: 'Loom',
 		version: '1.1.2',
 		updateTime: '2024-12-31',
-		doc: 'https://vue.cool-admin.com/src/guide/plugins/crud.html'
+		doc: ''
 	};
 };

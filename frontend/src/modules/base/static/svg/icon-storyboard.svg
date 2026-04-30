@@ -1,0 +1,11 @@
+<svg class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+	<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="64">
+		<rect x="112" y="160" width="250" height="250" rx="54" />
+		<rect x="387" y="160" width="250" height="250" rx="54" />
+		<rect x="662" y="160" width="250" height="250" rx="54" />
+		<rect x="112" y="614" width="250" height="250" rx="54" />
+		<rect x="387" y="614" width="250" height="250" rx="54" />
+		<rect x="662" y="614" width="250" height="250" rx="54" />
+		<path d="M232 500h560M792 500l-64-64M792 500l-64 64" />
+	</g>
+</svg>

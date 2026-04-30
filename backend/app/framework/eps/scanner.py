@@ -54,10 +54,10 @@ def scan_model_columns(model: Any) -> list[dict[str, Any]]:
             {
                 "propertyName": public_name,
                 "source": name,
-                "prop": public_name,  # 对齐 Cool-Admin 的 prop 字段
+                "prop": public_name,  # 对齐 Loom 的 prop 字段
                 "type": eps_type,
                 "comment": field.description or name,
-                "label": field.description or public_name,  # 对齐 Cool-Admin 的 label 字段
+                "label": field.description or public_name,  # 对齐 Loom 的 label 字段
                 "nullable": is_nullable or not field.is_required(),
                 "required": field.is_required() and not is_nullable,
                 "dict": enum_options if enum_options else None,
