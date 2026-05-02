@@ -15,7 +15,7 @@ def run(session: Session) -> None:
     if status_dict.id is not None:
         existing_values = list(session.exec(select(DictInfo).where(DictInfo.type_id == status_dict.id)).all())
         if not existing_values:
-            session.add(DictInfo(type_id=status_dict.id, name="禁用", value="0", order_num=0))
-            session.add(DictInfo(type_id=status_dict.id, name="启用", value="1", order_num=1))
+            session.add(DictInfo(type_id=status_dict.id, name="禁用", value="0", sort_order=0))
+            session.add(DictInfo(type_id=status_dict.id, name="启用", value="1", sort_order=1))
 
     session.commit()

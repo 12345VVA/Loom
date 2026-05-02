@@ -1,11 +1,12 @@
 // 解决热更新后数据失效问题
 // 初始化数据对象，如果热更新数据存在则使用它
-const data = import.meta.hot?.data.getData?.() || {};
+const hotData = import.meta.hot?.data;
+const data = hotData?.getData?.() || {};
 
 // 检查是否支持热更新
-if (import.meta.hot) {
+if (hotData) {
 	// 将当前数据存储函数赋值给热更新数据对象
-	import.meta.hot.data.getData = () => {
+	hotData.getData = () => {
 		return data;
 	};
 }

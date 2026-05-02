@@ -31,6 +31,10 @@ venv.bak/
 # Node
 node_modules/
 dist/
+coverage/
+.coverage
+test-results/
+playwright-report/
 *.log
 *.local
 .DS_Store

@@ -539,16 +539,5 @@
         ]
       }
     ]
-  },
-  {
-    "code": "home_hidden",
-    "name": "首页",
-    "type": "menu",
-    "path": "/",
-    "component": "modules/demo/views/home/index.vue",
-    "keep_alive": true,
-    "is_show": false,
-    "sort_order": 100,
-    "role_codes": ["admin", "task_operator"]
   }
 ]
