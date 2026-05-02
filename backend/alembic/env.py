@@ -10,6 +10,7 @@ from app.modules.base.model import auth as _auth_models  # noqa: F401
 from app.modules.base.model import sys as _sys_models  # noqa: F401
 from app.modules.dict.model import dict as _dict_models  # noqa: F401
 from app.modules.task.model import task as _task_models  # noqa: F401
+from app.modules.notification.model import notification as _notification_models  # noqa: F401
 from sqlmodel import SQLModel
 
 config = context.config

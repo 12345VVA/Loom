@@ -31,6 +31,13 @@ class TaskInfo(BaseEntity, table=True):
     next_run_time: Optional[datetime] = None  # 下次运行时间
     task_type: int = Field(default=0)  # 任务类型 0: cron, 1: 时间间隔
     last_execute_time: Optional[datetime] = None  # 最后执行时间
+    notify_enabled: bool = Field(default=False)
+    notify_on_success: bool = Field(default=False)
+    notify_on_failure: bool = Field(default=True)
+    notify_on_timeout: bool = Field(default=True)
+    notify_recipients: Optional[str] = None
+    notify_template_code: Optional[str] = None
+    notify_timeout_ms: int = Field(default=30000)
 
 
 class TaskLog(BaseEntity, table=True):
@@ -61,6 +68,13 @@ class TaskInfoRead(BaseModel):
     next_run_time: Optional[datetime] = None
     task_type: int
     last_execute_time: Optional[datetime] = None
+    notify_enabled: bool = False
+    notify_on_success: bool = False
+    notify_on_failure: bool = True
+    notify_on_timeout: bool = True
+    notify_recipients: Optional[str] = None
+    notify_template_code: Optional[str] = None
+    notify_timeout_ms: int = 30000
     created_at: datetime
     updated_at: datetime
 
@@ -79,6 +93,13 @@ class TaskInfoCreateRequest(BaseModel):
     service: Optional[str] = None
     type: int = 0
     task_type: int = 0
+    notify_enabled: bool = False
+    notify_on_success: bool = False
+    notify_on_failure: bool = True
+    notify_on_timeout: bool = True
+    notify_recipients: Optional[str] = None
+    notify_template_code: Optional[str] = None
+    notify_timeout_ms: int = 30000
 
 
 class TaskInfoUpdateRequest(TaskInfoCreateRequest):

@@ -123,6 +123,7 @@ import { ContextMenu, useForm } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import TaskLogs from '../components/logs.vue';
 import CronInput from '../components/cron-input.vue';
+import NotificationAudienceEditor from '/$/notification/components/audience-editor.vue';
 import { useI18n } from 'vue-i18n';
 
 const { service, refs, setRefs } = useCool();
@@ -280,6 +281,92 @@ const items: any[] = [
 				type: 'textarea',
 				rows: 3
 			}
+		}
+	},
+	{
+		label: t('通知设置'),
+		prop: 'notifyEnabled',
+		value: false,
+		component: {
+			name: 'el-switch'
+		}
+	},
+	{
+		label: t('成功通知'),
+		prop: 'notifyOnSuccess',
+		value: false,
+		hidden: ({ scope }: any) => !scope.notifyEnabled,
+		component: {
+			name: 'el-switch'
+		}
+	},
+	{
+		label: t('失败通知'),
+		prop: 'notifyOnFailure',
+		value: true,
+		hidden: ({ scope }: any) => !scope.notifyEnabled,
+		component: {
+			name: 'el-switch'
+		}
+	},
+	{
+		label: t('超时通知'),
+		prop: 'notifyOnTimeout',
+		value: false,
+		hidden: ({ scope }: any) => !scope.notifyEnabled,
+		component: {
+			name: 'el-switch'
+		}
+	},
+	{
+		label: t('超时阈值(ms)'),
+		prop: 'notifyTimeoutMs',
+		value: 30000,
+		hidden: ({ scope }: any) => !scope.notifyEnabled || !scope.notifyOnTimeout,
+		component: {
+			name: 'el-input-number',
+			props: {
+				min: 1,
+				'controls-position': 'right'
+			}
+		}
+	},
+	{
+		label: t('通知模板'),
+		prop: 'notifyTemplateCode',
+		hidden: ({ scope }: any) => !scope.notifyEnabled,
+		component: {
+			name: 'el-input',
+			props: {
+				placeholder: t('为空时使用默认任务通知模板')
+			}
+		}
+	},
+	{
+		label: t('通知接收人'),
+		prop: 'notifyRecipients',
+		hidden: ({ scope }: any) => !scope.notifyEnabled,
+		hook: {
+			bind(value: any) {
+				if (!value) {
+					return { allAdmins: true };
+				}
+				if (typeof value === 'string') {
+					try {
+						return JSON.parse(value);
+					} catch {
+						return { allAdmins: true };
+					}
+				}
+				return value;
+			},
+			submit(value: any) {
+				return JSON.stringify(value || { allAdmins: true });
+			}
+		},
+		component: {
+			name: 'notification-audience-editor',
+			vm: markRaw(NotificationAudienceEditor)
 		}
 	}
 ];

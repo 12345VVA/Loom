@@ -2,8 +2,11 @@
 数据库配置
 """
 from pathlib import Path
+from contextlib import contextmanager
+from collections.abc import Iterator
 
 from sqlalchemy import inspect, text
+from sqlalchemy.orm import SessionTransactionOrigin
 from sqlmodel import SQLModel, create_engine, Session
 from app.core.config import settings
 from app.modules.base.model import auth as _base_auth_models  # noqa: F401
@@ -11,6 +14,7 @@ from app.modules.base.model.sys import SysLog, SysLoginLog, SysParam
 from app.modules.base.model import sys as _base_sys_models  # noqa: F401
 from app.modules.dict.model import dict as _dict_models  # noqa: F401
 from app.modules.task.model import task as _task_models  # noqa: F401
+from app.modules.notification.model import notification as _notification_models  # noqa: F401
 from sqlalchemy import event
 from datetime import datetime
 from app.framework.models.entity import BaseEntity
@@ -78,6 +82,29 @@ def get_session():
         yield session
 
 
+@contextmanager
+def transaction(session: Session) -> Iterator[Session]:
+    """
+    统一事务上下文。
+
+    已处于事务中时复用外层事务，交给外层提交/回滚；否则在当前上下文内提交或回滚。
+    """
+    transaction_state = session.get_transaction()
+    has_pending_outer_work = bool(session.new or session.dirty or session.deleted)
+    if transaction_state is not None and (
+        transaction_state.origin is not SessionTransactionOrigin.AUTOBEGIN or has_pending_outer_work
+    ):
+        yield session
+        return
+
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
 def _ensure_sqlite_compatible_schema() -> None:
     if "sqlite" not in DATABASE_URL:
         return
@@ -109,6 +136,20 @@ def _ensure_sqlite_compatible_schema() -> None:
             "password_version": "ALTER TABLE sys_user ADD COLUMN password_version INTEGER DEFAULT 1",
             "password_changed_at": "ALTER TABLE sys_user ADD COLUMN password_changed_at DATETIME",
         },
+        "task_info": {
+            "notify_enabled": "ALTER TABLE task_info ADD COLUMN notify_enabled BOOLEAN DEFAULT 0",
+            "notify_on_success": "ALTER TABLE task_info ADD COLUMN notify_on_success BOOLEAN DEFAULT 0",
+            "notify_on_failure": "ALTER TABLE task_info ADD COLUMN notify_on_failure BOOLEAN DEFAULT 1",
+            "notify_on_timeout": "ALTER TABLE task_info ADD COLUMN notify_on_timeout BOOLEAN DEFAULT 1",
+            "notify_recipients": "ALTER TABLE task_info ADD COLUMN notify_recipients VARCHAR",
+            "notify_template_code": "ALTER TABLE task_info ADD COLUMN notify_template_code VARCHAR",
+            "notify_timeout_ms": "ALTER TABLE task_info ADD COLUMN notify_timeout_ms INTEGER DEFAULT 30000",
+        },
+        "notification_message": {
+            "is_recalled": "ALTER TABLE notification_message ADD COLUMN is_recalled BOOLEAN DEFAULT 0",
+            "recalled_at": "ALTER TABLE notification_message ADD COLUMN recalled_at DATETIME",
+            "recalled_by": "ALTER TABLE notification_message ADD COLUMN recalled_by INTEGER",
+        },
     }
 
     # 所有需要检查标准字段的表列表
@@ -116,6 +157,7 @@ def _ensure_sqlite_compatible_schema() -> None:
         "sys_department", "sys_role", "sys_menu", "sys_user",
         "sys_param", "sys_log", "sys_login_log", 
         "dict_type", "dict_info", "task_info", "task_log",
+        "notification_message", "notification_recipient", "notification_template", "notification_rule",
         "sys_user_role", "sys_role_menu", "sys_role_department"
     ]
 

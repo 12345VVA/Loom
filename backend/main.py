@@ -18,6 +18,7 @@ from app.core.logging import configure_logging
 from app.core.database import init_db
 from app.core.database import Session, engine
 from app.framework.middleware.metrics import render_metrics
+from app.core.startup_checks import assert_startup_settings, validate_startup_settings
 from app.modules.base.service.cache_service import get_redis_client
 from app.modules import (
     bootstrap_modules,
@@ -34,6 +35,7 @@ configure_logging(settings.DEBUG)
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时执行
+    assert_startup_settings()
     init_db()
     with Session(engine) as session:
         bootstrap_modules(session)
@@ -117,6 +119,7 @@ async def health():
         "database": _check_database(),
         "redis": _check_redis(),
         "celery": _check_celery_config(),
+        "settings": _check_startup_settings(),
     }
     status_value = "healthy" if all(item["status"] in {"ok", "skipped"} for item in checks.values()) else "degraded"
     return {"status": status_value, "checks": checks}
@@ -154,3 +157,14 @@ def _check_celery_config() -> dict:
     if not settings.CELERY_BROKER_URL:
         return {"status": "skipped", "message": "broker not configured"}
     return {"status": "ok", "broker": settings.CELERY_BROKER_URL.split("://", 1)[0]}
+
+
+def _check_startup_settings() -> dict:
+    results = validate_startup_settings()
+    errors = [item for item in results if item.level == "error"]
+    warnings = [item for item in results if item.level == "warning"]
+    if errors:
+        return {"status": "error", "items": [item.__dict__ for item in results]}
+    if warnings:
+        return {"status": "degraded", "items": [item.__dict__ for item in results]}
+    return {"status": "ok"}

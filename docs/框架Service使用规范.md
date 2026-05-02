@@ -360,7 +360,9 @@ def assign_roles(self, payload, user=None):
 ### 5.3 事务处理规范
 
 ```python
-# ✅ 推荐：显式提交事务
+# ✅ 推荐：统一事务上下文
+from app.core.database import transaction
+
 def move(self, payload: UserMoveRequest) -> dict:
     """移动用户到其他部门"""
     department = self.session.get(Department, payload.department_id)
@@ -371,11 +373,10 @@ def move(self, payload: UserMoveRequest) -> dict:
         select(User).where(User.id.in_(payload.user_ids))
     ).all())
     
-    for user in users:
-        user.department_id = payload.department_id
-        self.session.add(user)
-    
-    self.session.commit()  # 显式提交
+    with transaction(self.session):
+        for user in users:
+            user.department_id = payload.department_id
+            self.session.add(user)
     
     for user in users:
         clear_login_caches(user.id)
@@ -1105,27 +1106,24 @@ def assign_roles(self, payload: UserRoleAssignRequest) -> UserListItem:
 ### 12.3 事务处理
 
 ```python
-# ✅ 推荐：显式事务控制
+# ✅ 推荐：统一事务控制
+from app.core.database import transaction
+
 def transfer_user(self, user_id: int, from_dept: int, to_dept: int) -> dict:
     """转移用户到新部门"""
-    try:
-        user = self.session.get(User, user_id)
-        if not user:
-            raise HTTPException(status_code=404, detail="用户不存在")
-        
+    user = self.session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    with transaction(self.session):
         # 业务逻辑...
         user.department_id = to_dept
         self.session.add(user)
-        
-        self.session.commit()  # 显式提交
-        
-        # 清理缓存
-        clear_login_caches(user_id)
-        
-        return {"success": True}
-    
-    except Exception as e:
-        self.session.rollback()  # 显式回滚
+
+    # 清理缓存
+    clear_login_caches(user_id)
+
+    return {"success": True}
         raise HTTPException(status_code=500, detail=str(e))
 ```
 

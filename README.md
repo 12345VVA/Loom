@@ -37,20 +37,24 @@
 Loom/
 ├── frontend/           # Vue 3 前端
 │   ├── src/
-│   │   ├── api/       # API 调用
-│   │   ├── components/# 组件
-│   │   ├── router/    # 路由
-│   │   ├── stores/    # Pinia 状态管理
-│   │   ├── types/     # TypeScript 类型
-│   │   └── views/     # 页面视图
-│   └── Dockerfile.dev
+│   │   ├── cool/      # 框架核心、service、router、module bootstrap
+│   │   ├── modules/   # 业务模块页面、store、静态资源
+│   │   ├── plugins/   # 项目插件
+│   │   ├── config/    # 环境与代理配置
+│   │   └── main.ts    # 前端入口
+│   ├── packages/      # 本地源码包，如 @cool-vue/crud、vite-plugin
+│   ├── tests/         # Vitest 单元测试与 Playwright E2E
+│   └── Dockerfile
 ├── backend/           # FastAPI 后端
 │   ├── app/
 │   │   ├── core/     # 核心配置
 │   │   ├── framework/ # 自动路由与中间件框架
 │   │   └── modules/   # 模块化业务代码
-│   ├── venv/         # Python 虚拟环境
+│   ├── tests/        # pytest 自动化测试
+│   ├── alembic/      # 数据库迁移骨架
 │   └── Dockerfile
+├── docs/              # 当前有效项目文档
+├── scripts/           # 本地验证脚本
 ├── docker-compose.yml # Docker 编排配置
 └── README.md
 ```
@@ -184,6 +188,14 @@ npm run dev
 框架对业务建模中的物理删除与软删除提供了透明支持：
 - **自动识别**: 只要模型中定义了 `delete_time` 字段，`QueryBuilder` 会在所有的查询操作中自动过滤掉已删除的记录。
 - **统一 API**: 在 Service 层调用 `delete` 时，系统会根据元数据配置自动选择执行 `UPDATE`（置空 `delete_time`）还是 `DELETE` 操作。
+
+## 框架完善度与后续建议
+
+当前框架主干机制已基本完善，并已有后端 pytest、前端单元测试、类型检查和构建命令覆盖关键路径：
+
+- **已完善**: 模块加载、自动路由、`CoolController` CRUD、EPS 输出、管理端鉴权、RBAC、DataScope、统一响应、字段映射、Redis/内存缓存降级、上传校验、S3-compatible 存储、健康检查、`/metrics`、限流、CSRF Origin 检查、密码强度/哈希升级、验证码防重放、Token 吊销、会话并发控制、操作/登录/安全日志、启动配置校验、统一事务 helper、缓存命名空间、导入导出 schema 校验、任务保守调度和 Alembic baseline。
+- **后续生产化建议**: 接入集中日志与告警平台、为业务模块声明导入导出字段白名单和权限点、为跨进程事件补可靠消费确认、将更多多表业务逐步迁移到统一事务 helper。
+- **当前边界**: Python 后端通过显式元数据对象承载控制器声明，不依赖 Midway/TypeScript 反射；EPS 已覆盖当前前端需要的字段与接口元数据，但不是 TypeScript 原生反射生成；SQLite 自动补列主要服务开发阶段，生产环境应以 Alembic 迁移为准。
 
 
 

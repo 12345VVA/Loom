@@ -46,6 +46,10 @@
 							<cl-svg name="my" />
 							<span>{{ t('个人中心') }}</span>
 						</el-dropdown-item>
+						<el-dropdown-item v-if="canViewNotification" command="notification">
+							<cl-svg name="icon-notification" />
+							<span>{{ t('我的通知') }}</span>
+						</el-dropdown-item>
 						<el-dropdown-item command="exit">
 							<cl-svg name="exit" />
 							<span>{{ t('退出登录') }}</span>
@@ -75,11 +79,18 @@ const { router, service, browser } = useCool();
 const { user, app } = useBase();
 const { t } = useI18n();
 
+const canViewNotification = computed(() => {
+	return service.notification?.message?._permission?.mine === true;
+});
+
 // 命令事件
 async function onCommand(name: string) {
 	switch (name) {
 		case 'my':
 			router.push('/my/info');
+			break;
+		case 'notification':
+			router.push('/my/notification');
 			break;
 		case 'exit':
 			ElMessageBox.confirm(t('确定退出登录吗？'), t('提示'), {

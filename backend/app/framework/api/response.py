@@ -10,12 +10,13 @@ from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel
+from app.framework.api.error_codes import ErrorCode
 
-SUCCESS_CODE = 1000
-FAIL_CODE = 1001
-UNAUTHORIZED_CODE = 1002
-FORBIDDEN_CODE = 1003
-VALIDATION_CODE = 1004
+SUCCESS_CODE = ErrorCode.SUCCESS
+FAIL_CODE = ErrorCode.FAIL
+UNAUTHORIZED_CODE = ErrorCode.UNAUTHORIZED
+FORBIDDEN_CODE = ErrorCode.FORBIDDEN
+VALIDATION_CODE = ErrorCode.VALIDATION
 
 
 def ok(data: Any = None, message: str = "success", code: int = SUCCESS_CODE) -> dict[str, Any]:

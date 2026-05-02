@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from redis import Redis
@@ -18,6 +19,39 @@ logger = logging.getLogger(__name__)
 _redis_client: Redis | None = None
 _redis_unavailable = False
 _memory_cache: dict[str, tuple[str, float | None]] = {}
+
+
+@dataclass(frozen=True)
+class CacheNamespace:
+    """模块级缓存命名空间。"""
+
+    name: str
+    default_ttl_seconds: int | None = None
+
+    def key(self, *parts: Any) -> str:
+        clean_parts = [str(part).strip(":") for part in parts if part is not None and str(part) != ""]
+        return ":".join([self.name, *clean_parts])
+
+    def pattern(self, *parts: Any) -> str:
+        return f"{self.key(*parts)}*"
+
+    def set(self, *parts: Any, value: str, ttl_seconds: int | None = None) -> bool:
+        return cache_set(self.key(*parts), value, ttl_seconds if ttl_seconds is not None else self.default_ttl_seconds)
+
+    def set_json(self, *parts: Any, value: Any, ttl_seconds: int | None = None) -> bool:
+        return cache_set_json(self.key(*parts), value, ttl_seconds if ttl_seconds is not None else self.default_ttl_seconds)
+
+    def get(self, *parts: Any) -> str | None:
+        return cache_get(self.key(*parts))
+
+    def get_json(self, *parts: Any) -> Any | None:
+        return cache_get_json(self.key(*parts))
+
+    def delete(self, *parts: Any) -> None:
+        cache_delete(self.key(*parts))
+
+    def clear(self, *parts: Any) -> int:
+        return cache_delete_pattern(self.pattern(*parts))
 
 
 def get_redis_client() -> Redis | None:

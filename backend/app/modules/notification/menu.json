@@ -1,0 +1,76 @@
+[
+  {
+    "code": "nav_notification",
+    "name": "通知中心",
+    "type": "group",
+    "icon": "icon-notification",
+    "sort_order": 60,
+    "parent_code": "nav_system",
+    "role_codes": ["admin"],
+    "children": [
+      {
+        "code": "nav_notification_message",
+        "name": "通知消息",
+        "type": "menu",
+        "module": "notification",
+        "resource": "message",
+        "path": "/notification/message",
+        "component": "modules/notification/views/message.vue",
+        "icon": "icon-message",
+        "sort_order": 1,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "notification_message_add", "name": "新增", "type": "button", "permission": "notification:message:add", "role_codes": ["admin"] },
+          { "code": "notification_message_delete", "name": "删除", "type": "button", "permission": "notification:message:delete", "role_codes": ["admin"] },
+          { "code": "notification_message_update", "name": "修改", "type": "button", "permission": "notification:message:update", "role_codes": ["admin"] },
+          { "code": "notification_message_page", "name": "分页查询", "type": "button", "permission": "notification:message:page", "role_codes": ["admin"] },
+          { "code": "notification_message_info", "name": "详情", "type": "button", "permission": "notification:message:info", "role_codes": ["admin"] },
+          { "code": "notification_message_send", "name": "发送通知", "type": "button", "permission": "notification:message:send", "role_codes": ["admin"] },
+          { "code": "notification_message_preview_recipients", "name": "预览接收人", "type": "button", "permission": "notification:message:previewRecipients", "role_codes": ["admin"] },
+          { "code": "notification_message_stats", "name": "通知统计", "type": "button", "permission": "notification:message:stats", "role_codes": ["admin"] },
+          { "code": "notification_message_recipients", "name": "接收人明细", "type": "button", "permission": "notification:message:recipients", "role_codes": ["admin"] },
+          { "code": "notification_message_recall", "name": "撤回通知", "type": "button", "permission": "notification:message:recall", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_notification_template",
+        "name": "通知模板",
+        "type": "menu",
+        "module": "notification",
+        "resource": "template",
+        "path": "/notification/template",
+        "component": "modules/notification/views/template.vue",
+        "icon": "icon-template",
+        "sort_order": 2,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "notification_template_add", "name": "新增", "type": "button", "permission": "notification:template:add", "role_codes": ["admin"] },
+          { "code": "notification_template_delete", "name": "删除", "type": "button", "permission": "notification:template:delete", "role_codes": ["admin"] },
+          { "code": "notification_template_update", "name": "修改", "type": "button", "permission": "notification:template:update", "role_codes": ["admin"] },
+          { "code": "notification_template_page", "name": "分页查询", "type": "button", "permission": "notification:template:page", "role_codes": ["admin"] },
+          { "code": "notification_template_info", "name": "详情", "type": "button", "permission": "notification:template:info", "role_codes": ["admin"] },
+          { "code": "notification_template_preview", "name": "模板预览", "type": "button", "permission": "notification:template:preview", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_notification_rule",
+        "name": "通知规则",
+        "type": "menu",
+        "module": "notification",
+        "resource": "rule",
+        "path": "/notification/rule",
+        "component": "modules/notification/views/rule.vue",
+        "icon": "icon-set",
+        "sort_order": 3,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "notification_rule_add", "name": "新增", "type": "button", "permission": "notification:rule:add", "role_codes": ["admin"] },
+          { "code": "notification_rule_delete", "name": "删除", "type": "button", "permission": "notification:rule:delete", "role_codes": ["admin"] },
+          { "code": "notification_rule_update", "name": "修改", "type": "button", "permission": "notification:rule:update", "role_codes": ["admin"] },
+          { "code": "notification_rule_page", "name": "分页查询", "type": "button", "permission": "notification:rule:page", "role_codes": ["admin"] },
+          { "code": "notification_rule_info", "name": "详情", "type": "button", "permission": "notification:rule:info", "role_codes": ["admin"] }
+        ]
+      }
+    ]
+  }
+]

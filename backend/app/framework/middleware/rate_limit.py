@@ -14,6 +14,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
+from app.framework.api.error_codes import ErrorCode
+from app.framework.middleware.metrics import record_metric_event
 from app.modules.base.service.cache_service import cache_incr
 
 logger = logging.getLogger(__name__)
@@ -81,9 +83,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if current > limit:
             logger.warning("限流触发: ip=%s path=%s limit=%d", ip, path, limit)
+            record_metric_event("rate_limited", path=path)
             return JSONResponse(
                 status_code=429,
-                content={"code": 1001, "message": "请求过于频繁，请稍后再试", "data": None},
+                content={"code": int(ErrorCode.RATE_LIMITED), "message": "请求过于频繁，请稍后再试", "data": None},
                 headers={
                     "Retry-After": "60",
                     "X-RateLimit-Limit": str(limit),

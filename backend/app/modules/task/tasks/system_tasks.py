@@ -4,10 +4,14 @@
 import logging
 import time
 from datetime import datetime, timedelta
+from sqlmodel import select
 from app.celery_app import celery_app
-from app.core.database import Session, engine
+from app.core.database import Session, engine, transaction
+from app.framework.middleware.metrics import record_metric_event
 from app.modules.task.model.task import TaskInfo, TaskLog
 from app.modules.task.service.task_invoker import TaskInvoker
+from app.modules.task.service.task_service import compute_next_run_time, sync_task_schedule_state
+from app.modules.notification.service.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -25,29 +29,99 @@ def execute_system_task(task_id: int):
             return f"Task {task_id} not found"
 
         if not task.service:
+            consume_time = int((time.time() - start_time) * 1000)
+            _write_task_log(session, task_id, 0, "任务未配置 service", consume_time)
             return f"Task {task_id} has no service target"
 
-        log = TaskLog(task_id=task_id, status=1)
         try:
             # 更新最后执行时间
             task.last_execute_time = datetime.utcnow()
-            session.add(task)
-            session.commit()
 
             # 执行逻辑
             result = TaskInvoker.invoke(task.service, task.data)
-            log.detail = str(result)
-            log.status = 1
+            detail = str(result)
+            status = 1
+            record_metric_event("task_executed", status="success")
         except Exception as e:
-            log.detail = f"Error: {str(e)}"
-            log.status = 0
-            print(f"Task {task_id} failed: {e}")
+            detail = f"Error: {str(e)}"
+            status = 0
+            record_metric_event("task_executed", status="failed")
+            logger.exception("Task %s failed", task_id)
         finally:
-            # 记录耗时
-            log.consume_time = int((time.time() - start_time) * 1000)
-            session.add(log)
-            session.commit()
-            return f"Task executed with status: {log.status}"
+            if task:
+                task.next_run_time = compute_next_run_time(task)
+                sync_task_schedule_state(task)
+                session.add(task)
+            consume_time = int((time.time() - start_time) * 1000)
+            log = _write_task_log(session, task_id, status, detail, consume_time)
+            if task:
+                _maybe_send_task_notification(session, task, status, detail, consume_time)
+            return f"Task executed with status: {status}"
+
+
+@celery_app.task(name="task.dispatch_due_tasks")
+def dispatch_due_tasks():
+    """保守调度器：周期扫描已启用且到期的任务并分发执行。"""
+    now = datetime.utcnow()
+    dispatched: list[int] = []
+    with Session(engine) as session:
+        tasks = session.exec(
+            select(TaskInfo).where(
+                TaskInfo.status == 1,
+                (TaskInfo.next_run_time == None) | (TaskInfo.next_run_time <= now),  # noqa: E711
+            )
+        ).all()
+        for task in tasks:
+            if task.id is None:
+                continue
+            if task.next_run_time is None:
+                task.next_run_time = compute_next_run_time(task, now)
+                session.add(task)
+                continue
+            task.next_run_time = compute_next_run_time(task, now)
+            session.add(task)
+            execute_system_task.delay(task.id)
+            dispatched.append(task.id)
+        session.commit()
+    record_metric_event("task_dispatched", count=len(dispatched))
+    return {"success": True, "dispatched": dispatched}
+
+
+def _write_task_log(session: Session, task_id: int, status: int, detail: str, consume_time: int) -> TaskLog:
+    log = TaskLog(
+        task_id=task_id,
+        status=status,
+        detail=detail[:2000] if detail else None,
+        consume_time=consume_time,
+    )
+    with transaction(session):
+        session.add(log)
+    session.refresh(log)
+    return log
+
+
+def _maybe_send_task_notification(session: Session, task: TaskInfo, status_value: int, detail: str, consume_time: int) -> None:
+    if not task.notify_enabled:
+        return
+    timed_out = task.notify_timeout_ms > 0 and consume_time >= task.notify_timeout_ms
+    should_notify = (
+        (status_value == 1 and task.notify_on_success)
+        or (status_value == 0 and task.notify_on_failure)
+        or (timed_out and task.notify_on_timeout)
+    )
+    if not should_notify:
+        return
+    audience = task.notify_recipients or {"allAdmins": True}
+    NotificationService(session).send_task(
+        task_name=task.name,
+        task_id=task.id,
+        status_value=status_value,
+        consume_time=consume_time,
+        detail=detail,
+        audience=audience,
+        template_code=task.notify_template_code,
+        timeout=timed_out,
+    )
 
 
 @celery_app.task(name="task.clean_expired_logs")

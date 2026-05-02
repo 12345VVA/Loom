@@ -129,19 +129,18 @@ def add_token_to_blacklist(jti: str, expires_at: int) -> None:
         jti: JWT ID (Token唯一标识)
         expires_at: Token过期时间戳(秒)，用于设置黑名单TTL
     """
-    from app.core.redis import redis_client
-    from app.modules.base.service.cache_service import get_access_token_ttl
+    from app.modules.base.service.cache_service import cache_set
 
     # 计算剩余有效时间作为TTL，最少保留60秒避免时序问题
     ttl = max(expires_at - int(datetime.now(timezone.utc).timestamp()), 60)
-    redis_client.set(build_token_blacklist_key(jti), "1", ex=ttl)
+    cache_set(build_token_blacklist_key(jti), "1", ttl_seconds=ttl)
 
 
 def is_token_blacklisted(jti: str) -> bool:
     """检查Token是否在黑名单中"""
-    from app.core.redis import redis_client
+    from app.modules.base.service.cache_service import cache_get
 
-    return redis_client.exists(build_token_blacklist_key(jti)) > 0
+    return cache_get(build_token_blacklist_key(jti)) is not None
 
 
 def add_user_all_tokens_to_blacklist(user_id: int, current_token_jti: str | None = None) -> None:

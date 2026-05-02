@@ -535,6 +535,48 @@
             "type": "button",
             "permission": "base:session:logout",
             "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "notification_message_mine",
+            "name": "查看通知",
+            "type": "button",
+            "permission": "notification:message:mine",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "notification_message_unread",
+            "name": "通知未读数量",
+            "type": "button",
+            "permission": "notification:message:unreadCount",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "notification_message_read",
+            "name": "通知标记已读",
+            "type": "button",
+            "permission": "notification:message:read",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "notification_message_read_all",
+            "name": "通知全部已读",
+            "type": "button",
+            "permission": "notification:message:readAll",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "notification_message_archive",
+            "name": "通知归档",
+            "type": "button",
+            "permission": "notification:message:archive",
+            "role_codes": ["admin", "task_operator"]
+          },
+          {
+            "code": "notification_message_unarchive",
+            "name": "通知取消归档",
+            "type": "button",
+            "permission": "notification:message:unarchive",
+            "role_codes": ["admin", "task_operator"]
           }
         ]
       }

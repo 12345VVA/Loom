@@ -13,6 +13,8 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.security import decode_token, is_token_blacklisted
 from app.framework.router.route_meta import TagTypes, get_permission_meta
+from app.framework.middleware.metrics import record_metric_event
+from app.core.logging import current_user_id_ctx
 from app.modules.base.compat import ADMIN_PATH_ALIASES, DEFAULT_AUTHENTICATED_PERMISSIONS, DEFAULT_PUBLIC_PERMISSION_PATHS
 from app.modules.base.model.auth import Menu, Role, RoleMenuLink, User, UserRoleLink
 from app.modules.base.service.cache_service import cache_delete, cache_get, cache_get_json, cache_set, cache_set_json
@@ -369,6 +371,7 @@ def authorize_admin_request(session: Session, request: Request, anonymous_paths:
     user, _ = get_user_from_access_token(session, token)
 
     request.state.current_user = user
+    current_user_id_ctx.set(str(user.id))
     request.state.permissions = get_cached_user_permissions(session, user)
     request.state.permission_patterns = get_user_permission_patterns(session, user)
     request.state.permission_paths = get_user_permission_paths(session, user)
@@ -379,6 +382,7 @@ def authorize_admin_request(session: Session, request: Request, anonymous_paths:
     if required_permission:
         if has_permission(request.state.permissions, required_permission):
             return user
+        record_metric_event("auth_forbidden", scope="admin", permission=required_permission)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问当前接口")
 
     normalized_request_path = canonicalize_admin_path(request_path)
@@ -387,6 +391,7 @@ def authorize_admin_request(session: Session, request: Request, anonymous_paths:
         return user
 
     if not has_url_permission(request.state.permission_patterns, request.method, normalized_request_path):
+        record_metric_event("auth_forbidden", scope="admin", path=normalized_request_path)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问当前接口")
 
     return user

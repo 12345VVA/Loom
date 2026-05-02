@@ -16,6 +16,7 @@ _lock = threading.Lock()
 _requests: dict[tuple[str, str, int], int] = defaultdict(int)
 _latency_total: dict[tuple[str, str], float] = defaultdict(float)
 _latency_count: dict[tuple[str, str], int] = defaultdict(int)
+_events: dict[tuple[str, tuple[tuple[str, str], ...]], int] = defaultdict(int)
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -35,6 +36,12 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             _latency_total[(method, path)] += elapsed
             _latency_count[(method, path)] += 1
         return response
+
+
+def record_metric_event(name: str, **labels: str | int | None) -> None:
+    normalized = tuple(sorted((key, str(value)) for key, value in labels.items() if value is not None))
+    with _lock:
+        _events[(name, normalized)] += 1
 
 
 def render_metrics() -> str:
@@ -61,4 +68,13 @@ def render_metrics() -> str:
             lines.append(
                 f'loom_http_request_duration_seconds_avg{{method="{method}",path="{path}"}} {total / count:.6f}'
             )
+        lines.extend(
+            [
+                "# HELP loom_events_total Framework event counters.",
+                "# TYPE loom_events_total counter",
+            ]
+        )
+        for (name, labels), value in sorted(_events.items()):
+            label_items = [f'event="{name}"', *(f'{key}="{val}"' for key, val in labels)]
+            lines.append(f"loom_events_total{{{','.join(label_items)}}} {value}")
     return "\n".join(lines) + "\n"

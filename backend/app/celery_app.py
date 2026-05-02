@@ -26,6 +26,11 @@ celery_app.conf.update(
 
 # Celery Beat 定时任务配置
 celery_app.conf.beat_schedule = {
+    # 每分钟扫描启用且到期的数据库任务
+    "dispatch-due-system-tasks": {
+        "task": "task.dispatch_due_tasks",
+        "schedule": 60.0,
+    },
     # 每天凌晨2点清理过期日志
     "clean-expired-logs-daily": {
         "task": "task.clean_expired_logs",
