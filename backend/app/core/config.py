@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # OpenAI / Ollama 配置
     OPENAI_API_KEY: str  # 启动时自动从 .env 中读取
     OPENAI_BASE_URL: str  # 启动时自动从 .env 中读取
+    SECRET_ENCRYPTION_KEY: str = ""
 
     # 认证配置
     JWT_SECRET_KEY: str # 启动时自动从 .env 中读取

@@ -39,6 +39,11 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
     if is_prod and not config.CELERY_BROKER_URL:
         results.append(StartupCheckResult("error", "CELERY_BROKER_URL", "生产环境必须配置 Celery broker"))
 
+    if not config.SECRET_ENCRYPTION_KEY:
+        results.append(StartupCheckResult("error" if is_prod else "warning", "SECRET_ENCRYPTION_KEY", "模型供应商密钥加密需要配置 SECRET_ENCRYPTION_KEY"))
+    elif len(config.SECRET_ENCRYPTION_KEY) < 32:
+        results.append(StartupCheckResult("error" if is_prod else "warning", "SECRET_ENCRYPTION_KEY", "SECRET_ENCRYPTION_KEY 长度建议至少 32 字符"))
+
     return results
 
 

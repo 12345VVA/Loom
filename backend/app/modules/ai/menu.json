@@ -1,0 +1,75 @@
+[
+  {
+    "code": "nav_ai",
+    "name": "AI 管理",
+    "type": "group",
+    "icon": "icon-ai",
+    "sort_order": 35,
+    "parent_code": "nav_system",
+    "role_codes": ["admin"],
+    "children": [
+      {
+        "code": "nav_ai_provider",
+        "name": "模型厂商",
+        "type": "menu",
+        "module": "ai",
+        "resource": "provider",
+        "path": "/ai/provider",
+        "component": "modules/ai/views/provider.vue",
+        "icon": "icon-integration",
+        "sort_order": 1,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_provider_add", "name": "新增", "type": "button", "permission": "ai:provider:add", "role_codes": ["admin"] },
+          { "code": "ai_provider_delete", "name": "删除", "type": "button", "permission": "ai:provider:delete", "role_codes": ["admin"] },
+          { "code": "ai_provider_update", "name": "修改", "type": "button", "permission": "ai:provider:update", "role_codes": ["admin"] },
+          { "code": "ai_provider_page", "name": "分页查询", "type": "button", "permission": "ai:provider:page", "role_codes": ["admin"] },
+          { "code": "ai_provider_info", "name": "详情", "type": "button", "permission": "ai:provider:info", "role_codes": ["admin"] },
+          { "code": "ai_provider_test", "name": "测试连接", "type": "button", "permission": "ai:provider:test", "role_codes": ["admin"] },
+          { "code": "ai_provider_catalog", "name": "预设清单", "type": "button", "permission": "ai:provider:catalog", "role_codes": ["admin"] },
+          { "code": "ai_provider_import_catalog", "name": "导入预设", "type": "button", "permission": "ai:provider:importCatalog", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_ai_model",
+        "name": "模型管理",
+        "type": "menu",
+        "module": "ai",
+        "resource": "model",
+        "path": "/ai/model",
+        "component": "modules/ai/views/model.vue",
+        "icon": "icon-ai-model",
+        "sort_order": 2,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_model_add", "name": "新增", "type": "button", "permission": "ai:model:add", "role_codes": ["admin"] },
+          { "code": "ai_model_delete", "name": "删除", "type": "button", "permission": "ai:model:delete", "role_codes": ["admin"] },
+          { "code": "ai_model_update", "name": "修改", "type": "button", "permission": "ai:model:update", "role_codes": ["admin"] },
+          { "code": "ai_model_page", "name": "分页查询", "type": "button", "permission": "ai:model:page", "role_codes": ["admin"] },
+          { "code": "ai_model_info", "name": "详情", "type": "button", "permission": "ai:model:info", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_ai_profile",
+        "name": "调用配置",
+        "type": "menu",
+        "module": "ai",
+        "resource": "profile",
+        "path": "/ai/profile",
+        "component": "modules/ai/views/profile.vue",
+        "icon": "icon-params",
+        "sort_order": 3,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_profile_add", "name": "新增", "type": "button", "permission": "ai:profile:add", "role_codes": ["admin"] },
+          { "code": "ai_profile_delete", "name": "删除", "type": "button", "permission": "ai:profile:delete", "role_codes": ["admin"] },
+          { "code": "ai_profile_update", "name": "修改", "type": "button", "permission": "ai:profile:update", "role_codes": ["admin"] },
+          { "code": "ai_profile_page", "name": "分页查询", "type": "button", "permission": "ai:profile:page", "role_codes": ["admin"] },
+          { "code": "ai_profile_info", "name": "详情", "type": "button", "permission": "ai:profile:info", "role_codes": ["admin"] },
+          { "code": "ai_profile_set_default", "name": "设为默认", "type": "button", "permission": "ai:profile:setDefault", "role_codes": ["admin"] },
+          { "code": "ai_profile_test", "name": "测试调用", "type": "button", "permission": "ai:profile:test", "role_codes": ["admin"] }
+        ]
+      }
+    ]
+  }
+]

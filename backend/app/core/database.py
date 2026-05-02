@@ -15,6 +15,7 @@ from app.modules.base.model import sys as _base_sys_models  # noqa: F401
 from app.modules.dict.model import dict as _dict_models  # noqa: F401
 from app.modules.task.model import task as _task_models  # noqa: F401
 from app.modules.notification.model import notification as _notification_models  # noqa: F401
+from app.modules.ai.model import ai as _ai_models  # noqa: F401
 from sqlalchemy import event
 from datetime import datetime
 from app.framework.models.entity import BaseEntity
@@ -150,6 +151,17 @@ def _ensure_sqlite_compatible_schema() -> None:
             "recalled_at": "ALTER TABLE notification_message ADD COLUMN recalled_at DATETIME",
             "recalled_by": "ALTER TABLE notification_message ADD COLUMN recalled_by INTEGER",
         },
+        "ai_provider": {
+            "api_key_cipher": "ALTER TABLE ai_provider ADD COLUMN api_key_cipher VARCHAR",
+            "api_key_mask": "ALTER TABLE ai_provider ADD COLUMN api_key_mask VARCHAR",
+            "sort_order": "ALTER TABLE ai_provider ADD COLUMN sort_order INTEGER DEFAULT 0",
+        },
+        "ai_model": {
+            "sort_order": "ALTER TABLE ai_model ADD COLUMN sort_order INTEGER DEFAULT 0",
+        },
+        "ai_model_profile": {
+            "sort_order": "ALTER TABLE ai_model_profile ADD COLUMN sort_order INTEGER DEFAULT 0",
+        },
     }
 
     # 所有需要检查标准字段的表列表
@@ -158,6 +170,7 @@ def _ensure_sqlite_compatible_schema() -> None:
         "sys_param", "sys_log", "sys_login_log", 
         "dict_type", "dict_info", "task_info", "task_log",
         "notification_message", "notification_recipient", "notification_template", "notification_rule",
+        "ai_provider", "ai_model", "ai_model_profile", "ai_model_call_log",
         "sys_user_role", "sys_role_menu", "sys_role_department"
     ]
 

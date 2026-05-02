@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 SENSITIVE_FIELDS = {
     "password", "old_password", "new_password", "confirm_password",
     "passwd", "pwd", "secret", "token", "access_token", "refresh_token",
-    "api_key", "apikey", "private_key", "private_key",
+    "api_key", "apikey", "apiKey", "authorization", "private_key", "private_key",
     "phone", "mobile", "telephone", "id_card", "idcard", "idCard",
     "bank_card", "bankCard", "credit_card", "creditCard",
     "ssn", "social_security_number"
