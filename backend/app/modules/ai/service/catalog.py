@@ -44,6 +44,7 @@ AI_MODEL_CATALOG = [
         "models": [
             {"code": "doubao-seed-1-6", "name": "Doubao Seed 1.6", "model_type": "chat", "capabilities": "chat,stream,tools"},
             {"code": "doubao-embedding", "name": "Doubao Embedding", "model_type": "embedding", "capabilities": "embedding"},
+            {"code": "doubao-seedream-5.0-lite", "name": "Doubao Seedream 5.0 Lite", "model_type": "image", "capabilities": "image,text-to-image,image-to-image"},
         ],
     },
     {

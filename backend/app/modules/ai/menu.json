@@ -91,12 +91,46 @@
         "path": "/ai/log",
         "component": "modules/ai/views/log.vue",
         "icon": "icon-log",
-        "sort_order": 5,
+        "sort_order": 6,
         "role_codes": ["admin"],
         "children": [
           { "code": "ai_log_page", "name": "分页查询", "type": "button", "permission": "ai:log:page", "role_codes": ["admin"] },
           { "code": "ai_log_info", "name": "详情", "type": "button", "permission": "ai:log:info", "role_codes": ["admin"] },
-          { "code": "ai_log_list", "name": "列表查询", "type": "button", "permission": "ai:log:list", "role_codes": ["admin"] }
+          { "code": "ai_log_list", "name": "列表查询", "type": "button", "permission": "ai:log:list", "role_codes": ["admin"] },
+          { "code": "ai_log_stats", "name": "统计", "type": "button", "permission": "ai:log:stats", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_ai_image",
+        "name": "图片测试",
+        "type": "menu",
+        "module": "ai",
+        "resource": "image",
+        "path": "/ai/image",
+        "component": "modules/ai/views/image.vue",
+        "icon": "icon-media",
+        "sort_order": 5,
+        "role_codes": ["admin"]
+      },
+      {
+        "code": "nav_ai_task",
+        "name": "生成任务",
+        "type": "menu",
+        "module": "ai",
+        "resource": "task",
+        "path": "/ai/task",
+        "component": "modules/ai/views/task.vue",
+        "icon": "icon-task",
+        "sort_order": 7,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_task_page", "name": "分页查询", "type": "button", "permission": "ai:task:page", "role_codes": ["admin"] },
+          { "code": "ai_task_info", "name": "详情", "type": "button", "permission": "ai:task:info", "role_codes": ["admin"] },
+          { "code": "ai_task_list", "name": "列表查询", "type": "button", "permission": "ai:task:list", "role_codes": ["admin"] },
+          { "code": "ai_task_submit", "name": "提交", "type": "button", "permission": "ai:task:submit", "role_codes": ["admin"] },
+          { "code": "ai_task_cancel", "name": "取消", "type": "button", "permission": "ai:task:cancel", "role_codes": ["admin"] },
+          { "code": "ai_task_retry", "name": "重试", "type": "button", "permission": "ai:task:retry", "role_codes": ["admin"] },
+          { "code": "ai_task_stats", "name": "统计", "type": "button", "permission": "ai:task:stats", "role_codes": ["admin"] }
         ]
       }
     ]

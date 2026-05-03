@@ -3,7 +3,14 @@ AI 模型调用日志接口。
 """
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
 from app.modules.ai.model.ai import AiModelCallLogRead
-from app.modules.ai.service.ai_service import AiModelCallLogService
+from fastapi import Depends
+from sqlmodel import Session
+
+from app.core.database import get_session
+from app.framework.router.route_meta import Post
+from app.modules.ai.service.ai_service import AiModelCallLogService, AiModelCallStatsService
+from app.modules.base.model.auth import User
+from app.modules.base.service.security_service import get_current_user
 
 
 @CoolController(
@@ -35,7 +42,13 @@ from app.modules.ai.service.ai_service import AiModelCallLogService
     )
 )
 class AiModelCallLogController(BaseController):
-    pass
+    @Post("/stats", summary="AI 调用日志统计", permission="ai:log:stats")
+    async def stats(
+        self,
+        _: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ):
+        return AiModelCallStatsService(session).summary()
 
 
 router = AiModelCallLogController.router

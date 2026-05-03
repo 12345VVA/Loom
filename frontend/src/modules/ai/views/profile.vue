@@ -105,6 +105,7 @@ const Upsert = useUpsert({
 				name: 'cl-select-table',
 				props: {
 					service: service.ai.model,
+					multiple: false,
 					columns: [
 						{ label: t('厂商'), prop: 'providerName', minWidth: 140 },
 						{ label: t('编码'), prop: 'code', minWidth: 160 },
@@ -129,6 +130,23 @@ const Upsert = useUpsert({
 			component: { name: 'el-input', props: { type: 'textarea', rows: 4, placeholder: '[]' } }
 		},
 		{
+			label: 'timeout(s)',
+			prop: 'timeout',
+			component: { name: 'el-input-number', props: { min: 1, 'controls-position': 'right' } }
+		},
+		{
+			label: 'retry_count',
+			prop: 'retryCount',
+			value: 0,
+			component: { name: 'el-input-number', props: { min: 0, max: 5, 'controls-position': 'right' } }
+		},
+		{
+			label: 'retry_delay(s)',
+			prop: 'retryDelaySeconds',
+			value: 0,
+			component: { name: 'el-input-number', props: { min: 0, max: 60, 'controls-position': 'right' } }
+		},
+		{
 			label: t('兜底配置ID'),
 			prop: 'fallbackProfileId',
 			component: { name: 'el-input-number' }
@@ -144,7 +162,7 @@ const Upsert = useUpsert({
 	},
 	onSubmit(data, { next, done }) {
 		try {
-			const payload = { ...data, responseFormat: stringifyResponseFormat(data) };
+			const payload = { ...data, modelId: normalizeSingleId(data.modelId), responseFormat: stringifyResponseFormat(data) };
 			delete payload.responseFormatMode;
 			delete payload.responseSchemaName;
 			delete payload.responseSchemaDescription;
@@ -267,6 +285,10 @@ function stringifyResponseFormat(data: any) {
 			strict: data.responseSchemaStrict !== false
 		}
 	});
+}
+
+function normalizeSingleId(value: any) {
+	return Array.isArray(value) ? value[0] : value;
 }
 </script>
 

@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     UPLOAD_MAX_SIZE_MB: int = 10                       # 单文件最大 MB
     UPLOAD_ALLOWED_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.csv,.json,.mp4,.mp3"
     STORAGE_PROVIDER: str = "local"
+    MEDIA_REMOTE_DOWNLOAD_MAX_SIZE_MB: int = 100
+    MEDIA_REMOTE_DOWNLOAD_TIMEOUT_SECONDS: int = 30
+    MEDIA_REMOTE_ALLOWED_HOSTS: str = "*.volces.com"
     S3_ENDPOINT_URL: str = ""
     S3_ACCESS_KEY_ID: str = ""
     S3_SECRET_ACCESS_KEY: str = ""

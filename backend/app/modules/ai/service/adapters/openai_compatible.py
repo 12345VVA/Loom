@@ -9,6 +9,8 @@ from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCap
 
 
 class OpenAICompatibleAdapter(BaseHttpAdapter):
+    supported_capabilities = {"chat", "stream_chat", "embedding", "image"}
+
     def __init__(self, provider: AiProvider):
         super().__init__(provider)
         self.client = OpenAI(api_key=self.api_key or "EMPTY", base_url=self.base_url or None)

@@ -72,6 +72,9 @@ class AiModelProfile(BaseEntity, table=True):
     max_tokens: Optional[int] = None
     response_format: Optional[str] = None
     tools_config: Optional[str] = None
+    timeout: Optional[int] = None
+    retry_count: int = Field(default=0)
+    retry_delay_seconds: int = Field(default=0)
     fallback_profile_id: Optional[int] = Field(default=None, index=True)
     is_default: bool = Field(default=False, index=True)
     is_active: bool = Field(default=True, index=True)
@@ -93,6 +96,24 @@ class AiModelCallLog(BaseEntity, table=True):
     total_tokens: int = Field(default=0)
     error_message: Optional[str] = Field(default=None, max_length=500)
     request_id: Optional[str] = Field(default=None, index=True, max_length=100)
+
+
+class AiGenerationTask(BaseEntity, table=True):
+    __tablename__ = "ai_generation_task"
+
+    task_type: str = Field(default="chat", index=True, max_length=50)
+    scenario: str = Field(default="default", index=True, max_length=100)
+    profile_code: Optional[str] = Field(default=None, index=True, max_length=100)
+    status: str = Field(default="pending", index=True, max_length=50)
+    progress: int = Field(default=0)
+    request_payload: Optional[str] = None
+    result_payload: Optional[str] = None
+    error_message: Optional[str] = Field(default=None, max_length=1000)
+    celery_task_id: Optional[str] = Field(default=None, index=True, max_length=100)
+    created_by: Optional[int] = Field(default=None, index=True)
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    retry_count: int = Field(default=0)
 
 
 class AiModelCallLogRead(BaseModel):
@@ -235,6 +256,9 @@ class AiModelProfileRead(BaseModel):
     max_tokens: Optional[int] = None
     response_format: Optional[str] = None
     tools_config: Optional[str] = None
+    timeout: Optional[int] = None
+    retry_count: int = 0
+    retry_delay_seconds: int = 0
     fallback_profile_id: Optional[int] = None
     is_default: bool
     is_active: bool
@@ -255,10 +279,20 @@ class AiModelProfileCreateRequest(BaseModel):
     max_tokens: Optional[int] = None
     response_format: Optional[str] = None
     tools_config: Optional[str] = None
+    timeout: Optional[int] = None
+    retry_count: int = 0
+    retry_delay_seconds: int = 0
     fallback_profile_id: Optional[int] = None
     is_default: bool = False
     is_active: bool = True
     sort_order: int = 0
+
+    @field_validator("model_id", mode="before")
+    @classmethod
+    def normalize_model_id(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return value[0] if value else None
+        return value
 
 
 class AiModelProfileUpdateRequest(AiModelProfileCreateRequest):
@@ -348,6 +382,42 @@ class AiVideoRequest(BaseModel):
     profile_code: Optional[str] = None
     prompt: str
     options: dict[str, Any] = PydanticField(default_factory=dict)
+
+
+class AiGenerationTaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    task_type: str
+    scenario: str
+    profile_code: Optional[str] = None
+    status: str
+    progress: int = 0
+    request_payload: Optional[str] = None
+    result_payload: Optional[str] = None
+    error_message: Optional[str] = None
+    celery_task_id: Optional[str] = None
+    created_by: Optional[int] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    retry_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class AiTaskSubmitRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    task_type: str = "chat"
+    scenario: str = "default"
+    profile_code: Optional[str] = None
+    payload: dict[str, Any]
+
+
+class AiTaskActionRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
 
 
 class AiProfileTestRequest(BaseModel):

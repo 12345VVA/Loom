@@ -6,7 +6,10 @@ from __future__ import annotations
 import json
 import re
 import time
+import time as time_module
+from contextlib import contextmanager
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -19,12 +22,14 @@ from app.modules.ai.model.ai import (
     AiCatalogImportRequest,
     AiChatRequest,
     AiEmbeddingRequest,
+    AiGenerationTask,
     AiImageRequest,
     AiModel,
     AiModelCallLog,
     AiModelProfile,
     AiResponseFormatRequest,
     AiRerankRequest,
+    AiTaskSubmitRequest,
     AiVideoRequest,
     AiProvider,
 )
@@ -51,12 +56,12 @@ class AiProviderService(BaseAdminCrudService):
     def _before_update(self, data: dict, entity: AiProvider) -> dict:
         self._ensure_unique_code(data.get("code"), exclude_id=entity.id)
         _validate_json_config(data.get("extra_config"), "extraConfig", expected_type=dict)
+        data.pop("api_key_cipher", None)
+        data.pop("api_key_mask", None)
         api_key = data.pop("api_key", None)
         if api_key:
             data["api_key_cipher"] = encrypt_secret(api_key)
             data["api_key_mask"] = mask_secret(api_key)
-        data.pop("api_key_cipher", None)
-        data.pop("api_key_mask", None)
         return data
 
     def add(self, payload: Any) -> dict:
@@ -91,7 +96,8 @@ class AiProviderService(BaseAdminCrudService):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="厂商不存在")
         adapter = build_adapter(provider)
         try:
-            return adapter.test()
+            result = adapter.test()
+            return {**adapter.capability_status(), **result}
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"连接测试失败: {exc}") from exc
 
@@ -253,9 +259,11 @@ class AiModelProfileService(BaseAdminCrudService):
         is_tree: bool | None = None,
         parent_field: str | None = None,
     ) -> list[dict]:
+        query = self._profile_query(query)
         return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
 
     def page(self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> PageResult[dict]:
+        query = self._profile_query(query)
         result = super().page(query, current_user, relations)
         result.items = [self._decorate(item) for item in result.items]
         return result
@@ -320,6 +328,38 @@ class AiModelProfileService(BaseAdminCrudService):
         data["modelType"] = model.model_type if model else None
         data["providerName"] = provider.name if provider else None
         return data
+
+    def _profile_query(self, query: CrudQuery | None) -> CrudQuery | None:
+        model_type = (query.raw_params.get("modelType") or query.raw_params.get("model_type")) if query else None
+        if not model_type:
+            return query
+        model_ids = [
+            item
+            for item in self.session.exec(
+                select(AiModel.id).where(
+                    AiModel.model_type == model_type,
+                    AiModel.delete_time == None,  # noqa: E711
+                )
+            ).all()
+            if item is not None
+        ]
+        eq_filters = dict(query.eq_filters)
+        eq_filters["model_id"] = model_ids or [-1]
+        return CrudQuery(
+            page=query.page,
+            size=query.size,
+            keyword=query.keyword,
+            order=query.order,
+            sort=query.sort,
+            keyword_fields=query.keyword_fields,
+            order_fields=query.order_fields,
+            select_fields=query.select_fields,
+            add_order_by=query.add_order_by,
+            where_handler=query.where_handler,
+            eq_filters=eq_filters,
+            like_filters=query.like_filters,
+            raw_params=query.raw_params,
+        )
 
 
 class AiModelCallLogService(BaseAdminCrudService):
@@ -394,6 +434,8 @@ class AiModelRegistryService:
             options["top_p"] = profile.top_p
         if profile.max_tokens is not None:
             options["max_tokens"] = profile.max_tokens
+        if profile.timeout is not None:
+            options["timeout"] = profile.timeout
         if profile.response_format:
             response_format = normalize_response_format(_loads(profile.response_format))
             if response_format:
@@ -475,7 +517,7 @@ class AiModelRuntimeService:
         request_options = request_options or {}
         try:
             adapter = build_adapter(provider)
-            result = getattr(adapter, method)(model=model.code, **kwargs)
+            result = self._invoke_with_retry(adapter, method, profile, model.code, kwargs)
             usage = result.get("usage") or {}
             self._log_call(provider, model, profile, "success", start, usage, request_id=result.get("requestId"))
             if method == "chat" and _is_structured_response(structured_response):
@@ -490,6 +532,26 @@ class AiModelRuntimeService:
             if fallback is not None:
                 return fallback
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"模型调用失败: {exc}") from exc
+
+    def _invoke_with_retry(self, adapter, method: str, profile: AiModelProfile, model_code: str, kwargs: dict[str, Any]) -> dict:
+        attempts = max(0, int(profile.retry_count or 0)) + 1
+        retry_delay = max(0, int(profile.retry_delay_seconds or 0))
+        last_exc: Exception | None = None
+        for index in range(attempts):
+            try:
+                call_kwargs = dict(kwargs)
+                call_kwargs["options"] = _options_without_governance(call_kwargs.get("options") or {})
+                with _adapter_timeout(adapter, profile.timeout):
+                    return getattr(adapter, method)(model=model_code, **call_kwargs)
+            except UnsupportedCapabilityError:
+                raise
+            except Exception as exc:
+                last_exc = exc
+                if index >= attempts - 1:
+                    break
+                if retry_delay:
+                    time_module.sleep(retry_delay)
+        raise last_exc or RuntimeError("模型调用失败")
 
     def _resolve_chat(self, payload: AiChatRequest) -> tuple[dict, dict[str, Any], bool]:
         resolved = AiModelRegistryService(self.session).resolve(model_type="chat", scenario=payload.scenario, profile_code=payload.profile_code)
@@ -526,27 +588,29 @@ class AiModelRuntimeService:
         yield _sse_event({"event": "start", "provider": provider.code, "model": model.code, "profile": profile.code})
         try:
             adapter = build_adapter(provider)
-            for event in adapter.stream_chat(model=model.code, messages=messages, options=options):
-                request_id = event.get("requestId") or request_id
-                usage = event.get("usage") or usage
-                event_name = event.get("event")
-                if event_name in {"delta", "thinking_delta", "tool_delta"}:
-                    text = event.get("content") or ""
-                    if event_name == "delta":
-                        content_parts.append(text)
-                        emitted_delta = True
-                    yield _sse_event({"event": event_name, "content": text})
-                    continue
-                if event_name == "error":
-                    message = event.get("content") or "模型流式调用失败"
-                    self._log_call(provider, model, profile, "error", start, usage, str(message), request_id=request_id)
-                    yield _sse_event({"event": "error", "message": str(message), "status": 400})
-                    return
-                if event_name == "done":
-                    if event.get("usage"):
-                        usage = event.get("usage") or usage
-                    if event.get("requestId"):
-                        request_id = event.get("requestId")
+            with _adapter_timeout(adapter, profile.timeout):
+                stream_events = adapter.stream_chat(model=model.code, messages=messages, options=_options_without_governance(options))
+                for event in stream_events:
+                    request_id = event.get("requestId") or request_id
+                    usage = event.get("usage") or usage
+                    event_name = event.get("event")
+                    if event_name in {"delta", "thinking_delta", "tool_delta"}:
+                        text = event.get("content") or ""
+                        if event_name == "delta":
+                            content_parts.append(text)
+                            emitted_delta = True
+                        yield _sse_event({"event": event_name, "content": text})
+                        continue
+                    if event_name == "error":
+                        message = event.get("content") or "模型流式调用失败"
+                        self._log_call(provider, model, profile, "error", start, usage, str(message), request_id=request_id)
+                        yield _sse_event({"event": "error", "message": str(message), "status": 400})
+                        return
+                    if event_name == "done":
+                        if event.get("usage"):
+                            usage = event.get("usage") or usage
+                        if event.get("requestId"):
+                            request_id = event.get("requestId")
             content = "".join(content_parts)
             done_payload = {"event": "done", "content": content, "usage": usage or {}}
             if _is_structured_response(structured_response):
@@ -752,3 +816,177 @@ def _loads(value: str | None) -> Any:
         return json.loads(value)
     except Exception:
         return {}
+
+
+def _options_without_governance(options: dict[str, Any]) -> dict[str, Any]:
+    data = dict(options or {})
+    data.pop("timeout", None)
+    return data
+
+
+@contextmanager
+def _adapter_timeout(adapter, timeout: int | None):
+    if timeout is None:
+        yield
+        return
+    previous_timeout = getattr(adapter, "timeout", None)
+    previous_client = getattr(adapter, "client", None)
+    adapter.timeout = float(timeout)
+    if previous_client is not None and hasattr(previous_client, "with_options"):
+        adapter.client = previous_client.with_options(timeout=float(timeout))
+    try:
+        yield
+    finally:
+        adapter.timeout = previous_timeout
+        if previous_client is not None:
+            adapter.client = previous_client
+
+
+class AiGenerationTaskService(BaseAdminCrudService):
+    def __init__(self, session: Session):
+        super().__init__(session, AiGenerationTask)
+
+    def submit(self, payload: AiTaskSubmitRequest | dict, current_user: User | None = None) -> dict:
+        if isinstance(payload, dict):
+            payload = AiTaskSubmitRequest(**payload)
+        self._validate_task_type(payload.task_type)
+        task = AiGenerationTask(
+            task_type=payload.task_type,
+            scenario=payload.scenario or "default",
+            profile_code=payload.profile_code,
+            request_payload=json.dumps(payload.payload, ensure_ascii=False, default=str),
+            status="pending",
+            progress=0,
+            created_by=current_user.id if current_user else None,
+        )
+        self.session.add(task)
+        self.session.commit()
+        self.session.refresh(task)
+
+        from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
+
+        try:
+            async_result = execute_ai_generation_task.delay(task.id)
+        except Exception as exc:
+            task.status = "failed"
+            task.progress = 100
+            task.error_message = f"任务入队失败: {exc}"[:1000]
+            task.finished_at = datetime.utcnow()
+            self.session.add(task)
+            self.session.commit()
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=task.error_message) from exc
+        task.celery_task_id = async_result.id
+        self.session.add(task)
+        self.session.commit()
+        return {"success": True, "taskId": task.id, "celeryTaskId": async_result.id}
+
+    def cancel(self, id: int) -> dict:
+        task = self.session.get(AiGenerationTask, id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI 任务不存在")
+        if task.status in {"success", "failed", "cancelled"}:
+            return {"success": True, "status": task.status}
+        if task.celery_task_id:
+            from app.celery_app import celery_app
+
+            try:
+                celery_app.control.revoke(task.celery_task_id, terminate=True)
+            except Exception:
+                pass
+        task.status = "cancelled"
+        task.progress = 100
+        task.finished_at = datetime.utcnow()
+        self.session.add(task)
+        self.session.commit()
+        return {"success": True, "status": task.status}
+
+    def retry(self, id: int) -> dict:
+        task = self.session.get(AiGenerationTask, id)
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI 任务不存在")
+        if task.status not in {"failed", "cancelled"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅失败或已取消任务可以重试")
+        task.status = "pending"
+        task.progress = 0
+        task.result_payload = None
+        task.error_message = None
+        task.started_at = None
+        task.finished_at = None
+        task.retry_count += 1
+        self.session.add(task)
+        self.session.commit()
+        self.session.refresh(task)
+
+        from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
+
+        try:
+            async_result = execute_ai_generation_task.delay(task.id)
+        except Exception as exc:
+            task.status = "failed"
+            task.progress = 100
+            task.error_message = f"任务入队失败: {exc}"[:1000]
+            task.finished_at = datetime.utcnow()
+            self.session.add(task)
+            self.session.commit()
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=task.error_message) from exc
+        task.celery_task_id = async_result.id
+        self.session.add(task)
+        self.session.commit()
+        return {"success": True, "taskId": task.id, "celeryTaskId": async_result.id}
+
+    def stats(self) -> dict:
+        rows = self.session.exec(select(AiGenerationTask.status, AiGenerationTask.error_message)).all()
+        status_counts: dict[str, int] = {}
+        recent_errors: list[str] = []
+        for status_value, error_message in rows:
+            status_counts[status_value] = status_counts.get(status_value, 0) + 1
+            if error_message:
+                recent_errors.append(error_message)
+        return {"statusCounts": status_counts, "recentErrors": recent_errors[-5:]}
+
+    def _validate_task_type(self, task_type: str) -> None:
+        if task_type not in {"chat", "embedding", "image", "rerank", "audio", "video"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的 AI 任务类型")
+
+
+class AiModelCallStatsService:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def summary(self) -> dict:
+        logs = list(self.session.exec(select(AiModelCallLog)).all())
+        total = len(logs)
+        success = len([item for item in logs if item.status == "success"])
+        errors = len([item for item in logs if item.status != "success"])
+        avg_latency = int(sum(item.latency_ms for item in logs) / total) if total else 0
+        token_total = sum(item.total_tokens for item in logs)
+        groups: dict[str, dict[str, Any]] = {}
+        for item in logs:
+            key = f"{item.provider_id or '-'}:{item.model_id or '-'}:{item.profile_id or '-'}"
+            group = groups.setdefault(key, {
+                "providerId": item.provider_id,
+                "modelId": item.model_id,
+                "profileId": item.profile_id,
+                "total": 0,
+                "success": 0,
+                "error": 0,
+                "totalTokens": 0,
+                "avgLatencyMs": 0,
+                "_latency": 0,
+            })
+            group["total"] += 1
+            group["success" if item.status == "success" else "error"] += 1
+            group["totalTokens"] += item.total_tokens
+            group["_latency"] += item.latency_ms
+        for group in groups.values():
+            group["avgLatencyMs"] = int(group["_latency"] / group["total"]) if group["total"] else 0
+            group.pop("_latency", None)
+        return {
+            "total": total,
+            "success": success,
+            "error": errors,
+            "successRate": round(success / total, 4) if total else 0,
+            "avgLatencyMs": avg_latency,
+            "totalTokens": token_total,
+            "groups": list(groups.values()),
+        }

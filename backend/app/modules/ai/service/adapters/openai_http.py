@@ -8,6 +8,7 @@ from app.modules.ai.service.adapters.base import BaseHttpAdapter, iter_sse_event
 
 
 class OpenAIHttpAdapter(BaseHttpAdapter):
+    supported_capabilities = {"chat", "stream_chat", "embedding", "image", "rerank"}
     chat_path = "/chat/completions"
     embeddings_path = "/embeddings"
     images_path = "/images/generations"

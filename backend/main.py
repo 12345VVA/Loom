@@ -2,9 +2,11 @@
 Loom API - FastAPI 主入口
 """
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from sqlalchemy import text
 
@@ -17,6 +19,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.database import init_db
 from app.core.database import Session, engine
+from app.framework.storage import DEFAULT_UPLOAD_DIR
 from app.framework.middleware.metrics import render_metrics
 from app.core.startup_checks import assert_startup_settings, validate_startup_settings
 from app.modules.base.service.cache_service import get_redis_client
@@ -57,6 +60,9 @@ api_router = create_api_router()
 app.include_router(api_router)
 if settings.API_VERSION_PREFIX_ENABLED:
     app.include_router(api_router, prefix=settings.API_VERSION_PREFIX.rstrip("/"))
+UPLOADS_DIR = DEFAULT_UPLOAD_DIR
+Path(UPLOADS_DIR).mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 app.state.scope_whitelists = load_scope_whitelists()
 app.state.module_runtime = {
     item.name: {

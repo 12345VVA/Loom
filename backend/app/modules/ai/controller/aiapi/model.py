@@ -11,6 +11,9 @@ from app.framework.router.route_meta import Post
 from app.modules.ai.model.ai import AiAudioRequest, AiChatRequest, AiEmbeddingRequest, AiImageRequest, AiRerankRequest, AiVideoRequest
 from app.modules.ai.service.ai_service import AiModelRuntimeService
 from app.modules.base.service.admin_service import BaseAdminCrudService
+from app.modules.base.model.auth import User
+from app.modules.base.service.security_service import get_current_user
+from app.modules.media.service.media_service import MediaAssetService
 
 
 class _NoopService(BaseAdminCrudService):
@@ -51,8 +54,25 @@ class AiRuntimeController(BaseController):
         return AiModelRuntimeService(session).embedding(payload)
 
     @Post("/image", summary="统一图像模型调用")
-    async def image(self, payload: AiImageRequest, session: Session = Depends(get_session)):
-        return AiModelRuntimeService(session).image(payload)
+    async def image(
+        self,
+        payload: AiImageRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ):
+        result = AiModelRuntimeService(session).image(payload)
+        try:
+            MediaAssetService(session).create_from_ai_result(
+                task_type="image",
+                result=result,
+                request_payload=payload.model_dump(),
+                source_type="ai_sync",
+                created_by=current_user.id if current_user else None,
+                profile_code=payload.profile_code,
+            )
+        except Exception:
+            pass
+        return result
 
     @Post("/rerank", summary="统一重排模型调用")
     async def rerank(self, payload: AiRerankRequest, session: Session = Depends(get_session)):

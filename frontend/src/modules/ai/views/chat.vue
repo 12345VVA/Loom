@@ -162,7 +162,7 @@ async function sendStream() {
 
 	try {
 		await stream.invoke({
-			url: '/aiapi/ai/model/streamChat',
+			url: (service.ai as any).runtime.model.streamUrl(),
 			data: payload,
 			cb(event) {
 				streamEvents.value.push(event);

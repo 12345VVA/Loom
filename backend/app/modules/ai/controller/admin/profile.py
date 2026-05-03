@@ -5,7 +5,7 @@ from fastapi import Depends
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
+from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
 from app.framework.router.route_meta import Post
 from app.modules.ai.model.ai import (
     AiModelProfileCreateRequest,
@@ -37,7 +37,7 @@ from app.modules.base.service.security_service import get_current_user
         actions=("add", "delete", "update", "page", "info", "list"),
         page_query=QueryConfig(
             keyword_like_fields=("code", "name", "scenario"),
-            field_eq=("model_id", "scenario", "is_default", "is_active"),
+            field_eq=("model_id", "scenario", "is_default", QueryFieldConfig("is_active", "status")),
             field_like=("code", "name", "scenario"),
             order_fields=("created_at", "updated_at", "sort_order", "code"),
             add_order_by=(OrderByConfig("sort_order", "desc"), OrderByConfig("created_at", "desc")),

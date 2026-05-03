@@ -11,19 +11,15 @@ import os
 from app.core.config import settings
 
 
-_VERSION = "v1"
+_VERSION = "v2"
+_LEGACY_VERSION = "v1"
 
 
 def encrypt_secret(value: str | None) -> str | None:
     """使用 SECRET_ENCRYPTION_KEY 加密敏感值。"""
     if not value:
         return None
-    key = _derive_key()
-    nonce = os.urandom(16)
-    plain = value.encode("utf-8")
-    cipher = _xor_bytes(plain, _keystream(key, nonce, len(plain)))
-    mac = hmac.new(key, nonce + cipher, hashlib.sha256).digest()
-    payload = base64.urlsafe_b64encode(nonce + mac + cipher).decode("ascii")
+    payload = _fernet().encrypt(value.encode("utf-8")).decode("ascii")
     return f"{_VERSION}:{payload}"
 
 
@@ -32,7 +28,13 @@ def decrypt_secret(value: str | None) -> str | None:
     if not value:
         return None
     if not value.startswith(f"{_VERSION}:"):
+        if value.startswith(f"{_LEGACY_VERSION}:"):
+            return _decrypt_legacy(value)
         return value
+    return _fernet().decrypt(value.split(":", 1)[1].encode("ascii")).decode("utf-8")
+
+
+def _decrypt_legacy(value: str) -> str:
     key = _derive_key()
     raw = base64.urlsafe_b64decode(value.split(":", 1)[1].encode("ascii"))
     nonce, mac, cipher = raw[:16], raw[16:48], raw[48:]
@@ -55,6 +57,14 @@ def mask_secret(value: str | None) -> str | None:
 def _derive_key() -> bytes:
     raw = settings.SECRET_ENCRYPTION_KEY or settings.JWT_SECRET_KEY
     return hashlib.sha256(raw.encode("utf-8")).digest()
+
+
+def _fernet():
+    try:
+        from cryptography.fernet import Fernet
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("缺少 cryptography 依赖，请在 backend 下运行 pip install -r requirements.txt") from exc
+    return Fernet(base64.urlsafe_b64encode(_derive_key()))
 
 
 def _keystream(key: bytes, nonce: bytes, size: int) -> bytes:

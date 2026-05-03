@@ -9,6 +9,7 @@ from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCap
 
 class OllamaAdapter(BaseHttpAdapter):
     default_base_url = "http://localhost:11434"
+    supported_capabilities = {"chat", "stream_chat", "embedding"}
 
     def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]) -> dict:
         response = httpx.post(f"{self.base_url}/api/chat", json={"model": model, "messages": messages, "stream": False, "options": options}, timeout=self.timeout)

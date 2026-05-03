@@ -9,6 +9,7 @@ from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCap
 
 class GeminiAdapter(BaseHttpAdapter):
     default_base_url = "https://generativelanguage.googleapis.com/v1beta"
+    supported_capabilities = {"chat", "stream_chat", "embedding"}
 
     def _headers(self) -> dict[str, str]:
         return {"Content-Type": "application/json"}

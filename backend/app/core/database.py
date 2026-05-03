@@ -16,6 +16,7 @@ from app.modules.dict.model import dict as _dict_models  # noqa: F401
 from app.modules.task.model import task as _task_models  # noqa: F401
 from app.modules.notification.model import notification as _notification_models  # noqa: F401
 from app.modules.ai.model import ai as _ai_models  # noqa: F401
+from app.modules.media.model import media as _media_models  # noqa: F401
 from sqlalchemy import event
 from datetime import datetime
 from app.framework.models.entity import BaseEntity
@@ -161,6 +162,46 @@ def _ensure_sqlite_compatible_schema() -> None:
         },
         "ai_model_profile": {
             "sort_order": "ALTER TABLE ai_model_profile ADD COLUMN sort_order INTEGER DEFAULT 0",
+            "timeout": "ALTER TABLE ai_model_profile ADD COLUMN timeout INTEGER",
+            "retry_count": "ALTER TABLE ai_model_profile ADD COLUMN retry_count INTEGER DEFAULT 0",
+            "retry_delay_seconds": "ALTER TABLE ai_model_profile ADD COLUMN retry_delay_seconds INTEGER DEFAULT 0",
+        },
+        "ai_generation_task": {
+            "task_type": "ALTER TABLE ai_generation_task ADD COLUMN task_type VARCHAR DEFAULT 'chat'",
+            "scenario": "ALTER TABLE ai_generation_task ADD COLUMN scenario VARCHAR DEFAULT 'default'",
+            "profile_code": "ALTER TABLE ai_generation_task ADD COLUMN profile_code VARCHAR",
+            "status": "ALTER TABLE ai_generation_task ADD COLUMN status VARCHAR DEFAULT 'pending'",
+            "progress": "ALTER TABLE ai_generation_task ADD COLUMN progress INTEGER DEFAULT 0",
+            "request_payload": "ALTER TABLE ai_generation_task ADD COLUMN request_payload VARCHAR",
+            "result_payload": "ALTER TABLE ai_generation_task ADD COLUMN result_payload VARCHAR",
+            "error_message": "ALTER TABLE ai_generation_task ADD COLUMN error_message VARCHAR",
+            "celery_task_id": "ALTER TABLE ai_generation_task ADD COLUMN celery_task_id VARCHAR",
+            "created_by": "ALTER TABLE ai_generation_task ADD COLUMN created_by INTEGER",
+            "started_at": "ALTER TABLE ai_generation_task ADD COLUMN started_at DATETIME",
+            "finished_at": "ALTER TABLE ai_generation_task ADD COLUMN finished_at DATETIME",
+            "retry_count": "ALTER TABLE ai_generation_task ADD COLUMN retry_count INTEGER DEFAULT 0",
+        },
+        "media_asset": {
+            "asset_type": "ALTER TABLE media_asset ADD COLUMN asset_type VARCHAR DEFAULT 'file'",
+            "source_type": "ALTER TABLE media_asset ADD COLUMN source_type VARCHAR DEFAULT 'upload'",
+            "source_task_id": "ALTER TABLE media_asset ADD COLUMN source_task_id INTEGER",
+            "provider_code": "ALTER TABLE media_asset ADD COLUMN provider_code VARCHAR",
+            "model_code": "ALTER TABLE media_asset ADD COLUMN model_code VARCHAR",
+            "profile_code": "ALTER TABLE media_asset ADD COLUMN profile_code VARCHAR",
+            "original_url": "ALTER TABLE media_asset ADD COLUMN original_url VARCHAR",
+            "storage_url": "ALTER TABLE media_asset ADD COLUMN storage_url VARCHAR",
+            "file_name": "ALTER TABLE media_asset ADD COLUMN file_name VARCHAR",
+            "mime_type": "ALTER TABLE media_asset ADD COLUMN mime_type VARCHAR",
+            "md5": "ALTER TABLE media_asset ADD COLUMN md5 VARCHAR",
+            "size_bytes": "ALTER TABLE media_asset ADD COLUMN size_bytes INTEGER DEFAULT 0",
+            "width": "ALTER TABLE media_asset ADD COLUMN width INTEGER",
+            "height": "ALTER TABLE media_asset ADD COLUMN height INTEGER",
+            "duration_seconds": "ALTER TABLE media_asset ADD COLUMN duration_seconds FLOAT",
+            "prompt": "ALTER TABLE media_asset ADD COLUMN prompt VARCHAR",
+            "params_payload": "ALTER TABLE media_asset ADD COLUMN params_payload VARCHAR",
+            "status": "ALTER TABLE media_asset ADD COLUMN status VARCHAR DEFAULT 'pending'",
+            "error_message": "ALTER TABLE media_asset ADD COLUMN error_message VARCHAR",
+            "created_by": "ALTER TABLE media_asset ADD COLUMN created_by INTEGER",
         },
     }
 
@@ -170,7 +211,8 @@ def _ensure_sqlite_compatible_schema() -> None:
         "sys_param", "sys_log", "sys_login_log", 
         "dict_type", "dict_info", "task_info", "task_log",
         "notification_message", "notification_recipient", "notification_template", "notification_rule",
-        "ai_provider", "ai_model", "ai_model_profile", "ai_model_call_log",
+        "ai_provider", "ai_model", "ai_model_profile", "ai_model_call_log", "ai_generation_task",
+        "media_asset",
         "sys_user_role", "sys_role_menu", "sys_role_department"
     ]
 

@@ -9,6 +9,7 @@ from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCap
 
 class ClaudeAdapter(BaseHttpAdapter):
     default_base_url = "https://api.anthropic.com/v1"
+    supported_capabilities = {"chat", "stream_chat", "thinking"}
 
     def _headers(self) -> dict[str, str]:
         return {

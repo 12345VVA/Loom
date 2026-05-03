@@ -11,6 +11,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         "app.modules.task.tasks.system_tasks",
+        "app.modules.ai.tasks.generation_tasks",
     ],
 )
 

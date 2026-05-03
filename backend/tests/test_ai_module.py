@@ -6,15 +6,18 @@ from unittest.mock import patch
 import json
 
 from fastapi import HTTPException
+from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.secret import decrypt_secret, encrypt_secret, mask_secret
+import httpx
 from app.framework.controller_meta import CrudQuery, _invoke_service
 from app.modules.ai.model.ai import (
     AI_ADAPTERS,
     AiChatRequest,
     AiCatalogImportRequest,
     AiImageRequest,
+    AiGenerationTask,
     AiModel,
     AiModelCallLog,
     AiModelCallLogRead,
@@ -26,13 +29,15 @@ from app.modules.ai.model.ai import (
     AiProviderRead,
     AiProviderUpdateRequest,
     AiResponseFormatRequest,
+    AiTaskSubmitRequest,
 )
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
-from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter, DeepSeekAdapter
+from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter, DeepSeekAdapter, VolcengineArkAdapter
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
-from app.modules.ai.service.ai_service import AiModelCallLogService, AiModelProfileService, AiModelRegistryService, AiModelRuntimeService, AiModelService, AiProviderService
+from app.modules.ai.service.ai_service import AiGenerationTaskService, AiModelCallLogService, AiModelProfileService, AiModelRegistryService, AiModelRuntimeService, AiModelService, AiProviderService
+from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
 
 
 def _parse_sse_chunks(chunks: list[str]) -> list[dict]:
@@ -47,7 +52,7 @@ def _parse_sse_chunks(chunks: list[str]) -> list[dict]:
 
 class AiModuleTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 
@@ -95,6 +100,33 @@ class AiModuleTestCase(unittest.TestCase):
         info = service.info(provider.id)
         self.assertNotIn("apiKeyCipher", info)
         self.assertTrue(info["hasApiKey"])
+
+    def test_provider_update_saves_new_secret_when_previous_secret_is_empty(self):
+        service = AiProviderService(self.session)
+        provider_response = service.add(
+            AiProviderCreateRequest(
+                code="volcengine-ark",
+                name="火山方舟",
+                adapter="volcengine-ark",
+                base_url="https://ark.cn-beijing.volces.com/api/v3",
+            )
+        )
+
+        service.update(
+            AiProviderUpdateRequest(
+                id=provider_response["id"],
+                code="volcengine-ark",
+                name="火山方舟",
+                adapter="volcengine-ark",
+                base_url="https://ark.cn-beijing.volces.com/api/v3",
+                api_key="volc-secret-key",
+            )
+        )
+
+        saved = self.session.get(AiProvider, provider_response["id"])
+        self.assertEqual(decrypt_secret(saved.api_key_cipher), "volc-secret-key")
+        self.assertEqual(saved.api_key_mask, "volc****-key")
+        self.assertTrue(service.info(saved.id)["hasApiKey"])
 
     def test_provider_read_dto_uses_camel_case_and_no_cipher(self):
         data = AiProviderRead(
@@ -395,6 +427,42 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(page.items[0]["profileName"], "Default Chat")
         self.assertEqual(info["requestId"], "req-1")
         self.assertIn("requestId", dto)
+
+    def test_profile_list_filters_by_related_model_type(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        chat_model = AiModel(provider_id=provider.id, code="chat-model", name="Chat Model", model_type="chat", is_active=True)
+        image_model = AiModel(provider_id=provider.id, code="image-model", name="Image Model", model_type="image", is_active=True)
+        self.session.add(chat_model)
+        self.session.add(image_model)
+        self.session.commit()
+        self.session.refresh(chat_model)
+        self.session.refresh(image_model)
+        self.session.add(AiModelProfile(code="chat-profile", name="Chat", model_id=chat_model.id, scenario="default", is_active=True))
+        self.session.add(AiModelProfile(code="image-profile", name="Image", model_id=image_model.id, scenario="default", is_active=True))
+        self.session.commit()
+
+        result = AiModelProfileService(self.session).list(
+            CrudQuery(raw_params={"modelType": "image"}, eq_filters={"is_active": True})
+        )
+
+        self.assertEqual([item["code"] for item in result], ["image-profile"])
+        self.assertEqual(result[0]["modelType"], "image")
+
+    def test_model_page_does_not_use_profile_model_type_filter(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        self.session.add(AiModel(provider_id=provider.id, code="image-model", name="Image Model", model_type="image", is_active=True))
+        self.session.commit()
+
+        result = AiModelService(self.session).page(CrudQuery(page=1, size=10, raw_params={"modelType": "image"}))
+
+        self.assertEqual(result.total, 1)
+        self.assertEqual(result.items[0]["code"], "image-model")
 
     def test_runtime_fallback_merges_fallback_options_and_preserves_request_options(self):
         primary_provider = AiProvider(code="primary", name="Primary", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-primary"), is_active=True)
@@ -700,6 +768,19 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(provider.base_url, "https://api.deepseek.com")
         self.assertEqual({item.code for item in models}, {"deepseek-v4-flash", "deepseek-v4-pro"})
 
+    def test_volcengine_catalog_import_includes_image_model(self):
+        service = AiProviderService(self.session)
+
+        result = service.import_catalog(AiCatalogImportRequest(provider_code="volcengine-ark"))
+        provider = self.session.exec(select(AiProvider).where(AiProvider.code == "volcengine-ark")).first()
+        models = self.session.exec(select(AiModel).where(AiModel.provider_id == provider.id)).all()
+        image_model = next(item for item in models if item.code == "doubao-seedream-5.0-lite")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(provider.adapter, "volcengine-ark")
+        self.assertEqual(image_model.model_type, "image")
+        self.assertEqual(image_model.capabilities, "image,text-to-image,image-to-image")
+
     def test_catalog_import_restores_soft_deleted_provider_and_models(self):
         service = AiProviderService(self.session)
         provider = AiProvider(code="deepseek", name="Deleted DeepSeek", adapter="deepseek", base_url="https://old.example.com", is_active=False, delete_time=datetime.utcnow())
@@ -866,6 +947,93 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["requestId"], "ds-req-1")
         self.assertEqual(str(mocked.call_args.args[0]), "https://api.deepseek.com/chat/completions")
         self.assertEqual(mocked.call_args.kwargs["json"]["model"], "deepseek-v4-flash")
+
+    def test_volcengine_adapter_image_defaults_url_and_passes_options(self):
+        provider = AiProvider(code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk"))
+        adapter = VolcengineArkAdapter(provider)
+
+        class FakeResponse:
+            headers = {"x-request-id": "volc-req-1"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"data": [{"url": "https://example.com/image.png"}], "usage": {"total_tokens": 9}}
+
+        with patch("httpx.post", return_value=FakeResponse()) as mocked:
+            result = adapter.image(
+                model="doubao-seedream-4-5-251128",
+                prompt="draw",
+                options={"size": "2K", "watermark": True, "guidance_scale": 2.5},
+            )
+
+        self.assertEqual(str(mocked.call_args.args[0]), "https://ark.cn-beijing.volces.com/api/v3/images/generations")
+        self.assertEqual(mocked.call_args.kwargs["json"]["model"], "doubao-seedream-4-5-251128")
+        self.assertEqual(mocked.call_args.kwargs["json"]["prompt"], "draw")
+        self.assertEqual(mocked.call_args.kwargs["json"]["response_format"], "url")
+        self.assertEqual(mocked.call_args.kwargs["json"]["sequential_image_generation"], "disabled")
+        self.assertEqual(mocked.call_args.kwargs["json"]["size"], "2048x2048")
+        self.assertNotIn("guidance_scale", mocked.call_args.kwargs["json"])
+        self.assertTrue(mocked.call_args.kwargs["json"]["watermark"])
+        self.assertEqual(result["data"][0]["url"], "https://example.com/image.png")
+        self.assertEqual(result["usage"]["totalTokens"], 9)
+        self.assertEqual(result["requestId"], "volc-req-1")
+
+    def test_volcengine_adapter_image_normalizes_custom_response_shapes(self):
+        provider = AiProvider(code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk"))
+        adapter = VolcengineArkAdapter(provider)
+
+        class FakeResponse:
+            headers = {"x-tt-logid": "tt-log-1"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"result": {"images": [{"image_url": "https://example.com/custom.png"}, {"base64": "abc"}]}}
+
+        with patch("httpx.post", return_value=FakeResponse()):
+            result = adapter.image(model="doubao-seedream-5.0-lite", prompt="draw", options={"response_format": "b64_json"})
+
+        self.assertEqual(result["data"][0]["url"], "https://example.com/custom.png")
+        self.assertEqual(result["data"][1]["b64_json"], "abc")
+        self.assertEqual(result["requestId"], "tt-log-1")
+
+    def test_volcengine_adapter_image_exposes_upstream_error_body(self):
+        provider = AiProvider(code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk"))
+        adapter = VolcengineArkAdapter(provider)
+
+        request = httpx.Request("POST", "https://ark.cn-beijing.volces.com/api/v3/images/generations")
+
+        class FakeResponse:
+            status_code = 400
+            reason_phrase = "Bad Request"
+            headers = {"x-tt-logid": "tt-log-400"}
+            text = '{"error":{"message":"invalid sequential_image_generation"}}'
+
+            def raise_for_status(self):
+                raise httpx.HTTPStatusError("bad request", request=request, response=self)
+
+            def json(self):
+                return {"error": {"message": "invalid sequential_image_generation"}}
+
+        with patch("httpx.post", return_value=FakeResponse()):
+            with self.assertRaises(Exception) as ctx:
+                adapter.image(model="doubao-seedream-4-5-251128", prompt="draw", options={})
+
+        self.assertIn("invalid sequential_image_generation", str(ctx.exception))
+        self.assertIn("tt-log-400", str(ctx.exception))
+
+    def test_volcengine_adapter_rejects_too_small_seedream_4_image_size(self):
+        provider = AiProvider(code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk"))
+        adapter = VolcengineArkAdapter(provider)
+
+        with self.assertRaises(HTTPException) as ctx:
+            adapter.image(model="doubao-seedream-4-5-251128", prompt="draw", options={"size": "1536x1536"})
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("3686400", ctx.exception.detail)
 
     def test_gemini_adapter_chat_transforms_response(self):
         provider = AiProvider(code="gemini", name="Gemini", adapter="gemini", api_key_cipher=encrypt_secret("key"))
@@ -1092,6 +1260,135 @@ class AiModuleTestCase(unittest.TestCase):
             AiModelRuntimeService(self.session).image(AiImageRequest(prompt="draw"))
 
         self.assertEqual(ctx.exception.status_code, 501)
+
+    def test_runtime_profile_timeout_applies_to_adapter(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", timeout=7, is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            timeout = 60
+
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "raw": {"timeout": self.timeout}, "usage": {}}
+
+        adapter = FakeAdapter()
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=adapter):
+            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertEqual(result["raw"]["timeout"], 7.0)
+        self.assertEqual(adapter.timeout, 60)
+
+    def test_ai_generation_task_submit_and_execute_success(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAsyncResult:
+            id = "celery-1"
+
+        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.delay", return_value=FakeAsyncResult()):
+            submitted = AiGenerationTaskService(self.session).submit(
+                AiTaskSubmitRequest(
+                    task_type="chat",
+                    payload={"messages": [{"role": "user", "content": "hi"}]},
+                )
+            )
+
+        task = self.session.get(AiGenerationTask, submitted["taskId"])
+        self.assertEqual(task.status, "pending")
+        self.assertEqual(task.celery_task_id, "celery-1")
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "raw": {}, "usage": {"totalTokens": 1}}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()), patch("app.modules.ai.tasks.generation_tasks.engine", self.engine):
+            result = execute_ai_generation_task.run(task.id)
+
+        self.assertTrue(result["success"])
+        saved = self.session.get(AiGenerationTask, task.id)
+        self.session.refresh(saved)
+        self.assertEqual(saved.status, "success")
+        self.assertEqual(saved.progress, 100)
+        self.assertIn("ok", saved.result_payload)
+
+    def test_ai_generation_task_submit_marks_failed_when_enqueue_fails(self):
+        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.delay", side_effect=RuntimeError("broker down")):
+            with self.assertRaises(HTTPException) as ctx:
+                AiGenerationTaskService(self.session).submit(AiTaskSubmitRequest(task_type="chat", payload={"messages": []}))
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        task = self.session.exec(select(AiGenerationTask)).one()
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.progress, 100)
+        self.assertIn("broker down", task.error_message)
+        self.assertIsNone(task.celery_task_id)
+
+    def test_ai_generation_task_does_not_overwrite_cancelled_after_runtime(self):
+        task = AiGenerationTask(task_type="chat", request_payload='{"messages":[{"role":"user","content":"hi"}]}', status="pending")
+        self.session.add(task)
+        self.session.commit()
+        self.session.refresh(task)
+
+        def cancel_during_call(session: Session, running_task: AiGenerationTask, payload: dict) -> dict:
+            running_task.status = "cancelled"
+            running_task.finished_at = datetime.utcnow()
+            session.add(running_task)
+            session.commit()
+            return {"content": "late result"}
+
+        with patch("app.modules.ai.tasks.generation_tasks.engine", self.engine), patch("app.modules.ai.tasks.generation_tasks._invoke_runtime", side_effect=cancel_during_call):
+            result = execute_ai_generation_task.run(task.id)
+
+        self.assertFalse(result["success"])
+        saved = self.session.get(AiGenerationTask, task.id)
+        self.session.refresh(saved)
+        self.assertEqual(saved.status, "cancelled")
+        self.assertIsNone(saved.result_payload)
+
+    def test_ai_generation_task_failure_cancel_and_retry(self):
+        task = AiGenerationTask(task_type="chat", request_payload='{"messages":[]}', status="pending")
+        self.session.add(task)
+        self.session.commit()
+        self.session.refresh(task)
+
+        with patch("app.modules.ai.tasks.generation_tasks.engine", self.engine):
+            result = execute_ai_generation_task.run(task.id)
+        self.assertFalse(result["success"])
+        self.session.refresh(task)
+        self.assertEqual(task.status, "failed")
+
+        class FakeAsyncResult:
+            id = "retry-1"
+
+        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.delay", return_value=FakeAsyncResult()):
+            retry = AiGenerationTaskService(self.session).retry(task.id)
+        self.assertTrue(retry["success"])
+        self.session.refresh(task)
+        self.assertEqual(task.status, "pending")
+        self.assertEqual(task.retry_count, 1)
+
+        cancel = AiGenerationTaskService(self.session).cancel(task.id)
+        self.assertTrue(cancel["success"])
+        self.session.refresh(task)
+        self.assertEqual(task.status, "cancelled")
 
 
 if __name__ == "__main__":

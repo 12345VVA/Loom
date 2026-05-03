@@ -17,8 +17,16 @@ class UnsupportedCapabilityError(NotImplementedError):
     pass
 
 
+class UpstreamApiError(RuntimeError):
+    def __init__(self, message: str, *, status_code: int | None = None, request_id: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.request_id = request_id
+
+
 class BaseHttpAdapter:
     default_base_url = ""
+    supported_capabilities: set[str] = set()
 
     def __init__(self, provider: AiProvider):
         self.provider = provider
@@ -51,6 +59,12 @@ class BaseHttpAdapter:
     def test(self) -> dict:
         raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持连接测试")
 
+    def capability_status(self) -> dict:
+        return {
+            "adapter": self.provider.adapter,
+            "supportedCapabilities": sorted(self.supported_capabilities),
+        }
+
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key or ''}", "Content-Type": "application/json"}
 
@@ -61,7 +75,7 @@ class BaseHttpAdapter:
             headers=headers or self._headers(),
             timeout=self.timeout,
         )
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json(), response
 
     def _get(self, path: str, headers: dict[str, str] | None = None) -> tuple[dict, httpx.Response]:
@@ -70,8 +84,21 @@ class BaseHttpAdapter:
             headers=headers or self._headers(),
             timeout=self.timeout,
         )
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json(), response
+
+    def _raise_for_status(self, response: httpx.Response) -> None:
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            request_id = response.headers.get("x-request-id") or response.headers.get("x-tt-logid")
+            message = _extract_error_message(response)
+            detail = f"{response.status_code} {response.reason_phrase}"
+            if message:
+                detail = f"{detail}: {message}"
+            if request_id:
+                detail = f"{detail} (requestId: {request_id})"
+            raise UpstreamApiError(detail, status_code=response.status_code, request_id=request_id) from exc
 
     @staticmethod
     def _loads(value: str | None) -> dict[str, Any]:
@@ -154,3 +181,18 @@ def loads_json(value: str | None) -> dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _extract_error_message(response: httpx.Response) -> str:
+    try:
+        data = response.json()
+    except Exception:
+        return response.text[:1000]
+    if not isinstance(data, dict):
+        return str(data)[:1000]
+    error = data.get("error")
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("msg") or error.get("code")
+        if message:
+            return str(message)[:1000]
+    return str(data.get("message") or data.get("msg") or data.get("error") or data)[:1000]

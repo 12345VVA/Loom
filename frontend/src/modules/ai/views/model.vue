@@ -8,17 +8,13 @@
 				<cl-select :options="modelTypeOptions" prop="modelType" :width="130" />
 			</cl-filter>
 			<cl-flex1 />
+			<el-tag v-if="showHint" class="capability-hint" type="info" effect="plain">
+				{{ $t('能力字段是模型元信息，未实现接口仍会返回 501。') }}
+			</el-tag>
+			<el-button text type="primary" @click="showHint = !showHint">
+				{{ showHint ? $t('隐藏说明') : $t('说明') }}
+			</el-button>
 			<cl-search-key :placeholder="$t('搜索编码、名称')" />
-		</cl-row>
-
-		<cl-row>
-			<el-alert
-				class="capability-alert"
-				:title="$t('能力字段是模型元信息，stream/tools/vision/thinking 等标签不代表统一运行时已完整实现。未实现接口仍会返回 501。')"
-				type="info"
-				show-icon
-				:closable="false"
-			/>
 		</cl-row>
 
 		<cl-row>
@@ -41,18 +37,20 @@ defineOptions({
 
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
+import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const { service } = useCool();
 const { t } = useI18n();
+const showHint = ref(false);
 
 const modelTypeOptions = [
-	{ label: 'Chat', value: 'chat' },
-	{ label: 'Embedding', value: 'embedding' },
-	{ label: 'Image', value: 'image' },
-	{ label: 'Audio', value: 'audio' },
-	{ label: 'Video', value: 'video' },
-	{ label: 'Rerank', value: 'rerank' }
+	{ label: t('对话'), value: 'chat' },
+	{ label: t('向量'), value: 'embedding' },
+	{ label: t('图片'), value: 'image' },
+	{ label: t('音频'), value: 'audio' },
+	{ label: t('视频'), value: 'video' },
+	{ label: t('重排'), value: 'rerank' }
 ];
 
 const Upsert = useUpsert({
@@ -67,6 +65,7 @@ const Upsert = useUpsert({
 				name: 'cl-select-table',
 				props: {
 					service: service.ai.provider,
+					multiple: false,
 					columns: [
 						{ label: t('编码'), prop: 'code', minWidth: 140 },
 						{ label: t('名称'), prop: 'name', minWidth: 140 },
@@ -108,7 +107,7 @@ const Table = useTable({
 		{ label: t('厂商'), prop: 'providerName', minWidth: 150 },
 		{ label: t('编码'), prop: 'code', minWidth: 180 },
 		{ label: t('名称'), prop: 'name', minWidth: 160 },
-		{ label: t('类型'), prop: 'modelType', minWidth: 120 },
+		{ label: t('类型'), prop: 'modelType', minWidth: 120, formatter: ({ modelType }: any) => optionLabel(modelTypeOptions, modelType) },
 		{
 			label: t('能力'),
 			prop: 'capabilities',
@@ -139,11 +138,18 @@ function splitCapabilities(value?: string) {
 		.map(item => item.trim())
 		.filter(Boolean);
 }
+
+function optionLabel(options: { label: string; value: string }[], value: string) {
+	return options.find(item => item.value === value)?.label || value || '-';
+}
 </script>
 
 <style lang="scss" scoped>
-.capability-alert {
-	width: 100%;
+.capability-hint {
+	max-width: 520px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 </style>

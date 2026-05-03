@@ -1,0 +1,33 @@
+[
+  {
+    "code": "nav_media",
+    "name": "资源管理",
+    "type": "group",
+    "icon": "icon-media",
+    "sort_order": 36,
+    "parent_code": "nav_system",
+    "role_codes": ["admin"],
+    "children": [
+      {
+        "code": "nav_media_asset",
+        "name": "资源库",
+        "type": "menu",
+        "module": "media",
+        "resource": "asset",
+        "path": "/media/asset",
+        "component": "modules/media/views/asset.vue",
+        "icon": "icon-media",
+        "sort_order": 1,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "media_asset_page", "name": "分页查询", "type": "button", "permission": "media:asset:page", "role_codes": ["admin"] },
+          { "code": "media_asset_list", "name": "列表查询", "type": "button", "permission": "media:asset:list", "role_codes": ["admin"] },
+          { "code": "media_asset_info", "name": "详情", "type": "button", "permission": "media:asset:info", "role_codes": ["admin"] },
+          { "code": "media_asset_delete", "name": "删除", "type": "button", "permission": "media:asset:delete", "role_codes": ["admin"] },
+          { "code": "media_asset_upload", "name": "上传", "type": "button", "permission": "media:asset:upload", "role_codes": ["admin"] },
+          { "code": "media_asset_stats", "name": "统计", "type": "button", "permission": "media:asset:stats", "role_codes": ["admin"] }
+        ]
+      }
+    ]
+  }
+]

@@ -2,6 +2,7 @@ import os
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from app.core.config import settings
@@ -13,6 +14,11 @@ class BaseStorageProvider(ABC):
     @abstractmethod
     def upload(self, file_content: bytes, filename: str) -> str:
         """上传文件并返回访问路径"""
+        pass
+
+    @abstractmethod
+    def save(self, file_content: bytes, filename: str) -> str:
+        """保存已完成业务校验的文件并返回访问路径"""
         pass
 
     @abstractmethod
@@ -49,11 +55,14 @@ def validate_upload(file_content: bytes, filename: str) -> str:
     return ext
 
 
+DEFAULT_UPLOAD_DIR = Path(__file__).resolve().parents[2] / "data" / "uploads"
+
+
 class LocalStorageProvider(BaseStorageProvider):
     """本地文件存储提供者"""
 
-    def __init__(self, upload_dir: str = "data/uploads", base_url: str = "/uploads"):
-        self.upload_dir = os.path.abspath(upload_dir)
+    def __init__(self, upload_dir: str | None = None, base_url: str = "/uploads"):
+        self.upload_dir = os.path.abspath(upload_dir or DEFAULT_UPLOAD_DIR)
         self.base_url = base_url
         if not os.path.exists(self.upload_dir):
             os.makedirs(self.upload_dir)
@@ -70,7 +79,13 @@ class LocalStorageProvider(BaseStorageProvider):
 
     def upload(self, file_content: bytes, filename: str) -> str:
         ext = validate_upload(file_content, filename)
+        return self._save_with_ext(file_content, ext)
 
+    def save(self, file_content: bytes, filename: str) -> str:
+        ext = os.path.splitext(filename)[1].lower() or ".bin"
+        return self._save_with_ext(file_content, ext)
+
+    def _save_with_ext(self, file_content: bytes, ext: str) -> str:
         date_folder = datetime.now().strftime("%Y%m%d")
         dest_dir = os.path.join(self.upload_dir, date_folder)
 
@@ -121,6 +136,13 @@ class S3StorageProvider(BaseStorageProvider):
 
     def upload(self, file_content: bytes, filename: str) -> str:
         ext = validate_upload(file_content, filename)
+        return self._save_with_ext(file_content, ext)
+
+    def save(self, file_content: bytes, filename: str) -> str:
+        ext = os.path.splitext(filename)[1].lower() or ".bin"
+        return self._save_with_ext(file_content, ext)
+
+    def _save_with_ext(self, file_content: bytes, ext: str) -> str:
         date_folder = datetime.now().strftime("%Y%m%d")
         object_key = f"uploads/{date_folder}/{uuid.uuid4().hex}{ext}"
         self.client.put_object(Bucket=self.bucket, Key=object_key, Body=file_content)
@@ -154,6 +176,9 @@ class StorageService:
 
     def upload(self, file_content: bytes, filename: str) -> str:
         return self.provider.upload(file_content, filename)
+
+    def save(self, file_content: bytes, filename: str) -> str:
+        return self.provider.save(file_content, filename)
 
     def delete(self, path: str) -> bool:
         return self.provider.delete(path)
