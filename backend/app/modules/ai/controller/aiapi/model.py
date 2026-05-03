@@ -3,6 +3,7 @@
 """
 from fastapi import Depends
 from sqlmodel import Session
+from starlette.responses import StreamingResponse
 
 from app.core.database import get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
@@ -32,6 +33,18 @@ class AiRuntimeController(BaseController):
     @Post("/chat", summary="统一文本模型调用")
     async def chat(self, payload: AiChatRequest, session: Session = Depends(get_session)):
         return AiModelRuntimeService(session).chat(payload)
+
+    @Post("/streamChat", summary="统一文本模型流式调用")
+    async def stream_chat(self, payload: AiChatRequest, session: Session = Depends(get_session)):
+        return StreamingResponse(
+            AiModelRuntimeService(session).stream_chat(payload),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @Post("/embedding", summary="统一向量模型调用")
     async def embedding(self, payload: AiEmbeddingRequest, session: Session = Depends(get_session)):

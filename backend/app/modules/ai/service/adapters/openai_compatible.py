@@ -24,8 +24,14 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         stream = self.client.chat.completions.create(model=model, messages=messages, stream=True, **options)
         for chunk in stream:
             data = chunk.model_dump(mode="json") if hasattr(chunk, "model_dump") else {}
-            delta = (((data.get("choices") or [{}])[0]).get("delta") or {}).get("content")
-            yield {"event": "delta", "content": delta, "raw": data}
+            choice = (data.get("choices") or [{}])[0]
+            delta = (choice.get("delta") or {}).get("content")
+            finish_reason = choice.get("finish_reason")
+            usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
+            if delta:
+                yield {"event": "delta", "content": delta, "raw": data}
+            if usage or finish_reason:
+                yield {"event": "done", "raw": data, "usage": usage, "finishReason": finish_reason}
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         response = self.client.embeddings.create(model=model, input=input, **options)

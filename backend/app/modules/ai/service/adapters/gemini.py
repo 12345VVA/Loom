@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCapabilityError, normalize_usage
+import httpx
+
+from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCapabilityError, iter_sse_events, loads_json, normalize_usage
 
 
 class GeminiAdapter(BaseHttpAdapter):
@@ -30,7 +32,29 @@ class GeminiAdapter(BaseHttpAdapter):
         }
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
-        raise UnsupportedCapabilityError("Gemini 流式接口将在 SSE 层统一接入")
+        payload = {
+            "contents": [_gemini_content(item) for item in messages if item.get("role") != "system"],
+            **options,
+        }
+        system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
+        if system_text:
+            payload["systemInstruction"] = {"parts": [{"text": system_text}]}
+        path = f"/models/{model}:streamGenerateContent?alt=sse&key={self.api_key or ''}"
+        with httpx.stream("POST", f"{self.base_url}{path}", json=payload, headers=self._headers(), timeout=self.timeout) as response:
+            response.raise_for_status()
+            request_id = response.headers.get("x-request-id")
+            for event in iter_sse_events(response.iter_lines()):
+                data = loads_json(event.get("data"))
+                candidate = (data.get("candidates") or [{}])[0]
+                parts = ((candidate.get("content") or {}).get("parts") or [])
+                for part in parts:
+                    text = part.get("text")
+                    if text:
+                        yield {"event": "delta", "content": text, "raw": data, "requestId": request_id}
+                usage = normalize_usage(data.get("usageMetadata"))
+                finish_reason = candidate.get("finishReason")
+                if usage or finish_reason:
+                    yield {"event": "done", "raw": data, "usage": usage, "finishReason": finish_reason, "requestId": request_id}
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         texts = input if isinstance(input, list) else [input]

@@ -27,6 +27,16 @@ AI_MODEL_CATALOG = [
         ],
     },
     {
+        "code": "deepseek",
+        "name": "DeepSeek",
+        "adapter": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "models": [
+            {"code": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "model_type": "chat", "capabilities": "chat,stream,tools,json,thinking"},
+            {"code": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "model_type": "chat", "capabilities": "chat,stream,tools,json,thinking"},
+        ],
+    },
+    {
         "code": "volcengine-ark",
         "name": "火山方舟",
         "adapter": "volcengine-ark",

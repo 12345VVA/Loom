@@ -12,6 +12,10 @@ class BailianAdapter(OpenAIHttpAdapter):
     default_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
+class DeepSeekAdapter(OpenAIHttpAdapter):
+    default_base_url = "https://api.deepseek.com"
+
+
 class VolcengineArkAdapter(OpenAIHttpAdapter):
     default_base_url = "https://ark.cn-beijing.volces.com/api/v3"
 
@@ -46,6 +50,7 @@ ADAPTERS = {
     "ollama": OllamaAdapter,
     "gemini": GeminiAdapter,
     "claude": ClaudeAdapter,
+    "deepseek": DeepSeekAdapter,
     "volcengine-ark": VolcengineArkAdapter,
     "bailian": BailianAdapter,
     "hunyuan": HunyuanAdapter,

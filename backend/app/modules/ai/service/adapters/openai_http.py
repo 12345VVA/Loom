@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCapabilityError, openai_chat_result, openai_embedding_result, openai_image_result
+import httpx
+
+from app.modules.ai.service.adapters.base import BaseHttpAdapter, iter_sse_events, loads_json, normalize_usage, openai_chat_result, openai_embedding_result, openai_image_result
 
 
 class OpenAIHttpAdapter(BaseHttpAdapter):
@@ -16,7 +18,30 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
         return openai_chat_result(data, response)
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 流式接口将在 SSE 层统一接入")
+        payload = {"model": model, "messages": messages, **options, "stream": True}
+        with httpx.stream(
+            "POST",
+            f"{self.base_url}{self.chat_path}",
+            json=payload,
+            headers=self._headers(),
+            timeout=self.timeout,
+        ) as response:
+            response.raise_for_status()
+            request_id = response.headers.get("x-request-id")
+            for event in iter_sse_events(response.iter_lines()):
+                value = event.get("data")
+                if value == "[DONE]":
+                    yield {"event": "done", "requestId": request_id}
+                    continue
+                data = loads_json(value)
+                choice = (data.get("choices") or [{}])[0]
+                delta = (choice.get("delta") or {}).get("content")
+                finish_reason = choice.get("finish_reason")
+                usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
+                if delta:
+                    yield {"event": "delta", "content": delta, "raw": data, "requestId": request_id}
+                if usage or finish_reason:
+                    yield {"event": "done", "raw": data, "usage": usage, "finishReason": finish_reason, "requestId": request_id}
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         data, response = self._post(self.embeddings_path, {"model": model, "input": input, **options})

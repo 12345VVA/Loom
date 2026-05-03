@@ -18,6 +18,7 @@ AI_ADAPTERS = {
     "ollama",
     "gemini",
     "claude",
+    "deepseek",
     "volcengine-ark",
     "bailian",
     "hunyuan",
@@ -92,6 +93,29 @@ class AiModelCallLog(BaseEntity, table=True):
     total_tokens: int = Field(default=0)
     error_message: Optional[str] = Field(default=None, max_length=500)
     request_id: Optional[str] = Field(default=None, index=True, max_length=100)
+
+
+class AiModelCallLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    provider_id: Optional[int] = None
+    provider_name: Optional[str] = None
+    model_id: Optional[int] = None
+    model_name: Optional[str] = None
+    profile_id: Optional[int] = None
+    profile_name: Optional[str] = None
+    scenario: Optional[str] = None
+    model_type: str
+    status: str
+    latency_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    error_message: Optional[str] = None
+    request_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class AiProviderRead(BaseModel):
@@ -254,6 +278,22 @@ class AiRuntimeMessage(BaseModel):
     content: str
 
 
+class AiResponseJsonSchema(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    name: str
+    description: Optional[str] = None
+    schema_: dict[str, Any] = PydanticField(alias="schema")
+    strict: bool = True
+
+
+class AiResponseFormatRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    type: str = "text"
+    json_schema: Optional[AiResponseJsonSchema | dict[str, Any]] = None
+
+
 class AiChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
@@ -261,6 +301,7 @@ class AiChatRequest(BaseModel):
     profile_code: Optional[str] = None
     messages: list[AiRuntimeMessage]
     options: dict[str, Any] = PydanticField(default_factory=dict)
+    response_format: Optional[AiResponseFormatRequest | dict[str, Any]] = None
 
 
 class AiEmbeddingRequest(BaseModel):

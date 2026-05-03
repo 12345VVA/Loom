@@ -1,28 +1,48 @@
 from __future__ import annotations
 
+from datetime import datetime
 import unittest
 from unittest.mock import patch
+import json
 
 from fastapi import HTTPException
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.secret import decrypt_secret, encrypt_secret, mask_secret
+from app.framework.controller_meta import CrudQuery, _invoke_service
 from app.modules.ai.model.ai import (
     AI_ADAPTERS,
     AiChatRequest,
     AiCatalogImportRequest,
+    AiImageRequest,
     AiModel,
+    AiModelCallLog,
+    AiModelCallLogRead,
+    AiModelCreateRequest,
     AiModelProfile,
+    AiModelProfileCreateRequest,
     AiProvider,
     AiProviderCreateRequest,
     AiProviderRead,
     AiProviderUpdateRequest,
+    AiResponseFormatRequest,
 )
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
-from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter
+from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter, DeepSeekAdapter
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
-from app.modules.ai.service.ai_service import AiModelRegistryService, AiModelRuntimeService, AiProviderService
+from app.modules.ai.service.adapters.ollama import OllamaAdapter
+from app.modules.ai.service.ai_service import AiModelCallLogService, AiModelProfileService, AiModelRegistryService, AiModelRuntimeService, AiModelService, AiProviderService
+
+
+def _parse_sse_chunks(chunks: list[str]) -> list[dict]:
+    events = []
+    for part in "".join(chunks).split("\n\n"):
+        part = part.strip()
+        if not part.startswith("data:"):
+            continue
+        events.append(json.loads(part[5:].strip()))
+    return events
 
 
 class AiModuleTestCase(unittest.TestCase):
@@ -97,6 +117,23 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertIn("hasApiKey", data)
         self.assertNotIn("apiKeyCipher", data)
 
+    def test_provider_page_accepts_framework_injected_query(self):
+        service = AiProviderService(self.session)
+        service.add(
+            AiProviderCreateRequest(
+                code="openai",
+                name="OpenAI",
+                adapter="openai-compatible",
+                base_url="https://api.openai.com/v1",
+            )
+        )
+
+        result = _invoke_service(service.page, query=CrudQuery(page=1, size=10), current_user=None)
+
+        self.assertEqual(result.total, 1)
+        self.assertEqual(result.items[0]["code"], "openai")
+        self.assertIn("hasApiKey", result.items[0])
+
     def test_registry_resolves_default_profile_by_scenario_and_type(self):
         provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
         self.session.add(provider)
@@ -140,6 +177,468 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["content"], "ok")
 
+    def test_runtime_logs_upstream_request_id(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "raw": {"id": "1"}, "usage": {"totalTokens": 3}, "requestId": "upstream-1"}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+            AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        log = self.session.exec(select(AiModelCallLog)).one()
+        self.assertEqual(log.request_id, "upstream-1")
+
+    def test_runtime_stream_chat_outputs_events_and_logs_success(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", default_config='{"temperature":0.3}', is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, max_tokens=64, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+        seen_options = {}
+
+        class FakeAdapter:
+            def stream_chat(self, *, model, messages, options):
+                seen_options.update(options)
+                yield {"event": "delta", "content": "he"}
+                yield {"event": "delta", "content": "llo"}
+                yield {"event": "done", "usage": {"promptTokens": 1, "completionTokens": 2, "totalTokens": 3}, "requestId": "stream-1"}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+            chunks = list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.5})))
+
+        events = _parse_sse_chunks(chunks)
+        self.assertEqual([item["event"] for item in events], ["start", "delta", "delta", "done"])
+        self.assertEqual(events[-1]["content"], "hello")
+        self.assertEqual(seen_options["temperature"], 0.5)
+        self.assertEqual(seen_options["max_tokens"], 64)
+        log = self.session.exec(select(AiModelCallLog)).one()
+        self.assertEqual(log.status, "success")
+        self.assertEqual(log.request_id, "stream-1")
+        self.assertEqual(log.total_tokens, 3)
+
+    def test_runtime_stream_chat_structured_done_parse_error_does_not_fail(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", response_format='{"type":"json_object"}', is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            def stream_chat(self, *, model, messages, options):
+                yield {"event": "delta", "content": "not json"}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+            events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
+
+        self.assertEqual(events[-1]["event"], "done")
+        self.assertIsNone(events[-1]["parsed"])
+        self.assertTrue(events[-1]["parseError"])
+
+    def test_runtime_stream_chat_unsupported_outputs_error_and_logs(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            def stream_chat(self, *, model, messages, options):
+                raise UnsupportedCapabilityError("no stream")
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+            events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
+
+        self.assertEqual(events[-1]["event"], "error")
+        self.assertEqual(events[-1]["status"], 501)
+        log = self.session.exec(select(AiModelCallLog)).one()
+        self.assertEqual(log.status, "unsupported")
+
+    def test_runtime_stream_chat_fallback_only_before_first_delta(self):
+        primary_provider = AiProvider(code="primary", name="Primary", adapter="openai-compatible", is_active=True)
+        fallback_provider = AiProvider(code="fallback", name="Fallback", adapter="openai-compatible", is_active=True)
+        self.session.add(primary_provider)
+        self.session.add(fallback_provider)
+        self.session.commit()
+        self.session.refresh(primary_provider)
+        self.session.refresh(fallback_provider)
+        primary_model = AiModel(provider_id=primary_provider.id, code="primary-model", name="Primary", model_type="chat", is_active=True)
+        fallback_model = AiModel(provider_id=fallback_provider.id, code="fallback-model", name="Fallback", model_type="chat", is_active=True)
+        self.session.add(primary_model)
+        self.session.add(fallback_model)
+        self.session.commit()
+        self.session.refresh(primary_model)
+        self.session.refresh(fallback_model)
+        fallback_profile = AiModelProfile(code="fallback-profile", name="Fallback", model_id=fallback_model.id, scenario="default", is_active=True)
+        self.session.add(fallback_profile)
+        self.session.commit()
+        self.session.refresh(fallback_profile)
+        primary_profile = AiModelProfile(code="primary-profile", name="Primary", model_id=primary_model.id, scenario="default", fallback_profile_id=fallback_profile.id, is_default=True, is_active=True)
+        self.session.add(primary_profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            def __init__(self, provider):
+                self.provider = provider
+
+            def stream_chat(self, *, model, messages, options):
+                if self.provider.code == "primary":
+                    raise RuntimeError("primary failed")
+                yield {"event": "delta", "content": "fallback ok"}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)):
+            events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
+
+        self.assertEqual(events[-1]["event"], "done")
+        self.assertEqual(events[-1]["content"], "fallback ok")
+        self.assertEqual(events[1]["provider"], "fallback")
+        logs = self.session.exec(select(AiModelCallLog).order_by(AiModelCallLog.created_at)).all()
+        self.assertEqual([item.status for item in logs], ["error", "success"])
+
+        class LateFailAdapter:
+            def stream_chat(self, *, model, messages, options):
+                yield {"event": "delta", "content": "partial"}
+                raise RuntimeError("late failed")
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=LateFailAdapter()):
+            late_events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
+
+        self.assertEqual(late_events[-1]["event"], "error")
+        self.assertIn("late failed", late_events[-1]["message"])
+
+    def test_call_log_read_service_decorates_related_names_and_aliases_request_id(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default Chat", model_id=model.id, scenario="default", is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+        self.session.refresh(profile)
+        log = AiModelCallLog(
+            provider_id=provider.id,
+            model_id=model.id,
+            profile_id=profile.id,
+            scenario="default",
+            model_type="chat",
+            status="success",
+            latency_ms=12,
+            prompt_tokens=1,
+            completion_tokens=2,
+            total_tokens=3,
+            request_id="req-1",
+        )
+        self.session.add(log)
+        self.session.commit()
+        self.session.refresh(log)
+
+        service = AiModelCallLogService(self.session)
+        page = service.page(CrudQuery(page=1, size=10))
+        info = service.info(log.id)
+        dto = AiModelCallLogRead(
+            id=log.id,
+            provider_id=provider.id,
+            provider_name=provider.name,
+            model_id=model.id,
+            model_name=model.name,
+            profile_id=profile.id,
+            profile_name=profile.name,
+            scenario=log.scenario,
+            model_type=log.model_type,
+            status=log.status,
+            latency_ms=log.latency_ms,
+            prompt_tokens=log.prompt_tokens,
+            completion_tokens=log.completion_tokens,
+            total_tokens=log.total_tokens,
+            error_message=log.error_message,
+            request_id=log.request_id,
+            created_at=log.created_at,
+            updated_at=log.updated_at,
+        ).model_dump(by_alias=True)
+
+        self.assertEqual(page.total, 1)
+        self.assertEqual(page.items[0]["providerName"], "OpenAI")
+        self.assertEqual(page.items[0]["modelName"], "GPT Test")
+        self.assertEqual(page.items[0]["profileName"], "Default Chat")
+        self.assertEqual(info["requestId"], "req-1")
+        self.assertIn("requestId", dto)
+
+    def test_runtime_fallback_merges_fallback_options_and_preserves_request_options(self):
+        primary_provider = AiProvider(code="primary", name="Primary", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-primary"), is_active=True)
+        fallback_provider = AiProvider(code="fallback", name="Fallback", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-fallback"), is_active=True)
+        self.session.add(primary_provider)
+        self.session.add(fallback_provider)
+        self.session.commit()
+        self.session.refresh(primary_provider)
+        self.session.refresh(fallback_provider)
+        primary_model = AiModel(
+            provider_id=primary_provider.id,
+            code="primary-model",
+            name="Primary",
+            model_type="chat",
+            default_config='{"temperature": 0.1, "max_tokens": 100}',
+            is_active=True,
+        )
+        fallback_model = AiModel(
+            provider_id=fallback_provider.id,
+            code="fallback-model",
+            name="Fallback",
+            model_type="chat",
+            default_config='{"temperature": 0.7, "max_tokens": 200}',
+            is_active=True,
+        )
+        self.session.add(primary_model)
+        self.session.add(fallback_model)
+        self.session.commit()
+        self.session.refresh(primary_model)
+        self.session.refresh(fallback_model)
+        fallback_profile = AiModelProfile(
+            code="fallback-profile",
+            name="Fallback",
+            model_id=fallback_model.id,
+            scenario="default",
+            top_p=0.8,
+            max_tokens=256,
+            is_active=True,
+        )
+        self.session.add(fallback_profile)
+        self.session.commit()
+        self.session.refresh(fallback_profile)
+        primary_profile = AiModelProfile(
+            code="primary-profile",
+            name="Primary",
+            model_id=primary_model.id,
+            scenario="default",
+            fallback_profile_id=fallback_profile.id,
+            is_default=True,
+            is_active=True,
+        )
+        self.session.add(primary_profile)
+        self.session.commit()
+        seen_calls = []
+
+        class FakeAdapter:
+            def __init__(self, provider):
+                self.provider = provider
+
+            def chat(self, *, model, messages, options):
+                seen_calls.append((self.provider.code, model, dict(options)))
+                if self.provider.code == "primary":
+                    raise RuntimeError("primary failed")
+                return {"content": "fallback ok", "raw": {"id": "2"}, "usage": {"totalTokens": 5}, "requestId": "fallback-req"}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)):
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.2})
+            )
+
+        self.assertEqual(result["provider"], "fallback")
+        self.assertEqual(result["model"], "fallback-model")
+        self.assertEqual(seen_calls[0][2]["temperature"], 0.2)
+        self.assertEqual(seen_calls[1][2]["temperature"], 0.2)
+        self.assertEqual(seen_calls[1][2]["max_tokens"], 256)
+        self.assertEqual(seen_calls[1][2]["top_p"], 0.8)
+        logs = self.session.exec(select(AiModelCallLog).order_by(AiModelCallLog.created_at)).all()
+        self.assertEqual([item.status for item in logs], ["error", "success"])
+        self.assertEqual(logs[-1].request_id, "fallback-req")
+
+    def test_profile_json_object_response_format_is_passed_to_chat_options(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(
+            code="default-chat",
+            name="Default",
+            model_id=model.id,
+            scenario="default",
+            response_format='{"type":"json_object"}',
+            is_default=True,
+            is_active=True,
+        )
+        self.session.add(profile)
+        self.session.commit()
+        seen_options = {}
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                seen_options.update(options)
+                return {"content": '{"ok": true}', "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertEqual(seen_options["response_format"], {"type": "json_object"})
+        self.assertEqual(result["parsed"], {"ok": True})
+        self.assertIsNone(result["parseError"])
+
+    def test_profile_json_schema_response_format_is_normalized_and_passed_to_chat_options(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        service = AiModelProfileService(self.session)
+        profile = service.add(
+            AiModelProfileCreateRequest(
+                code="schema-chat",
+                name="Schema Chat",
+                model_id=model.id,
+                response_format='{"type":"json_schema","json_schema":{"name":"answer_schema","description":"Answer","schema":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false},"strict":true}}',
+                is_default=True,
+            )
+        )
+        seen_options = {}
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                seen_options.update(options)
+                return {"content": '{"answer": "ok"}', "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+            result = AiModelRuntimeService(self.session).chat(AiChatRequest(profile_code=profile.code, messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertEqual(seen_options["response_format"]["type"], "json_schema")
+        self.assertEqual(seen_options["response_format"]["json_schema"]["name"], "answer_schema")
+        self.assertEqual(seen_options["response_format"]["json_schema"]["schema"]["properties"]["answer"]["type"], "string")
+        self.assertEqual(result["parsed"], {"answer": "ok"})
+
+    def test_runtime_request_response_format_overrides_profile(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(
+            code="schema-chat",
+            name="Schema Chat",
+            model_id=model.id,
+            response_format='{"type":"json_schema","json_schema":{"name":"old_schema","schema":{"type":"object"}}}',
+            is_default=True,
+            is_active=True,
+        )
+        self.session.add(profile)
+        self.session.commit()
+        seen_options = {}
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                seen_options.update(options)
+                return {"content": '{"ok": true}', "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+            AiModelRuntimeService(self.session).chat(
+                AiChatRequest(
+                    messages=[{"role": "user", "content": "hi"}],
+                    response_format=AiResponseFormatRequest(type="json_object"),
+                )
+            )
+
+        self.assertEqual(seen_options["response_format"], {"type": "json_object"})
+
+    def test_runtime_structured_output_parse_error_does_not_fail_call(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(
+            code="default-chat",
+            name="Default",
+            model_id=model.id,
+            scenario="default",
+            response_format='{"type":"json_object"}',
+            is_default=True,
+            is_active=True,
+        )
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "not json", "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
+
+        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertTrue(result["success"])
+        self.assertIsNone(result["parsed"])
+        self.assertTrue(result["parseError"])
+
+    def test_json_schema_response_format_validation_rejects_invalid_schema(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        service = AiModelProfileService(self.session)
+
+        invalid_payloads = [
+            '{"type":"json_schema","json_schema":{"name":"bad name","schema":{"type":"object"}}}',
+            '{"type":"json_schema","json_schema":{"name":"missing_schema"}}',
+            '{"type":"json_schema","json_schema":{"name":"bad_schema","schema":[]}}',
+        ]
+        for index, response_format in enumerate(invalid_payloads):
+            with self.assertRaises(HTTPException) as ctx:
+                service.add(
+                    AiModelProfileCreateRequest(
+                        code=f"bad-schema-{index}",
+                        name="Bad Schema",
+                        model_id=model.id,
+                        response_format=response_format,
+                    )
+                )
+            self.assertEqual(ctx.exception.status_code, 400)
+
     def test_registry_returns_clear_error_when_no_default(self):
         with self.assertRaises(HTTPException) as ctx:
             AiModelRegistryService(self.session).resolve(model_type="chat", scenario="missing")
@@ -150,7 +649,19 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertTrue(AI_ADAPTERS.issubset(set(ADAPTERS.keys())))
         self.assertIn("gemini", AI_ADAPTERS)
         self.assertIn("claude", AI_ADAPTERS)
+        self.assertIn("deepseek", AI_ADAPTERS)
         self.assertIn("minimax", AI_ADAPTERS)
+        self.assertIs(ADAPTERS["deepseek"], DeepSeekAdapter)
+
+    def test_call_log_controller_exposes_read_only_crud_actions(self):
+        from app.modules.ai.controller.admin.log import AiModelCallLogController
+
+        actions = tuple(item if isinstance(item, str) else item.name for item in AiModelCallLogController.meta.actions)
+
+        self.assertEqual(actions, ("page", "info", "list"))
+        self.assertNotIn("add", actions)
+        self.assertNotIn("update", actions)
+        self.assertNotIn("delete", actions)
 
     def test_catalog_import_is_idempotent_and_preserves_secret(self):
         service = AiProviderService(self.session)
@@ -175,6 +686,50 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(saved.api_key_cipher, old_cipher)
         self.assertGreaterEqual(len(self.session.exec(select(AiModel)).all()), 1)
 
+    def test_deepseek_catalog_import_is_idempotent(self):
+        service = AiProviderService(self.session)
+
+        first = service.import_catalog(AiCatalogImportRequest(provider_code="deepseek"))
+        second = service.import_catalog(AiCatalogImportRequest(provider_code="deepseek"))
+        provider = self.session.exec(select(AiProvider).where(AiProvider.code == "deepseek")).first()
+        models = self.session.exec(select(AiModel).where(AiModel.provider_id == provider.id)).all()
+
+        self.assertTrue(first["success"])
+        self.assertTrue(second["success"])
+        self.assertEqual(provider.adapter, "deepseek")
+        self.assertEqual(provider.base_url, "https://api.deepseek.com")
+        self.assertEqual({item.code for item in models}, {"deepseek-v4-flash", "deepseek-v4-pro"})
+
+    def test_catalog_import_restores_soft_deleted_provider_and_models(self):
+        service = AiProviderService(self.session)
+        provider = AiProvider(code="deepseek", name="Deleted DeepSeek", adapter="deepseek", base_url="https://old.example.com", is_active=False, delete_time=datetime.utcnow())
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(
+            provider_id=provider.id,
+            code="deepseek-v4-flash",
+            name="Deleted Model",
+            model_type="chat",
+            is_active=False,
+            delete_time=datetime.utcnow(),
+        )
+        self.session.add(model)
+        self.session.commit()
+
+        result = service.import_catalog(AiCatalogImportRequest(provider_code="deepseek"))
+        page = service.page(CrudQuery(page=1, size=10))
+        restored = self.session.exec(select(AiProvider).where(AiProvider.code == "deepseek")).first()
+        restored_model = self.session.exec(select(AiModel).where(AiModel.provider_id == restored.id, AiModel.code == "deepseek-v4-flash")).first()
+
+        self.assertTrue(result["success"])
+        self.assertIsNone(restored.delete_time)
+        self.assertTrue(restored.is_active)
+        self.assertIsNone(restored_model.delete_time)
+        self.assertTrue(restored_model.is_active)
+        self.assertEqual(page.total, 1)
+        self.assertEqual(page.items[0]["code"], "deepseek")
+
     def test_openai_http_adapter_chat_parses_usage_and_request_id(self):
         provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
         adapter = BailianAdapter(provider)
@@ -197,6 +752,37 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["content"], "ok")
         self.assertEqual(result["usage"]["totalTokens"], 3)
         self.assertEqual(result["requestId"], "req-1")
+
+    def test_openai_http_adapter_stream_chat_parses_sse_delta(self):
+        provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
+        adapter = BailianAdapter(provider)
+
+        class FakeStreamResponse:
+            headers = {"x-request-id": "req-stream"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def raise_for_status(self):
+                return None
+
+            def iter_lines(self):
+                return iter([
+                    'data: {"choices":[{"delta":{"content":"hi"}}]}',
+                    "",
+                    "data: [DONE]",
+                    "",
+                ])
+
+        with patch("httpx.stream", return_value=FakeStreamResponse()):
+            events = list(adapter.stream_chat(model="qwen-plus", messages=[{"role": "user", "content": "hi"}], options={}))
+
+        self.assertEqual(events[0]["event"], "delta")
+        self.assertEqual(events[0]["content"], "hi")
+        self.assertEqual(events[0]["requestId"], "req-stream")
 
     def test_openai_http_adapter_test_raises_for_http_failure(self):
         provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
@@ -235,6 +821,52 @@ class AiModuleTestCase(unittest.TestCase):
 
         self.assertTrue(result["success"])
 
+    def test_deepseek_adapter_test_uses_models_endpoint(self):
+        provider = AiProvider(code="deepseek", name="DeepSeek", adapter="deepseek", api_key_cipher=encrypt_secret("sk"))
+        adapter = DeepSeekAdapter(provider)
+
+        class FakeResponse:
+            headers = {"x-ds-trace-id": "ds-1"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"data": [{"id": "deepseek-v4-flash"}, {"id": "deepseek-v4-pro"}]}
+
+        with patch("httpx.get", return_value=FakeResponse()) as mocked:
+            result = adapter.test()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(mocked.call_args.kwargs["headers"]["Authorization"], "Bearer sk")
+        self.assertEqual(str(mocked.call_args.args[0]), "https://api.deepseek.com/models")
+
+    def test_deepseek_adapter_chat_parses_openai_compatible_response(self):
+        provider = AiProvider(code="deepseek", name="DeepSeek", adapter="deepseek", api_key_cipher=encrypt_secret("sk"))
+        adapter = DeepSeekAdapter(provider)
+
+        class FakeResponse:
+            headers = {"x-request-id": "ds-req-1"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "choices": [{"message": {"content": "deepseek ok"}}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
+                }
+
+        with patch("httpx.post", return_value=FakeResponse()) as mocked:
+            result = adapter.chat(model="deepseek-v4-flash", messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.2})
+
+        self.assertEqual(result["content"], "deepseek ok")
+        self.assertEqual(result["usage"]["totalTokens"], 7)
+        self.assertEqual(result["requestId"], "ds-req-1")
+        self.assertEqual(str(mocked.call_args.args[0]), "https://api.deepseek.com/chat/completions")
+        self.assertEqual(mocked.call_args.kwargs["json"]["model"], "deepseek-v4-flash")
+
     def test_gemini_adapter_chat_transforms_response(self):
         provider = AiProvider(code="gemini", name="Gemini", adapter="gemini", api_key_cipher=encrypt_secret("key"))
         adapter = GeminiAdapter(provider)
@@ -257,12 +889,209 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["content"], "hello")
         self.assertEqual(result["requestId"], "g-1")
 
+    def test_claude_adapter_stream_chat_parses_text_and_thinking_delta(self):
+        provider = AiProvider(code="claude", name="Claude", adapter="claude", api_key_cipher=encrypt_secret("key"))
+        adapter = ClaudeAdapter(provider)
+
+        class FakeStreamResponse:
+            headers = {"request-id": "c-stream"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def raise_for_status(self):
+                return None
+
+            def iter_lines(self):
+                return iter([
+                    "event: content_block_delta",
+                    'data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"think"}}',
+                    "",
+                    "event: content_block_delta",
+                    'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}',
+                    "",
+                    "event: message_stop",
+                    'data: {"type":"message_stop"}',
+                    "",
+                ])
+
+        with patch("httpx.stream", return_value=FakeStreamResponse()):
+            events = list(adapter.stream_chat(model="claude-test", messages=[{"role": "user", "content": "hi"}], options={}))
+
+        self.assertEqual(events[0]["event"], "thinking_delta")
+        self.assertEqual(events[1]["event"], "delta")
+        self.assertEqual(events[1]["content"], "hello")
+
+    def test_gemini_adapter_stream_chat_parses_sse_delta(self):
+        provider = AiProvider(code="gemini", name="Gemini", adapter="gemini", api_key_cipher=encrypt_secret("key"))
+        adapter = GeminiAdapter(provider)
+
+        class FakeStreamResponse:
+            headers = {"x-request-id": "g-stream"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def raise_for_status(self):
+                return None
+
+            def iter_lines(self):
+                return iter([
+                    'data: {"candidates":[{"content":{"parts":[{"text":"hello"}]}}],"usageMetadata":{"totalTokenCount":3}}',
+                    "",
+                ])
+
+        with patch("httpx.stream", return_value=FakeStreamResponse()):
+            events = list(adapter.stream_chat(model="gemini-2.5-flash", messages=[{"role": "user", "content": "hi"}], options={}))
+
+        self.assertEqual(events[0]["event"], "delta")
+        self.assertEqual(events[0]["content"], "hello")
+
+    def test_ollama_adapter_stream_chat_parses_ndjson_delta(self):
+        provider = AiProvider(code="ollama", name="Ollama", adapter="ollama")
+        adapter = OllamaAdapter(provider)
+
+        class FakeStreamResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def raise_for_status(self):
+                return None
+
+            def iter_lines(self):
+                return iter([
+                    json.dumps({"message": {"content": "hi"}, "done": False}),
+                    json.dumps({"done": True, "prompt_eval_count": 1, "eval_count": 2}),
+                ])
+
+        with patch("httpx.stream", return_value=FakeStreamResponse()):
+            events = list(adapter.stream_chat(model="llama", messages=[{"role": "user", "content": "hi"}], options={}))
+
+        self.assertEqual(events[0]["event"], "delta")
+        self.assertEqual(events[0]["content"], "hi")
+        self.assertEqual(events[-1]["usage"]["totalTokens"], 3)
+
     def test_claude_adapter_unsupported_embedding(self):
         provider = AiProvider(code="claude", name="Claude", adapter="claude", api_key_cipher=encrypt_secret("key"))
         adapter = ClaudeAdapter(provider)
 
         with self.assertRaises(UnsupportedCapabilityError):
             adapter.embedding(model="claude", input="hello", options={})
+
+    def test_claude_adapter_chat_does_not_mutate_options(self):
+        provider = AiProvider(code="claude", name="Claude", adapter="claude", api_key_cipher=encrypt_secret("key"))
+        adapter = ClaudeAdapter(provider)
+        options = {"max_tokens": 64, "temperature": 0.2}
+
+        class FakeResponse:
+            headers = {"request-id": "c-1"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 1, "output_tokens": 2}}
+
+        with patch.object(adapter, "_post", return_value=(FakeResponse().json(), FakeResponse())):
+            result = adapter.chat(model="claude-test", messages=[{"role": "user", "content": "hi"}], options=options)
+
+        self.assertEqual(result["content"], "ok")
+        self.assertEqual(options, {"max_tokens": 64, "temperature": 0.2})
+
+    def test_json_config_validation_rejects_invalid_provider_extra_config(self):
+        with self.assertRaises(HTTPException) as ctx:
+            AiProviderService(self.session).add(
+                AiProviderCreateRequest(
+                    code="bad",
+                    name="Bad",
+                    adapter="openai-compatible",
+                    extra_config="{bad-json",
+                )
+            )
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("extraConfig", str(ctx.exception.detail))
+
+    def test_json_config_validation_rejects_invalid_model_default_config(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+
+        with self.assertRaises(HTTPException) as ctx:
+            AiModelService(self.session).add(
+                AiModelCreateRequest(
+                    provider_id=provider.id,
+                    code="bad-model",
+                    name="Bad Model",
+                    model_type="chat",
+                    default_config="[1, 2]",
+                )
+            )
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("defaultConfig", str(ctx.exception.detail))
+
+    def test_json_config_validation_rejects_invalid_profile_configs(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+
+        with self.assertRaises(HTTPException) as response_ctx:
+            AiModelProfileService(self.session).add(
+                AiModelProfileCreateRequest(
+                    code="bad-response",
+                    name="Bad Response",
+                    model_id=model.id,
+                    response_format="{bad-json",
+                )
+            )
+        with self.assertRaises(HTTPException) as tools_ctx:
+            AiModelProfileService(self.session).add(
+                AiModelProfileCreateRequest(
+                    code="bad-tools",
+                    name="Bad Tools",
+                    model_id=model.id,
+                    tools_config="{bad-json",
+                )
+            )
+
+        self.assertEqual(response_ctx.exception.status_code, 400)
+        self.assertEqual(tools_ctx.exception.status_code, 400)
+        self.assertIn("responseFormat", str(response_ctx.exception.detail))
+        self.assertIn("toolsConfig", str(tools_ctx.exception.detail))
+
+    def test_runtime_unsupported_capability_returns_501(self):
+        provider = AiProvider(code="ollama", name="Ollama", adapter="ollama", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="image-test", name="Image Test", model_type="image", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="image-default", name="Image Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        with self.assertRaises(HTTPException) as ctx:
+            AiModelRuntimeService(self.session).image(AiImageRequest(prompt="draw"))
+
+        self.assertEqual(ctx.exception.status_code, 501)
 
 
 if __name__ == "__main__":

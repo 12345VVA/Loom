@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # OpenAI / Ollama 配置
     OPENAI_API_KEY: str  # 启动时自动从 .env 中读取
     OPENAI_BASE_URL: str  # 启动时自动从 .env 中读取
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = ""
     SECRET_ENCRYPTION_KEY: str = ""
 
     # 认证配置

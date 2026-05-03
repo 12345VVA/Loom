@@ -25,7 +25,27 @@ class OllamaAdapter(BaseHttpAdapter):
         }
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
-        raise UnsupportedCapabilityError("Ollama 流式接口将在 SSE 层统一接入")
+        with httpx.stream(
+            "POST",
+            f"{self.base_url}/api/chat",
+            json={"model": model, "messages": messages, "stream": True, "options": options},
+            timeout=self.timeout,
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                data = _loads_line(line)
+                content = (data.get("message") or {}).get("content")
+                if content:
+                    yield {"event": "delta", "content": content, "raw": data}
+                if data.get("done"):
+                    usage = {
+                        "promptTokens": data.get("prompt_eval_count") or 0,
+                        "completionTokens": data.get("eval_count") or 0,
+                        "totalTokens": (data.get("prompt_eval_count") or 0) + (data.get("eval_count") or 0),
+                    }
+                    yield {"event": "done", "raw": data, "usage": usage}
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         text = input if isinstance(input, str) else "\n".join(input)
@@ -42,3 +62,14 @@ class OllamaAdapter(BaseHttpAdapter):
         response.raise_for_status()
         data = response.json()
         return {"success": True, "count": len(data.get("models", []))}
+
+
+def _loads_line(line: str | bytes) -> dict[str, Any]:
+    import json
+
+    value = line.decode("utf-8") if isinstance(line, bytes) else line
+    try:
+        data = json.loads(value)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}

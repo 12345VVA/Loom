@@ -4,6 +4,7 @@ AI 厂商适配器基础工具。
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from typing import Any
 
 import httpx
@@ -120,3 +121,36 @@ def openai_image_result(data: dict[str, Any], response: httpx.Response | None = 
         "usage": normalize_usage(data.get("usage")),
         "requestId": response.headers.get("x-request-id") if response else None,
     }
+
+
+def iter_sse_events(lines: Iterable[str | bytes]) -> Iterable[dict[str, str | None]]:
+    event_name: str | None = None
+    data_lines: list[str] = []
+    for raw_line in lines:
+        line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+        line = line.rstrip("\r")
+        if not line:
+            if data_lines:
+                yield {"event": event_name, "data": "\n".join(data_lines)}
+            event_name = None
+            data_lines = []
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            event_name = line[6:].strip()
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    if data_lines:
+        yield {"event": event_name, "data": "\n".join(data_lines)}
+
+
+def loads_json(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        data = json.loads(value)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}

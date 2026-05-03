@@ -69,6 +69,35 @@
           { "code": "ai_profile_set_default", "name": "设为默认", "type": "button", "permission": "ai:profile:setDefault", "role_codes": ["admin"] },
           { "code": "ai_profile_test", "name": "测试调用", "type": "button", "permission": "ai:profile:test", "role_codes": ["admin"] }
         ]
+      },
+      {
+        "code": "nav_ai_chat",
+        "name": "对话测试",
+        "type": "menu",
+        "module": "ai",
+        "resource": "chat",
+        "path": "/ai/chat",
+        "component": "modules/ai/views/chat.vue",
+        "icon": "icon-message",
+        "sort_order": 4,
+        "role_codes": ["admin"]
+      },
+      {
+        "code": "nav_ai_log",
+        "name": "调用日志",
+        "type": "menu",
+        "module": "ai",
+        "resource": "log",
+        "path": "/ai/log",
+        "component": "modules/ai/views/log.vue",
+        "icon": "icon-log",
+        "sort_order": 5,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_log_page", "name": "分页查询", "type": "button", "permission": "ai:log:page", "role_codes": ["admin"] },
+          { "code": "ai_log_info", "name": "详情", "type": "button", "permission": "ai:log:info", "role_codes": ["admin"] },
+          { "code": "ai_log_list", "name": "列表查询", "type": "button", "permission": "ai:log:list", "role_codes": ["admin"] }
+        ]
       }
     ]
   }

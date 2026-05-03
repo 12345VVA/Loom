@@ -43,30 +43,12 @@ export function useStream() {
 										return;
 									}
 
-									let text = decoder.decode(value, { stream: true });
+									const text = decoder.decode(value, { stream: true });
 
 									if (cb) {
-										if (cacheText) {
-											text = cacheText + text;
-										}
-
-										if (text.indexOf('data:') == 0) {
-											text = '\n\n' + text;
-										}
-
-										try {
-											const arr = text
-												.split(/\n\ndata:/g)
-												.filter(Boolean)
-												.map(e => JSON.parse(e));
-
-											arr.forEach(cb);
-
-											cacheText = '';
-										} catch (err) {
-											console.error('[parse text]', text);
-											cacheText = text;
-										}
+										const parsed = parseSse(cacheText + text);
+										parsed.events.forEach(cb);
+										cacheText = parsed.rest;
 									}
 
 									controller.enqueue(text);
@@ -100,4 +82,39 @@ export function useStream() {
 		invoke,
 		cancel
 	};
+}
+
+function parseSse(text: string) {
+	const events: any[] = [];
+	const normalized = text.replace(/\r\n/g, '\n');
+	const parts = normalized.split('\n\n');
+	const rest = parts.pop() || '';
+
+	for (const part of parts) {
+		const data: string[] = [];
+
+		for (const line of part.split('\n')) {
+			if (!line || line.startsWith(':') || line.startsWith('event:')) {
+				continue;
+			}
+
+			if (line.startsWith('data:')) {
+				data.push(line.slice(5).trimStart());
+			}
+		}
+
+		const value = data.join('\n').trim();
+
+		if (!value) {
+			continue;
+		}
+
+		try {
+			events.push(JSON.parse(value));
+		} catch (err) {
+			console.error('[parse sse]', value);
+		}
+	}
+
+	return { events, rest };
 }

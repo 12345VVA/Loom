@@ -12,6 +12,16 @@
 		</cl-row>
 
 		<cl-row>
+			<el-alert
+				class="capability-alert"
+				:title="$t('能力字段是模型元信息，stream/tools/vision/thinking 等标签不代表统一运行时已完整实现。未实现接口仍会返回 501。')"
+				type="info"
+				show-icon
+				:closable="false"
+			/>
+		</cl-row>
+
+		<cl-row>
 			<cl-table ref="Table" />
 		</cl-row>
 
@@ -99,6 +109,13 @@ const Table = useTable({
 		{ label: t('编码'), prop: 'code', minWidth: 180 },
 		{ label: t('名称'), prop: 'name', minWidth: 160 },
 		{ label: t('类型'), prop: 'modelType', minWidth: 120 },
+		{
+			label: t('能力'),
+			prop: 'capabilities',
+			minWidth: 220,
+			showOverflowTooltip: true,
+			formatter: ({ capabilities }: any) => splitCapabilities(capabilities).join(' / ') || '-'
+		},
 		{ label: t('上下文'), prop: 'contextWindow', minWidth: 110 },
 		{ label: t('最大输出'), prop: 'maxOutputTokens', minWidth: 110 },
 		{ label: t('启用'), prop: 'status', width: 100 },
@@ -107,7 +124,7 @@ const Table = useTable({
 	]
 });
 
-useCrud(
+const Crud = useCrud(
 	{
 		service: service.ai.model
 	},
@@ -115,4 +132,18 @@ useCrud(
 		app.refresh();
 	}
 );
+
+function splitCapabilities(value?: string) {
+	return String(value || '')
+		.split(',')
+		.map(item => item.trim())
+		.filter(Boolean);
+}
 </script>
+
+<style lang="scss" scoped>
+.capability-alert {
+	width: 100%;
+}
+
+</style>

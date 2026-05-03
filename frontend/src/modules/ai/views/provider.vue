@@ -62,6 +62,7 @@ const adapterOptions = [
 	{ label: 'Ollama', value: 'ollama' },
 	{ label: 'Gemini', value: 'gemini' },
 	{ label: 'Claude', value: 'claude' },
+	{ label: 'DeepSeek', value: 'deepseek' },
 	{ label: '火山方舟', value: 'volcengine-ark' },
 	{ label: '阿里百炼', value: 'bailian' },
 	{ label: '腾讯混元', value: 'hunyuan' },
