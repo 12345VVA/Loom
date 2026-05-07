@@ -8,7 +8,7 @@ from app.core.database import get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
 from app.framework.router.route_meta import Post
 from app.modules.ai.model.ai import AiGenerationTaskRead, AiTaskActionRequest, AiTaskSubmitRequest
-from app.modules.ai.service.ai_service import AiGenerationTaskService
+from app.modules.ai.service.task_service import AiGenerationTaskService
 from app.modules.base.model.auth import User
 from app.modules.base.service.security_service import get_current_user
 

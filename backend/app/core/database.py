@@ -48,7 +48,7 @@ def normalize_database_url(database_url: str) -> str:
 DATABASE_URL = normalize_database_url(settings.DATABASE_URL)
 
 engine_kwargs = {
-    "echo": settings.DEBUG,
+    "echo": settings.db_echo_enabled,
     "pool_pre_ping": settings.DB_POOL_PRE_PING,
 }
 if "sqlite" in DATABASE_URL:
@@ -166,6 +166,11 @@ def _ensure_sqlite_compatible_schema() -> None:
             "retry_count": "ALTER TABLE ai_model_profile ADD COLUMN retry_count INTEGER DEFAULT 0",
             "retry_delay_seconds": "ALTER TABLE ai_model_profile ADD COLUMN retry_delay_seconds INTEGER DEFAULT 0",
         },
+        "ai_model_call_log": {
+            "user_id": "ALTER TABLE ai_model_call_log ADD COLUMN user_id INTEGER",
+            "cost_micro_usd": "ALTER TABLE ai_model_call_log ADD COLUMN cost_micro_usd INTEGER DEFAULT 0",
+            "currency": "ALTER TABLE ai_model_call_log ADD COLUMN currency VARCHAR DEFAULT 'USD'",
+        },
         "ai_generation_task": {
             "task_type": "ALTER TABLE ai_generation_task ADD COLUMN task_type VARCHAR DEFAULT 'chat'",
             "scenario": "ALTER TABLE ai_generation_task ADD COLUMN scenario VARCHAR DEFAULT 'default'",
@@ -180,6 +185,47 @@ def _ensure_sqlite_compatible_schema() -> None:
             "started_at": "ALTER TABLE ai_generation_task ADD COLUMN started_at DATETIME",
             "finished_at": "ALTER TABLE ai_generation_task ADD COLUMN finished_at DATETIME",
             "retry_count": "ALTER TABLE ai_generation_task ADD COLUMN retry_count INTEGER DEFAULT 0",
+        },
+        "ai_governance_rule": {
+            "code": "ALTER TABLE ai_governance_rule ADD COLUMN code VARCHAR",
+            "name": "ALTER TABLE ai_governance_rule ADD COLUMN name VARCHAR",
+            "scope_type": "ALTER TABLE ai_governance_rule ADD COLUMN scope_type VARCHAR DEFAULT 'global'",
+            "user_id": "ALTER TABLE ai_governance_rule ADD COLUMN user_id INTEGER",
+            "profile_id": "ALTER TABLE ai_governance_rule ADD COLUMN profile_id INTEGER",
+            "period": "ALTER TABLE ai_governance_rule ADD COLUMN period VARCHAR DEFAULT 'day'",
+            "max_requests": "ALTER TABLE ai_governance_rule ADD COLUMN max_requests INTEGER",
+            "max_tokens": "ALTER TABLE ai_governance_rule ADD COLUMN max_tokens INTEGER",
+            "max_cost_micro_usd": "ALTER TABLE ai_governance_rule ADD COLUMN max_cost_micro_usd INTEGER",
+            "max_concurrent": "ALTER TABLE ai_governance_rule ADD COLUMN max_concurrent INTEGER",
+            "mode": "ALTER TABLE ai_governance_rule ADD COLUMN mode VARCHAR DEFAULT 'enforce'",
+            "notify_enabled": "ALTER TABLE ai_governance_rule ADD COLUMN notify_enabled BOOLEAN DEFAULT 1",
+            "is_active": "ALTER TABLE ai_governance_rule ADD COLUMN is_active BOOLEAN DEFAULT 1",
+            "sort_order": "ALTER TABLE ai_governance_rule ADD COLUMN sort_order INTEGER DEFAULT 0",
+        },
+        "ai_governance_event": {
+            "rule_id": "ALTER TABLE ai_governance_event ADD COLUMN rule_id INTEGER",
+            "user_id": "ALTER TABLE ai_governance_event ADD COLUMN user_id INTEGER",
+            "profile_id": "ALTER TABLE ai_governance_event ADD COLUMN profile_id INTEGER",
+            "model_id": "ALTER TABLE ai_governance_event ADD COLUMN model_id INTEGER",
+            "provider_id": "ALTER TABLE ai_governance_event ADD COLUMN provider_id INTEGER",
+            "event_type": "ALTER TABLE ai_governance_event ADD COLUMN event_type VARCHAR DEFAULT 'allowed'",
+            "metric": "ALTER TABLE ai_governance_event ADD COLUMN metric VARCHAR DEFAULT 'request'",
+            "current_value": "ALTER TABLE ai_governance_event ADD COLUMN current_value INTEGER DEFAULT 0",
+            "limit_value": "ALTER TABLE ai_governance_event ADD COLUMN limit_value INTEGER DEFAULT 0",
+            "window_start": "ALTER TABLE ai_governance_event ADD COLUMN window_start DATETIME",
+            "window_end": "ALTER TABLE ai_governance_event ADD COLUMN window_end DATETIME",
+            "message": "ALTER TABLE ai_governance_event ADD COLUMN message VARCHAR",
+            "notified": "ALTER TABLE ai_governance_event ADD COLUMN notified BOOLEAN DEFAULT 0",
+        },
+        "ai_runtime_invocation": {
+            "invocation_id": "ALTER TABLE ai_runtime_invocation ADD COLUMN invocation_id VARCHAR",
+            "user_id": "ALTER TABLE ai_runtime_invocation ADD COLUMN user_id INTEGER",
+            "profile_id": "ALTER TABLE ai_runtime_invocation ADD COLUMN profile_id INTEGER",
+            "model_id": "ALTER TABLE ai_runtime_invocation ADD COLUMN model_id INTEGER",
+            "provider_id": "ALTER TABLE ai_runtime_invocation ADD COLUMN provider_id INTEGER",
+            "status": "ALTER TABLE ai_runtime_invocation ADD COLUMN status VARCHAR DEFAULT 'running'",
+            "started_at": "ALTER TABLE ai_runtime_invocation ADD COLUMN started_at DATETIME",
+            "finished_at": "ALTER TABLE ai_runtime_invocation ADD COLUMN finished_at DATETIME",
         },
         "media_asset": {
             "asset_type": "ALTER TABLE media_asset ADD COLUMN asset_type VARCHAR DEFAULT 'file'",
@@ -212,6 +258,7 @@ def _ensure_sqlite_compatible_schema() -> None:
         "dict_type", "dict_info", "task_info", "task_log",
         "notification_message", "notification_recipient", "notification_template", "notification_rule",
         "ai_provider", "ai_model", "ai_model_profile", "ai_model_call_log", "ai_generation_task",
+        "ai_governance_rule", "ai_governance_event", "ai_runtime_invocation",
         "media_asset",
         "sys_user_role", "sys_role_menu", "sys_role_department"
     ]

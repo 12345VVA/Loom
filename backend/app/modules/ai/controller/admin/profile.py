@@ -14,7 +14,7 @@ from app.modules.ai.model.ai import (
     AiProfileActionRequest,
     AiProfileTestRequest,
 )
-from app.modules.ai.service.ai_service import AiModelProfileService
+from app.modules.ai.service.profile_service import AiModelProfileService
 from app.modules.base.model.auth import User
 from app.modules.base.service.security_service import get_current_user
 

@@ -7,8 +7,8 @@ from sqlmodel import Session
 from app.core.database import get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
 from app.framework.router.route_meta import Post
-from app.modules.ai.model.ai import AiCatalogImportRequest, AiProviderCreateRequest, AiProviderRead, AiProviderTestRequest, AiProviderUpdateRequest
-from app.modules.ai.service.ai_service import AiProviderService
+from app.modules.ai.model.ai import AiCatalogImportRequest, AiProviderCreateRequest, AiProviderRead, AiProviderSyncModelsRequest, AiProviderTestRequest, AiProviderUpdateRequest
+from app.modules.ai.service.provider_service import AiProviderService
 from app.modules.base.model.auth import User
 from app.modules.base.service.security_service import get_current_user
 
@@ -65,6 +65,15 @@ class AiProviderController(BaseController):
         session: Session = Depends(get_session),
     ):
         return AiProviderService(session).import_catalog(payload)
+
+    @Post("/syncModels", summary="同步厂商模型列表", permission="ai:provider:syncModels")
+    async def sync_models(
+        self,
+        payload: AiProviderSyncModelsRequest,
+        _: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ):
+        return AiProviderService(session).sync_models(payload.id)
 
 
 router = AiProviderController.router

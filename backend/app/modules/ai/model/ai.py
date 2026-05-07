@@ -28,6 +28,11 @@ AI_ADAPTERS = {
     "mimo",
 }
 AI_MODEL_TYPES = {"chat", "embedding", "image", "audio", "video", "rerank"}
+AI_GOVERNANCE_SCOPE_TYPES = {"global", "user", "profile"}
+AI_GOVERNANCE_PERIODS = {"minute", "day", "month"}
+AI_GOVERNANCE_MODES = {"enforce", "observe"}
+AI_GOVERNANCE_EVENT_TYPES = {"allowed", "blocked", "warn"}
+AI_INVOCATION_STATUSES = {"running", "success", "error", "blocked"}
 
 
 class AiProvider(BaseEntity, table=True):
@@ -87,6 +92,7 @@ class AiModelCallLog(BaseEntity, table=True):
     provider_id: Optional[int] = Field(default=None, index=True)
     model_id: Optional[int] = Field(default=None, index=True)
     profile_id: Optional[int] = Field(default=None, index=True)
+    user_id: Optional[int] = Field(default=None, index=True)
     scenario: Optional[str] = Field(default=None, index=True, max_length=100)
     model_type: str = Field(default="chat", index=True, max_length=50)
     status: str = Field(default="success", index=True, max_length=50)
@@ -94,6 +100,8 @@ class AiModelCallLog(BaseEntity, table=True):
     prompt_tokens: int = Field(default=0)
     completion_tokens: int = Field(default=0)
     total_tokens: int = Field(default=0)
+    cost_micro_usd: int = Field(default=0)
+    currency: str = Field(default="USD", max_length=20)
     error_message: Optional[str] = Field(default=None, max_length=500)
     request_id: Optional[str] = Field(default=None, index=True, max_length=100)
 
@@ -116,6 +124,56 @@ class AiGenerationTask(BaseEntity, table=True):
     retry_count: int = Field(default=0)
 
 
+class AiGovernanceRule(BaseEntity, table=True):
+    __tablename__ = "ai_governance_rule"
+
+    code: str = Field(index=True, unique=True, max_length=100)
+    name: str = Field(index=True, max_length=100)
+    scope_type: str = Field(default="global", index=True, max_length=50)
+    user_id: Optional[int] = Field(default=None, index=True)
+    profile_id: Optional[int] = Field(default=None, index=True)
+    period: str = Field(default="day", index=True, max_length=50)
+    max_requests: Optional[int] = None
+    max_tokens: Optional[int] = None
+    max_cost_micro_usd: Optional[int] = None
+    max_concurrent: Optional[int] = None
+    mode: str = Field(default="enforce", index=True, max_length=50)
+    notify_enabled: bool = Field(default=True, index=True)
+    is_active: bool = Field(default=True, index=True)
+    sort_order: int = Field(default=0, index=True)
+
+
+class AiGovernanceEvent(BaseEntity, table=True):
+    __tablename__ = "ai_governance_event"
+
+    rule_id: Optional[int] = Field(default=None, index=True)
+    user_id: Optional[int] = Field(default=None, index=True)
+    profile_id: Optional[int] = Field(default=None, index=True)
+    model_id: Optional[int] = Field(default=None, index=True)
+    provider_id: Optional[int] = Field(default=None, index=True)
+    event_type: str = Field(default="allowed", index=True, max_length=50)
+    metric: str = Field(default="request", index=True, max_length=50)
+    current_value: int = Field(default=0)
+    limit_value: int = Field(default=0)
+    window_start: Optional[datetime] = Field(default=None, index=True)
+    window_end: Optional[datetime] = Field(default=None, index=True)
+    message: Optional[str] = Field(default=None, max_length=1000)
+    notified: bool = Field(default=False, index=True)
+
+
+class AiRuntimeInvocation(BaseEntity, table=True):
+    __tablename__ = "ai_runtime_invocation"
+
+    invocation_id: str = Field(index=True, unique=True, max_length=100)
+    user_id: Optional[int] = Field(default=None, index=True)
+    profile_id: Optional[int] = Field(default=None, index=True)
+    model_id: Optional[int] = Field(default=None, index=True)
+    provider_id: Optional[int] = Field(default=None, index=True)
+    status: str = Field(default="running", index=True, max_length=50)
+    started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    finished_at: Optional[datetime] = Field(default=None, index=True)
+
+
 class AiModelCallLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
@@ -126,6 +184,8 @@ class AiModelCallLogRead(BaseModel):
     model_name: Optional[str] = None
     profile_id: Optional[int] = None
     profile_name: Optional[str] = None
+    user_id: Optional[int] = None
+    username: Optional[str] = None
     scenario: Optional[str] = None
     model_type: str
     status: str
@@ -133,6 +193,9 @@ class AiModelCallLogRead(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cost_micro_usd: int = 0
+    cost_usd: float = 0
+    currency: str = "USD"
     error_message: Optional[str] = None
     request_id: Optional[str] = None
     created_at: datetime
@@ -191,6 +254,12 @@ class AiCatalogImportRequest(BaseModel):
 
     provider_code: str
     overwrite_models: bool = True
+
+
+class AiProviderSyncModelsRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
 
 
 class AiModelRead(BaseModel):
@@ -425,3 +494,123 @@ class AiProfileTestRequest(BaseModel):
 
     id: int
     prompt: str = "你好，请用一句话介绍你自己。"
+
+
+class AiGovernanceRuleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    code: str
+    name: str
+    scope_type: str
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    profile_id: Optional[int] = None
+    profile_name: Optional[str] = None
+    period: str
+    max_requests: Optional[int] = None
+    max_tokens: Optional[int] = None
+    max_cost_micro_usd: Optional[int] = None
+    max_concurrent: Optional[int] = None
+    mode: str
+    notify_enabled: bool
+    is_active: bool
+    sort_order: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class AiGovernanceRuleCreateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    code: str
+    name: str
+    scope_type: str = "global"
+    user_id: Optional[int] = None
+    profile_id: Optional[int] = None
+    period: str = "day"
+    max_requests: Optional[int] = None
+    max_tokens: Optional[int] = None
+    max_cost_micro_usd: Optional[int] = None
+    max_concurrent: Optional[int] = None
+    mode: str = "enforce"
+    notify_enabled: bool = True
+    is_active: bool = True
+    sort_order: int = 0
+
+    @field_validator("scope_type")
+    @classmethod
+    def validate_scope_type(cls, value: str) -> str:
+        if value not in AI_GOVERNANCE_SCOPE_TYPES:
+            raise ValueError("不支持的治理范围")
+        return value
+
+    @field_validator("period")
+    @classmethod
+    def validate_period(cls, value: str) -> str:
+        if value not in AI_GOVERNANCE_PERIODS:
+            raise ValueError("不支持的统计周期")
+        return value
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        if value not in AI_GOVERNANCE_MODES:
+            raise ValueError("不支持的治理模式")
+        return value
+
+
+class AiGovernanceRuleUpdateRequest(AiGovernanceRuleCreateRequest):
+    id: int
+
+
+class AiGovernanceRuleActionRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+
+
+class AiGovernanceRuleMatchRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    user_id: Optional[int] = None
+    profile_id: Optional[int] = None
+
+
+class AiGovernanceEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    rule_id: Optional[int] = None
+    rule_name: Optional[str] = None
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    profile_id: Optional[int] = None
+    profile_name: Optional[str] = None
+    model_id: Optional[int] = None
+    model_name: Optional[str] = None
+    provider_id: Optional[int] = None
+    provider_name: Optional[str] = None
+    event_type: str
+    metric: str
+    current_value: int = 0
+    limit_value: int = 0
+    window_start: Optional[datetime] = None
+    window_end: Optional[datetime] = None
+    message: Optional[str] = None
+    notified: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class AiGovernanceStatsRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    days: int = 14
+
+
+class AiCallStatsRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    days: int = 14
+    group_by: str = "day"

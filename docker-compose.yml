@@ -62,6 +62,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: loom-celery-worker
+    env_file:
+      - ./backend/.env
     volumes:
       - ./backend:/app
       - ./logs:/app/logs
@@ -74,7 +76,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: celery -A app.celery_app worker --loglevel=info
+    command: sh -c 'celery -A app.celery_app worker --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video'
 
   # Celery Beat - 定时任务调度器（可选）
   # celery-beat:
@@ -82,6 +84,8 @@ services:
   #     context: ./backend
   #     dockerfile: Dockerfile
   #   container_name: loom-celery-beat
+  #   env_file:
+  #     - ./backend/.env
   #   volumes:
   #     - ./backend:/app
   #   environment:
@@ -89,7 +93,7 @@ services:
   #   depends_on:
   #     redis:
   #       condition: service_healthy
-  #   command: celery -A app.celery_app beat --loglevel=info
+  #   command: sh -c 'celery -A app.celery_app beat --loglevel="$${LOG_LEVEL:-info}"'
 
   # Flower - Celery 监控面板（可选）
   # flower:

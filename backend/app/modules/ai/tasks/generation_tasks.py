@@ -17,7 +17,8 @@ from app.modules.ai.model.ai import (
     AiRerankRequest,
     AiVideoRequest,
 )
-from app.modules.ai.service.ai_service import AiModelRuntimeService
+from app.modules.ai.service.runtime_service import AiModelRuntimeService
+from app.modules.base.model.auth import User
 from app.modules.media.service.media_service import MediaAssetService
 
 
@@ -67,23 +68,24 @@ def execute_ai_generation_task(task_id: int) -> dict:
 
 def _invoke_runtime(session: Session, task: AiGenerationTask, payload: dict) -> dict:
     runtime = AiModelRuntimeService(session)
+    current_user = session.get(User, task.created_by) if task.created_by else None
     common = {
         "scenario": task.scenario,
         "profile_code": task.profile_code,
         "options": payload.get("options") or {},
     }
     if task.task_type == "chat":
-        return runtime.chat(AiChatRequest(**{**common, "messages": payload.get("messages") or []}))
+        return runtime.chat(AiChatRequest(**{**common, "messages": payload.get("messages") or []}), current_user=current_user)
     if task.task_type == "embedding":
-        return runtime.embedding(AiEmbeddingRequest(**{**common, "input": payload.get("input")}))
+        return runtime.embedding(AiEmbeddingRequest(**{**common, "input": payload.get("input")}), current_user=current_user)
     if task.task_type == "image":
-        return runtime.image(AiImageRequest(**{**common, "prompt": payload.get("prompt") or ""}))
+        return runtime.image(AiImageRequest(**{**common, "prompt": payload.get("prompt") or ""}), current_user=current_user)
     if task.task_type == "rerank":
-        return runtime.rerank(AiRerankRequest(**{**common, "query": payload.get("query") or "", "documents": payload.get("documents") or []}))
+        return runtime.rerank(AiRerankRequest(**{**common, "query": payload.get("query") or "", "documents": payload.get("documents") or []}), current_user=current_user)
     if task.task_type == "audio":
-        return runtime.audio(AiAudioRequest(**{**common, "input": payload.get("input") or ""}))
+        return runtime.audio(AiAudioRequest(**{**common, "input": payload.get("input") or ""}), current_user=current_user)
     if task.task_type == "video":
-        return runtime.video(AiVideoRequest(**{**common, "prompt": payload.get("prompt") or ""}))
+        return runtime.video(AiVideoRequest(**{**common, "prompt": payload.get("prompt") or ""}), current_user=current_user)
     raise ValueError("不支持的 AI 任务类型")
 
 
@@ -92,3 +94,23 @@ def _loads_payload(value: str | None) -> dict:
         return {}
     data = json.loads(value)
     return data if isinstance(data, dict) else {}
+
+
+@celery_app.task(name="ai.clean_expired_governance_data")
+def clean_expired_governance_data() -> dict:
+    from app.modules.ai.service.cleanup_service import AiGovernanceCleanupService
+    from app.modules.base.service.sys_manage_service import SysParamService
+
+    with Session(engine) as session:
+        params = SysParamService(session)
+        task_days = _int_param(params.get_value("aiTaskPayloadKeepDays", "90"), 90)
+        log_days = _int_param(params.get_value("aiCallLogKeepDays", "180"), 180)
+        event_days = _int_param(params.get_value("aiGovernanceEventKeepDays", "180"), 180)
+        return AiGovernanceCleanupService(session).clean(task_days, log_days, event_days)
+
+
+def _int_param(value: str | None, default: int) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default

@@ -347,6 +347,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 )
                 return await _resolve_result(result)
 
+            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
             router.add_api_route(
                 action.path,
@@ -420,6 +421,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 )
                 return await _resolve_result(result)
 
+            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
             router.add_api_route(action.path, endpoint, methods=list(_crud_route_methods(action)), response_model=response_model, summary=action.summary)
         elif action.name == "info":
@@ -475,6 +477,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     )
                     return _strip_ignored_properties(await _resolve_result(result), meta.info_ignore_property)
 
+            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
             router.add_api_route(action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary)
         elif action.name == "add":
@@ -506,6 +509,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 return await _resolve_result(result)
 
             endpoint.__annotations__["payload"] = request_model
+            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
             router.add_api_route(action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary)
         elif action.name == "update":
@@ -537,6 +541,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 return await _resolve_result(result)
 
             endpoint.__annotations__["payload"] = request_model
+            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
             router.add_api_route(action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary)
         elif action.name == "delete":
@@ -568,6 +573,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 return await _resolve_result(result)
 
             endpoint.__annotations__["payload"] = request_model
+            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
             router.add_api_route(action.path, endpoint, methods=[action.method], response_model=dict, summary=action.summary)
 
@@ -676,6 +682,7 @@ def _register_service_routes(router: APIRouter, meta: CoolControllerMeta) -> Non
             )
             return await _resolve_result(result)
 
+        endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{config.method}"
         _tag_generated_endpoint(endpoint, meta.scope)
         router.add_api_route(f"/{config.method}", endpoint, methods=["POST"], summary=config.summary or config.method)
 

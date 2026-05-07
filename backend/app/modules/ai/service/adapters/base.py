@@ -59,6 +59,18 @@ class BaseHttpAdapter:
     def test(self) -> dict:
         raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持连接测试")
 
+    def list_models(self) -> list[dict[str, Any]]:
+        data, _ = self._get(getattr(self, "models_path", "/models"))
+        items = data.get("data") or data.get("models") or []
+        result: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            code = item.get("id") or item.get("name") or item.get("model")
+            if code:
+                result.append({"code": str(code), "name": str(item.get("display_name") or item.get("name") or code)})
+        return result
+
     def capability_status(self) -> dict:
         return {
             "adapter": self.provider.adapter,

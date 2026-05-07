@@ -64,6 +64,19 @@ class OllamaAdapter(BaseHttpAdapter):
         data = response.json()
         return {"success": True, "count": len(data.get("models", []))}
 
+    def list_models(self) -> list[dict[str, Any]]:
+        response = httpx.get(f"{self.base_url}/api/tags", timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        result: list[dict[str, Any]] = []
+        for item in data.get("models", []):
+            if not isinstance(item, dict):
+                continue
+            code = item.get("name") or item.get("model")
+            if code:
+                result.append({"code": str(code), "name": str(code)})
+        return result
+
 
 def _loads_line(line: str | bytes) -> dict[str, Any]:
     import json

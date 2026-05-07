@@ -27,7 +27,8 @@
           { "code": "ai_provider_info", "name": "详情", "type": "button", "permission": "ai:provider:info", "role_codes": ["admin"] },
           { "code": "ai_provider_test", "name": "测试连接", "type": "button", "permission": "ai:provider:test", "role_codes": ["admin"] },
           { "code": "ai_provider_catalog", "name": "预设清单", "type": "button", "permission": "ai:provider:catalog", "role_codes": ["admin"] },
-          { "code": "ai_provider_import_catalog", "name": "导入预设", "type": "button", "permission": "ai:provider:importCatalog", "role_codes": ["admin"] }
+          { "code": "ai_provider_import_catalog", "name": "导入预设", "type": "button", "permission": "ai:provider:importCatalog", "role_codes": ["admin"] },
+          { "code": "ai_provider_sync_models", "name": "同步模型", "type": "button", "permission": "ai:provider:syncModels", "role_codes": ["admin"] }
         ]
       },
       {
@@ -98,6 +99,60 @@
           { "code": "ai_log_info", "name": "详情", "type": "button", "permission": "ai:log:info", "role_codes": ["admin"] },
           { "code": "ai_log_list", "name": "列表查询", "type": "button", "permission": "ai:log:list", "role_codes": ["admin"] },
           { "code": "ai_log_stats", "name": "统计", "type": "button", "permission": "ai:log:stats", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_ai_governance_rule",
+        "name": "治理规则",
+        "type": "menu",
+        "module": "ai",
+        "resource": "governanceRule",
+        "path": "/ai/governance-rule",
+        "component": "modules/ai/views/governance-rule.vue",
+        "icon": "icon-set",
+        "sort_order": 8,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_governance_rule_add", "name": "新增", "type": "button", "permission": "ai:governanceRule:add", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_delete", "name": "删除", "type": "button", "permission": "ai:governanceRule:delete", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_update", "name": "修改", "type": "button", "permission": "ai:governanceRule:update", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_page", "name": "分页查询", "type": "button", "permission": "ai:governanceRule:page", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_info", "name": "详情", "type": "button", "permission": "ai:governanceRule:info", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_toggle", "name": "启停", "type": "button", "permission": "ai:governanceRule:toggle", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_match", "name": "测试匹配", "type": "button", "permission": "ai:governanceRule:match", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_ai_governance_event",
+        "name": "治理事件",
+        "type": "menu",
+        "module": "ai",
+        "resource": "governanceEvent",
+        "path": "/ai/governance-event",
+        "component": "modules/ai/views/governance-event.vue",
+        "icon": "icon-log",
+        "sort_order": 9,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_governance_event_page", "name": "分页查询", "type": "button", "permission": "ai:governanceEvent:page", "role_codes": ["admin"] },
+          { "code": "ai_governance_event_info", "name": "详情", "type": "button", "permission": "ai:governanceEvent:info", "role_codes": ["admin"] },
+          { "code": "ai_governance_event_list", "name": "列表查询", "type": "button", "permission": "ai:governanceEvent:list", "role_codes": ["admin"] },
+          { "code": "ai_governance_event_stats", "name": "统计", "type": "button", "permission": "ai:governanceEvent:stats", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_ai_dashboard",
+        "name": "成本看板",
+        "type": "menu",
+        "module": "ai",
+        "resource": "dashboard",
+        "path": "/ai/dashboard",
+        "component": "modules/ai/views/dashboard.vue",
+        "icon": "icon-dashboard-ai",
+        "sort_order": 10,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_dashboard_cost", "name": "成本统计", "type": "button", "permission": "ai:dashboard:cost", "role_codes": ["admin"] }
         ]
       },
       {

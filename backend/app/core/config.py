@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     APP_NAME: str  # 启动时自动从 .env 中读取
     APP_VERSION: str  # 启动时自动从 .env 中读取
     DEBUG: bool  # 启动时自动从 .env 中读取
+    LOG_LEVEL: str = ""
+    LOG_DIR: str = "logs"
+    LOG_RETENTION_DAYS: int = 30
     EPS_ENABLED: str = ""
 
     # 服务器配置
@@ -118,6 +121,19 @@ class Settings(BaseSettings):
             if lowered in {"0", "false", "no", "off", "release", "production", "prod"}:
                 return False
         return bool(value)
+
+    @property
+    def effective_log_level(self) -> str:
+        """应用日志级别；未显式设置 LOG_LEVEL 时兼容旧 DEBUG 行为。"""
+        value = (self.LOG_LEVEL or "").strip().upper()
+        if value:
+            return value
+        return "DEBUG" if self.DEBUG else "INFO"
+
+    @property
+    def db_echo_enabled(self) -> bool:
+        """只有有效日志级别为 DEBUG 时才输出 SQL 查询日志。"""
+        return self.effective_log_level == "DEBUG"
 
     @property
     def cors_origins_list(self) -> List[str]:

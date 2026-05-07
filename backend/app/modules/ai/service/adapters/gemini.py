@@ -79,6 +79,18 @@ class GeminiAdapter(BaseHttpAdapter):
         data, _ = self._get(f"/models?key={self.api_key or ''}", self._headers())
         return {"success": True, "count": len(data.get("models", []))}
 
+    def list_models(self) -> list[dict[str, Any]]:
+        data, _ = self._get(f"/models?key={self.api_key or ''}", self._headers())
+        result: list[dict[str, Any]] = []
+        for item in data.get("models", []):
+            if not isinstance(item, dict):
+                continue
+            raw_name = item.get("name") or ""
+            code = raw_name.removeprefix("models/") or item.get("displayName")
+            if code:
+                result.append({"code": str(code), "name": str(item.get("displayName") or code)})
+        return result
+
 
 def _gemini_content(message: dict[str, Any]) -> dict:
     role = "model" if message.get("role") == "assistant" else "user"

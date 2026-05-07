@@ -74,6 +74,7 @@ const Table = useTable({
 		{ label: t('厂商'), prop: 'providerName', minWidth: 140 },
 		{ label: t('模型'), prop: 'modelName', minWidth: 150 },
 		{ label: t('调用配置'), prop: 'profileName', minWidth: 150 },
+		{ label: t('用户'), prop: 'username', minWidth: 130 },
 		{ label: t('场景'), prop: 'scenario', minWidth: 120 },
 		{ label: t('类型'), prop: 'modelType', minWidth: 100, formatter: ({ modelType }: any) => optionLabel(modelTypeOptions, modelType) },
 		{ label: t('状态'), prop: 'status', minWidth: 110, formatter: ({ status }: any) => optionLabel(statusOptions, status) },
@@ -81,6 +82,7 @@ const Table = useTable({
 		{ label: 'Prompt Tokens', prop: 'promptTokens', minWidth: 130 },
 		{ label: 'Completion Tokens', prop: 'completionTokens', minWidth: 160 },
 		{ label: 'Total Tokens', prop: 'totalTokens', minWidth: 120 },
+		{ label: 'Cost(USD)', prop: 'costUsd', minWidth: 110 },
 		{ label: 'Request ID', prop: 'requestId', minWidth: 180, showOverflowTooltip: true },
 		{ label: t('错误信息'), prop: 'errorMessage', minWidth: 240, showOverflowTooltip: true },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 }

@@ -18,6 +18,9 @@ from app.modules.ai.model.ai import (
     AiCatalogImportRequest,
     AiImageRequest,
     AiGenerationTask,
+    AiGovernanceEvent,
+    AiGovernanceRule,
+    AiRuntimeInvocation,
     AiModel,
     AiModelCallLog,
     AiModelCallLogRead,
@@ -31,12 +34,13 @@ from app.modules.ai.model.ai import (
     AiResponseFormatRequest,
     AiTaskSubmitRequest,
 )
+from app.celery_app import AI_TASK_QUEUES, celery_app
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
 from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter, DeepSeekAdapter, VolcengineArkAdapter
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
-from app.modules.ai.service.ai_service import AiGenerationTaskService, AiModelCallLogService, AiModelProfileService, AiModelRegistryService, AiModelRuntimeService, AiModelService, AiProviderService
+from app.modules.ai.service.ai_service import AiGenerationTaskService, AiGovernanceCleanupService, AiGovernanceRuleService, AiModelCallLogService, AiModelProfileService, AiModelRegistryService, AiModelRuntimeService, AiModelService, AiProviderService
 from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
 
 
@@ -201,7 +205,7 @@ class AiModuleTestCase(unittest.TestCase):
             def chat(self, *, model, messages, options):
                 return {"content": "ok", "raw": {"id": "1"}, "usage": {"promptTokens": 1, "completionTokens": 2, "totalTokens": 3}}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             result = AiModelRuntimeService(self.session).chat(
                 AiChatRequest(messages=[{"role": "user", "content": "hi"}])
             )
@@ -226,7 +230,7 @@ class AiModuleTestCase(unittest.TestCase):
             def chat(self, *, model, messages, options):
                 return {"content": "ok", "raw": {"id": "1"}, "usage": {"totalTokens": 3}, "requestId": "upstream-1"}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
 
         log = self.session.exec(select(AiModelCallLog)).one()
@@ -253,7 +257,7 @@ class AiModuleTestCase(unittest.TestCase):
                 yield {"event": "delta", "content": "llo"}
                 yield {"event": "done", "usage": {"promptTokens": 1, "completionTokens": 2, "totalTokens": 3}, "requestId": "stream-1"}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             chunks = list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.5})))
 
         events = _parse_sse_chunks(chunks)
@@ -265,6 +269,33 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(log.status, "success")
         self.assertEqual(log.request_id, "stream-1")
         self.assertEqual(log.total_tokens, 3)
+
+    def test_runtime_stream_chat_client_close_releases_invocation(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            def stream_chat(self, *, model, messages, options):
+                yield {"event": "delta", "content": "partial"}
+                yield {"event": "done", "usage": {"totalTokens": 1}}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            stream = AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+            next(stream)
+            stream.close()
+
+        invocation = self.session.exec(select(AiRuntimeInvocation)).one()
+        self.assertEqual(invocation.status, "error")
+        self.assertIsNotNone(invocation.finished_at)
 
     def test_runtime_stream_chat_structured_done_parse_error_does_not_fail(self):
         provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
@@ -283,7 +314,7 @@ class AiModuleTestCase(unittest.TestCase):
             def stream_chat(self, *, model, messages, options):
                 yield {"event": "delta", "content": "not json"}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
 
         self.assertEqual(events[-1]["event"], "done")
@@ -307,7 +338,7 @@ class AiModuleTestCase(unittest.TestCase):
             def stream_chat(self, *, model, messages, options):
                 raise UnsupportedCapabilityError("no stream")
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
 
         self.assertEqual(events[-1]["event"], "error")
@@ -347,7 +378,7 @@ class AiModuleTestCase(unittest.TestCase):
                     raise RuntimeError("primary failed")
                 yield {"event": "delta", "content": "fallback ok"}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)):
             events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
 
         self.assertEqual(events[-1]["event"], "done")
@@ -361,7 +392,7 @@ class AiModuleTestCase(unittest.TestCase):
                 yield {"event": "delta", "content": "partial"}
                 raise RuntimeError("late failed")
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=LateFailAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=LateFailAdapter()):
             late_events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
 
         self.assertEqual(late_events[-1]["event"], "error")
@@ -528,7 +559,7 @@ class AiModuleTestCase(unittest.TestCase):
                     raise RuntimeError("primary failed")
                 return {"content": "fallback ok", "raw": {"id": "2"}, "usage": {"totalTokens": 5}, "requestId": "fallback-req"}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)):
             result = AiModelRuntimeService(self.session).chat(
                 AiChatRequest(messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.2})
             )
@@ -570,7 +601,7 @@ class AiModuleTestCase(unittest.TestCase):
                 seen_options.update(options)
                 return {"content": '{"ok": true}', "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
 
         self.assertEqual(seen_options["response_format"], {"type": "json_object"})
@@ -603,7 +634,7 @@ class AiModuleTestCase(unittest.TestCase):
                 seen_options.update(options)
                 return {"content": '{"answer": "ok"}', "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             result = AiModelRuntimeService(self.session).chat(AiChatRequest(profile_code=profile.code, messages=[{"role": "user", "content": "hi"}]))
 
         self.assertEqual(seen_options["response_format"]["type"], "json_schema")
@@ -637,7 +668,7 @@ class AiModuleTestCase(unittest.TestCase):
                 seen_options.update(options)
                 return {"content": '{"ok": true}', "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             AiModelRuntimeService(self.session).chat(
                 AiChatRequest(
                     messages=[{"role": "user", "content": "hi"}],
@@ -672,7 +703,7 @@ class AiModuleTestCase(unittest.TestCase):
             def chat(self, *, model, messages, options):
                 return {"content": "not json", "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
 
         self.assertTrue(result["success"])
@@ -1281,7 +1312,7 @@ class AiModuleTestCase(unittest.TestCase):
                 return {"content": "ok", "raw": {"timeout": self.timeout}, "usage": {}}
 
         adapter = FakeAdapter()
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=adapter):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=adapter):
             result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
 
         self.assertEqual(result["raw"]["timeout"], 7.0)
@@ -1303,7 +1334,7 @@ class AiModuleTestCase(unittest.TestCase):
         class FakeAsyncResult:
             id = "celery-1"
 
-        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.delay", return_value=FakeAsyncResult()):
+        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", return_value=FakeAsyncResult()):
             submitted = AiGenerationTaskService(self.session).submit(
                 AiTaskSubmitRequest(
                     task_type="chat",
@@ -1319,7 +1350,7 @@ class AiModuleTestCase(unittest.TestCase):
             def chat(self, *, model, messages, options):
                 return {"content": "ok", "raw": {}, "usage": {"totalTokens": 1}}
 
-        with patch("app.modules.ai.service.ai_service.build_adapter", return_value=FakeAdapter()), patch("app.modules.ai.tasks.generation_tasks.engine", self.engine):
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()), patch("app.modules.ai.tasks.generation_tasks.engine", self.engine):
             result = execute_ai_generation_task.run(task.id)
 
         self.assertTrue(result["success"])
@@ -1329,8 +1360,32 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(saved.progress, 100)
         self.assertIn("ok", saved.result_payload)
 
+    def test_ai_generation_task_uses_isolated_queue_and_declares_worker_queues(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="image-test", name="Image Test", model_type="image", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-image", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAsyncResult:
+            id = "celery-image-1"
+
+        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", return_value=FakeAsyncResult()) as mocked:
+            AiGenerationTaskService(self.session).submit(AiTaskSubmitRequest(task_type="image", payload={"prompt": "hi"}))
+
+        self.assertEqual(mocked.call_args.kwargs["queue"], "ai.image")
+        declared_queues = {queue.name for queue in celery_app.conf.task_queues}
+        self.assertIn("default", declared_queues)
+        self.assertTrue(set(AI_TASK_QUEUES).issubset(declared_queues))
+
     def test_ai_generation_task_submit_marks_failed_when_enqueue_fails(self):
-        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.delay", side_effect=RuntimeError("broker down")):
+        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", side_effect=RuntimeError("broker down")):
             with self.assertRaises(HTTPException) as ctx:
                 AiGenerationTaskService(self.session).submit(AiTaskSubmitRequest(task_type="chat", payload={"messages": []}))
 
@@ -1378,7 +1433,7 @@ class AiModuleTestCase(unittest.TestCase):
         class FakeAsyncResult:
             id = "retry-1"
 
-        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.delay", return_value=FakeAsyncResult()):
+        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", return_value=FakeAsyncResult()):
             retry = AiGenerationTaskService(self.session).retry(task.id)
         self.assertTrue(retry["success"])
         self.session.refresh(task)
@@ -1389,6 +1444,222 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertTrue(cancel["success"])
         self.session.refresh(task)
         self.assertEqual(task.status, "cancelled")
+
+    def test_governance_global_request_limit_blocks_runtime(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.add(AiGovernanceRule(code="global-one", name="Global One", scope_type="global", period="day", max_requests=1, is_active=True))
+        self.session.add(AiModelCallLog(provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success"))
+        self.session.commit()
+
+        with self.assertRaises(HTTPException) as ctx:
+            AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertEqual(ctx.exception.status_code, 429)
+        event = self.session.exec(select(AiGovernanceEvent)).one()
+        self.assertEqual(event.event_type, "blocked")
+        self.assertEqual(event.metric, "request")
+
+    def test_governance_concurrent_limit_releases_after_call(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.add(AiGovernanceRule(code="conc-one", name="Concurrent One", scope_type="profile", profile_id=profile.id, period="day", max_concurrent=1, is_active=True))
+        self.session.commit()
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            first = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+            second = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertTrue(first["success"])
+        self.assertTrue(second["success"])
+
+    def test_governance_cost_calculation_records_log_cost(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", pricing_config='{"input_per_1m": 2, "output_per_1m": 4}', is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "usage": {"promptTokens": 1_000_000, "completionTokens": 500_000, "totalTokens": 1_500_000}}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        log = self.session.exec(select(AiModelCallLog)).one()
+        self.assertEqual(log.cost_micro_usd, 4_000_000)
+
+    def test_governance_token_limit_blocks_before_adapter_call(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.add(AiGovernanceRule(code="token-rule", name="Token Rule", scope_type="global", period="day", max_tokens=100, is_active=True))
+        self.session.add(AiModelCallLog(provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success", total_tokens=100))
+        self.session.commit()
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter") as mocked_build_adapter:
+            with self.assertRaises(HTTPException) as ctx:
+                AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertEqual(ctx.exception.status_code, 429)
+        mocked_build_adapter.assert_not_called()
+        event = self.session.exec(select(AiGovernanceEvent)).one()
+        self.assertEqual(event.event_type, "blocked")
+        self.assertEqual(event.metric, "token")
+
+    def test_governance_cost_limit_blocks_before_adapter_call(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.add(AiGovernanceRule(code="cost-rule", name="Cost Rule", scope_type="global", period="day", max_cost_micro_usd=100, is_active=True))
+        self.session.add(AiModelCallLog(provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success", cost_micro_usd=100))
+        self.session.commit()
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter") as mocked_build_adapter:
+            with self.assertRaises(HTTPException) as ctx:
+                AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertEqual(ctx.exception.status_code, 429)
+        mocked_build_adapter.assert_not_called()
+        event = self.session.exec(select(AiGovernanceEvent)).one()
+        self.assertEqual(event.event_type, "blocked")
+        self.assertEqual(event.metric, "cost")
+
+    def test_governance_observe_token_limit_records_event_without_blocking(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.add(AiGovernanceRule(code="observe-token-rule", name="Observe Token Rule", scope_type="global", period="day", max_tokens=100, mode="observe", is_active=True))
+        self.session.add(AiModelCallLog(provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success", total_tokens=100))
+        self.session.commit()
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()) as mocked_build_adapter:
+            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertTrue(result["success"])
+        mocked_build_adapter.assert_called_once()
+        events = self.session.exec(select(AiGovernanceEvent)).all()
+        self.assertTrue(any(event.event_type == "blocked" and event.metric == "token" for event in events))
+
+    def test_governance_post_usage_does_not_double_count_current_call(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", pricing_config='{"input_per_1m": 1, "output_per_1m": 1}', is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        self.session.add(profile)
+        self.session.add(AiGovernanceRule(code="token-rule", name="Token Rule", scope_type="global", period="day", max_tokens=100, is_active=True))
+        self.session.add(AiGovernanceRule(code="cost-rule", name="Cost Rule", scope_type="global", period="day", max_cost_micro_usd=100, is_active=True))
+        self.session.commit()
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "usage": {"promptTokens": 30, "completionTokens": 30, "totalTokens": 60}}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertEqual(len(self.session.exec(select(AiModelCallLog)).all()), 1)
+        self.assertEqual(len(self.session.exec(select(AiGovernanceEvent)).all()), 0)
+
+    def test_provider_sync_models_creates_inactive_new_models(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+
+        class FakeAdapter:
+            def list_models(self):
+                return [{"code": "new-model", "name": "New Model"}]
+
+        with patch("app.modules.ai.service.provider_service.build_adapter", return_value=FakeAdapter()):
+            result = AiProviderService(self.session).sync_models(provider.id)
+
+        self.assertEqual(result["created"], 1)
+        model = self.session.exec(select(AiModel).where(AiModel.code == "new-model")).one()
+        self.assertFalse(model.is_active)
+
+    def test_governance_cleanup_clears_payload_and_deletes_old_logs(self):
+        old = datetime.utcnow().replace(year=2020)
+        task = AiGenerationTask(task_type="chat", request_payload='{"x":1}', result_payload='{"y":2}', status="success")
+        log = AiModelCallLog(model_type="chat", status="success")
+        event = AiGovernanceEvent(event_type="blocked", metric="request")
+        self.session.add(task)
+        self.session.add(log)
+        self.session.add(event)
+        self.session.commit()
+        task.created_at = old
+        log.created_at = old
+        event.created_at = old
+        self.session.add(task)
+        self.session.add(log)
+        self.session.add(event)
+        self.session.commit()
+
+        result = AiGovernanceCleanupService(self.session).clean(90, 180, 180)
+
+        self.assertEqual(result["taskPayloadCleared"], 1)
+        self.session.refresh(task)
+        self.assertIsNone(task.request_payload)
+        self.assertIsNone(task.result_payload)
+        self.assertEqual(len(self.session.exec(select(AiModelCallLog)).all()), 0)
+        self.assertEqual(len(self.session.exec(select(AiGovernanceEvent)).all()), 0)
 
 
 if __name__ == "__main__":

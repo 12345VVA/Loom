@@ -3,7 +3,7 @@ AI 模型管理接口。
 """
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
 from app.modules.ai.model.ai import AiModelCreateRequest, AiModelRead, AiModelUpdateRequest
-from app.modules.ai.service.ai_service import AiModelService
+from app.modules.ai.service.model_service import AiModelService
 
 
 @CoolController(

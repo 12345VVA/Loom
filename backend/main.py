@@ -31,7 +31,11 @@ from app.modules import (
     load_module_runtime_infos,
 )
 
-configure_logging(settings.DEBUG)
+configure_logging(
+    log_level=settings.effective_log_level,
+    log_dir=settings.LOG_DIR,
+    retention_days=settings.LOG_RETENTION_DAYS,
+)
 
 
 @asynccontextmanager

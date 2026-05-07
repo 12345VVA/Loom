@@ -14,6 +14,9 @@
 				<template #slot-test="{ scope }">
 					<el-button text type="primary" @click="testProvider(scope.row)">{{ $t('测试') }}</el-button>
 				</template>
+				<template #slot-sync="{ scope }">
+					<el-button text type="primary" @click="syncModels(scope.row)">{{ $t('同步模型') }}</el-button>
+				</template>
 			</cl-table>
 		</cl-row>
 
@@ -56,6 +59,7 @@ import { useI18n } from 'vue-i18n';
 
 const { service } = useCool();
 const { t } = useI18n();
+const aiService = service.ai as any;
 
 const adapterOptions = [
 	{ label: 'OpenAI Compatible', value: 'openai-compatible' },
@@ -127,8 +131,8 @@ const Table = useTable({
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
 		{
 			type: 'op',
-			width: 260,
-			buttons: ['edit', 'delete', 'slot-test']
+			width: 340,
+			buttons: ['edit', 'delete', 'slot-test', 'slot-sync']
 		}
 	]
 });
@@ -166,6 +170,15 @@ async function testProvider(row: any) {
 		ElMessage.success(res?.message || t('连接测试成功'));
 	} catch (err: any) {
 		ElMessage.error(err.message || t('连接测试失败'));
+	}
+}
+
+async function syncModels(row: any) {
+	try {
+		const res = await aiService.provider.syncModels({ id: row.id });
+		ElMessage.success(`${t('同步完成')}，${t('新增')}: ${res?.created || 0}`);
+	} catch (err: any) {
+		ElMessage.error(err.message || t('同步失败'));
 	}
 }
 </script>

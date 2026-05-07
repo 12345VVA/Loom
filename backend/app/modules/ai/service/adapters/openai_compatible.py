@@ -58,3 +58,15 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         models = self.client.models.list()
         data = models.model_dump(mode="json").get("data", []) if hasattr(models, "model_dump") else []
         return {"success": True, "count": len(data)}
+
+    def list_models(self) -> list[dict[str, Any]]:
+        models = self.client.models.list()
+        data = models.model_dump(mode="json").get("data", []) if hasattr(models, "model_dump") else []
+        result: list[dict[str, Any]] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            code = item.get("id") or item.get("name")
+            if code:
+                result.append({"code": str(code), "name": str(item.get("name") or code)})
+        return result
