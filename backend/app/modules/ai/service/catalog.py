@@ -56,6 +56,9 @@ AI_MODEL_CATALOG = [
             {"code": "qwen-plus", "name": "Qwen Plus", "model_type": "chat", "capabilities": "chat,stream,tools"},
             {"code": "qwen-max", "name": "Qwen Max", "model_type": "chat", "capabilities": "chat,stream,tools"},
             {"code": "text-embedding-v4", "name": "Text Embedding V4", "model_type": "embedding", "capabilities": "embedding"},
+            {"code": "wan2.6-t2i", "name": "Wan 2.6 Text to Image", "model_type": "image", "capabilities": "image,text-to-image"},
+            {"code": "wan2.5-t2i-preview", "name": "Wan 2.5 Text to Image Preview", "model_type": "image", "capabilities": "image,text-to-image"},
+            {"code": "wan2.2-t2i-flash", "name": "Wan 2.2 Text to Image Flash", "model_type": "image", "capabilities": "image,text-to-image"},
         ],
     },
     {

@@ -349,10 +349,11 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
 
             endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(
+            _add_api_route_per_method(
+                router,
                 action.path,
                 endpoint,
-                methods=list(_crud_route_methods(action)),
+                methods=_crud_route_methods(action),
                 response_model=response_model,
                 response_model_exclude_none=bool(meta.info_ignore_property),
                 summary=action.summary,
@@ -423,7 +424,14 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
 
             endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(action.path, endpoint, methods=list(_crud_route_methods(action)), response_model=response_model, summary=action.summary)
+            _add_api_route_per_method(
+                router,
+                action.path,
+                endpoint,
+                methods=_crud_route_methods(action),
+                response_model=response_model,
+                summary=action.summary,
+            )
         elif action.name == "info":
             response_model = meta.info_response_model
             if meta.info_param_type is int:
@@ -685,6 +693,11 @@ def _register_service_routes(router: APIRouter, meta: CoolControllerMeta) -> Non
         endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{config.method}"
         _tag_generated_endpoint(endpoint, meta.scope)
         router.add_api_route(f"/{config.method}", endpoint, methods=["POST"], summary=config.summary or config.method)
+
+
+def _add_api_route_per_method(router: APIRouter, path: str, endpoint, *, methods: tuple[str, ...], **kwargs) -> None:
+    for method in methods:
+        router.add_api_route(path, endpoint, methods=[method], **kwargs)
 
 
 def _tag_generated_endpoint(endpoint, scope: str) -> None:

@@ -481,6 +481,37 @@ class AiModuleTestCase(unittest.TestCase):
 
         self.assertEqual([item["code"] for item in result], ["image-profile"])
         self.assertEqual(result[0]["modelType"], "image")
+        self.assertEqual(result[0]["modelCode"], "image-model")
+        self.assertEqual(result[0]["providerCode"], "openai")
+        self.assertEqual(result[0]["providerAdapter"], "openai-compatible")
+
+    def test_profile_list_decorates_model_capabilities(self):
+        provider = AiProvider(code="bailian-custom", name="Custom Provider", adapter="bailian", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(
+            provider_id=provider.id,
+            code="wan2.6-t2i",
+            name="Wan Image",
+            model_type="image",
+            capabilities="image,text-to-image",
+            is_active=True,
+        )
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        self.session.add(AiModelProfile(code="wan-image", name="Wan Image", model_id=model.id, scenario="default", is_active=True))
+        self.session.commit()
+
+        result = AiModelProfileService(self.session).list(
+            CrudQuery(raw_params={"modelType": "image"}, eq_filters={"is_active": True})
+        )
+
+        self.assertEqual(result[0]["providerCode"], "bailian-custom")
+        self.assertEqual(result[0]["providerAdapter"], "bailian")
+        self.assertEqual(result[0]["modelCode"], "wan2.6-t2i")
+        self.assertEqual(result[0]["modelCapabilities"], "image,text-to-image")
 
     def test_model_page_does_not_use_profile_model_type_filter(self):
         provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
@@ -784,6 +815,10 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertTrue(second["success"])
         self.assertEqual(saved.api_key_cipher, old_cipher)
         self.assertGreaterEqual(len(self.session.exec(select(AiModel)).all()), 1)
+        models = self.session.exec(select(AiModel).where(AiModel.provider_id == provider.id)).all()
+        image_model = next(item for item in models if item.code == "wan2.6-t2i")
+        self.assertEqual(image_model.model_type, "image")
+        self.assertEqual(image_model.capabilities, "image,text-to-image")
 
     def test_deepseek_catalog_import_is_idempotent(self):
         service = AiProviderService(self.session)
@@ -932,6 +967,160 @@ class AiModuleTestCase(unittest.TestCase):
             result = adapter.test()
 
         self.assertTrue(result["success"])
+
+    def test_bailian_adapter_wan26_sync_image_normalizes_payload_and_result(self):
+        provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
+        adapter = BailianAdapter(provider)
+
+        class FakeResponse:
+            headers = {"x-request-id": "bailian-sync-1"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"output": {"choices": [{"message": {"content": [{"image": "https://example.com/wan26.png"}]}}]}}
+
+        with patch("httpx.post", return_value=FakeResponse()) as mocked:
+            result = adapter.image(model="wan2.6-t2i", prompt="draw", options={"size": "1024x1024", "watermark": False})
+
+        self.assertEqual(str(mocked.call_args.args[0]), "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")
+        payload = mocked.call_args.kwargs["json"]
+        self.assertEqual(payload["model"], "wan2.6-t2i")
+        self.assertEqual(payload["input"]["messages"][0]["content"][0]["text"], "draw")
+        self.assertEqual(payload["parameters"]["size"], "1024*1024")
+        self.assertFalse(payload["parameters"]["watermark"])
+        self.assertEqual(result["data"][0]["url"], "https://example.com/wan26.png")
+        self.assertEqual(result["requestId"], "bailian-sync-1")
+
+    def test_bailian_adapter_wan26_sync_rejects_negative_prompt(self):
+        provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
+        adapter = BailianAdapter(provider)
+
+        with self.assertRaises(HTTPException) as ctx:
+            adapter.image(model="wan2.6-t2i", prompt="draw", options={"negative_prompt": "blur"})
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("negative_prompt", str(ctx.exception.detail))
+
+    def test_bailian_adapter_wan26_async_keeps_negative_prompt(self):
+        provider = AiProvider(
+            code="bailian",
+            name="百炼",
+            adapter="bailian",
+            api_key_cipher=encrypt_secret("sk"),
+            extra_config='{"image_poll_interval_seconds":0,"image_poll_timeout_seconds":1}',
+        )
+        adapter = BailianAdapter(provider)
+
+        class PostResponse:
+            headers = {"x-request-id": "create-req"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"output": {"task_id": "task-1"}}
+
+        class GetResponse:
+            headers = {"x-request-id": "poll-req"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"output": {"task_status": "SUCCEEDED", "results": [{"url": "https://example.com/wan26-async.png"}]}}
+
+        with patch("httpx.post", return_value=PostResponse()) as mocked_post:
+            with patch("httpx.get", return_value=GetResponse()):
+                result = adapter.image(model="wan2.6-t2i", prompt="draw", options={"async": True, "negativePrompt": "blur"})
+
+        self.assertEqual(str(mocked_post.call_args.args[0]), "https://dashscope.aliyuncs.com/api/v1/services/aigc/image-generation/generation")
+        self.assertEqual(mocked_post.call_args.kwargs["headers"]["X-DashScope-Async"], "enable")
+        payload = mocked_post.call_args.kwargs["json"]
+        self.assertEqual(payload["input"]["negative_prompt"], "blur")
+        self.assertNotIn("negative_prompt", payload["parameters"])
+        self.assertEqual(result["data"][0]["url"], "https://example.com/wan26-async.png")
+
+    def test_bailian_adapter_legacy_async_image_polls_task_and_uses_workspace(self):
+        provider = AiProvider(
+            code="bailian",
+            name="百炼",
+            adapter="bailian",
+            api_key_cipher=encrypt_secret("sk"),
+            extra_config='{"workspace_id":"ws-1","image_poll_interval_seconds":0,"image_poll_timeout_seconds":1}',
+        )
+        adapter = BailianAdapter(provider)
+
+        class PostResponse:
+            headers = {"x-request-id": "create-req"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"output": {"task_id": "task-1"}}
+
+        class GetResponse:
+            headers = {"x-request-id": "poll-req"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"output": {"task_status": "SUCCEEDED", "results": [{"url": "https://example.com/legacy.png"}]}}
+
+        with patch("httpx.post", return_value=PostResponse()) as mocked_post:
+            with patch("httpx.get", return_value=GetResponse()) as mocked_get:
+                result = adapter.image(model="wan2.5-t2i-preview", prompt="draw", options={"size": "1024x1024", "negative_prompt": "blur"})
+
+        self.assertEqual(str(mocked_post.call_args.args[0]), "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis")
+        self.assertEqual(mocked_post.call_args.kwargs["headers"]["X-DashScope-Async"], "enable")
+        self.assertEqual(mocked_post.call_args.kwargs["headers"]["X-DashScope-WorkSpace"], "ws-1")
+        payload = mocked_post.call_args.kwargs["json"]
+        self.assertEqual(payload["input"]["prompt"], "draw")
+        self.assertEqual(payload["input"]["negative_prompt"], "blur")
+        self.assertEqual(payload["parameters"]["size"], "1024*1024")
+        self.assertEqual(str(mocked_get.call_args.args[0]), "https://dashscope.aliyuncs.com/api/v1/tasks/task-1")
+        self.assertEqual(result["data"][0]["url"], "https://example.com/legacy.png")
+        self.assertEqual(result["taskId"], "task-1")
+        self.assertEqual(result["requestId"], "poll-req")
+
+    def test_bailian_adapter_async_image_failure_includes_task_id(self):
+        provider = AiProvider(
+            code="bailian",
+            name="百炼",
+            adapter="bailian",
+            api_key_cipher=encrypt_secret("sk"),
+            extra_config='{"image_poll_interval_seconds":0,"image_poll_timeout_seconds":1}',
+        )
+        adapter = BailianAdapter(provider)
+
+        class PostResponse:
+            headers = {"x-request-id": "create-req"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"output": {"task_id": "task-failed"}}
+
+        class GetResponse:
+            headers = {"x-request-id": "poll-failed"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"output": {"task_status": "FAILED", "message": "bad prompt"}}
+
+        with patch("httpx.post", return_value=PostResponse()):
+            with patch("httpx.get", return_value=GetResponse()):
+                with self.assertRaises(Exception) as ctx:
+                    adapter.image(model="wan2.2-t2i-flash", prompt="draw", options={})
+
+        self.assertIn("bad prompt", str(ctx.exception))
+        self.assertIn("task-failed", str(ctx.exception))
 
     def test_deepseek_adapter_test_uses_models_endpoint(self):
         provider = AiProvider(code="deepseek", name="DeepSeek", adapter="deepseek", api_key_cipher=encrypt_secret("sk"))

@@ -26,7 +26,22 @@
 			<cl-pagination />
 		</cl-row>
 
-		<cl-upsert ref="Upsert" />
+		<cl-upsert ref="Upsert">
+			<template #slot-default-config="{ scope }">
+				<div class="default-config-editor">
+					<div class="default-config-editor__tools">
+						<span>{{ defaultConfigHint(scope) }}</span>
+						<el-button text type="primary" @click="fillDefaultConfig(scope)">{{ $t('填充示例') }}</el-button>
+					</div>
+					<el-input
+						v-model="scope.defaultConfig"
+						type="textarea"
+						:rows="6"
+						:placeholder="defaultConfigPlaceholder(scope)"
+					/>
+				</div>
+			</template>
+		</cl-upsert>
 	</cl-crud>
 </template>
 
@@ -94,7 +109,7 @@ const Upsert = useUpsert({
 		{
 			label: t('默认参数'),
 			prop: 'defaultConfig',
-			component: { name: 'el-input', props: { type: 'textarea', rows: 5, placeholder: '{"temperature": 0.7}' } }
+			component: { name: 'slot-default-config' }
 		},
 		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } },
 		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } }
@@ -142,6 +157,43 @@ function splitCapabilities(value?: string) {
 function optionLabel(options: { label: string; value: string }[], value: string) {
 	return options.find(item => item.value === value)?.label || value || '-';
 }
+
+function defaultConfigHint(scope: any) {
+	if (scope.modelType === 'image') {
+		return t('图片模型常用参数会合并到 options');
+	}
+	if (scope.modelType === 'chat') {
+		return t('对话模型默认参数');
+	}
+	return t('模型默认参数 JSON');
+}
+
+function defaultConfigPlaceholder(scope: any) {
+	return JSON.stringify(defaultConfigTemplate(scope), null, 2);
+}
+
+function fillDefaultConfig(scope: any) {
+	scope.defaultConfig = defaultConfigPlaceholder(scope);
+}
+
+function defaultConfigTemplate(scope: any) {
+	if (scope.modelType === 'image') {
+		return {
+			size: '1024x1024',
+			n: 1,
+			response_format: 'url',
+			watermark: true
+		};
+	}
+	if (scope.modelType === 'embedding') {
+		return {};
+	}
+	return {
+		temperature: 0.7,
+		top_p: 0.9,
+		max_tokens: 1024
+	};
+}
 </script>
 
 <style lang="scss" scoped>
@@ -150,6 +202,19 @@ function optionLabel(options: { label: string; value: string }[], value: string)
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.default-config-editor {
+	width: 100%;
+
+	&__tools {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 8px;
+		color: var(--el-text-color-secondary);
+		font-size: 13px;
+	}
 }
 
 </style>

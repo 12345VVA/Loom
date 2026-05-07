@@ -6,7 +6,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Iterable
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select
 
 from app.modules.base.compat import RESOURCE_COMPATS
@@ -16,8 +16,6 @@ ROUTER_ALIASES: tuple[tuple[str, str], ...] = (
     ("app.modules.base.controller.admin.role", "/admin/base/sys/role"),
     ("app.modules.base.controller.admin.menu", "/admin/base/sys/menu"),
     ("app.modules.base.controller.admin.department", "/admin/base/sys/department"),
-    ("app.modules.dict.controller.admin.type", "/admin/dict/type"),
-    ("app.modules.dict.controller.admin.info", "/admin/dict/info"),
 )
 
 
@@ -50,27 +48,12 @@ def register_compat_aliases(api_router: APIRouter) -> None:
 def _build_dict_compat_router() -> APIRouter:
     router = APIRouter(prefix="/admin/dict/info", tags=["admin", "dict", "info"])
 
-    @router.get("/types", summary="获取字典类型")
-    async def dict_types(session: Session = Depends(_get_session)) -> list[dict]:
-        from app.modules.base.model.sys import SysDict
-
-        rows = list(session.exec(select(SysDict).order_by(SysDict.name.asc())).all())
-        return [{"id": row.id, "key": row.type, "name": row.name} for row in rows]
-
     @router.get("/data", summary="批量获取字典数据")
     async def dict_data_get(
         types: list[str] = Query(default_factory=list),
         session: Session = Depends(_get_session),
     ) -> dict[str, list[dict]]:
         return _build_dict_data_payload(session, types)
-
-    @router.post("/data", summary="批量获取字典数据")
-    async def dict_data_post(
-        payload: dict = Body(default_factory=dict),
-        session: Session = Depends(_get_session),
-    ) -> dict[str, list[dict]]:
-        raw_types = payload.get("types") or []
-        return _build_dict_data_payload(session, raw_types)
 
     return router
 

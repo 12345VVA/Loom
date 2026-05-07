@@ -25,16 +25,35 @@
 			<cl-pagination />
 		</cl-row>
 
-		<cl-upsert ref="Upsert" />
+		<cl-upsert ref="Upsert">
+			<template #slot-extra-config="{ scope }">
+				<div class="extra-config-editor">
+					<div class="extra-config-editor__tools">
+						<span>{{ $t('按适配器填充常用配置') }}</span>
+						<el-button text type="primary" @click="fillExtraConfig(scope)">{{ $t('填充模板') }}</el-button>
+					</div>
+					<el-input
+						v-model="scope.extraConfig"
+						type="textarea"
+						:rows="7"
+						placeholder='{"timeout": 60}'
+					/>
+				</div>
+			</template>
+		</cl-upsert>
 	</cl-crud>
 
 	<el-drawer v-model="catalog.visible" :title="$t('导入模型厂商预设')" size="520px">
 		<el-table :data="catalog.items" border>
 			<el-table-column prop="name" :label="$t('厂商')" min-width="140" />
 			<el-table-column prop="adapter" :label="$t('适配器')" min-width="150" />
-			<el-table-column :label="$t('模型数')" width="90">
+			<el-table-column :label="$t('模型')" min-width="150">
 				<template #default="{ row }">
-					{{ row.models?.length || 0 }}
+					<div class="catalog-types">
+						<el-tag v-for="item in modelTypeStats(row)" :key="item.label" size="small" effect="plain">
+							{{ item.label }} {{ item.value }}
+						</el-tag>
+					</div>
 				</template>
 			</el-table-column>
 			<el-table-column :label="$t('操作')" width="100">
@@ -75,6 +94,21 @@ const adapterOptions = [
 	{ label: 'MiniMax', value: 'minimax' },
 	{ label: '小米 MiMo', value: 'mimo' }
 ];
+const extraConfigTemplates: Record<string, string> = {
+	bailian: JSON.stringify(
+		{
+			timeout: 60,
+			dashscope_base_url: 'https://dashscope.aliyuncs.com/api/v1',
+			workspace_id: '',
+			image_poll_interval_seconds: 2,
+			image_poll_timeout_seconds: 180
+		},
+		null,
+		2
+	),
+	'openai-compatible': JSON.stringify({ timeout: 60, skip_model_list_check: false }, null, 2),
+	'volcengine-ark': JSON.stringify({ timeout: 60 }, null, 2)
+};
 const catalog = reactive({
 	visible: false,
 	items: [] as any[]
@@ -109,7 +143,7 @@ const Upsert = useUpsert({
 		{
 			label: t('扩展配置'),
 			prop: 'extraConfig',
-			component: { name: 'el-input', props: { type: 'textarea', rows: 5, placeholder: '{"timeout": 60}' } }
+			component: { name: 'slot-extra-config' }
 		},
 		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } },
 		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } }
@@ -181,4 +215,47 @@ async function syncModels(row: any) {
 		ElMessage.error(err.message || t('同步失败'));
 	}
 }
+
+function fillExtraConfig(scope: any) {
+	const adapter = scope.adapter || 'openai-compatible';
+	scope.extraConfig = extraConfigTemplates[adapter] || JSON.stringify({ timeout: 60 }, null, 2);
+}
+
+function modelTypeStats(row: any) {
+	const labels: Record<string, string> = {
+		chat: t('对话'),
+		embedding: t('向量'),
+		image: t('图片'),
+		rerank: t('重排'),
+		audio: t('音频'),
+		video: t('视频')
+	};
+	const counts: Record<string, number> = {};
+	(row.models || []).forEach((item: any) => {
+		const type = item.model_type || item.modelType || 'chat';
+		counts[type] = (counts[type] || 0) + 1;
+	});
+	return Object.entries(counts).map(([key, value]) => ({ label: labels[key] || key, value }));
+}
 </script>
+
+<style lang="scss" scoped>
+.extra-config-editor {
+	width: 100%;
+
+	&__tools {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 8px;
+		color: var(--el-text-color-secondary);
+		font-size: 13px;
+	}
+}
+
+.catalog-types {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+</style>

@@ -55,11 +55,20 @@
 
 	<el-drawer v-model="tester.visible" :title="$t('测试调用')" size="440px">
 		<el-form label-position="top">
+			<el-alert v-if="tester.modelType === 'image'" class="mb-12" type="info" :closable="false" show-icon>
+				{{ $t('图片配置会调用统一生图接口，结果可直接预览。') }}
+			</el-alert>
 			<el-form-item :label="$t('提示词')">
 				<el-input v-model="tester.prompt" type="textarea" :rows="6" />
 			</el-form-item>
 			<el-button type="primary" @click="runTest">{{ $t('调用') }}</el-button>
 		</el-form>
+		<div v-if="tester.imageItems.length" class="test-images">
+			<div v-for="(item, index) in tester.imageItems" :key="index" class="test-image">
+				<el-image :src="item.src" fit="contain" :preview-src-list="tester.imageItems.map(i => i.src)" :initial-index="index" preview-teleported />
+				<el-button text type="primary" @click="copyText(item.value)">{{ $t('复制') }}</el-button>
+			</div>
+		</div>
 		<el-input v-if="tester.result" v-model="tester.result" type="textarea" :rows="12" class="result" />
 	</el-drawer>
 </template>
@@ -81,8 +90,10 @@ const { t } = useI18n();
 const tester = reactive({
 	visible: false,
 	id: 0,
+	modelType: '',
 	prompt: '你好，请用一句话介绍你自己。',
-	result: ''
+	result: '',
+	imageItems: [] as { src: string; value: string; url?: string }[]
 });
 
 const responseFormatModes = [
@@ -213,7 +224,10 @@ async function setDefault(row: any) {
 
 function openTest(row: any) {
 	tester.id = row.id;
+	tester.modelType = row.modelType || '';
+	tester.prompt = row.modelType === 'image' ? '一张干净的 AI 内容平台海报，科技感，高质量细节' : '你好，请用一句话介绍你自己。';
 	tester.result = '';
+	tester.imageItems = [];
 	tester.visible = true;
 }
 
@@ -221,6 +235,7 @@ async function runTest() {
 	try {
 		const res = await service.ai.profile.test({ id: tester.id, prompt: tester.prompt });
 		tester.result = JSON.stringify(res, null, 2);
+		tester.imageItems = tester.modelType === 'image' ? extractImageItems(res) : [];
 	} catch (err: any) {
 		ElMessage.error(err.message || t('调用失败'));
 	}
@@ -290,11 +305,93 @@ function stringifyResponseFormat(data: any) {
 function normalizeSingleId(value: any) {
 	return Array.isArray(value) ? value[0] : value;
 }
+
+async function copyText(value: string) {
+	await navigator.clipboard.writeText(value);
+	ElMessage.success(t('已复制'));
+}
+
+function extractImageItems(value: any): { src: string; value: string; url?: string }[] {
+	const items = findImageData(value);
+	return items
+		.map(item => {
+			const url = item?.url || item?.image_url || item?.imageUrl || item?.image;
+			const b64 = item?.b64_json || item?.b64Json || item?.base64;
+			if (url) {
+				return { src: url, value: url, url };
+			}
+			if (b64) {
+				const src = String(b64).startsWith('data:image') ? String(b64) : `data:image/png;base64,${b64}`;
+				return { src, value: String(b64) };
+			}
+			return null;
+		})
+		.filter(Boolean) as { src: string; value: string; url?: string }[];
+}
+
+function findImageData(value: any): any[] {
+	if (!value) {
+		return [];
+	}
+	if (typeof value === 'string') {
+		try {
+			return findImageData(JSON.parse(value));
+		} catch {
+			return [];
+		}
+	}
+	if (Array.isArray(value)) {
+		return value;
+	}
+	if (Array.isArray(value.data)) {
+		return value.data;
+	}
+	if (value.raw) {
+		const rawItems = findImageData(value.raw);
+		if (rawItems.length) {
+			return rawItems;
+		}
+	}
+	if (value.output) {
+		const outputItems = findImageData(value.output);
+		if (outputItems.length) {
+			return outputItems;
+		}
+	}
+	if (value.result) {
+		return findImageData(value.result);
+	}
+	return [];
+}
 </script>
 
 <style lang="scss" scoped>
 .result {
 	margin-top: 16px;
+}
+
+.mb-12 {
+	margin-bottom: 12px;
+}
+
+.test-images {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+	gap: 10px;
+	margin-top: 14px;
+}
+
+.test-image {
+	border: 1px solid var(--el-border-color-lighter);
+	border-radius: 6px;
+	overflow: hidden;
+
+	.el-image {
+		display: block;
+		width: 100%;
+		height: 160px;
+		background: var(--el-fill-color-light);
+	}
 }
 
 .response-format {

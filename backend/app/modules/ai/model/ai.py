@@ -318,7 +318,11 @@ class AiModelProfileRead(BaseModel):
     model_id: int
     model_name: Optional[str] = None
     model_type: Optional[str] = None
+    model_code: Optional[str] = None
+    model_capabilities: Optional[str] = None
     provider_name: Optional[str] = None
+    provider_code: Optional[str] = None
+    provider_adapter: Optional[str] = None
     scenario: str
     temperature: Optional[float] = None
     top_p: Optional[float] = None

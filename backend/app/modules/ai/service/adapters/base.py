@@ -80,9 +80,9 @@ class BaseHttpAdapter:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key or ''}", "Content-Type": "application/json"}
 
-    def _post(self, path: str, payload: dict[str, Any], headers: dict[str, str] | None = None) -> tuple[dict, httpx.Response]:
+    def _post(self, path: str, payload: dict[str, Any], headers: dict[str, str] | None = None, base_url: str | None = None) -> tuple[dict, httpx.Response]:
         response = httpx.post(
-            f"{self.base_url}{path}",
+            f"{(base_url or self.base_url).rstrip('/')}{path}",
             json=payload,
             headers=headers or self._headers(),
             timeout=self.timeout,
@@ -90,9 +90,9 @@ class BaseHttpAdapter:
         self._raise_for_status(response)
         return response.json(), response
 
-    def _get(self, path: str, headers: dict[str, str] | None = None) -> tuple[dict, httpx.Response]:
+    def _get(self, path: str, headers: dict[str, str] | None = None, base_url: str | None = None) -> tuple[dict, httpx.Response]:
         response = httpx.get(
-            f"{self.base_url}{path}",
+            f"{(base_url or self.base_url).rstrip('/')}{path}",
             headers=headers or self._headers(),
             timeout=self.timeout,
         )

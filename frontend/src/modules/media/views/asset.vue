@@ -74,7 +74,14 @@
 				<el-descriptions-item label="MD5">{{ viewer.row.md5 || '-' }}</el-descriptions-item>
 				<el-descriptions-item :label="$t('资源链接')">{{ viewer.row.storageUrl || '-' }}</el-descriptions-item>
 				<el-descriptions-item :label="$t('原始链接')">{{ viewer.row.originalUrl || '-' }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('来源')">{{ optionLabel(sourceTypeOptions, viewer.row.sourceType) }}</el-descriptions-item>
+				<el-descriptions-item label="Provider">{{ viewer.row.providerCode || '-' }}</el-descriptions-item>
+				<el-descriptions-item label="Model">{{ viewer.row.modelCode || '-' }}</el-descriptions-item>
+				<el-descriptions-item label="Profile">{{ viewer.row.profileCode || '-' }}</el-descriptions-item>
 				<el-descriptions-item :label="$t('提示词')">{{ viewer.row.prompt || '-' }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('参数')">
+					<pre class="params-preview">{{ formatJson(viewer.row.paramsPayload) }}</pre>
+				</el-descriptions-item>
 				<el-descriptions-item :label="$t('错误')">{{ viewer.row.errorMessage || '-' }}</el-descriptions-item>
 			</el-descriptions>
 		</div>
@@ -240,6 +247,17 @@ function formatSize(value: number) {
 	return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatJson(value?: string) {
+	if (!value) {
+		return '-';
+	}
+	try {
+		return JSON.stringify(JSON.parse(value), null, 2);
+	} catch {
+		return value;
+	}
+}
+
 function statusType(status: string) {
 	if (status === 'success') {
 		return 'success';
@@ -348,5 +366,12 @@ function iconFor(type: string) {
 
 .asset-preview__audio {
 	width: 100%;
+}
+
+.params-preview {
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+	font-size: 12px;
 }
 </style>

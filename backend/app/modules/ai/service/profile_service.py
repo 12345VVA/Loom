@@ -115,7 +115,11 @@ class AiModelProfileService(BaseAdminCrudService):
         provider = self.session.get(AiProvider, model.provider_id) if model else None
         data["modelName"] = model.name if model else None
         data["modelType"] = model.model_type if model else None
+        data["modelCode"] = model.code if model else None
+        data["modelCapabilities"] = model.capabilities if model else None
         data["providerName"] = provider.name if provider else None
+        data["providerCode"] = provider.code if provider else None
+        data["providerAdapter"] = provider.adapter if provider else None
         return data
 
     def _profile_query(self, query: CrudQuery | None) -> CrudQuery | None:

@@ -58,6 +58,12 @@
 				<pre>{{ formatJson(viewer.row?.requestPayload) }}</pre>
 			</el-tab-pane>
 			<el-tab-pane :label="$t('结果')">
+				<el-descriptions v-if="viewer.row" class="task-meta" border :column="2">
+					<el-descriptions-item label="Task ID">{{ viewer.row.id || '-' }}</el-descriptions-item>
+					<el-descriptions-item :label="$t('状态')">{{ optionLabel(statusOptions, viewer.row.status) }}</el-descriptions-item>
+					<el-descriptions-item :label="$t('配置')">{{ viewer.row.profileCode || '-' }}</el-descriptions-item>
+					<el-descriptions-item :label="$t('进度')">{{ viewer.row.progress ?? '-' }}</el-descriptions-item>
+				</el-descriptions>
 				<div v-if="taskImageItems.length" class="image-results">
 					<div v-for="(item, index) in taskImageItems" :key="index" class="image-result">
 						<el-image
@@ -360,6 +366,10 @@ pre {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 	gap: 12px;
+	margin-bottom: 12px;
+}
+
+.task-meta {
 	margin-bottom: 12px;
 }
 
