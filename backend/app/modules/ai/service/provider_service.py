@@ -91,17 +91,12 @@ class AiProviderService(BaseAdminCrudService):
             code = str(item.get("code") or "").strip()
             if not code:
                 continue
-            exists = self.session.exec(
-                select(AiModel).where(
-                    AiModel.provider_id == provider.id,
-                    AiModel.code == code,
-                    AiModel.model_type == "chat",
-                )
-            ).first()
+            exists = self.session.exec(select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == code)).first()
             if exists:
                 existing_count += 1
                 exists.name = str(item.get("name") or code)
                 exists.delete_time = None
+                exists.is_active = False
                 self.session.add(exists)
                 continue
             self.session.add(
@@ -110,7 +105,7 @@ class AiProviderService(BaseAdminCrudService):
                     code=code,
                     name=str(item.get("name") or code),
                     model_type="chat",
-                    capabilities="chat,stream",
+                    capabilities="sync-pending,manual-classification-required",
                     is_active=False,
                 )
             )

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from openai import OpenAI
 
 from app.modules.ai.model.ai import AiProvider
 from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCapabilityError, normalize_usage
+from app.modules.ai.service.utils import extract_request_id, sanitize_options_for_log, summarize_image_result_items, summarize_prompt
+
+logger = logging.getLogger(__name__)
+_OPENAI_IMAGE_ALLOWED_OPTION_KEYS = {"size", "n", "response_format", "quality", "style", "user"}
 
 
 class OpenAICompatibleAdapter(BaseHttpAdapter):
@@ -41,9 +46,67 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         return {"data": data.get("data", []), "raw": data, "usage": normalize_usage(data.get("usage"))}
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
-        response = self.client.images.generate(model=model, prompt=prompt, **options)
+        normalized_options = dict(options or {})
+        allowed_options = {key: value for key, value in normalized_options.items() if key in _OPENAI_IMAGE_ALLOWED_OPTION_KEYS}
+        dropped_options = {key: value for key, value in normalized_options.items() if key not in _OPENAI_IMAGE_ALLOWED_OPTION_KEYS}
+        logger.info(
+            "OpenAI Compatible 生图上游请求开始",
+            extra={
+                "provider_adapter": self.provider.adapter,
+                "provider_code": self.provider.code,
+                "base_url": self.base_url,
+                "model": model,
+                "prompt": summarize_prompt(prompt),
+                "options": sanitize_options_for_log(normalized_options),
+                "filtered_options": sanitize_options_for_log(allowed_options),
+            },
+        )
+        if dropped_options:
+            logger.warning(
+                "OpenAI Compatible 生图参数已拦截非标准字段",
+                extra={
+                    "provider_adapter": self.provider.adapter,
+                    "provider_code": self.provider.code,
+                    "base_url": self.base_url,
+                    "model": model,
+                    "dropped_option_keys": sorted(dropped_options.keys()),
+                    "dropped_options": sanitize_options_for_log(dropped_options),
+                },
+            )
+        try:
+            response = self.client.images.generate(model=model, prompt=prompt, **allowed_options)
+        except Exception as exc:
+            logger.error(
+                "OpenAI Compatible 生图上游请求失败",
+                extra={
+                    "provider_adapter": self.provider.adapter,
+                    "provider_code": self.provider.code,
+                    "base_url": self.base_url,
+                    "model": model,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    "filtered_options": sanitize_options_for_log(allowed_options),
+                },
+                exc_info=exc,
+            )
+            raise
         data = response.model_dump(mode="json") if hasattr(response, "model_dump") else {}
-        return {"data": data.get("data", []), "raw": data, "usage": {}}
+        request_id = extract_request_id(response)
+        usage = normalize_usage(data.get("usage")) if isinstance(data, dict) else {}
+        logger.info(
+            "OpenAI Compatible 生图上游请求完成",
+            extra={
+                "provider_adapter": self.provider.adapter,
+                "provider_code": self.provider.code,
+                "base_url": self.base_url,
+                "model": model,
+                "upstream_request_id": request_id,
+                "usage": usage,
+                "image_count": len(data.get("data", [])),
+                "images": summarize_image_result_items(data.get("data", [])),
+            },
+        )
+        return {"data": data.get("data", []), "raw": data, "usage": usage, "requestId": request_id}
 
     def audio(self, *, model: str, input: str, options: dict[str, Any]) -> dict:
         raise UnsupportedCapabilityError("OpenAI Compatible 音频接口暂未统一")

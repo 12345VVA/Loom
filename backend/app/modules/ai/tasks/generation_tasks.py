@@ -4,6 +4,7 @@ AI 生成任务 Celery 执行入口。
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 
 from app.celery_app import celery_app
@@ -21,6 +22,8 @@ from app.modules.ai.service.runtime_service import AiModelRuntimeService
 from app.modules.base.model.auth import User
 from app.modules.media.service.media_service import MediaAssetService
 
+logger = logging.getLogger(__name__)
+
 
 @celery_app.task(name="ai.execute_generation_task")
 def execute_ai_generation_task(task_id: int) -> dict:
@@ -37,10 +40,39 @@ def execute_ai_generation_task(task_id: int) -> dict:
         task.error_message = None
         session.add(task)
         session.commit()
+        logger.info(
+            "AI 异步生成任务开始执行",
+            extra={
+                "task_id": task.id,
+                "task_type": task.task_type,
+                "scenario": task.scenario,
+                "profile_code": task.profile_code,
+            },
+        )
 
         try:
             payload = _loads_payload(task.request_payload)
+            logger.info(
+                "AI 异步生成任务载入请求完成",
+                extra={
+                    "task_id": task.id,
+                    "task_type": task.task_type,
+                    "payload_keys": sorted(payload.keys()),
+                    "options_keys": sorted((payload.get("options") or {}).keys()),
+                },
+            )
             result = _invoke_runtime(session, task, payload)
+            logger.info(
+                "AI 异步生成任务运行时调用完成",
+                extra={
+                    "task_id": task.id,
+                    "task_type": task.task_type,
+                    "provider": result.get("provider"),
+                    "model": result.get("model"),
+                    "profile": result.get("profile"),
+                    "request_id": result.get("requestId"),
+                },
+            )
             session.refresh(task)
             if task.status == "cancelled":
                 task.progress = 100
@@ -54,7 +86,9 @@ def execute_ai_generation_task(task_id: int) -> dict:
             task.finished_at = datetime.utcnow()
             session.add(task)
             session.commit()
+            logger.info("AI 异步生成任务结果已持久化", extra={"task_id": task.id, "task_type": task.task_type})
             MediaAssetService(session).create_from_ai_task(task)
+            logger.info("AI 异步生成任务媒体转存完成", extra={"task_id": task.id, "task_type": task.task_type})
             return {"success": True, "taskId": task.id}
         except Exception as exc:
             task.status = "failed"
@@ -63,6 +97,17 @@ def execute_ai_generation_task(task_id: int) -> dict:
             task.finished_at = datetime.utcnow()
             session.add(task)
             session.commit()
+            logger.error(
+                "AI 异步生成任务执行失败",
+                extra={
+                    "task_id": task.id,
+                    "task_type": task.task_type,
+                    "profile_code": task.profile_code,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+                exc_info=exc,
+            )
             return {"success": False, "taskId": task.id, "message": str(exc)}
 
 

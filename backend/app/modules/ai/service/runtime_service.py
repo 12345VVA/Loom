@@ -1,6 +1,7 @@
 """AI 模型统一运行时服务。"""
 from __future__ import annotations
 
+import logging
 import time
 import time as time_module
 from collections.abc import Iterable
@@ -14,8 +15,10 @@ from app.modules.ai.service.adapters import build_adapter
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.governance_service import AiGovernanceBlocked, AiGovernanceService
 from app.modules.ai.service.registry_service import AiModelRegistryService
-from app.modules.ai.service.utils import _adapter_timeout, _calculate_cost_micro_usd, _is_structured_response, _options_without_governance, _parse_content, _sse_event, _with_parsed_content, normalize_response_format
+from app.modules.ai.service.utils import _adapter_timeout, _calculate_cost_micro_usd, _is_structured_response, _options_without_governance, _parse_content, _sse_event, _with_parsed_content, normalize_response_format, sanitize_options_for_log, summarize_image_result_items, summarize_prompt
 from app.modules.base.model.auth import User
+
+logger = logging.getLogger(__name__)
 
 
 class AiModelRuntimeService:
@@ -56,6 +59,20 @@ class AiModelRuntimeService:
     def image(self, payload: AiImageRequest, current_user: User | None = None) -> dict:
         resolved = AiModelRegistryService(self.session).resolve(model_type="image", scenario=payload.scenario, profile_code=payload.profile_code)
         options = {**resolved["options"], **payload.options}
+        logger.info(
+            "AI 生图请求已解析",
+            extra={
+                "method": "image",
+                "scenario": payload.scenario,
+                "profile_code": payload.profile_code,
+                "provider": resolved["provider"].code,
+                "provider_adapter": resolved["provider"].adapter,
+                "model": resolved["model"].code,
+                "resolved_profile": resolved["profile"].code,
+                "prompt": summarize_prompt(payload.prompt),
+                "options": sanitize_options_for_log(options),
+            },
+        )
         return self._invoke(resolved, "image", current_user=current_user, request_options=payload.options, prompt=payload.prompt, options=options)
 
     def rerank(self, payload: AiRerankRequest, current_user: User | None = None) -> dict:
@@ -91,14 +108,43 @@ class AiModelRuntimeService:
         request_options = request_options or {}
         governance = AiGovernanceService(self.session)
         invocation: AiRuntimeInvocation | None = None
+        log_context = {
+            "method": method,
+            "provider": provider.code,
+            "provider_adapter": provider.adapter,
+            "model": model.code,
+            "profile": profile.code,
+            "scenario": profile.scenario,
+        }
         try:
             invocation = governance.begin(user=current_user, provider=provider, model=model, profile=profile)
             adapter = build_adapter(provider)
+            if method == "image":
+                logger.info(
+                    "AI 生图调用开始",
+                    extra={
+                        **log_context,
+                        "prompt": summarize_prompt(kwargs.get("prompt")),
+                        "options": sanitize_options_for_log(kwargs.get("options")),
+                    },
+                )
             result = self._invoke_with_retry(adapter, method, profile, model.code, kwargs)
             usage = result.get("usage") or {}
             cost_micro_usd = _calculate_cost_micro_usd(model, usage)
             governance.finish(invocation, status_value="success", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=cost_micro_usd)
             self._log_call(provider, model, profile, "success", start, usage, user=current_user, cost_micro_usd=cost_micro_usd, request_id=result.get("requestId"))
+            if method == "image":
+                logger.info(
+                    "AI 生图调用成功",
+                    extra={
+                        **log_context,
+                        "latency_ms": int((time.perf_counter() - start) * 1000),
+                        "upstream_request_id": result.get("requestId"),
+                        "usage": usage,
+                        "image_count": len(result.get("data") or []),
+                        "images": summarize_image_result_items(result.get("data")),
+                    },
+                )
             if method == "chat" and _is_structured_response(structured_response):
                 result = _with_parsed_content(result)
             return {"success": True, "provider": provider.code, "model": model.code, "profile": profile.code, **result}
@@ -113,6 +159,20 @@ class AiModelRuntimeService:
         except Exception as exc:
             governance.finish(invocation, status_value="error", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=0)
             self._log_call(provider, model, profile, "error", start, usage, str(exc), user=current_user)
+            if method == "image":
+                logger.error(
+                    "AI 生图调用失败",
+                    extra={
+                        **log_context,
+                        "latency_ms": int((time.perf_counter() - start) * 1000),
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                        "prompt": summarize_prompt(kwargs.get("prompt")),
+                        "options": sanitize_options_for_log(kwargs.get("options")),
+                        "fallback_profile_id": profile.fallback_profile_id,
+                    },
+                    exc_info=exc,
+                )
             fallback = self._fallback(profile, method, kwargs, request_options, structured_response, response_format_overridden, current_user=current_user)
             if fallback is not None:
                 return fallback
@@ -306,6 +366,18 @@ class AiModelRuntimeService:
             options["response_format"] = structured_response
         elif response_format_overridden:
             options.pop("response_format", None)
+        if method == "image":
+            logger.warning(
+                "AI 生图触发兜底模型",
+                extra={
+                    "method": method,
+                    "from_profile": profile.code,
+                    "to_profile": fallback.code,
+                    "to_provider": provider.code,
+                    "to_model": model.code,
+                    "options": sanitize_options_for_log(options),
+                },
+            )
         fallback_kwargs = {**kwargs, "options": options}
         return self._invoke(
             {"provider": provider, "model": model, "profile": fallback, "options": options},

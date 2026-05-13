@@ -8,6 +8,7 @@ import binascii
 import hashlib
 import ipaddress
 import json
+import logging
 import mimetypes
 import socket
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.base.service.authority_service import is_super_admin
 from app.modules.media.model.media import MEDIA_ASSET_TYPES, MediaAsset
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class MediaArtifact:
@@ -43,6 +46,25 @@ class MediaArtifact:
 class MediaAssetService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, MediaAsset)
+
+    def list(
+        self,
+        query=None,
+        current_user: User | None = None,
+        relations=None,
+        is_tree: bool | None = None,
+        parent_field: str | None = None,
+    ) -> list[dict]:
+        rows = super().list(query, current_user, relations, is_tree, parent_field)
+        return [self._compact_media_row(item) for item in rows]
+
+    def page(self, query, current_user: User | None = None, relations=()) -> Any:
+        result = super().page(query, current_user, relations)
+        result.items = [self._compact_media_row(item) for item in result.items]
+        return result
+
+    def info(self, id: Any, current_user: User | None = None, relations=()) -> dict:
+        return self._detail_media_row(super().info(id, current_user, relations))
 
     def upload(self, file: UploadFile, current_user: User | None = None) -> dict:
         content = _read_upload_file(file)
@@ -138,6 +160,17 @@ class MediaAssetService(BaseAdminCrudService):
     ) -> list[MediaAsset]:
         artifacts = _extract_artifacts(result, task_type)
         assets: list[MediaAsset] = []
+        logger.info(
+            "AI 结果开始转存媒体资产",
+            extra={
+                "task_type": task_type,
+                "source_type": source_type,
+                "source_task_id": source_task_id,
+                "profile_code": result.get("profile") or profile_code,
+                "artifact_count": len(artifacts),
+                "artifacts": [_artifact_summary(item) for item in artifacts],
+            },
+        )
 
         for artifact in artifacts:
             asset = MediaAsset(
@@ -162,12 +195,15 @@ class MediaAssetService(BaseAdminCrudService):
             self.session.commit()
             self.session.refresh(asset)
             try:
+                logger.info("媒体资产开始转存", extra={"asset_id": asset.id, "artifact": _artifact_summary(artifact)})
                 self._transfer_artifact(asset, artifact)
+                logger.info("媒体资产转存成功", extra={"asset_id": asset.id, "storage_url": asset.storage_url, "status": asset.status})
             except Exception as exc:  # 转存失败不能影响 AI 任务状态
                 asset.status = "failed"
                 asset.error_message = str(exc)[:1000]
                 self.session.add(asset)
                 self.session.commit()
+                logger.error("媒体资产转存失败", extra={"asset_id": asset.id, "artifact": _artifact_summary(artifact)}, exc_info=exc)
             assets.append(asset)
         return assets
 
@@ -190,6 +226,7 @@ class MediaAssetService(BaseAdminCrudService):
         _ensure_media_size(content)
         existing = self._find_existing_asset(asset)
         if existing:
+            logger.info("媒体资产命中去重", extra={"asset_id": asset.id, "existing_asset_id": existing.id, "source_type": asset.source_type})
             self.session.delete(asset)
             self.session.commit()
             return
@@ -215,6 +252,32 @@ class MediaAssetService(BaseAdminCrudService):
         )
         return self.session.exec(statement).first()
 
+    def _compact_media_row(self, data: dict) -> dict:
+        row = dict(data)
+        original_url = row.get("originalUrl") or row.get("original_url")
+        if isinstance(original_url, str) and len(original_url) > 2048:
+            row["originalUrl"] = None
+            row["original_url"] = None
+            row["hasInlineOriginal"] = original_url.startswith("data:")
+            row["originalUrlLength"] = len(original_url)
+        else:
+            row["hasInlineOriginal"] = bool(isinstance(original_url, str) and original_url.startswith("data:"))
+            row["originalUrlLength"] = len(original_url) if isinstance(original_url, str) else 0
+        return row
+
+    def _detail_media_row(self, data: dict) -> dict:
+        row = dict(data)
+        original_url = row.get("originalUrl") or row.get("original_url")
+        if isinstance(original_url, str) and len(original_url) > 4096:
+            row["hasInlineOriginal"] = original_url.startswith("data:")
+            row["originalUrlLength"] = len(original_url)
+            row["originalUrlPreview"] = f"{original_url[:512]}..."
+        else:
+            row["hasInlineOriginal"] = bool(isinstance(original_url, str) and original_url.startswith("data:"))
+            row["originalUrlLength"] = len(original_url) if isinstance(original_url, str) else 0
+            row["originalUrlPreview"] = None
+        return row
+
 
 def _read_upload_file(file: UploadFile) -> bytes:
     content = file.file.read()
@@ -237,12 +300,59 @@ def _loads_json(value: str | None) -> dict:
 
 
 def _extract_artifacts(value: Any, task_type: str) -> list[MediaArtifact]:
+    preferred_items = _preferred_artifact_items(value)
+    if preferred_items is not None:
+        return _artifact_items_to_result(preferred_items, task_type)
+
     result: list[MediaArtifact] = []
     for item in _walk_json(value):
         if not isinstance(item, dict):
             continue
         url = item.get("url") or item.get("image_url") or item.get("imageUrl") or item.get("video_url") or item.get("audio_url")
         b64 = item.get("b64_json") or item.get("b64Json") or item.get("base64")
+        if isinstance(url, str) and url.startswith("data:"):
+            b64 = url
+            url = None
+        if not url and not b64:
+            continue
+        asset_type = _asset_type_from_payload(item, task_type, url)
+        result.append(
+            MediaArtifact(
+                asset_type=asset_type,
+                original_url=url,
+                b64_data=b64,
+                mime_type=item.get("mime_type") or item.get("mimeType"),
+                file_name=item.get("file_name") or item.get("fileName"),
+                width=_int_or_none(item.get("width")),
+                height=_int_or_none(item.get("height")),
+                duration_seconds=_float_or_none(item.get("duration") or item.get("duration_seconds") or item.get("durationSeconds")),
+            )
+        )
+    return result
+
+
+def _preferred_artifact_items(value: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(value, dict):
+        return None
+    direct = value.get("data")
+    if isinstance(direct, list):
+        return [item for item in direct if isinstance(item, dict)]
+    raw = value.get("raw")
+    if isinstance(raw, dict):
+        nested = raw.get("data")
+        if isinstance(nested, list):
+            return [item for item in nested if isinstance(item, dict)]
+    return None
+
+
+def _artifact_items_to_result(items: list[dict[str, Any]], task_type: str) -> list[MediaArtifact]:
+    result: list[MediaArtifact] = []
+    for item in items:
+        url = item.get("url") or item.get("image_url") or item.get("imageUrl") or item.get("video_url") or item.get("audio_url")
+        b64 = item.get("b64_json") or item.get("b64Json") or item.get("base64")
+        if isinstance(url, str) and url.startswith("data:"):
+            b64 = url
+            url = None
         if not url and not b64:
             continue
         asset_type = _asset_type_from_payload(item, task_type, url)
@@ -396,3 +506,19 @@ def _float_or_none(value: Any) -> float | None:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _artifact_summary(artifact: MediaArtifact) -> dict[str, Any]:
+    return {
+        "asset_type": artifact.asset_type,
+        "has_url": bool(artifact.original_url),
+        "url_preview": str(artifact.original_url or "")[:160] or None,
+        "has_b64": bool(artifact.b64_data),
+        "b64_length": len(artifact.b64_data or ""),
+        "b64_is_data_url": str(artifact.b64_data or "").startswith("data:"),
+        "mime_type": artifact.mime_type,
+        "file_name": artifact.file_name,
+        "width": artifact.width,
+        "height": artifact.height,
+        "duration_seconds": artifact.duration_seconds,
+    }

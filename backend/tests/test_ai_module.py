@@ -4,6 +4,7 @@ from datetime import datetime
 import unittest
 from unittest.mock import patch
 import json
+import logging
 
 from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
@@ -37,6 +38,7 @@ from app.modules.ai.model.ai import (
 from app.celery_app import AI_TASK_QUEUES, celery_app
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
+from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
 from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter, DeepSeekAdapter, VolcengineArkAdapter
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
@@ -968,6 +970,64 @@ class AiModuleTestCase(unittest.TestCase):
 
         self.assertTrue(result["success"])
 
+    def test_openai_compatible_adapter_image_returns_request_id_and_usage_shape(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk"))
+        adapter = OpenAICompatibleAdapter(provider)
+
+        class FakeImageResponse:
+            _request_id = "img-req-1"
+
+            def model_dump(self, mode="json"):
+                return {
+                    "created": 123,
+                    "data": [{"url": "https://example.com/a.png"}],
+                    "usage": {"total_tokens": 8},
+                }
+
+        with patch.object(adapter.client.images, "generate", return_value=FakeImageResponse()):
+            result = adapter.image(model="gpt-image-1", prompt="draw", options={"response_format": "url"})
+
+        self.assertEqual(result["requestId"], "img-req-1")
+        self.assertEqual(result["usage"]["totalTokens"], 8)
+        self.assertEqual(result["data"][0]["url"], "https://example.com/a.png")
+
+    def test_openai_compatible_adapter_image_returns_none_request_id_when_missing(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk"))
+        adapter = OpenAICompatibleAdapter(provider)
+
+        class FakeImageResponse:
+            def model_dump(self, mode="json"):
+                return {"data": [{"b64_json": "abc"}]}
+
+        with patch.object(adapter.client.images, "generate", return_value=FakeImageResponse()):
+            result = adapter.image(model="gpt-image-1", prompt="draw", options={"response_format": "b64_json"})
+
+        self.assertIsNone(result["requestId"])
+        self.assertEqual(result["usage"], {})
+        self.assertEqual(result["data"][0]["b64_json"], "abc")
+
+    def test_openai_compatible_adapter_image_filters_nonstandard_options_and_logs_warning(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk"))
+        adapter = OpenAICompatibleAdapter(provider)
+
+        class FakeImageResponse:
+            _request_id = "img-req-2"
+
+            def model_dump(self, mode="json"):
+                return {"data": [{"url": "https://example.com/b.png"}]}
+
+        with self.assertLogs("app.modules.ai.service.adapters.openai_compatible", level="WARNING") as logs:
+            with patch.object(adapter.client.images, "generate", return_value=FakeImageResponse()) as mocked:
+                result = adapter.image(
+                    model="gpt-image-1",
+                    prompt="draw",
+                    options={"response_format": "url", "watermark": True, "size": "1024x1024"},
+                )
+
+        self.assertEqual(result["requestId"], "img-req-2")
+        self.assertEqual(mocked.call_args.kwargs, {"model": "gpt-image-1", "prompt": "draw", "response_format": "url", "size": "1024x1024"})
+        self.assertTrue(any("已拦截非标准字段" in message for message in logs.output))
+
     def test_bailian_adapter_wan26_sync_image_normalizes_payload_and_result(self):
         provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
         adapter = BailianAdapter(provider)
@@ -1572,6 +1632,22 @@ class AiModuleTestCase(unittest.TestCase):
         declared_queues = {queue.name for queue in celery_app.conf.task_queues}
         self.assertIn("default", declared_queues)
         self.assertTrue(set(AI_TASK_QUEUES).issubset(declared_queues))
+
+    def test_sync_models_marks_new_models_inactive_and_pending_manual_classification(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+
+        with patch("app.modules.ai.service.provider_service.build_adapter") as build_adapter_mock:
+            build_adapter_mock.return_value.list_models.return_value = [{"code": "new-image-model", "name": "New Image Model"}]
+            result = AiProviderService(self.session).sync_models(provider.id)
+
+        saved = self.session.exec(select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == "new-image-model")).one()
+        self.assertTrue(result["success"])
+        self.assertFalse(saved.is_active)
+        self.assertEqual(saved.model_type, "chat")
+        self.assertEqual(saved.capabilities, "sync-pending,manual-classification-required")
 
     def test_ai_generation_task_submit_marks_failed_when_enqueue_fails(self):
         with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", side_effect=RuntimeError("broker down")):

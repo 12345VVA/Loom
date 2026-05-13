@@ -46,7 +46,7 @@
 				<div class="section__title">{{ $t('通用参数') }}</div>
 				<div class="field-grid field-grid--compact">
 					<el-form-item :label="$t('尺寸')">
-						<cl-select v-model="form.size" :options="sizeOptions" />
+						<cl-select v-model="form.size" :options="availableSizeOptions" />
 					</el-form-item>
 					<el-form-item :label="$t('数量')">
 						<el-input-number v-model="form.n" :min="1" :max="8" controls-position="right" />
@@ -54,10 +54,13 @@
 					<el-form-item :label="$t('返回')">
 						<cl-select v-model="form.responseFormat" :options="responseFormatOptions" />
 					</el-form-item>
-					<el-form-item :label="$t('水印')">
+					<el-form-item v-if="showWatermarkOption" :label="$t('水印')">
 						<el-switch v-model="form.watermark" />
 					</el-form-item>
 				</div>
+				<el-alert v-if="sizeHint" class="mt-10" type="info" :closable="false" show-icon>
+					{{ sizeHint }}
+				</el-alert>
 			</div>
 
 			<div class="section">
@@ -178,7 +181,7 @@ defineOptions({
 	name: 'ai-image'
 });
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
@@ -222,6 +225,28 @@ const sizeOptions = [
 	{ label: '2496x1664', value: '2496x1664' },
 	{ label: '1664x2496', value: '1664x2496' }
 ];
+const openaiAutoSizeOption = { label: '自动比例（仅 OpenAI 官方）', value: 'auto' };
+const bailianSizeOptions = [
+	{ label: '1024x1024（1:1）', value: '1024x1024' },
+	{ label: '768x1024（3:4）', value: '768x1024' },
+	{ label: '1024x768（4:3）', value: '1024x768' },
+	{ label: '720x1280（9:16）', value: '720x1280' },
+	{ label: '1280x720（16:9）', value: '1280x720' }
+];
+const volcengineSeedream4SizeOptions = [
+	{ label: '2560x1440（16:9）', value: '2560x1440' },
+	{ label: '1440x2560（9:16）', value: '1440x2560' },
+	{ label: '2048x2048（1:1）', value: '2048x2048' }
+];
+const volcengineSizeOptions = [
+	{ label: '1024x1024（1:1）', value: '1024x1024' },
+	{ label: '1024x1536（2:3）', value: '1024x1536' },
+	{ label: '1536x1024（3:2）', value: '1536x1024' },
+	{ label: '864x1152（3:4）', value: '864x1152' },
+	{ label: '1152x864（4:3）', value: '1152x864' },
+	{ label: '768x1344（9:16）', value: '768x1344' },
+	{ label: '1344x768（16:9）', value: '1344x768' }
+];
 const responseFormatOptions = [
 	{ label: 'url', value: 'url' },
 	{ label: 'b64_json', value: 'b64_json' }
@@ -257,8 +282,45 @@ const providerKind = computed(() => detectProviderKind(selectedProfile.value));
 const bailianModelCode = computed(() =>
 	String(selectedProfile.value?.modelCode || selectedProfile.value?.modelName || '').toLowerCase()
 );
+const selectedModelCode = computed(() =>
+	String(selectedProfile.value?.modelCode || selectedProfile.value?.modelName || '').toLowerCase().replace(/\./g, '-')
+);
 const isBailianWan26 = computed(() => bailianModelCode.value.replace(/_/g, '-').startsWith('wan2.6-'));
+const isVolcengineSeedream4 = computed(
+	() => providerKind.value === 'volcengine-ark' && (selectedModelCode.value.includes('seedream-4-5') || selectedModelCode.value.includes('seedream-4-0'))
+);
 const showBailianNegativePrompt = computed(() => providerKind.value === 'bailian' && (!isBailianWan26.value || form.forceAsync));
+const showWatermarkOption = computed(() => providerKind.value !== 'openai');
+const availableSizeOptions = computed(() => {
+	if (providerKind.value === 'openai') {
+		return [openaiAutoSizeOption, ...sizeOptions];
+	}
+	if (providerKind.value === 'bailian') {
+		return bailianSizeOptions;
+	}
+	if (providerKind.value === 'volcengine-ark') {
+		if (isVolcengineSeedream4.value) {
+			return volcengineSeedream4SizeOptions;
+		}
+		return volcengineSizeOptions;
+	}
+	return sizeOptions;
+});
+const sizeHint = computed(() => {
+	if (providerKind.value === 'openai') {
+		return t('OpenAI 官方图片接口支持 size=auto；OpenAI 兼容渠道不保证所有底层模型都支持自动比例。');
+	}
+	if (providerKind.value === 'bailian') {
+		return t('阿里百炼当前按显式尺寸/固定比例使用，未开放自动比例。');
+	}
+	if (providerKind.value === 'volcengine-ark') {
+		if (isVolcengineSeedream4.value) {
+			return t('火山 Seedream 4.x 至少需要 3686400 像素，仅可使用高分辨率尺寸。');
+		}
+		return t('火山方舟当前按固定尺寸/比例使用，sequential_image_generation 的 auto 不是图片比例自动。');
+	}
+	return t('当前渠道建议使用显式尺寸，若需特殊比例请结合模型文档确认。');
+});
 const providerKindTag = computed(() => {
 	const map: Record<string, any> = {
 		bailian: { label: '阿里百炼', type: 'success' },
@@ -287,6 +349,19 @@ const resultMeta = computed(() => [result.value?.provider, result.value?.model, 
 onMounted(() => {
 	loadProfiles();
 });
+
+watch(
+	[providerKind, isVolcengineSeedream4, availableSizeOptions],
+	([kind, isSeedream4, options]) => {
+		if (kind !== 'volcengine-ark' || !isSeedream4) {
+			return;
+		}
+		if (!options.some(item => item.value === form.size)) {
+			form.size = options[0]?.value || '2560x1440';
+		}
+	},
+	{ immediate: true }
+);
 
 async function loadProfiles() {
 	const res = await (service.ai.profile as any).list({
@@ -327,9 +402,11 @@ function baseOptions() {
 	const options: Record<string, any> = {
 		size: form.size,
 		n: form.n,
-		response_format: form.responseFormat,
-		watermark: form.watermark
+		response_format: form.responseFormat
 	};
+	if (showWatermarkOption.value) {
+		options.watermark = form.watermark;
+	}
 	return cleanOptions(options);
 }
 

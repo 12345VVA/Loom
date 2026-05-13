@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any
@@ -138,6 +139,88 @@ def _options_without_governance(options: dict[str, Any]) -> dict[str, Any]:
     data = dict(options or {})
     data.pop("timeout", None)
     return data
+
+
+def summarize_prompt(value: Any, limit: int = 240) -> dict[str, Any]:
+    text = str(value or "")
+    return {
+        "length": len(text),
+        "preview": text[:limit],
+        "truncated": len(text) > limit,
+    }
+
+
+def sanitize_options_for_log(options: dict[str, Any] | None) -> dict[str, Any]:
+    def _sanitize(value: Any) -> Any:
+        if isinstance(value, dict):
+            result: dict[str, Any] = {}
+            for key, item in value.items():
+                lowered = str(key).lower()
+                if lowered in {"api_key", "apikey", "authorization"}:
+                    result[key] = "***"
+                    continue
+                if lowered in {"b64_json", "b64json", "base64", "image", "image_data"}:
+                    result[key] = _summarize_binary_like(item)
+                    continue
+                result[key] = _sanitize(item)
+            return result
+        if isinstance(value, list):
+            return [_sanitize(item) for item in value[:10]]
+        if isinstance(value, str) and len(value) > 500:
+            return {"type": "string", "length": len(value), "preview": value[:120]}
+        return value
+
+    return _sanitize(dict(options or {}))
+
+
+def summarize_image_result_items(items: Iterable[Any] | None) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for item in list(items or [])[:10]:
+        if not isinstance(item, dict):
+            result.append({"type": type(item).__name__})
+            continue
+        if item.get("url") or item.get("image_url") or item.get("imageUrl"):
+            url = item.get("url") or item.get("image_url") or item.get("imageUrl")
+            result.append({"kind": "url", "preview": str(url)[:160]})
+            continue
+        b64 = item.get("b64_json") or item.get("b64Json") or item.get("base64")
+        if b64:
+            result.append(_summarize_binary_like(b64, kind="b64"))
+            continue
+        result.append({"kind": "unknown", "keys": sorted(str(key) for key in item.keys())[:10]})
+    return result
+
+
+def extract_request_id(value: Any) -> str | None:
+    candidates = [
+        getattr(value, "_request_id", None),
+        getattr(value, "request_id", None),
+    ]
+    response = getattr(value, "response", None)
+    if response is not None:
+        headers = getattr(response, "headers", None)
+        if headers:
+            candidates.extend(
+                [
+                    headers.get("x-request-id"),
+                    headers.get("request-id"),
+                    headers.get("x-tt-logid"),
+                ]
+            )
+    for item in candidates:
+        if item:
+            return str(item)
+    return None
+
+
+def _summarize_binary_like(value: Any, kind: str = "binary") -> dict[str, Any]:
+    text = str(value or "")
+    return {
+        "kind": kind,
+        "length": len(text),
+        "is_data_url": text.startswith("data:"),
+        "preview": text[:60],
+    }
 
 
 @contextmanager

@@ -3,10 +3,10 @@
 		<cl-row class="toolbar-row">
 			<cl-refresh-btn />
 			<cl-filter :label="$t('类型')">
-				<cl-select :options="assetTypeOptions" prop="assetType" :width="120" />
+				<cl-select :options="assetTypeOptions" prop="asset_type" :width="120" />
 			</cl-filter>
 			<cl-filter :label="$t('来源')">
-				<cl-select :options="sourceTypeOptions" prop="sourceType" :width="120" />
+				<cl-select :options="sourceTypeOptions" prop="source_type" :width="120" />
 			</cl-filter>
 			<cl-filter :label="$t('状态')">
 				<cl-select :options="statusOptions" prop="status" :width="130" />
@@ -27,7 +27,7 @@
 			<cl-table ref="Table">
 				<template #column-preview="{ scope }">
 					<div class="preview-cell" @click="openPreview(scope.row)">
-						<el-image v-if="scope.row.assetType === 'image' && scope.row.storageUrl" :src="assetUrl(scope.row.storageUrl)" fit="cover" />
+						<el-image v-if="previewSrc(scope.row)" :src="previewSrc(scope.row)" fit="cover" />
 						<el-icon v-else class="preview-icon"><component :is="iconFor(scope.row.assetType)" /></el-icon>
 					</div>
 				</template>
@@ -58,11 +58,11 @@
 	<el-drawer v-model="viewer.visible" :title="$t('资源预览')" size="680px">
 		<div v-if="viewer.row" class="asset-preview">
 			<el-image
-				v-if="viewer.row.assetType === 'image' && viewer.row.storageUrl"
+				v-if="previewSrc(viewer.row)"
 				class="asset-preview__image"
-				:src="assetUrl(viewer.row.storageUrl)"
+				:src="previewSrc(viewer.row)"
 				fit="contain"
-				:preview-src-list="[assetUrl(viewer.row.storageUrl)]"
+				:preview-src-list="[previewSrc(viewer.row)]"
 				preview-teleported
 			/>
 			<video v-else-if="viewer.row.assetType === 'video' && viewer.row.storageUrl" class="asset-preview__media" :src="assetUrl(viewer.row.storageUrl)" controls />
@@ -73,7 +73,7 @@
 				<el-descriptions-item :label="$t('文件名')">{{ viewer.row.fileName || '-' }}</el-descriptions-item>
 				<el-descriptions-item label="MD5">{{ viewer.row.md5 || '-' }}</el-descriptions-item>
 				<el-descriptions-item :label="$t('资源链接')">{{ viewer.row.storageUrl || '-' }}</el-descriptions-item>
-				<el-descriptions-item :label="$t('原始链接')">{{ viewer.row.originalUrl || '-' }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('原始链接')">{{ viewer.row.originalUrlPreview || viewer.row.originalUrl || '-' }}</el-descriptions-item>
 				<el-descriptions-item :label="$t('来源')">{{ optionLabel(sourceTypeOptions, viewer.row.sourceType) }}</el-descriptions-item>
 				<el-descriptions-item label="Provider">{{ viewer.row.providerCode || '-' }}</el-descriptions-item>
 				<el-descriptions-item label="Model">{{ viewer.row.modelCode || '-' }}</el-descriptions-item>
@@ -234,6 +234,19 @@ function assetUrl(url?: string) {
 		return `${config.baseUrl}${url}`;
 	}
 	return url;
+}
+
+function previewSrc(row: any) {
+	if (!row || row.assetType !== 'image') {
+		return '';
+	}
+	if (row.storageUrl) {
+		return assetUrl(row.storageUrl);
+	}
+	if (typeof row.originalUrl === 'string' && row.originalUrl.startsWith('data:image')) {
+		return row.originalUrl;
+	}
+	return '';
 }
 
 function formatSize(value: number) {
