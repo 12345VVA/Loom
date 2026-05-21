@@ -17,6 +17,7 @@ def setup_celery_logging(**kwargs):
         log_level=settings.effective_log_level,
         log_dir=settings.LOG_DIR,
         retention_days=settings.LOG_RETENTION_DAYS,
+        file_prefix="celery",
     )
 
 celery_app = Celery(

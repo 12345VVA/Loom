@@ -113,10 +113,10 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
 
         # 尝试获取 Body (注意：这会读取并消耗 stream，FastAPI 默认不推荐在中间件直接读取)
         # 生产环境建议使用自定义 APIRoute 或者是更优雅的拦截方式
+        MAX_BODY_SIZE = 1 * 1024 * 1024  # 1MB，超过则跳过记录
         params = {}
         if request.method in ("POST", "PUT"):
             try:
-                # 注意：大型 Body 或二进制直接读取会导致性能问题或错误
                 body_bytes = await request.body()
                 if body_bytes:
                     # 关键修复：重置请求体流，确保后续中间件和路由能再次读取 Body
@@ -125,9 +125,11 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
                         return {"type": "http.request", "body": body_bytes}
                     request._receive = _re_receive
 
-                    params = json.loads(body_bytes.decode())
-                    # 使用增强的脱敏函数处理敏感字段
-                    params = mask_sensitive_data(params)
+                    if len(body_bytes) > MAX_BODY_SIZE:
+                        params = {"_warning": "body_too_large"}
+                    else:
+                        params = json.loads(body_bytes.decode())
+                        params = mask_sensitive_data(params)
             except Exception as exc:
                 logger.warning(f"解析请求Body失败 - {request.url.path}", exc_info=exc)
                 params = {"_error": "failed_to_parse_body"}

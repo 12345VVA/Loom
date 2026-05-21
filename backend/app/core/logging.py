@@ -95,6 +95,7 @@ def configure_logging(
     log_level: str = "INFO",
     log_dir: str = "logs",
     retention_days: int = 30,
+    file_prefix: str = "",
 ) -> None:
     formatter = JsonFormatter()
     root = logging.getLogger()
@@ -112,9 +113,10 @@ def configure_logging(
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
+    prefix = f"{file_prefix}_" if file_prefix else ""
     for filename, min_level in _LOG_FILES.items():
         handler = TimedRotatingFileHandler(
-            str(log_path / filename),
+            str(log_path / f"{prefix}{filename}"),
             when="midnight",
             interval=1,
             backupCount=retention_days,

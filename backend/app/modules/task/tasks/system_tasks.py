@@ -158,11 +158,17 @@ def clean_expired_logs():
             result_login_log = session.exec(stmt_login_log)
             login_log_count = result_login_log.rowcount
 
+            # 删除过期的任务执行日志
+            stmt_task_log = delete(TaskLog).where(TaskLog.created_at < cutoff_time)
+            result_task_log = session.exec(stmt_task_log)
+            task_log_count = result_task_log.rowcount
+
             session.commit()
 
             logger.info(
                 f"日志清理完成 - 保留天数: {keep_days}, "
-                f"删除操作日志: {sys_log_count}条, 删除登录日志: {login_log_count}条"
+                f"删除操作日志: {sys_log_count}条, 删除登录日志: {login_log_count}条, "
+                f"删除任务日志: {task_log_count}条"
             )
 
             return {
@@ -170,6 +176,7 @@ def clean_expired_logs():
                 "keep_days": keep_days,
                 "sys_log_deleted": sys_log_count,
                 "login_log_deleted": login_log_count,
+                "task_log_deleted": task_log_count,
                 "cutoff_time": cutoff_time.isoformat()
             }
     except Exception as exc:
