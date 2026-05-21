@@ -18,6 +18,7 @@ Loom 是一个全栈 AI 内容生成平台：
 
 - 修改前端规范、页面、组件、插件时，优先阅读 `frontend/.cursorrules` 和 `frontend/.cursor/rules/*.mdc`。
 - 修改后端模块、控制器、Service、模型时，优先阅读 `backend/.cursor/rules/*.mdc`，再参考 `backend/app/modules` 现有模块结构和 `README.md` 的核心机制说明。
+- 详细的代码级开发范式、核心字段转换映射（如 `is_active`→`status`）、DTO 继承规范，参考根目录 `CLAUDE.md` 的 "Development Rules"。
 - 只改与当前任务相关的文件，避免顺手重构无关代码。
 - 不要提交密钥、Token、真实账号或本地私有配置；`.env` 只作为本地运行配置。
 
@@ -97,7 +98,7 @@ docker-compose up -d
 
 - 前端文档或 rules 修改：检查文件列表、关键词、frontmatter，不必运行构建。
 - 前端代码修改：至少运行相关类型检查或构建；小范围样式/页面改动可启动 `npm run dev` 做人工验证。
-- 后端代码修改：优先运行相关 `pytest`；涉及路由、EPS、权限、响应结构时重点跑 `backend/tests` 中的对齐测试。
+- 后端代码修改：优先运行相关 `pytest`；涉及路由、EPS、权限、响应结构时重点跑 `backend/tests/test_framework_alignment.py` 对齐测试。
 - 跨前后端联动：确认后端 EPS 输出、前端 `build/cool/eps.d.ts` 或 service 使用方式是否需要同步。
 
 ## 代理操作习惯

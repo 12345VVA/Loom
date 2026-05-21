@@ -9,14 +9,17 @@ Loom-vue 8.x - A modular Vue 3 + TypeScript + Vite admin framework with plugin-b
 ## Commands
 
 ```bash
-pnpm dev          # Start dev server (http://localhost:9000)
-pnpm build        # Production build
-pnpm build-static # Static mode build
-pnpm build-demo   # Demo mode build
-pnpm preview      # Preview build
-pnpm type-check   # TypeScript check (vue-tsc)
-pnpm lint         # ESLint with auto-fix
-pnpm format       # Prettier format src/
+npm install
+npm run dev          # Start dev server (http://localhost:9090)
+npm run build        # Production build
+npm run build-static # Static mode build
+npm run build-demo   # Demo mode build
+npm run preview      # Preview build
+npm run type-check   # TypeScript check (vue-tsc)
+npm run test:unit    # Vitest unit test
+npm run test:e2e     # Playwright E2E test
+npm run lint         # ESLint with auto-fix
+npm run format       # Prettier format src/
 ```
 
 ## Path Aliases
