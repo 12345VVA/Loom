@@ -4,7 +4,7 @@ AI 模型管理实体与 DTO。
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field as PydanticField, field_validator
 from sqlmodel import Field
@@ -426,6 +426,7 @@ class AiImageRequest(BaseModel):
     scenario: str = "default"
     profile_code: Optional[str] = None
     prompt: str
+    image: Optional[Union[str, list[str]]] = None
     options: dict[str, Any] = PydanticField(default_factory=dict)
 
 

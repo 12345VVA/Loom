@@ -124,7 +124,7 @@ def _invoke_runtime(session: Session, task: AiGenerationTask, payload: dict) -> 
     if task.task_type == "embedding":
         return runtime.embedding(AiEmbeddingRequest(**{**common, "input": payload.get("input")}), current_user=current_user)
     if task.task_type == "image":
-        return runtime.image(AiImageRequest(**{**common, "prompt": payload.get("prompt") or ""}), current_user=current_user)
+        return runtime.image(AiImageRequest(**{**common, "prompt": payload.get("prompt") or "", "image": payload.get("image")}), current_user=current_user)
     if task.task_type == "rerank":
         return runtime.rerank(AiRerankRequest(**{**common, "query": payload.get("query") or "", "documents": payload.get("documents") or []}), current_user=current_user)
     if task.task_type == "audio":

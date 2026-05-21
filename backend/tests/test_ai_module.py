@@ -39,7 +39,7 @@ from app.celery_app import AI_TASK_QUEUES, celery_app
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
 from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
-from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter, DeepSeekAdapter, VolcengineArkAdapter
+from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter, DeepSeekAdapter, VolcengineArkAdapter, QianfanAdapter
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
 from app.modules.ai.service.ai_service import AiGenerationTaskService, AiGovernanceCleanupService, AiGovernanceRuleService, AiModelCallLogService, AiModelProfileService, AiModelRegistryService, AiModelRuntimeService, AiModelService, AiProviderService
@@ -1028,6 +1028,178 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(mocked.call_args.kwargs, {"model": "gpt-image-1", "prompt": "draw", "response_format": "url", "size": "1024x1024"})
         self.assertTrue(any("已拦截非标准字段" in message for message in logs.output))
 
+    def test_openai_compatible_adapter_gpt_image_2_constraints(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk"))
+        adapter = OpenAICompatibleAdapter(provider)
+
+        class FakeImageResponse:
+            _request_id = "gpt-image-2-req"
+
+            def model_dump(self, mode="json"):
+                return {"data": [{"b64_json": "fake-b64"}]}
+
+        with patch.object(adapter.client.images, "generate", return_value=FakeImageResponse()) as mocked:
+            result = adapter.image(
+                model="gpt-image-2-something",
+                prompt="draw",
+                options={"n": 3, "response_format": "url", "thinking": True, "size": "1024x1024"},
+            )
+
+        self.assertEqual(result["requestId"], "gpt-image-2-req")
+        self.assertEqual(result["data"][0]["b64_json"], "fake-b64")
+        expected_kwargs = {
+            "model": "gpt-image-2-something",
+            "prompt": "draw",
+            "size": "1024x1024",
+            "n": 1,
+            "response_format": "b64_json",
+            "extra_body": {"thinking": True}
+        }
+        self.assertEqual(mocked.call_args.kwargs, expected_kwargs)
+
+    def test_qianfan_adapter_irag_1_0_constraints(self):
+        provider = AiProvider(code="qianfan", name="百度千帆", adapter="qianfan", api_key_cipher=encrypt_secret("sk"))
+        adapter = QianfanAdapter(provider)
+
+        class FakeResponse:
+            headers = {"x-request-id": "qianfan-req-1"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"data": [{"url": "https://example.com/qianfan.png"}]}
+
+        long_prompt = "a" * 250
+        with patch("httpx.post", return_value=FakeResponse()) as mocked:
+            result = adapter.image(
+                model="irag-1.0",
+                prompt=long_prompt,
+                options={
+                    "negative_prompt": "ugly",
+                    "seed": 123,
+                    "image": "https://example.com/input.png",
+                    "size": "1024x1024"
+                }
+            )
+
+        self.assertEqual(result["requestId"], "qianfan-req-1")
+        payload = mocked.call_args.kwargs["json"]
+        self.assertEqual(payload["model"], "irag-1.0")
+        self.assertEqual(payload["prompt"], "a" * 220)
+        self.assertNotIn("negative_prompt", payload)
+        self.assertNotIn("seed", payload)
+        self.assertNotIn("image", payload)
+        self.assertEqual(payload["refer_image"], "https://example.com/input.png")
+        self.assertEqual(payload["size"], "1024x1024")
+
+        with patch("httpx.post", return_value=FakeResponse()) as mocked:
+            adapter.image(
+                model="other-qianfan-model",
+                prompt="draw",
+                options={
+                    "image": "https://example.com/input.png",
+                    "refer_image": "https://example.com/input.png"
+                }
+            )
+        payload = mocked.call_args.kwargs["json"]
+        self.assertNotIn("image", payload)
+        self.assertNotIn("refer_image", payload)
+
+    def test_gemini_adapter_image_generation(self):
+        provider = AiProvider(code="gemini", name="Google Gemini", adapter="gemini", api_key_cipher=encrypt_secret("sk"))
+        adapter = GeminiAdapter(provider)
+
+        class FakeResponse:
+            headers = {"x-request-id": "gemini-img-req"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "inlineData": {
+                                            "mimeType": "image/png",
+                                            "data": "fake-b64-image-bytes"
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                    "usageMetadata": {
+                        "promptTokenCount": 10,
+                        "candidatesTokenCount": 20,
+                        "totalTokenCount": 30
+                    }
+                }
+
+        with patch("httpx.post", return_value=FakeResponse()) as mocked_post:
+            result = adapter.image(
+                model="imagen-3.0-generate-002",
+                prompt="a beautiful cat",
+                options={"aspectRatio": "1:1", "number_of_images": 1}
+            )
+
+        self.assertEqual(result["requestId"], "gemini-img-req")
+        self.assertEqual(result["data"][0]["b64_json"], "fake-b64-image-bytes")
+        self.assertEqual(result["usage"]["totalTokens"], 30)
+
+        payload = mocked_post.call_args.kwargs["json"]
+        self.assertEqual(payload["contents"][0]["parts"], [{"text": "a beautiful cat"}])
+        self.assertEqual(payload["generationConfig"]["responseModalities"], ["TEXT", "IMAGE"])
+        self.assertEqual(payload["generationConfig"]["aspectRatio"], "1:1")
+        self.assertEqual(payload["generationConfig"]["number_of_images"], 1)
+
+        with patch("httpx.post", return_value=FakeResponse()) as mocked_post:
+            adapter.image(
+                model="imagen-3.0-generate-002",
+                prompt="make it red",
+                options={"image": "data:image/png;base64,abcdefg"}
+            )
+        payload = mocked_post.call_args.kwargs["json"]
+        parts = payload["contents"][0]["parts"]
+        self.assertEqual(len(parts), 2)
+        self.assertEqual(parts[0], {"inlineData": {"mimeType": "image/png", "data": "abcdefg"}})
+        self.assertEqual(parts[1], {"text": "make it red"})
+
+        class FakeStreamResponse:
+            headers = {"content-type": "image/jpeg", "content-length": "15"}
+            def raise_for_status(self):
+                return None
+            def iter_bytes(self, chunk_size=8192):
+                yield b"fake-jpeg-bytes"
+
+        class FakeStreamContext:
+            def __init__(self, method, url, *args, **kwargs):
+                self.method = method
+                self.url = url
+                self.args = args
+                self.kwargs = kwargs
+            def __enter__(self):
+                return FakeStreamResponse()
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                pass
+
+        with patch("httpx.stream", side_effect=FakeStreamContext) as mocked_stream, \
+             patch("httpx.post", return_value=FakeResponse()) as mocked_post:
+            adapter.image(
+                model="imagen-3.0-generate-002",
+                prompt="style of this",
+                options={"image": "https://example.com/style.jpg"}
+            )
+        mocked_stream.assert_called_once_with("GET", "https://example.com/style.jpg", timeout=15)
+        payload = mocked_post.call_args.kwargs["json"]
+        parts = payload["contents"][0]["parts"]
+        import base64
+        expected_b64 = base64.b64encode(b"fake-jpeg-bytes").decode("utf-8")
+        self.assertEqual(parts[0], {"inlineData": {"mimeType": "image/jpeg", "data": expected_b64}})
+
     def test_bailian_adapter_wan26_sync_image_normalizes_payload_and_result(self):
         provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
         adapter = BailianAdapter(provider)
@@ -1925,6 +2097,75 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertIsNone(task.result_payload)
         self.assertEqual(len(self.session.exec(select(AiModelCallLog)).all()), 0)
         self.assertEqual(len(self.session.exec(select(AiGovernanceEvent)).all()), 0)
+
+    def test_volcengine_ark_adapter_image_includes_image_payload(self):
+        provider = AiProvider(code="volcengine", name="Volcengine", adapter="volcengine-ark", is_active=True)
+        from app.modules.ai.service.adapters.factory import VolcengineArkAdapter
+        adapter = VolcengineArkAdapter(provider)
+        
+        class FakeResponse:
+            headers = {"x-request-id": "req-1"}
+            
+        with patch.object(adapter, "_post", return_value=({}, FakeResponse())) as mocked_post:
+            adapter.image(model="doubao-seedream-5.0-lite", prompt="draw", options={"image": "https://example.com/test.jpg"})
+            
+        self.assertEqual(mocked_post.call_args[0][0], adapter.images_path)
+        payload = mocked_post.call_args[0][1]
+        self.assertEqual(payload["image"], "https://example.com/test.jpg")
+
+    def test_bailian_adapter_qwen_image_sync_multimodal_payload(self):
+        provider = AiProvider(code="bailian", name="Bailian", adapter="bailian", is_active=True)
+        from app.modules.ai.service.adapters.factory import BailianAdapter
+        adapter = BailianAdapter(provider)
+        
+        class FakeResponse:
+            headers = {"x-request-id": "req-1"}
+            
+        with patch.object(adapter, "_post_dashscope", return_value=({}, FakeResponse())) as mocked_post:
+            adapter.image(
+                model="qwen-image-2.0",
+                prompt="draw",
+                options={"image": ["https://example.com/1.jpg", "https://example.com/2.jpg"], "negative_prompt": "blurry"}
+            )
+            
+        self.assertEqual(mocked_post.call_args[0][0], "/services/aigc/multimodal-generation/generation")
+        payload = mocked_post.call_args[0][1]
+        self.assertEqual(payload["model"], "qwen-image-2.0")
+        messages = payload["input"]["messages"]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["role"], "user")
+        
+        content = messages[0]["content"]
+        self.assertEqual(content[0], {"image": "https://example.com/1.jpg"})
+        self.assertEqual(content[1], {"image": "https://example.com/2.jpg"})
+        self.assertEqual(content[2], {"text": "draw"})
+        
+        parameters = payload["parameters"]
+        self.assertEqual(parameters["negative_prompt"], "blurry")
+
+    def test_openai_compatible_adapter_image_passes_extra_body(self):
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
+        adapter = OpenAICompatibleAdapter(provider)
+        
+        class FakeImageResponse:
+            def model_dump(self, mode="json"):
+                return {"data": []}
+                
+        with patch.object(adapter.client.images, "generate", return_value=FakeImageResponse()) as mocked_generate:
+            adapter.image(
+                model="gpt-image-2-custom",
+                prompt="draw",
+                options={"image": "https://example.com/ref.png", "size": "1024x1024"}
+            )
+            
+        kwargs = mocked_generate.call_args.kwargs
+        self.assertEqual(kwargs["model"], "gpt-image-2-custom")
+        self.assertEqual(kwargs["prompt"], "draw")
+        self.assertEqual(kwargs["size"], "1024x1024")
+        
+        extra_body = kwargs["extra_body"]
+        self.assertEqual(extra_body["image"], "https://example.com/ref.png")
 
 
 if __name__ == "__main__":

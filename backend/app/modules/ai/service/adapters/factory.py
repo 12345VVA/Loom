@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import HTTPException, status
 
 from app.modules.ai.model.ai import AiProvider
-from app.modules.ai.service.adapters.base import UpstreamApiError, normalize_usage
+from app.modules.ai.service.adapters.base import UpstreamApiError, normalize_usage, openai_image_result
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
@@ -98,6 +101,7 @@ class VolcengineArkAdapter(OpenAIHttpAdapter):
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
         normalized_options = _normalize_volcengine_image_options(model, options or {})
+        image = normalized_options.pop("image", None)
         payload = {
             "model": model,
             "prompt": prompt,
@@ -105,6 +109,8 @@ class VolcengineArkAdapter(OpenAIHttpAdapter):
             "sequential_image_generation": "disabled",
             **normalized_options,
         }
+        if image:
+            payload["image"] = image
         data, response = self._post(self.images_path, payload)
         return {
             "data": _normalize_volcengine_image_data(data),
@@ -120,6 +126,33 @@ class HunyuanAdapter(OpenAIHttpAdapter):
 
 class QianfanAdapter(OpenAIHttpAdapter):
     default_base_url = "https://qianfan.baidubce.com/v2"
+
+    def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
+        normalized_options = dict(options or {})
+        model_lower = model.lower()
+
+        if model_lower == "irag-1.0":
+            if len(prompt) > 220:
+                logger.warning(
+                    f"Model {model} only supports prompt length <= 220. Automatically truncating prompt.",
+                    extra={"model": model, "original_length": len(prompt)}
+                )
+                prompt = prompt[:220]
+            normalized_options.pop("negative_prompt", None)
+            normalized_options.pop("negativePrompt", None)
+            normalized_options.pop("seed", None)
+            image_url = normalized_options.pop("image", None)
+            if image_url:
+                # 百度智能云千帆大模型平台官方 V2 API 规定：ERNIE iRAG 图生图参考图字段名为 refer_image
+                normalized_options["refer_image"] = image_url
+        else:
+            # 百度千帆 V2 API 的其它模型（如 ernie-image-turbo、FLUX.1-schnell 等）目前在千帆平台官方协议中均不支持图生图参考图功能。
+            # 后续若有其它千帆模型支持图生图，可在此处扩展入参映射（例如 refer_image 等字段的注入）。
+            normalized_options.pop("image", None)
+            normalized_options.pop("refer_image", None)
+
+        data, response = self._post(self.images_path, {"model": model, "prompt": prompt, **normalized_options})
+        return openai_image_result(data, response)
 
 
 class ZhipuAdapter(OpenAIHttpAdapter):
@@ -172,28 +205,50 @@ def _resolve_bailian_image_protocol(model: str, options: dict[str, Any]) -> str:
     model_key = model.lower().replace("_", "-")
     if model_key.startswith("wan2.6-"):
         return "wan2.6-async" if async_flag is True else "wan2.6-sync"
+    if model_key.startswith("qwen-image"):
+        # 根据阿里百炼官方文档，qwen-image 系列同步生图接口统一走 /services/aigc/multimodal-generation/generation Endpoint，协议与 wan2.6-sync 完全一致
+        return "wan2.6-sync"
     return "legacy-async"
 
 
 def _build_bailian_wan26_sync_payload(model: str, prompt: str, options: dict[str, Any]) -> dict[str, Any]:
-    if _bailian_negative_prompt(options):
+    options = dict(options)
+    neg_prompt = _bailian_negative_prompt(options)
+    image = options.pop("image", None)
+
+    is_wan26 = model.lower().replace("_", "-").startswith("wan2.6")
+    if neg_prompt and is_wan26:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="百炼 wan2.6 同步生图暂不支持 negative_prompt，请启用异步或使用支持负向提示词的模型",
         )
+
+    parameters = _bailian_image_parameters(options)
+    if neg_prompt and not is_wan26:
+        parameters["negative_prompt"] = neg_prompt
+
+    content = []
+    if image:
+        if isinstance(image, list):
+            for img in image:
+                if img:
+                    content.append({"image": img})
+        elif isinstance(image, str) and image:
+            content.append({"image": image})
+
+    content.append({"text": prompt})
+
     return {
         "model": model,
         "input": {
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {"text": prompt},
-                    ],
+                    "content": content,
                 }
             ]
         },
-        "parameters": _bailian_image_parameters(options),
+        "parameters": parameters,
     }
 
 

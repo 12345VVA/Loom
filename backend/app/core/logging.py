@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import contextvars
+import sys
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -91,6 +92,26 @@ class _MinLevelFilter(logging.Filter):
         return record.levelno >= self.level
 
 
+class SafeTimedRotatingFileHandler(TimedRotatingFileHandler):
+    """
+    Windows 多进程环境下安全滚动的 TimedRotatingFileHandler。
+    在重命名锁定时捕获 PermissionError/OSError 并打印警告，防止异常导致日志处理输出大面积 traceback，
+    随后安全重新打开原文件流以继续写入。
+    """
+    def doRollover(self) -> None:
+        try:
+            super().doRollover()
+        except (PermissionError, OSError) as e:
+            # 日志轮转异常发生时，使用常规 logger 可能会导致递归循环报错，因此退推至标准错误输出
+            print(f"[Logging Warning] Failed to rollover log file: {e}. Reopening stream.", file=sys.stderr)
+            try:
+                if self.stream and not getattr(self.stream, "closed", True):
+                    self.stream.close()
+            except Exception:
+                pass
+            self.stream = self._open()
+
+
 def configure_logging(
     log_level: str = "INFO",
     log_dir: str = "logs",
@@ -115,7 +136,7 @@ def configure_logging(
 
     prefix = f"{file_prefix}_" if file_prefix else ""
     for filename, min_level in _LOG_FILES.items():
-        handler = TimedRotatingFileHandler(
+        handler = SafeTimedRotatingFileHandler(
             str(log_path / f"{prefix}{filename}"),
             when="midnight",
             interval=1,

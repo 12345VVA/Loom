@@ -17,8 +17,26 @@ from app.modules.ai.service.governance_service import AiGovernanceBlocked, AiGov
 from app.modules.ai.service.registry_service import AiModelRegistryService
 from app.modules.ai.service.utils import _adapter_timeout, _calculate_cost_micro_usd, _is_structured_response, _options_without_governance, _parse_content, _sse_event, _with_parsed_content, normalize_response_format, sanitize_options_for_log, summarize_image_result_items, summarize_prompt
 from app.modules.base.model.auth import User
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _make_absolute_url(path: str) -> str:
+    if not path:
+        return path
+    if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
+        return path
+    if path.startswith("/"):
+        base_url = settings.BACKEND_URL or settings.EXTERNAL_URL
+        if not base_url:
+            host = settings.HOST
+            if host == "0.0.0.0":
+                host = "127.0.0.1"
+            base_url = f"http://{host}:{settings.PORT}"
+
+        return f"{base_url.rstrip('/')}{path}"
+    return path
 
 
 class AiModelRuntimeService:
@@ -59,6 +77,14 @@ class AiModelRuntimeService:
     def image(self, payload: AiImageRequest, current_user: User | None = None) -> dict:
         resolved = AiModelRegistryService(self.session).resolve(model_type="image", scenario=payload.scenario, profile_code=payload.profile_code)
         options = {**resolved["options"], **payload.options}
+        if payload.image:
+            image_val = payload.image
+            if isinstance(image_val, str):
+                image_val = _make_absolute_url(image_val)
+            elif isinstance(image_val, list):
+                image_val = [_make_absolute_url(url) for url in image_val]
+            options["image"] = image_val
+            payload.image = image_val
         logger.info(
             "AI 生图请求已解析",
             extra={

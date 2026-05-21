@@ -47,8 +47,31 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
         normalized_options = dict(options or {})
+        
+        # 针对 gpt-image-2 模型的特定约束做自动转换/裁剪
+        is_gpt_image_2 = model.lower().startswith("gpt-image-2")
+        if is_gpt_image_2:
+            if normalized_options.get("n", 1) > 1:
+                logger.warning(
+                    f"Model {model} only supports n=1. Automatically truncating n to 1.",
+                    extra={"model": model, "original_n": normalized_options["n"]}
+                )
+                normalized_options["n"] = 1
+            if normalized_options.get("response_format") != "b64_json":
+                normalized_options["response_format"] = "b64_json"
+
         allowed_options = {key: value for key, value in normalized_options.items() if key in _OPENAI_IMAGE_ALLOWED_OPTION_KEYS}
         dropped_options = {key: value for key, value in normalized_options.items() if key not in _OPENAI_IMAGE_ALLOWED_OPTION_KEYS}
+        
+        extra_body = {}
+        if is_gpt_image_2:
+            for key in list(dropped_options.keys()):
+                if key not in {"async", "force_async", "prompt_extend"}:
+                    extra_body[key] = dropped_options.pop(key)
+            
+        if extra_body:
+            allowed_options["extra_body"] = extra_body
+            
         logger.info(
             "OpenAI Compatible 生图上游请求开始",
             extra={

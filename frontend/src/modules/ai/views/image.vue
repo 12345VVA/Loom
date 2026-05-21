@@ -9,6 +9,18 @@
 				<el-tag :type="providerKindTag.type" effect="plain">{{ providerKindTag.label }}</el-tag>
 			</header>
 
+			<div v-if="showTopNotice" class="top-notice">
+				<div class="top-notice__body">
+					<el-icon class="notice-icon"><bell /></el-icon>
+					<span class="notice-text">
+						{{ $t('提示：不同模型支持的图生图、尺寸规格和专属参数存在差异，可悬停标题旁的') }}
+						<el-icon class="inline-info-icon"><info-filled /></el-icon>
+						{{ $t('图标查看具体说明。') }}
+					</span>
+				</div>
+				<el-icon class="close-icon" @click="closeTopNotice"><close /></el-icon>
+			</div>
+
 			<div class="section">
 				<div class="section__title">{{ $t('调用配置') }}</div>
 				<div class="field-grid">
@@ -32,6 +44,10 @@
 			<div class="section">
 				<div class="section__title">{{ $t('提示词') }}</div>
 				<el-input v-model="form.prompt" type="textarea" :rows="6" :placeholder="$t('输入图片生成提示词')" />
+				<div v-if="isErnieIrag && form.prompt.length > 220" class="field-tip warning mt-10">
+					<el-icon><info-filled /></el-icon>
+					<span>{{ $t('提示：当前为 ERNIE iRAG 检索增强生图，Prompt 长度超过限额（最大 220 字符），后端将自动截断。') }}</span>
+				</div>
 				<el-input
 					v-if="showBailianNegativePrompt"
 					v-model="form.negativePrompt"
@@ -43,7 +59,37 @@
 			</div>
 
 			<div class="section">
-				<div class="section__title">{{ $t('通用参数') }}</div>
+				<div class="section__title">
+					<span>{{ $t('参考图片 (图生图)') }}</span>
+					<el-tooltip :content="$t('仅在火山方舟、阿里百炼和 OpenAI 兼容渠道等支持图生图的模型下生效。')" placement="top" effect="dark">
+						<el-icon class="title-tip-icon"><info-filled /></el-icon>
+					</el-tooltip>
+				</div>
+				<el-radio-group v-model="imageInputMode" size="small" class="mb-10">
+					<el-radio-button value="upload">{{ $t('本地上传') }}</el-radio-button>
+					<el-radio-button value="url">{{ $t('网络地址') }}</el-radio-button>
+				</el-radio-group>
+
+				<div v-if="imageInputMode === 'upload'" class="mt-10">
+					<cl-upload v-model="form.image" :limit="1" />
+				</div>
+				<div v-else class="mt-10">
+					<el-input v-model="form.image" :placeholder="$t('请输入参考图片 URL')" clearable />
+				</div>
+
+				<div class="field-tip">
+					<el-icon><info-filled /></el-icon>
+					<span>{{ $t('仅在火山方舟、阿里百炼和 OpenAI 兼容渠道等支持图生图的模型下生效。') }}</span>
+				</div>
+			</div>
+
+			<div class="section">
+				<div class="section__title">
+					<span>{{ $t('通用参数') }}</span>
+					<el-tooltip v-if="sizeHint" :content="sizeHint" placement="top" effect="dark">
+						<el-icon class="title-tip-icon"><info-filled /></el-icon>
+					</el-tooltip>
+				</div>
 				<div class="field-grid field-grid--compact">
 					<el-form-item :label="$t('尺寸')">
 						<cl-select v-model="form.size" :options="availableSizeOptions" />
@@ -58,19 +104,18 @@
 						<el-switch v-model="form.watermark" />
 					</el-form-item>
 				</div>
-				<el-alert v-if="sizeHint" class="mt-10" type="info" :closable="false" show-icon>
-					{{ sizeHint }}
-				</el-alert>
 			</div>
 
 			<div class="section">
-				<div class="section__title">{{ $t('厂商参数') }}</div>
+				<div class="section__title">
+					<span>{{ $t('厂商参数') }}</span>
+					<el-tooltip :content="providerHint" placement="top" effect="dark">
+						<el-icon class="title-tip-icon"><info-filled /></el-icon>
+					</el-tooltip>
+				</div>
 				<div v-if="providerKind === 'bailian'" class="provider-panel">
 					<el-checkbox v-model="form.promptExtend">{{ $t('智能改写 prompt_extend') }}</el-checkbox>
 					<el-checkbox v-model="form.forceAsync">{{ $t('强制异步') }}</el-checkbox>
-					<el-alert class="mt-10" type="info" :closable="false" show-icon>
-						{{ $t('百炼 workspace、轮询间隔等在厂商扩展配置中设置；这里的异步开关会写入 options.async。') }}
-					</el-alert>
 				</div>
 
 				<div v-else-if="providerKind === 'volcengine-ark'" class="provider-panel">
@@ -82,9 +127,6 @@
 							<cl-select v-model="form.sequentialImageGeneration" :options="sequentialOptions" clearable />
 						</el-form-item>
 					</div>
-					<el-alert class="mt-10" type="warning" :closable="false" show-icon>
-						{{ $t('Seedream 4.x 图片尺寸要求较高；后端会继续做最终校验。') }}
-					</el-alert>
 				</div>
 
 				<div v-else-if="providerKind === 'openai'" class="provider-panel">
@@ -95,12 +137,30 @@
 						<el-form-item label="style">
 							<cl-select v-model="form.style" :options="styleOptions" clearable />
 						</el-form-item>
+						<el-form-item :label="$t('思维思考')">
+							<el-switch v-model="form.thinking" />
+						</el-form-item>
 					</div>
 				</div>
 
-				<el-alert v-else type="info" :closable="false" show-icon>
-					{{ $t('该厂商暂未配置专属参数，可使用通用参数和高级 JSON。') }}
-				</el-alert>
+				<div v-else-if="providerKind === 'qianfan'" class="provider-panel">
+					<div class="field-tip">
+						<el-icon><info-filled /></el-icon>
+						<span>{{ isErnieIrag ? $t('当前使用百度 ERNIE iRAG 检索增强模型。中文文本准确度高，支持参考图，Prompt 限制 220 字符；不支持负向提示词与随机种子。') : $t('当前使用百度千帆 V2 接口。支持负向提示词与随机种子（可在高级 JSON 设置）。') }}</span>
+					</div>
+				</div>
+
+				<div v-else-if="providerKind === 'gemini'" class="provider-panel">
+					<div class="field-tip">
+						<el-icon><info-filled /></el-icon>
+						<span>{{ $t('当前使用谷歌 Gemini 原生生图，已平滑支持 gemini-2.5-flash-image 替代 Imagen。支持参考图，可结合 text/image 多模态调用。') }}</span>
+					</div>
+				</div>
+
+				<div v-else class="field-tip warning">
+					<el-icon><info-filled /></el-icon>
+					<span>{{ $t('该厂商暂未配置专属参数，可使用通用参数和高级 JSON。') }}</span>
+				</div>
 			</div>
 
 			<div class="section">
@@ -185,10 +245,26 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import { Bell, Close, InfoFilled } from '@element-plus/icons-vue';
 
 const { service } = useCool();
 const { t } = useI18n();
 const aiService = service.ai as any;
+
+const showTopNotice = ref(localStorage.getItem('loom_ai_image_notice_closed') !== 'true');
+
+function closeTopNotice() {
+	showTopNotice.value = false;
+	localStorage.setItem('loom_ai_image_notice_closed', 'true');
+}
+
+const imageInputMode = ref('upload');
+
+watch(imageInputMode, () => {
+	if (typeof form.image !== 'string') {
+		form.image = '';
+	}
+});
 
 const profiles = ref<any[]>([]);
 const result = ref<any>(null);
@@ -202,6 +278,7 @@ const form = reactive({
 	scenario: 'default',
 	prompt: '一张未来感 AI 内容平台海报，干净的构图，科技感灯光，高质量细节',
 	negativePrompt: '',
+	image: '',
 	size: '2560x1440',
 	n: 1,
 	responseFormat: 'url',
@@ -212,6 +289,7 @@ const form = reactive({
 	sequentialImageGeneration: '',
 	quality: '',
 	style: '',
+	thinking: false,
 	optionsText: '{}'
 });
 
@@ -326,9 +404,30 @@ const providerKindTag = computed(() => {
 		bailian: { label: '阿里百炼', type: 'success' },
 		'volcengine-ark': { label: '火山方舟', type: 'warning' },
 		openai: { label: 'OpenAI Compatible', type: 'primary' },
+		qianfan: { label: '百度千帆', type: 'success' },
+		gemini: { label: '谷歌 Gemini', type: 'danger' },
 		unknown: { label: t('通用'), type: 'info' }
 	};
 	return map[providerKind.value] || map.unknown;
+});
+
+const providerHint = computed(() => {
+	if (providerKind.value === 'bailian') {
+		return t('百炼 workspace、轮询间隔等在厂商扩展配置中设置；这里的异步开关会写入 options.async。');
+	}
+	if (providerKind.value === 'volcengine-ark') {
+		return t('Seedream 4.x 图片尺寸要求较高；后端会继续做最终校验。');
+	}
+	if (providerKind.value === 'openai') {
+		return t('支持配置 OpenAI 专属的生图品质 quality、风格 style 以及 thinking 思维参数。');
+	}
+	if (providerKind.value === 'qianfan') {
+		return t('支持百度智能云千帆大模型 V2 生图参数适配，包含 ERNIE iRAG 检索增强防超长机制。');
+	}
+	if (providerKind.value === 'gemini') {
+		return t('已接入谷歌 Gemini 原生 generateContent 生图，自动兼容处理参考图。');
+	}
+	return t('该厂商暂未配置专属参数，可使用通用参数和高级 JSON。');
 });
 const capabilityTags = computed(() =>
 	String(selectedProfile.value?.modelCapabilities || selectedProfile.value?.capabilities || '')
@@ -390,6 +489,7 @@ function buildPayload() {
 		scenario: form.scenario || 'default',
 		profileCode: form.profileCode || undefined,
 		prompt,
+		image: form.image.trim() || undefined,
 		options: {
 			...baseOptions(),
 			...providerOptions(),
@@ -426,6 +526,7 @@ function providerOptions() {
 	if (providerKind.value === 'openai') {
 		options.quality = form.quality || undefined;
 		options.style = form.style || undefined;
+		options.thinking = form.thinking || undefined;
 	}
 	return cleanOptions(options);
 }
@@ -467,6 +568,7 @@ async function submitTask() {
 		profileCode: payload.profileCode,
 		payload: {
 			prompt: payload.prompt,
+			image: payload.image,
 			options: payload.options
 		}
 	};
@@ -505,6 +607,11 @@ function formatJson(value: any) {
 	return JSON.stringify(value, null, 2);
 }
 
+const isErnieIrag = computed(() => {
+	const code = String(selectedProfile.value?.modelCode || selectedProfile.value?.modelName || '').toLowerCase();
+	return code.includes('irag-1.0') || code.includes('irag-1-0') || code.includes('ernie-irag');
+});
+
 function detectProviderKind(profile: any) {
 	const adapter = normalizeProviderToken(profile?.providerAdapter || profile?.adapter);
 	const providerCode = normalizeProviderToken(profile?.providerCode);
@@ -521,11 +628,23 @@ function detectProviderKind(profile: any) {
 	if (adapter === 'openai-compatible' || providerCode.includes('openai') || capabilities.includes('openai')) {
 		return 'openai';
 	}
+	if (adapter === 'qianfan' || providerCode.includes('qianfan') || modelCode.includes('ernie') || modelCode.startsWith('irag') || modelCode.includes('-irag')) {
+		return 'qianfan';
+	}
+	if (adapter === 'gemini' || providerCode.includes('gemini') || modelCode.includes('gemini')) {
+		return 'gemini';
+	}
 	if (fallback.includes('bailian') || fallback.includes('百炼') || fallback.includes('wan2.') || fallback.includes('wanx')) {
 		return 'bailian';
 	}
 	if (fallback.includes('volcengine') || fallback.includes('火山') || fallback.includes('seedream') || fallback.includes('doubao')) {
 		return 'volcengine-ark';
+	}
+	if (fallback.includes('qianfan') || fallback.includes('千帆')) {
+		return 'qianfan';
+	}
+	if (fallback.includes('gemini') || fallback.includes('谷歌')) {
+		return 'gemini';
 	}
 	if (fallback.includes('openai')) {
 		return 'openai';
@@ -644,8 +763,22 @@ function findImageData(value: any): any[] {
 	border-bottom: 1px solid var(--el-border-color-lighter);
 
 	&__title {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 		margin-bottom: 10px;
 		font-weight: 650;
+
+		.title-tip-icon {
+			font-size: 14px;
+			color: var(--el-text-color-placeholder);
+			cursor: pointer;
+			transition: color 0.3s;
+
+			&:hover {
+				color: var(--el-color-primary);
+			}
+		}
 	}
 }
 
@@ -687,6 +820,10 @@ function findImageData(value: any): any[] {
 
 .mt-10 {
 	margin-top: 10px;
+}
+
+.mb-10 {
+	margin-bottom: 10px;
 }
 
 .actions {
@@ -777,6 +914,86 @@ function findImageData(value: any): any[] {
 	.ai-image-workbench {
 		grid-template-columns: 1fr;
 		height: auto;
+	}
+}
+
+/* 顶部统一提示栏样式 */
+.top-notice {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	margin: 10px 14px 2px;
+	padding: 10px 12px;
+	background: var(--el-color-primary-light-9);
+	border: 1px solid var(--el-color-primary-light-8);
+	border-radius: 6px;
+	transition: all 0.3s ease;
+
+	&__body {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		color: var(--el-color-primary);
+		font-size: 12px;
+		line-height: 1.5;
+
+		.notice-icon {
+			font-size: 16px;
+			margin-top: 1px;
+			flex-shrink: 0;
+		}
+
+		.inline-info-icon {
+			font-size: 13px;
+			vertical-align: middle;
+			margin: 0 2px;
+			color: var(--el-color-primary);
+		}
+	}
+
+	.close-icon {
+		font-size: 14px;
+		color: var(--el-color-primary-light-3);
+		cursor: pointer;
+		margin-top: 2px;
+		transition: color 0.2s;
+
+		&:hover {
+			color: var(--el-color-primary);
+		}
+	}
+}
+
+/* 局部内联精致提示 */
+.field-tip {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	margin-top: 10px;
+	padding: 8px 10px;
+	background: var(--el-fill-color-lighter);
+	border-left: 3px solid var(--el-color-info);
+	border-radius: 4px;
+	color: var(--el-text-color-secondary);
+	font-size: 12px;
+	line-height: 1.4;
+
+	.el-icon {
+		color: var(--el-text-color-placeholder);
+		font-size: 14px;
+		margin-top: 1px;
+		flex-shrink: 0;
+	}
+
+	&.warning {
+		background: var(--el-color-warning-light-9);
+		border-left-color: var(--el-color-warning);
+		color: var(--el-color-warning-active);
+
+		.el-icon {
+			color: var(--el-color-warning);
+		}
 	}
 }
 </style>

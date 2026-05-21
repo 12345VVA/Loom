@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = ""
     SECRET_ENCRYPTION_KEY: str = ""
+    BACKEND_URL: str = ""
+    EXTERNAL_URL: str = ""
 
     # 认证配置
     JWT_SECRET_KEY: str # 启动时自动从 .env 中读取
