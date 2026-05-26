@@ -1,0 +1,50 @@
+[
+  {
+    "code": "nav_workflow",
+    "name": "工作流管理",
+    "type": "group",
+    "icon": "icon-task",
+    "sort_order": 38,
+    "parent_code": "nav_system",
+    "role_codes": ["admin"],
+    "children": [
+      {
+        "code": "nav_workflow_definition",
+        "name": "工作流设计",
+        "type": "menu",
+        "module": "workflow",
+        "resource": "definition",
+        "path": "/workflow/definition",
+        "component": "modules/workflow/views/definition.vue",
+        "icon": "icon-integration",
+        "sort_order": 1,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "workflow_definition_add", "name": "新增", "type": "button", "permission": "workflow:definition:add", "role_codes": ["admin"] },
+          { "code": "workflow_definition_delete", "name": "删除", "type": "button", "permission": "workflow:definition:delete", "role_codes": ["admin"] },
+          { "code": "workflow_definition_update", "name": "修改", "type": "button", "permission": "workflow:definition:update", "role_codes": ["admin"] },
+          { "code": "workflow_definition_page", "name": "分页", "type": "button", "permission": "workflow:definition:page", "role_codes": ["admin"] },
+          { "code": "workflow_definition_info", "name": "详情", "type": "button", "permission": "workflow:definition:info", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_workflow_instance",
+        "name": "执行监控",
+        "type": "menu",
+        "module": "workflow",
+        "resource": "instance",
+        "path": "/workflow/instance",
+        "component": "modules/workflow/views/instance.vue",
+        "icon": "icon-log",
+        "sort_order": 2,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "workflow_instance_page", "name": "分页", "type": "button", "permission": "workflow:instance:page", "role_codes": ["admin"] },
+          { "code": "workflow_instance_info", "name": "详情", "type": "button", "permission": "workflow:instance:info", "role_codes": ["admin"] },
+          { "code": "workflow_instance_start", "name": "启动", "type": "button", "permission": "workflow:instance:start", "role_codes": ["admin"] },
+          { "code": "workflow_instance_resume", "name": "人工确认", "type": "button", "permission": "workflow:instance:resume", "role_codes": ["admin"] }
+        ]
+      }
+    ]
+  }
+]

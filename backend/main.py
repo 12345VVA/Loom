@@ -46,6 +46,8 @@ async def lifespan(app: FastAPI):
     init_db()
     with Session(engine) as session:
         bootstrap_modules(session)
+        from app.modules.workflow.service.workflow_service import recover_orphaned_instances
+        recover_orphaned_instances(session)
     print(f"{settings.APP_NAME} v{settings.APP_VERSION} 启动中...")
     yield
     # 关闭时执行
