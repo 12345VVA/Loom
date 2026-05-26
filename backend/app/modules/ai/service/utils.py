@@ -138,7 +138,7 @@ def _calculate_cost_micro_usd(model: AiModel, usage: dict[str, Any]) -> int:
 def _options_without_governance(options: dict[str, Any]) -> dict[str, Any]:
     data = dict(options or {})
     data.pop("timeout", None)
-    return data
+    return {k: v for k, v in data.items() if not k.startswith("_")}
 
 
 def summarize_prompt(value: Any, limit: int = 240) -> dict[str, Any]:

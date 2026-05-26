@@ -120,6 +120,7 @@ class AiModelProfileService(BaseAdminCrudService):
         data["providerName"] = provider.name if provider else None
         data["providerCode"] = provider.code if provider else None
         data["providerAdapter"] = provider.adapter if provider else None
+        data["modelDefaultConfig"] = model.default_config if model else None
         return data
 
     def _profile_query(self, query: CrudQuery | None) -> CrudQuery | None:

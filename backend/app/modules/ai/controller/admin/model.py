@@ -1,7 +1,7 @@
 """
 AI 模型管理接口。
 """
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
+from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
 from app.modules.ai.model.ai import AiModelCreateRequest, AiModelRead, AiModelUpdateRequest
 from app.modules.ai.service.model_service import AiModelService
 
@@ -24,7 +24,11 @@ from app.modules.ai.service.model_service import AiModelService
         actions=("add", "delete", "update", "page", "info", "list"),
         page_query=QueryConfig(
             keyword_like_fields=("code", "name"),
-            field_eq=("provider_id", "model_type", "is_active"),
+            field_eq=(
+                QueryFieldConfig(column="provider_id", request_param="providerId"),
+                QueryFieldConfig(column="model_type", request_param="modelType"),
+                QueryFieldConfig(column="is_active", request_param="status"),
+            ),
             field_like=("code", "name"),
             order_fields=("created_at", "updated_at", "sort_order", "code"),
             add_order_by=(OrderByConfig("sort_order", "desc"), OrderByConfig("created_at", "desc")),
