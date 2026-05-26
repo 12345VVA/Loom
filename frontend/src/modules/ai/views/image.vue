@@ -48,6 +48,10 @@
 					<el-icon><info-filled /></el-icon>
 					<span>{{ $t('提示：当前为 ERNIE iRAG 检索增强生图，Prompt 长度超过限额（最大 220 字符），后端将自动截断。') }}</span>
 				</div>
+				<div v-if="!isErnieIrag && activeLimits.max_prompt_length && form.prompt.length > activeLimits.max_prompt_length" class="field-tip warning mt-10">
+					<el-icon><info-filled /></el-icon>
+					<span>{{ $t('提示：当前 Prompt 长度已超过模型推荐限制（最大') }} {{ activeLimits.max_prompt_length }} {{ $t('字符）。') }}</span>
+				</div>
 				<el-input
 					v-if="showBailianNegativePrompt"
 					v-model="form.negativePrompt"
@@ -95,7 +99,7 @@
 						<cl-select v-model="form.size" :options="availableSizeOptions" />
 					</el-form-item>
 					<el-form-item :label="$t('数量')">
-						<el-input-number v-model="form.n" :min="1" :max="8" controls-position="right" />
+						<el-input-number v-model="form.n" :min="1" :max="activeLimits.max_n || 8" controls-position="right" />
 					</el-form-item>
 					<el-form-item :label="$t('返回')">
 						<cl-select v-model="form.responseFormat" :options="responseFormatOptions" />
@@ -119,11 +123,23 @@
 				</div>
 
 				<div v-else-if="providerKind === 'volcengine-ark'" class="provider-panel">
-					<div class="field-grid">
-						<el-form-item label="guidance_scale">
+					<div class="field-grid field-grid--vertical">
+						<el-form-item>
+							<template #label>
+								<span class="mr-4">guidance_scale</span>
+								<el-tooltip :content="$t('分类指导比例。值越大越贴近提示词，但过大可能导致画面发硬或色彩过饱和，推荐 5.0 - 10.0。')" placement="top">
+									<el-icon class="label-tip-icon"><info-filled /></el-icon>
+								</el-tooltip>
+							</template>
 							<el-input-number v-model="form.guidanceScale" :min="0" :max="20" :step="0.5" controls-position="right" />
 						</el-form-item>
-						<el-form-item label="sequential_image_generation">
+						<el-form-item>
+							<template #label>
+								<span class="mr-4">sequential_image_generation</span>
+								<el-tooltip :content="$t('多图生成调度模式。disabled 表示并行生成；auto 表示自动调度，在生成大图或资源紧张时可提高成功率。')" placement="top">
+									<el-icon class="label-tip-icon"><info-filled /></el-icon>
+								</el-tooltip>
+							</template>
 							<cl-select v-model="form.sequentialImageGeneration" :options="sequentialOptions" clearable />
 						</el-form-item>
 					</div>
@@ -370,6 +386,17 @@ const isVolcengineSeedream4 = computed(
 const showBailianNegativePrompt = computed(() => providerKind.value === 'bailian' && (!isBailianWan26.value || form.forceAsync));
 const showWatermarkOption = computed(() => providerKind.value !== 'openai');
 const availableSizeOptions = computed(() => {
+	const profile = selectedProfile.value;
+	if (profile && profile.modelDefaultConfig) {
+		try {
+			const config = JSON.parse(profile.modelDefaultConfig);
+			if (config && Array.isArray(config._sizes)) {
+				return config._sizes;
+			}
+		} catch (e) {
+			console.warn('解析模型默认尺寸选项失败:', e);
+		}
+	}
 	if (providerKind.value === 'openai') {
 		return [openaiAutoSizeOption, ...sizeOptions];
 	}
@@ -383,6 +410,22 @@ const availableSizeOptions = computed(() => {
 		return volcengineSizeOptions;
 	}
 	return sizeOptions;
+});
+
+const activeLimits = computed(() => {
+	const profile = selectedProfile.value;
+	if (profile && profile.modelDefaultConfig) {
+		try {
+			const config = JSON.parse(profile.modelDefaultConfig);
+			if (config && config._limits) {
+				return {
+					max_n: config._limits.max_n || 8,
+					max_prompt_length: config._limits.max_prompt_length
+				};
+			}
+		} catch (e) {}
+	}
+	return { max_n: 8 };
 });
 const sizeHint = computed(() => {
 	if (providerKind.value === 'openai') {
@@ -460,6 +503,44 @@ watch(
 		}
 	},
 	{ immediate: true }
+);
+
+watch(
+	selectedProfile,
+	(profile) => {
+		if (profile && profile.modelDefaultConfig) {
+			try {
+				const config = JSON.parse(profile.modelDefaultConfig);
+				if (config) {
+					if (config.size && availableSizeOptions.value.some(item => item.value === config.size)) {
+						form.size = config.size;
+					} else if (availableSizeOptions.value.length > 0) {
+						form.size = availableSizeOptions.value[0].value;
+					}
+					if (config.n !== undefined) {
+						form.n = Math.min(config.n, activeLimits.value.max_n || 8);
+					}
+					if (config.response_format) {
+						form.responseFormat = config.response_format;
+					}
+					if (config.watermark !== undefined) {
+						form.watermark = config.watermark;
+					}
+					if (config.quality) {
+						form.quality = config.quality;
+					}
+					if (config.style) {
+						form.style = config.style;
+					}
+					if (config.thinking !== undefined) {
+						form.thinking = config.thinking;
+					}
+				}
+			} catch (e) {
+				console.warn('自动加载模型默认参数失败:', e);
+			}
+		}
+	}
 );
 
 async function loadProfiles() {
@@ -794,6 +875,10 @@ function findImageData(value: any): any[] {
 	&--compact {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
+
+	&--vertical {
+		grid-template-columns: 1fr;
+	}
 }
 
 .profile-meta {
@@ -806,6 +891,19 @@ function findImageData(value: any): any[] {
 .provider-panel {
 	:deep(.el-checkbox) {
 		margin-right: 16px;
+	}
+
+	.label-tip-icon {
+		margin-left: 4px;
+		font-size: 14px;
+		color: var(--el-text-color-placeholder);
+		cursor: pointer;
+		vertical-align: middle;
+		transition: color 0.3s;
+
+		&:hover {
+			color: var(--el-color-primary);
+		}
 	}
 }
 
