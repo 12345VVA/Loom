@@ -27,6 +27,7 @@ celery_app = Celery(
     include=[
         "app.modules.task.tasks.system_tasks",
         "app.modules.ai.tasks.generation_tasks",
+        "app.modules.workflow.tasks.workflow_tasks",
     ],
 )
 
@@ -41,9 +42,11 @@ celery_app.conf.update(
     task_queues=(
         Queue("celery"),
         Queue("default"),
+        Queue("workflow"),
         *(Queue(queue_name) for queue_name in AI_TASK_QUEUES),
     ),
     task_routes={
+        "workflow.execute": {"queue": "workflow"},
         "ai.execute_generation_task": {"queue": "ai.chat"},
         "ai.clean_expired_governance_data": {"queue": "default"},
     },

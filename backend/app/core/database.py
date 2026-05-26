@@ -78,6 +78,16 @@ def get_db_path() -> Path | None:
     return Path(DATABASE_URL.removeprefix("sqlite:///"))
 
 
+@contextmanager
+def SessionLocal():
+    """创建独立的数据库会话（用于后台任务等无法依赖 FastAPI DI 的场景）"""
+    session = Session(engine)
+    try:
+        yield session
+    finally:
+        session.close()
+
+
 def get_session():
     """获取数据库会话"""
     with Session(engine) as session:
@@ -227,6 +237,9 @@ def _ensure_sqlite_compatible_schema() -> None:
             "started_at": "ALTER TABLE ai_runtime_invocation ADD COLUMN started_at DATETIME",
             "finished_at": "ALTER TABLE ai_runtime_invocation ADD COLUMN finished_at DATETIME",
         },
+        "workflow_instance": {
+            "celery_task_id": "ALTER TABLE workflow_instance ADD COLUMN celery_task_id VARCHAR",
+        },
         "media_asset": {
             "asset_type": "ALTER TABLE media_asset ADD COLUMN asset_type VARCHAR DEFAULT 'file'",
             "source_type": "ALTER TABLE media_asset ADD COLUMN source_type VARCHAR DEFAULT 'upload'",
@@ -259,7 +272,7 @@ def _ensure_sqlite_compatible_schema() -> None:
         "notification_message", "notification_recipient", "notification_template", "notification_rule",
         "ai_provider", "ai_model", "ai_model_profile", "ai_model_call_log", "ai_generation_task",
         "ai_governance_rule", "ai_governance_event", "ai_runtime_invocation",
-        "media_asset",
+        "media_asset", "workflow_instance",
         "sys_user_role", "sys_role_menu", "sys_role_department"
     ]
 

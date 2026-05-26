@@ -76,7 +76,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: sh -c 'celery -A app.celery_app worker --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video'
+    command: sh -c 'celery -A app.celery_app worker --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,workflow,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video'
 
   # Celery Beat - 定时任务调度器（可选）
   # celery-beat:

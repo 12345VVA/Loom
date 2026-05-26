@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str  # 启动时自动从 .env 中读取
     CELERY_RESULT_BACKEND: str  # 启动时自动从 .env 中读取
 
+    # 工作流引擎
+    WORKFLOW_CHECKPOINT_BACKEND: str = "memory"  # "memory" | "sqlite" | "postgres"
+
     # OpenAI / Ollama 配置
     OPENAI_API_KEY: str  # 启动时自动从 .env 中读取
     OPENAI_BASE_URL: str  # 启动时自动从 .env 中读取
