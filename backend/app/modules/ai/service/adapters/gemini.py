@@ -19,10 +19,21 @@ class GeminiAdapter(BaseHttpAdapter):
         return headers
 
     def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]) -> dict:
+        call_options = dict(options or {})
+        response_format = call_options.pop("response_format", None)
+        generation_config = call_options.pop("generationConfig", call_options.pop("generation_config", {}))
+        if not isinstance(generation_config, dict):
+            generation_config = {}
+        if response_format:
+            generation_config["responseMimeType"] = "application/json"
+
         payload = {
             "contents": [_gemini_content(item) for item in messages if item.get("role") != "system"],
-            **options,
+            **call_options,
         }
+        if generation_config:
+            payload["generationConfig"] = generation_config
+
         system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
         if system_text:
             payload["systemInstruction"] = {"parts": [{"text": system_text}]}
@@ -37,10 +48,21 @@ class GeminiAdapter(BaseHttpAdapter):
         }
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
+        call_options = dict(options or {})
+        response_format = call_options.pop("response_format", None)
+        generation_config = call_options.pop("generationConfig", call_options.pop("generation_config", {}))
+        if not isinstance(generation_config, dict):
+            generation_config = {}
+        if response_format:
+            generation_config["responseMimeType"] = "application/json"
+
         payload = {
             "contents": [_gemini_content(item) for item in messages if item.get("role") != "system"],
-            **options,
+            **call_options,
         }
+        if generation_config:
+            payload["generationConfig"] = generation_config
+
         system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
         if system_text:
             payload["systemInstruction"] = {"parts": [{"text": system_text}]}

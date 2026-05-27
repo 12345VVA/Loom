@@ -22,6 +22,8 @@ class ClaudeAdapter(BaseHttpAdapter):
         system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
         call_options = dict(options)
         max_tokens = call_options.pop("max_tokens", call_options.pop("maxTokens", 1024))
+        # Claude API 不支持 OpenAI 风格的 response_format，需要移除以避免参数错误
+        call_options.pop("response_format", None)
         payload = {
             "model": model,
             "messages": [{"role": _claude_role(item), "content": item.get("content", "")} for item in messages if item.get("role") != "system"],
@@ -42,6 +44,8 @@ class ClaudeAdapter(BaseHttpAdapter):
         system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
         call_options = dict(options)
         max_tokens = call_options.pop("max_tokens", call_options.pop("maxTokens", 1024))
+        # Claude API 不支持 OpenAI 风格的 response_format，需要移除以避免参数错误
+        call_options.pop("response_format", None)
         payload = {
             "model": model,
             "messages": [{"role": _claude_role(item), "content": item.get("content", "")} for item in messages if item.get("role") != "system"],

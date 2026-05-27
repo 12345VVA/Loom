@@ -19,6 +19,7 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
         return openai_chat_result(data, response)
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
+        options = dict(options or {})
         payload = {"model": model, "messages": messages, **options, "stream": True}
         with httpx.stream(
             "POST",
