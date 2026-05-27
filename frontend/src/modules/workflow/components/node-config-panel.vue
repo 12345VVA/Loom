@@ -23,14 +23,14 @@
 					<div class="variable-ref-title">{{ $t('上游可用变量') }}</div>
 					<div class="variable-ref-list">
 						<el-tag
-							v-for="v in upstreamVariables"
-							:key="v.nodeId + '_' + v.variableName"
+							v-for="v in flattenedVariables"
+							:key="v.key"
 							size="small"
 							effect="plain"
 							class="variable-tag"
-							@click="insertVariableToField(v.variableName)"
+							@click="insertVariableToField(v.refText)"
 						>
-							{{ '{' + v.variableName + '}' }}
+							{{ v.display }}
 							<span class="variable-source">{{ v.nodeLabel }}</span>
 						</el-tag>
 					</div>
@@ -46,6 +46,7 @@
 				<component
 					:is="CONFIG_COMPONENTS[selectedNode.type]"
 					v-if="CONFIG_COMPONENTS[selectedNode.type]"
+					:key="selectedNode.id"
 					v-model="selectedNode.data.config"
 					:profiles="filteredProfiles"
 					:available-target-nodes="availableTargetNodes"
@@ -56,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onUnmounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import { Delete } from '@element-plus/icons-vue';
@@ -106,7 +107,6 @@ const CONFIG_COMPONENTS: Record<string, any> = {
 const NODE_MODEL_TYPE_MAP: Record<string, string> = {
 	llm: 'chat',
 	intent_classifier: 'chat',
-	batch_processor: 'chat',
 	image_generator: 'image',
 };
 
@@ -119,14 +119,140 @@ const filteredProfiles = computed(() => {
 	return props.aiProfiles.filter(p => p.modelType === requiredType);
 });
 
-// 记录配置面板内最后获得焦点的输入框/文本域
+// 递归展平 JSON 字段树
+function flattenTreeFields(
+	fields: any[],
+	prefix: string,
+	displayPrefix: string,
+	nodeLabel: string,
+	nodeId: string
+): { key: string; display: string; refText: string; nodeLabel: string }[] {
+	const result: any[] = [];
+	if (!fields || !Array.isArray(fields)) return result;
+
+	for (const field of fields) {
+		if (!field.name || !field.name.trim()) continue;
+		
+		const name = field.name.trim();
+		const currentRefPath = `${prefix}.${name}`;
+		const currentDisplayPath = `${displayPrefix}.${name}`;
+		const refText = getVariableRefText(currentRefPath);
+
+		result.push({
+			key: `${nodeId}_${currentRefPath}`,
+			display: `{${currentDisplayPath}}`,
+			refText: refText,
+			nodeLabel: `${nodeLabel} → .${name}`
+		});
+
+		if (field.children && Array.isArray(field.children) && field.children.length > 0) {
+			if (field.type === 'array_object') {
+				result.push(...flattenTreeFields(field.children, `${currentRefPath}.0`, `${currentDisplayPath}.[Item]`, nodeLabel, nodeId));
+			} else {
+				result.push(...flattenTreeFields(field.children, currentRefPath, currentDisplayPath, nodeLabel, nodeId));
+			}
+		}
+	}
+	return result;
+}
+
+// 展平上游变量：对 LLM JSON 输出模式的节点，额外展示子字段
+const flattenedVariables = computed(() => {
+	const result: { key: string; display: string; refText: string; nodeLabel: string }[] = [];
+	for (const v of props.upstreamVariables) {
+		const baseRef = getVariableRefText(v.variableName);
+		result.push({
+			key: `${v.nodeId}_${v.variableName}`,
+			display: `{${v.variableName}}`,
+			refText: baseRef,
+			nodeLabel: v.nodeLabel
+		});
+
+		// 如果上游节点是 LLM 且 JSON 输出模式，递归展开其 jsonFields
+		if (v.nodeType === 'llm' && v.jsonFields && Array.isArray(v.jsonFields)) {
+			result.push(...flattenTreeFields(v.jsonFields, v.variableName, v.variableName, v.nodeLabel, v.nodeId));
+		}
+	}
+	return result;
+});
+
+// ---------- 变量插入逻辑 ----------
+
+// 记录最后获得焦点的输入框
 const lastFocusedInput = ref<HTMLTextAreaElement | HTMLInputElement | null>(null);
+// 记住最后聚焦的 Markdown 编辑器绑定的 config 字段路径
+const lastFocusedFieldInfo = ref<{ configKey: string; cursorPos: number } | null>(null);
+
+// 节点类型 → 使用 Markdown 编辑器的 config 字段列表
+const MARKDOWN_FIELDS_MAP: Record<string, string[]> = {
+	llm: ['promptTemplate'],
+	image_generator: ['promptTemplate'],
+	end: ['outputTemplate']
+};
 
 function onConfigPanelFocusIn(event: FocusEvent) {
 	const target = event.target;
 	if (target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && target.type === 'text')) {
 		lastFocusedInput.value = target as any;
+		const fieldInfo = detectMarkdownEditorField(target as HTMLElement);
+		if (fieldInfo) {
+			lastFocusedFieldInfo.value = {
+				configKey: fieldInfo,
+				cursorPos: (target as any).selectionStart ?? 0
+			};
+		} else {
+			lastFocusedFieldInfo.value = null;
+		}
 	}
+}
+
+// 实时追踪游标位置
+function onSelectionChange() {
+	const el = lastFocusedInput.value;
+	if (el && document.body.contains(el) && lastFocusedFieldInfo.value) {
+		lastFocusedFieldInfo.value.cursorPos = el.selectionStart ?? 0;
+	}
+}
+document.addEventListener('selectionchange', onSelectionChange);
+onUnmounted(() => document.removeEventListener('selectionchange', onSelectionChange));
+
+// 检测元素是否处于 cl-editor-markdown 内部，返回对应的 config 字段名
+function detectMarkdownEditorField(el: HTMLElement): string | null {
+	// 向上查找 cl-editor-markdown 容器
+	let node: HTMLElement | null = el;
+	while (node && node !== document.body) {
+		if (node.classList && node.classList.contains('cl-editor-markdown')) {
+			break;
+		}
+		node = node.parentElement;
+	}
+	if (!node || !node.classList.contains('cl-editor-markdown')) return null;
+
+	// 通过 el-form-item label 推断字段名
+	let formItem: HTMLElement | null = el;
+	while (formItem && formItem !== document.body) {
+		if (formItem.classList && formItem.classList.contains('el-form-item')) {
+			break;
+		}
+		formItem = formItem.parentElement;
+	}
+	if (!formItem) return null;
+
+	const nodeType = props.selectedNode?.type;
+	const markdownFields = MARKDOWN_FIELDS_MAP[nodeType] || [];
+	if (markdownFields.length === 0) return null;
+	// 如果只有一个 Markdown 字段，直接返回
+	if (markdownFields.length === 1) return markdownFields[0];
+
+	// 多个 Markdown 字段时，通过 label 推断
+	const labelEl = formItem.querySelector('.el-form-item__label');
+	if (labelEl) {
+		const text = labelEl.textContent?.trim() || '';
+		if (text.toLowerCase().includes('prompt') || text.toLowerCase().includes('提示词')) return 'promptTemplate';
+		if (text.toLowerCase().includes('输出') || text.toLowerCase().includes('output')) return 'outputTemplate';
+	}
+
+	return markdownFields[0];
 }
 
 function getVariableRefText(varName: string): string {
@@ -137,8 +263,46 @@ function getVariableRefText(varName: string): string {
 	return `{${varName}}`;
 }
 
-function insertVariableToField(varName: string) {
-	const refText = getVariableRefText(varName);
+// 支持嵌套路径的取值/赋值
+function getNestedValue(obj: any, path: string): any {
+	const parts = path.split('.');
+	let current = obj;
+	for (const part of parts) {
+		if (current == null || typeof current !== 'object') return undefined;
+		current = current[part];
+	}
+	return current;
+}
+
+function setNestedValue(obj: any, path: string, value: any) {
+	const parts = path.split('.');
+	let current = obj;
+	for (let i = 0; i < parts.length - 1; i++) {
+		if (current[parts[i]] == null || typeof current[parts[i]] !== 'object') {
+			current[parts[i]] = {};
+		}
+		current = current[parts[i]];
+	}
+	current[parts[parts.length - 1]] = value;
+}
+
+function insertVariableToField(refText: string) {
+	// 优先尝试插入到 Markdown 编辑器绑定的 config 字段
+	if (lastFocusedFieldInfo.value) {
+		const config = props.selectedNode?.data?.config;
+		if (config) {
+			const key = lastFocusedFieldInfo.value.configKey;
+			const currentVal = getNestedValue(config, key) || '';
+			const pos = lastFocusedFieldInfo.value.cursorPos;
+			const newVal = currentVal.slice(0, pos) + refText + currentVal.slice(pos);
+			setNestedValue(config, key, newVal);
+			lastFocusedFieldInfo.value.cursorPos = pos + refText.length;
+			ElMessage.success(t('已插入: ') + refText);
+			return;
+		}
+	}
+
+	// 其次尝试原生 input/textarea 插入
 	const el = lastFocusedInput.value;
 	if (el && document.body.contains(el)) {
 		const start = el.selectionStart ?? el.value.length;
@@ -148,6 +312,7 @@ function insertVariableToField(varName: string) {
 		el.focus();
 		ElMessage.success(t('已插入: ') + refText);
 	} else {
+		// 兜底：复制到剪贴板
 		navigator.clipboard.writeText(refText).then(() => {
 			ElMessage.success(t('已复制: ') + refText);
 		}).catch(() => {
@@ -159,7 +324,7 @@ function insertVariableToField(varName: string) {
 
 <style lang="scss" scoped>
 .config-panel {
-	width: 320px;
+	width: 360px;
 	background-color: #fff;
 	border-left: 1px solid var(--el-border-color-light);
 	display: flex;

@@ -10,18 +10,7 @@
 	<template v-if="config.outputFormat === 'json'">
 		<el-form-item :label="$t('输出字段定义')">
 			<div class="field-hint" style="margin-bottom: 8px;">定义工作流输出的 JSON 字段，值支持变量引用如 {变量名}。</div>
-			<div
-				v-for="(field, idx) in (config.outputFields || [])"
-				:key="idx"
-				style="display: flex; gap: 6px; margin-bottom: 6px; align-items: center;"
-			>
-				<el-input v-model="field.name" placeholder="字段名" style="width: 30%" />
-				<el-input v-model="field.value" placeholder="值 (支持 {变量名})" style="flex: 1" />
-				<el-button :icon="Delete" circle size="small" @click="removeOutputField(idx)" />
-			</div>
-			<el-button type="primary" link @click="addOutputField">
-				<el-icon><Plus /></el-icon> {{ $t('添加字段') }}
-			</el-button>
+			<cl-json-tree-editor v-model="config.outputFields" mode="value" />
 		</el-form-item>
 		<el-form-item v-if="endNodeJsonPreview" :label="$t('JSON 预览')">
 			<pre class="json-preview-block">{{ endNodeJsonPreview }}</pre>
@@ -39,7 +28,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Delete, Plus } from '@element-plus/icons-vue';
+import ClJsonTreeEditor from '../cl-json-tree-editor.vue';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
@@ -47,25 +36,37 @@ const props = defineProps<{
 
 const config = props.modelValue;
 
-function addOutputField() {
-	if (!config.outputFields) {
-		config.outputFields = [];
+function buildJson(children: any[]): any {
+	const obj: Record<string, any> = {};
+	for (const child of children) {
+		if (!child.name) continue;
+		if (child.type === 'object') {
+			obj[child.name] = buildJson(child.children || []);
+		} else if (child.type === 'array') {
+			obj[child.name] = buildArray(child.children || []);
+		} else {
+			obj[child.name] = child.value || '';
+		}
 	}
-	config.outputFields.push({ name: '', value: '' });
+	return obj;
 }
 
-function removeOutputField(index: number) {
-	const fields = config.outputFields || [];
-	fields.splice(index, 1);
+function buildArray(children: any[]): any[] {
+	return (children || []).map(child => {
+		if (child.type === 'object') {
+			return buildJson(child.children || []);
+		} else if (child.type === 'array') {
+			return buildArray(child.children || []);
+		} else {
+			return child.value || '';
+		}
+	});
 }
 
 const endNodeJsonPreview = computed(() => {
 	const fields = config.outputFields || [];
 	if (fields.length === 0) return '';
-	const obj: Record<string, string> = {};
-	for (const f of fields) {
-		if (f.name) obj[f.name] = f.value || '';
-	}
+	const obj = buildJson(fields);
 	return JSON.stringify(obj, null, 2);
 });
 </script>

@@ -224,7 +224,7 @@ const availableTargetNodes = computed(() => {
 // 收集当前节点的上游可达变量
 const upstreamVariables = computed(() => {
 	if (!selectedNode.value) return [];
-	const result: { nodeId: string; nodeLabel: string; variableName: string; nodeType: string }[] = [];
+	const result: { nodeId: string; nodeLabel: string; variableName: string; nodeType: string; jsonFields?: any[] }[] = [];
 	const visited = new Set<string>();
 	function traceUpstream(nodeId: string) {
 		if (visited.has(nodeId)) return;
@@ -251,7 +251,11 @@ const upstreamVariables = computed(() => {
 				const cfg = src.data?.config || {};
 				const outputVar = (cfg as any).outputVariable || '';
 				if (outputVar) {
-					result.push({ nodeId: src.id, nodeLabel: src.label, variableName: outputVar, nodeType: src.type });
+					const entry: any = { nodeId: src.id, nodeLabel: src.label, variableName: outputVar, nodeType: src.type };
+					if (src.type === 'llm' && (cfg as any).outputFormat === 'json') {
+						entry.jsonFields = (cfg as any).jsonFields || [];
+					}
+					result.push(entry);
 				}
 				traceUpstream(src.id);
 			}
@@ -266,7 +270,7 @@ const variableSyntaxHints = computed(() => {
 	const nodeType = selectedNode.value?.type;
 	if (!nodeType) return [];
 	const hints: { label: string; syntax: string }[] = [];
-	if (['llm', 'image_generator', 'batch_processor', 'end'].includes(nodeType)) {
+	if (['llm', 'image_generator', 'end'].includes(nodeType)) {
 		hints.push({ label: '提示词插值', syntax: '{变量名}' });
 		hints.push({ label: '嵌套访问', syntax: '{变量名.字段名}' });
 	}
@@ -463,11 +467,11 @@ function onDrop(event: DragEvent) {
 	} else if (type === 'intent_classifier') {
 		config = { modelProfileCode: '', intents: [], defaultRoute: '' };
 	} else if (type === 'loop_controller') {
-		config = { listVariable: 'list_variable', itemVariable: 'loop_item', loopBodyRoute: '', exitRoute: '' };
+		config = { listVariable: 'list_variable', itemVariable: 'loop_item', outputVariable: getUniqueOutputVar(label, 'loop_results'), loopBodyRoute: '', exitRoute: '' };
 	} else if (type === 'batch_processor') {
-		config = { batchListVariable: 'batch_list_variable', actionTemplate: { type: 'llm', config: { modelProfileCode: '', promptTemplate: '' } }, concurrencyLimit: 5, outputVariable: getUniqueOutputVar(label, 'batch_results') };
+		config = { batchListVariable: 'batch_list_variable', itemVariable: 'batch_item', concurrencyLimit: 5, outputVariable: getUniqueOutputVar(label, 'batch_results'), loopBodyRoute: '', exitRoute: '' };
 	} else if (type === 'image_generator') {
-		config = { modelProfileCode: '', promptTemplate: '', size: '1024x1024', outputVariable: getUniqueOutputVar(label, 'image_url') };
+		config = { modelProfileCode: '', promptTemplate: '', size: '', imageVariable: '', imageTemplate: '', optionsJson: '{}', outputVariable: getUniqueOutputVar(label, 'image_url') };
 	} else if (type === 'tool_executor') {
 		config = { toolCode: '', argumentsJson: '{}', outputVariable: getUniqueOutputVar(label, 'tool_result') };
 	} else if (type === 'end') {
@@ -661,13 +665,24 @@ async function saveWorkflow() {
 		}
 
 		// 检查模型节点是否已选择 Profile
-		const modelRequiredTypes = ['llm', 'intent_classifier', 'batch_processor', 'image_generator'];
+		const modelRequiredTypes = ['llm', 'intent_classifier', 'image_generator'];
 		const missingProfileNodes = nodes.filter(
 			n => modelRequiredTypes.includes(n.type) && !(n.data?.config as any)?.modelProfileCode?.trim()
 		);
 		if (missingProfileNodes.length > 0) {
 			warnings.push(
 				t('以下节点未选择模型 Profile：') + missingProfileNodes.map(n => n.label || n.id).join(', ') + t('，请先在配置面板中选择模型！')
+			);
+		}
+
+		// 检查旧版 batch_processor 配置（含 actionTemplate 字段，需重新配置）
+		const legacyBatchNodes = nodes.filter(
+			n => n.type === 'batch_processor' && (n.data?.config as any)?.actionTemplate
+		);
+		if (legacyBatchNodes.length > 0) {
+			warnings.push(
+				t('以下批处理节点使用了旧版配置格式：') + legacyBatchNodes.map(n => n.label || n.id).join(', ') +
+				t('。旧版的内嵌 LLM 配置已废弃，请重新配置循环体入口和出口节点。')
 			);
 		}
 
