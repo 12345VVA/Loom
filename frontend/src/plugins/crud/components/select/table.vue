@@ -137,7 +137,7 @@ import { useI18n } from 'vue-i18n';
 import { useCrud, useForm, useSearch, useTable } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
 import { type PropType, computed, nextTick, reactive, ref, watch } from 'vue';
-import { cloneDeep, isArray, isEmpty, merge } from 'lodash-es';
+import { cloneDeep, isArray, isEmpty, isEqual, merge } from 'lodash-es';
 import { CircleClose } from '@element-plus/icons-vue';
 import { CrudProps } from '../../comm';
 
@@ -378,6 +378,47 @@ watch(
 	{
 		deep: true
 	}
+);
+
+// 上次加载对应的 modelValue，用于判断是否需要重新加载
+const lastLoadedValue = ref<any>(null);
+
+// 编辑时根据 modelValue 自动加载已选项
+watch(
+	() => props.modelValue,
+	async (val) => {
+		if (val == null || val === '') {
+			list.value = [];
+			lastLoadedValue.value = null;
+			return;
+		}
+
+		// 值未变化且已加载过，跳过
+		if (isEqual(val, lastLoadedValue.value) && !isEmpty(list.value)) return;
+
+		if (!props.service?.info) return;
+
+		lastLoadedValue.value = cloneDeep(val);
+
+		try {
+			if (props.multiple && isArray(val)) {
+				const items = await Promise.all(
+					val.map((id: any) => props.service.info({ id }))
+				);
+				list.value = items.filter(Boolean);
+			} else {
+				const res = await props.service.info({ id: val });
+				if (res) {
+					list.value = [res];
+				}
+			}
+		} catch (e) {
+			if (import.meta.env.DEV) {
+				console.warn('[cl-select-table] 加载已选项失败:', e);
+			}
+		}
+	},
+	{ immediate: true }
 );
 
 defineExpose({

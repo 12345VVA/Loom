@@ -77,6 +77,7 @@ const Upsert = useUpsert({
 				props: {
 					service: service.base.sys.user,
 					multiple: false,
+					dict: { text: 'fullName' },
 					columns: [
 						{ label: t('用户名'), prop: 'username', minWidth: 140 },
 						{ label: t('姓名'), prop: 'fullName', minWidth: 140 }
@@ -92,6 +93,7 @@ const Upsert = useUpsert({
 				props: {
 					service: service.ai.profile,
 					multiple: false,
+					dict: { text: 'name' },
 					columns: [
 						{ label: t('编码'), prop: 'code', minWidth: 140 },
 						{ label: t('名称'), prop: 'name', minWidth: 140 },

@@ -111,6 +111,7 @@ const Upsert = useUpsert({
 				props: {
 					service: service.ai.model,
 					multiple: false,
+					dict: { text: 'name' },
 					columns: [
 						{ label: t('厂商'), prop: 'providerName', minWidth: 140 },
 						{ label: t('编码'), prop: 'code', minWidth: 160 },

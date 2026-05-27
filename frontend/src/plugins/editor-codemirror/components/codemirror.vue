@@ -3,6 +3,7 @@
 		<div v-if="!preview" class="cl-editor-codemirror__toolbar">
 			<el-button text size="small" @click="format">{{ t('格式化') }}</el-button>
 			<el-button text size="small" @click="compress">{{ t('压缩') }}</el-button>
+			<el-button text size="small" @click="copy">{{ t('复制') }}</el-button>
 		</div>
 		<div ref="editorEl" class="cl-editor-codemirror__editor" :style="{ height: parsePx(editorHeight) }" />
 	</div>
@@ -160,6 +161,20 @@ function compress() {
 	}
 }
 
+function copy() {
+	if (!view.value) return;
+	const val = view.value.state.doc.toString();
+	if (!val) {
+		ElMessage.warning(t('内容为空，无需复制'));
+		return;
+	}
+	navigator.clipboard.writeText(val).then(() => {
+		ElMessage.success(t('已复制到剪贴板'));
+	}).catch(() => {
+		ElMessage.error(t('复制失败'));
+	});
+}
+
 function getValue(): string {
 	return view.value?.state.doc.toString() || '';
 }
@@ -175,7 +190,7 @@ onBeforeUnmount(() => {
 	view.value?.destroy();
 });
 
-defineExpose({ format, compress, formatCode: format, getValue, setValue });
+defineExpose({ format, compress, copy, formatCode: format, getValue, setValue });
 </script>
 
 <style lang="scss" scoped>
