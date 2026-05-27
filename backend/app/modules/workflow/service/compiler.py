@@ -2,6 +2,7 @@
 工作流动态编译器与节点注册表。
 """
 import ast
+import collections
 import json
 import logging
 import re
@@ -100,9 +101,10 @@ def safe_eval(expr_str: str, context: dict) -> Any:
 def render_template(template: str, variables: dict) -> str:
     """
     自定义模板渲染引擎，替代 str.format()。
-    支持点号路径导航嵌套字典结构，缺失路径返回空字符串。
+    支持点号路径导航嵌套字典结构，支持列表数字索引，缺失路径返回空字符串。
     {var}         → variables["var"]
     {var.field}   → variables["var"]["field"]
+    {var.list.0}  → variables["var"]["list"][0]
     dict/list 自动序列化为 JSON。
     """
     def _resolve(match):
@@ -114,6 +116,12 @@ def render_template(template: str, variables: dict) -> str:
         for part in parts:
             if isinstance(value, dict) and part in value:
                 value = value[part]
+            elif isinstance(value, list) and part.isdigit():
+                idx = int(part)
+                if 0 <= idx < len(value):
+                    value = value[idx]
+                else:
+                    return ''
             else:
                 return ''
         if isinstance(value, (dict, list)):
@@ -132,6 +140,13 @@ def convert_keys_to_snake(d: Any) -> Any:
     elif isinstance(d, list):
         return [convert_keys_to_snake(x) for x in d]
     return d
+
+
+# 条件分流节点类型集合：这些节点的出边由运行时条件路由决定，不参与静态边处理和环检测
+CONDITIONAL_NODE_TYPES = {"condition", "intent_classifier", "switch"}
+
+# 子图执行节点类型：循环体在编译时提取为独立子图，运行时按序/并发调用
+SUBGRAPH_NODE_TYPES = {"loop_controller", "batch_processor"}
 
 
 def validate_graph(graph_json: Dict[str, Any]) -> None:
@@ -168,14 +183,41 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
             raise ValueError(f"连线重复：从 '{source}' 到 '{target}' 的连线被定义了多次。")
         seen_edges.add(edge_key)
 
-    # 3. 孤立节点校验
+    # 3. 子图节点体路由校验
+    for n in nodes:
+        ntype = n.get("type")
+        if ntype in SUBGRAPH_NODE_TYPES:
+            config = convert_keys_to_snake(n.get("config", {}))
+            body_route = config.get("loop_body_route")
+            exit_route = config.get("exit_route")
+            node_name = n.get("name", n["id"])
+            if not body_route:
+                raise ValueError(f"节点 '{node_name}' 未配置循环体入口节点。")
+            if body_route not in node_ids:
+                raise ValueError(f"节点 '{node_name}' 的循环体入口 '{body_route}' 不存在。")
+            if not exit_route:
+                raise ValueError(f"节点 '{node_name}' 未配置循环结束跳转节点。")
+            if exit_route not in node_ids:
+                raise ValueError(f"节点 '{node_name}' 的结束跳转节点 '{exit_route}' 不存在。")
+
+    # 4. 孤立节点校验（子图体节点豁免：它们通过回边连向父节点，不在主图直接连通）
+    # 先收集所有子图节点的体节点 ID，这些节点不需要在主图中表现为"已连通"
+    all_body_node_ids = set()
+    for n in nodes:
+        ntype = n.get("type")
+        if ntype in SUBGRAPH_NODE_TYPES:
+            config = convert_keys_to_snake(n.get("config", {}))
+            body_entry = config.get("loop_body_route")
+            if body_entry and body_entry in node_ids:
+                all_body_node_ids.update(_find_body_nodes(n["id"], body_entry, edges))
+
     connected_nodes = set()
     for edge in edges:
         connected_nodes.add(edge["source"])
         connected_nodes.add(edge["target"])
-    
+
     for nid, ntype in node_types.items():
-        if ntype not in ("start", "end") and nid not in connected_nodes:
+        if ntype not in ("start", "end") and nid not in connected_nodes and nid not in all_body_node_ids:
             node_name = nid
             for n in nodes:
                 if n.get("id") == nid:
@@ -183,18 +225,16 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
                     break
             raise ValueError(f"检测到孤立的工作节点 '{node_name}' (ID: {nid})，必须为它建立输入和输出连线。")
 
-    # 4. 无条件静态环路检测 (DFS 环检测)
-    # 仅针对静态直接连线建图（排除从判断、分支和循环控制器发出的条件流，因为它们能基于运行时决策打破环路）
-    conditional_node_types = {"condition", "intent_classifier", "loop_controller", "switch"}
+    # 5. 无条件静态环路检测 (DFS 环检测)
+    # 仅针对非条件节点的静态连线建图（条件节点能基于运行时决策打破环路）
     adj = {nid: [] for nid in node_ids}
-    
+
     for edge in edges:
         source = edge["source"]
         target = edge["target"]
         source_type = node_types.get(source)
-        edge_type = edge.get("type", "direct")
-        
-        if edge_type == "direct" and source_type not in conditional_node_types:
+
+        if source_type not in CONDITIONAL_NODE_TYPES:
             adj[source].append(target)
             
     # DFS 状态跟踪：0 = 未访问, 1 = 正在访问, 2 = 已完全访问
@@ -221,8 +261,8 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
                         break
                 raise ValueError(f"检测到无条件死循环：静态流程在节点 '{node_name}' (ID: {nid}) 附近形成了闭环且没有任何判定条件分支。")
 
-    # 5. 模型节点配置完整性校验
-    model_required_types = {"llm", "intent_classifier", "batch_processor", "image_generator"}
+    # 6. 模型节点配置完整性校验
+    model_required_types = {"llm", "intent_classifier", "image_generator"}
     for n in nodes:
         ntype = n.get("type")
         if ntype in model_required_types:
@@ -234,6 +274,237 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
             if not profile_code or not profile_code.strip():
                 node_name = n.get("name", n["id"])
                 raise ValueError(f"节点 '{node_name}' 未选择模型 Profile，请先在配置面板中选择一个模型。")
+
+
+# --- 子图工具函数 ---
+
+def _find_body_nodes(parent_id: str, body_entry_id: str, edges: list) -> set[str]:
+    """BFS 从 body_entry_id 出发，沿 forward edges 遍历，直到遇到 parent_id 停止。"""
+    if body_entry_id == parent_id:
+        raise ValueError(
+            f"循环体入口节点不能指向循环控制节点自身 (ID: {parent_id})。"
+            f"请选择一个不同的节点作为循环体入口。"
+        )
+    body_nodes = set()
+    queue = collections.deque([body_entry_id])
+    visited = set()
+
+    while queue:
+        current = queue.popleft()
+        if current in visited or current == parent_id:
+            continue
+        visited.add(current)
+        body_nodes.add(current)
+
+        for edge in edges:
+            if edge["source"] == current:
+                target = edge["target"]
+                if target not in visited:
+                    queue.append(target)
+
+    return body_nodes
+
+
+def _extract_body_edges(body_node_ids: set[str], parent_id: str, edges: list) -> list[dict]:
+    """提取体子图的内部边和回边（回边 target == parent 会编译时重定向为 → END）。"""
+    body_edges = []
+    for edge in edges:
+        source = edge["source"]
+        target = edge["target"]
+        # 内部边：source 和 target 都在体节点中
+        if source in body_node_ids and target in body_node_ids:
+            body_edges.append(edge)
+        # 回边：体节点连回父节点
+        elif source in body_node_ids and target == parent_id:
+            body_edges.append(edge)
+    return body_edges
+
+
+def _validate_subgraph_boundaries(
+    parent_id: str, body_node_ids: set[str], edges: list, nodes_map: dict
+) -> None:
+    """校验体子图边界：无越界逃逸、无外部入边。"""
+    for edge in edges:
+        source = edge["source"]
+        target = edge["target"]
+        # 体节点向外的越界边：只允许连回父节点或体内部
+        if source in body_node_ids:
+            if target != parent_id and target not in body_node_ids:
+                src_name = nodes_map.get(source, {}).get("name", source)
+                tgt_name = nodes_map.get(target, {}).get("name", target)
+                raise ValueError(
+                    f"循环体节点 '{src_name}' 的连线越界：直接连向了循环外的节点 '{tgt_name}'。"
+                    f"循环体内节点只能连回循环控制节点或体内部节点。"
+                )
+        # 外部节点向体内部入边：只允许父节点连向体入口
+        if target in body_node_ids and source != parent_id:
+            src_name = nodes_map.get(source, {}).get("name", source)
+            tgt_name = nodes_map.get(target, {}).get("name", target)
+            raise ValueError(
+                f"循环外节点 '{src_name}' 直接连向了循环体内的节点 '{tgt_name}'。"
+                f"循环体外节点不能直接连入体内部，只能通过循环控制节点进入。"
+            )
+
+
+def _add_conditional_edges_for_node(builder, node: dict) -> None:
+    """为单个条件节点注册 conditional edges，供主图和体子图复用。"""
+    node_id = node["id"]
+    node_type = node["type"]
+    node_config = convert_keys_to_snake(node.get("config", {}))
+
+    if node_type == "condition":
+        true_route = node_config.get("true_route")
+        false_route = node_config.get("false_route")
+        if true_route and false_route:
+            builder.add_conditional_edges(
+                node_id,
+                WorkflowCompiler.create_conditional_router(node_id, node_config),
+                {true_route: true_route, false_route: false_route}
+            )
+
+    elif node_type == "intent_classifier":
+        intents = node_config.get("intents", [])
+        default_route = node_config.get("default_route")
+        path_map = {}
+        for intent in intents:
+            target = intent.get("target_route")
+            if target:
+                path_map[target] = target
+        if default_route:
+            path_map[default_route] = default_route
+        if path_map:
+            builder.add_conditional_edges(
+                node_id,
+                WorkflowCompiler.create_intent_router(node_id, node_config),
+                path_map
+            )
+
+    elif node_type == "switch":
+        cases = node_config.get("cases", [])
+        default_route = node_config.get("default_route")
+        path_map = {}
+        for case in cases:
+            target = case.get("target_route")
+            if target:
+                path_map[target] = target
+        if default_route:
+            path_map[default_route] = default_route
+        if path_map:
+            builder.add_conditional_edges(
+                node_id,
+                WorkflowCompiler.create_switch_router(node_id, node_config),
+                path_map
+            )
+
+
+def _compile_body_graph(
+    body_nodes: list, body_edges: list, body_entry_id: str, parent_id: str
+):
+    """将体节点编译为独立的 LangGraph StateGraph（无 checkpointer，瞬态执行）。"""
+    builder = StateGraph(WorkflowState)
+
+    # 注册体节点（复用 create_node_runner）
+    for node in body_nodes:
+        node_id = node["id"]
+        node_type = node["type"]
+        node_config = convert_keys_to_snake(node.get("config", {}))
+        builder.add_node(node_id, WorkflowCompiler.create_node_runner(node_id, node_type, node_config))
+
+    # START → 体入口
+    builder.add_edge(START, body_entry_id)
+
+    # 体内部边 + 条件节点处理
+    # 先收集条件节点，后续统一处理
+    body_condition_nodes = []
+    for edge in body_edges:
+        source = edge["source"]
+        target = edge["target"]
+
+        if target == parent_id:
+            # 回边 → END
+            builder.add_edge(source, END)
+            continue
+
+        # 检查 source 是否是条件节点（需要 add_conditional_edges 而非 add_edge）
+        source_node = next((n for n in body_nodes if n["id"] == source), None)
+        if source_node and source_node["type"] in CONDITIONAL_NODE_TYPES:
+            body_condition_nodes.append(source_node)
+            continue
+
+        builder.add_edge(source, target)
+
+    # 处理体内部的条件节点（复用共享注册函数）
+    for cond_node in body_condition_nodes:
+        _add_conditional_edges_for_node(builder, cond_node)
+
+    # 体内部的 end 节点连向 END
+    for node in body_nodes:
+        if node["type"] == "end":
+            builder.add_edge(node["id"], END)
+
+    logger.info("[Compiler] Body sub-graph compiled: entry=%s, nodes=%s", body_entry_id,
+                [n["id"] for n in body_nodes])
+    return builder.compile()
+
+
+def _compile_subgraphs_recursive(graph_json: dict, nodes_map: dict) -> tuple[dict, set[str]]:
+    """
+    递归预处理所有子图节点：由内而外编译体子图。
+    返回 (subgraph_configs, all_body_node_ids)。
+    """
+    nodes = graph_json.get("nodes", [])
+    edges = graph_json.get("edges", [])
+    subgraph_configs = {}
+    all_body_node_ids = set()
+
+    # 找到所有子图节点
+    sg_nodes = [n for n in nodes if n.get("type") in SUBGRAPH_NODE_TYPES]
+
+    # 递归编译（由内而外）
+    def _process(sg_node):
+        sg_id = sg_node["id"]
+        if sg_id in subgraph_configs:
+            return  # 已处理
+
+        config = convert_keys_to_snake(sg_node.get("config", {}))
+        body_entry = config.get("loop_body_route")
+        if not body_entry:
+            return
+
+        # 提取体节点
+        body_node_ids = _find_body_nodes(sg_id, body_entry, edges)
+        if not body_node_ids:
+            return
+
+        # 若体节点中包含另一个子图节点，先递归处理内层
+        for nid in body_node_ids:
+            inner_node = nodes_map.get(nid)
+            if inner_node and inner_node.get("type") in SUBGRAPH_NODE_TYPES:
+                _process(inner_node)
+
+        # 校验体边界
+        _validate_subgraph_boundaries(sg_id, body_node_ids, edges, nodes_map)
+
+        # 提取体边
+        body_edges = _extract_body_edges(body_node_ids, sg_id, edges)
+
+        # 编译体子图
+        body_nodes_list = [nodes_map[nid] for nid in body_node_ids if nid in nodes_map]
+        compiled_body = _compile_body_graph(body_nodes_list, body_edges, body_entry, sg_id)
+
+        subgraph_configs[sg_id] = {
+            "compiled_body": compiled_body,
+            "body_node_ids": body_node_ids,
+            "config": config,
+        }
+        all_body_node_ids.update(body_node_ids)
+
+    for sg_node in sg_nodes:
+        _process(sg_node)
+
+    logger.info("[Compiler] Pre-pass complete: %d subgraph(s) extracted, body_nodes=%s",
+                len(subgraph_configs), all_body_node_ids)
+    return subgraph_configs, all_body_node_ids
 
 
 def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
@@ -314,7 +585,9 @@ class WorkflowCompiler:
     @classmethod
     def compile_graph(cls, graph_json: Dict[str, Any]) -> StateGraph:
         """
-        根据前端配置的拓扑 JSON 编译成 LangGraph 图
+        根据前端配置的拓扑 JSON 编译成 LangGraph 图。
+        支持 for_each / batch 子图：循环体在 Pre-pass 阶段提取为独立子图，
+        主图保持纯 DAG 结构。
         """
         # 0. 校验拓扑数据结构与完整性
         if not isinstance(graph_json, dict) or "nodes" not in graph_json or "edges" not in graph_json:
@@ -323,125 +596,106 @@ class WorkflowCompiler:
         # 严格验证图结构完整性
         validate_graph(graph_json)
 
-        # 创建工作流状态图
-        builder = StateGraph(WorkflowState)
-
-        # 获取所有节点定义
+        # 获取所有节点和边定义
         nodes = graph_json.get("nodes", [])
         edges = graph_json.get("edges", [])
-
-        # 预先构建散列表映射，将查找复杂度由 O(N*M) 降至 O(N+M)
         nodes_map = {n["id"]: n for n in nodes}
 
-        # 1. 遍历注册所有工作节点
+        # === Pre-pass: 提取并编译所有子图 ===
+        subgraph_configs, all_body_node_ids = _compile_subgraphs_recursive(graph_json, nodes_map)
+
+        # 创建主图
+        builder = StateGraph(WorkflowState)
+
+        # 1. 遍历注册所有工作节点（跳过体节点）
         for node in nodes:
             node_id = node["id"]
             node_type = node["type"]
             node_config = convert_keys_to_snake(node.get("config", {}))
 
-            # 跳过开始辅助节点（结束节点需要注册为执行节点以处理输出模板）
+            # 跳过开始辅助节点
             if node_type == "start":
                 continue
 
-            # 为当前节点构造执行包装器
+            # 跳过子图体节点（它们已被编译到各自的子图中）
+            if node_id in all_body_node_ids:
+                continue
+
+            # 对子图执行节点，注入已编译的体子图
+            if node_id in subgraph_configs:
+                node_config["_compiled_body"] = subgraph_configs[node_id]["compiled_body"]
+
             builder.add_node(
                 node_id,
                 cls.create_node_runner(node_id, node_type, node_config)
             )
 
-        # 2. 遍历并建立普通连线关系
+        # 2. 遍历并建立连线关系
+        added_edges = []
+        skipped_edges = []
+
         for edge in edges:
             source = edge["source"]
             target = edge["target"]
             edge_type = edge.get("type", "direct")
 
-            # 处理边界节点 (O(1) 散列映射)
             source_node = nodes_map.get(source)
             target_node = nodes_map.get(target)
 
             source_type = source_node.get("type") if source_node else None
             target_type = target_node.get("type") if target_node else None
 
+            # 跳过体节点内部的边（已编译进子图）
+            if source in all_body_node_ids or target in all_body_node_ids:
+                # 但 target == 子图父节点（回边）的情况也要跳过
+                skipped_edges.append(f"{source} → {target} (body)")
+                continue
+
             # 从 START 连接
             if source_type == "start":
+                logger.info(f"[Compiler] Edge: START → {target}")
                 builder.add_edge(START, target)
+                added_edges.append(f"START → {target}")
                 continue
 
-            # 连接到结束节点（结束节点执行后自动连向 END）
+            # 连接到结束节点
             if target_type == "end":
+                logger.info(f"[Compiler] Edge: {source} → {target} (to-end)")
                 builder.add_edge(source, target)
+                added_edges.append(f"{source} → {target}")
                 continue
 
-            # 条件连接由条件节点专门处理，普通连线直接建立
-            if edge_type == "direct":
-                builder.add_edge(source, target)
+            # 条件分流节点的出边由步骤 3 处理
+            if source_type in CONDITIONAL_NODE_TYPES:
+                logger.info(f"[Compiler] Edge deferred to conditional routing: {source}({source_type}) → {target}")
+                skipped_edges.append(f"{source} → {target} (conditional)")
+                continue
+
+            # 所有其他节点的出边一律添加
+            logger.info(f"[Compiler] Edge: {source}({source_type}) → {target} (edge_visual_type={edge_type})")
+            builder.add_edge(source, target)
+            added_edges.append(f"{source} → {target}")
+
+        logger.info(f"[Compiler] Graph edges summary: added={len(added_edges)}, skipped={len(skipped_edges)} | {added_edges}")
 
         # 2.5 结束节点统一连向 END
         for node in nodes:
-            if node.get("type") == "end":
+            if node.get("type") == "end" and node["id"] not in all_body_node_ids:
                 builder.add_edge(node["id"], END)
 
         # 3. 遍历并处理条件边与分流节点
         for node in nodes:
             node_id = node["id"]
             node_type = node["type"]
+            # 跳过体节点中的条件节点（已编译进子图）
+            if node_id in all_body_node_ids:
+                continue
             node_config = convert_keys_to_snake(node.get("config", {}))
 
-            if node_type == "condition":
-                true_route = node_config.get("true_route")
-                false_route = node_config.get("false_route")
-                if true_route and false_route:
-                    builder.add_conditional_edges(
-                        node_id,
-                        cls.create_conditional_router(node_id, node_config),
-                        {true_route: true_route, false_route: false_route}
-                    )
+            if node_type in CONDITIONAL_NODE_TYPES:
+                _add_conditional_edges_for_node(builder, node)
 
-            elif node_type == "intent_classifier":
-                intents = node_config.get("intents", [])
-                default_route = node_config.get("default_route")
-                path_map = {}
-                for intent in intents:
-                    target = intent.get("target_route")
-                    if target:
-                        path_map[target] = target
-                if default_route:
-                    path_map[default_route] = default_route
-
-                if path_map:
-                    builder.add_conditional_edges(
-                        node_id,
-                        cls.create_intent_router(node_id, node_config),
-                        path_map
-                    )
-
-            elif node_type == "loop_controller":
-                loop_body = node_config.get("loop_body_route")
-                exit_route = node_config.get("exit_route")
-                if loop_body and exit_route:
-                    builder.add_conditional_edges(
-                        node_id,
-                        cls.create_loop_router(node_id, node_config),
-                        {loop_body: loop_body, exit_route: exit_route}
-                    )
-
-            elif node_type == "switch":
-                cases = node_config.get("cases", [])
-                default_route = node_config.get("default_route")
-                path_map = {}
-                for case in cases:
-                    target = case.get("target_route")
-                    if target:
-                        path_map[target] = target
-                if default_route:
-                    path_map[default_route] = default_route
-
-                if path_map:
-                    builder.add_conditional_edges(
-                        node_id,
-                        cls.create_switch_router(node_id, node_config),
-                        path_map
-                    )
+        logger.info("[Compiler] Graph build complete: nodes=%s", list(builder.nodes.keys()))
 
         return builder
 
@@ -518,16 +772,6 @@ class WorkflowCompiler:
             target_route = state.get("variables", {}).get(f"{node_id}_selected_route")
             return target_route or config.get("default_route")
         return intent_router
-
-    @classmethod
-    def create_loop_router(cls, node_id: str, config: Dict[str, Any]):
-        """
-        生成循环遍历路由逻辑
-        """
-        def loop_router(state: WorkflowState) -> str:
-            target_route = state.get("variables", {}).get(f"{node_id}_next_route")
-            return target_route or config.get("exit_route")
-        return loop_router
 
     @classmethod
     def create_switch_router(cls, node_id: str, config: Dict[str, Any]):

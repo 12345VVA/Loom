@@ -2,6 +2,7 @@
 工作流核心管理与运行时服务。
 """
 import asyncio
+import copy
 import json
 import logging
 import re
@@ -36,16 +37,22 @@ from app.modules.workflow.service.event_bus import publish_event
 
 # --- 统一的 AI 运行时操作封装 (避免局部 SessionLocal 导入重复与异常静默吞没) ---
 
-def run_ai_chat(profile_code: str, prompt: str) -> str:
+def run_ai_chat(
+    profile_code: str,
+    prompt: str,
+    response_format: dict[str, Any] | None = None,
+) -> str:
     """
-    统一驱动对话模型，做空响应拦截防御
+    统一驱动对话模型，做空响应拦截防御。
+    response_format 支持 json_schema / json_object / None(纯文本)。
     """
     from app.core.database import SessionLocal
     with SessionLocal() as session:
         runtime_service = AiModelRuntimeService(session)
         chat_request = AiChatRequest(
             profile_code=profile_code,
-            messages=[AiRuntimeMessage(role="user", content=prompt)]
+            messages=[AiRuntimeMessage(role="user", content=prompt)],
+            response_format=response_format,
         )
         result = runtime_service.chat(chat_request)
 
@@ -64,15 +71,16 @@ def run_ai_image(
     size: str | None = None,
     image: str | list[str] | None = None,
     custom_options: dict[str, Any] | None = None,
-) -> str:
+) -> dict[str, Any]:
     """
-    统一驱动图像模型，做空响应拦截防御，并支持自适应尺寸与参考图
+    统一驱动图像模型，做空响应拦截防御，并支持自适应尺寸与参考图。
+    返回 {"url": ..., "result": ..., "request_payload": ...} 以便调用方进一步持久化。
     """
     from app.core.database import SessionLocal
     with SessionLocal() as session:
         runtime_service = AiModelRuntimeService(session)
         from app.modules.ai.model.ai import AiImageRequest
-        
+
         # 组装参数
         options = dict(custom_options or {})
         if size:
@@ -85,46 +93,219 @@ def run_ai_image(
             options=options
         )
         result = runtime_service.image(image_request)
-        
+
         data = result.get("data", [])
         if not data:
             raise ValueError(f"绘图大模型响应的图片列表为空。错误详情: {result.get('errorMessage') or '未返回详情'}")
-            
+
         image_url = data[0].get("url", "")
-        return image_url
+        request_payload = {"prompt": prompt, "options": options, "size": size}
+        return {"url": image_url, "result": result, "request_payload": request_payload}
 
 
 # --- 1. 注册核心节点执行逻辑 ---
 
+def _field_to_schema(f: dict) -> dict[str, Any]:
+    field_type = f.get("type", "string").strip()
+    desc = f.get("description", "").strip()
+    
+    schema = {}
+    if desc:
+        schema["description"] = desc
+        
+    if field_type == "object":
+        schema["type"] = "object"
+        properties = {}
+        required = []
+        for child in (f.get("children") or []):
+            child_name = child.get("name", "").strip()
+            if not child_name or child_name == "[Item]":
+                continue
+            properties[child_name] = _field_to_schema(child)
+            required.append(child_name)
+        schema["properties"] = properties
+        schema["required"] = required
+        schema["additionalProperties"] = False
+        
+    elif field_type == "array_object":
+        schema["type"] = "array"
+        properties = {}
+        required = []
+        for child in (f.get("children") or []):
+            child_name = child.get("name", "").strip()
+            if not child_name:
+                continue
+            properties[child_name] = _field_to_schema(child)
+            required.append(child_name)
+        schema["items"] = {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False
+        }
+        
+    elif field_type == "array_string":
+        schema["type"] = "array"
+        schema["items"] = {"type": "string"}
+        
+    elif field_type == "array_number":
+        schema["type"] = "array"
+        schema["items"] = {"type": "number"}
+        
+    elif field_type == "array_boolean":
+        schema["type"] = "array"
+        schema["items"] = {"type": "boolean"}
+        
+    elif field_type == "array":
+        schema["type"] = "array"
+        children = f.get("children") or []
+        if children:
+            schema["items"] = _field_to_schema(children[0])
+        else:
+            schema["items"] = {"type": "string"}
+            
+    else:
+        # 兼容 OpenAI Schema 规范，确保 boolean, number/integer, string 类型正确
+        schema["type"] = field_type
+        
+    return schema
+
+
+def _build_json_schema_from_fields(
+    json_fields: list[dict],
+    schema_name: str = "workflow_output",
+) -> dict[str, Any] | None:
+    """
+    将工作流 jsonFields [{name, type, description, children}] 转为 OpenAI 兼容的 JSON Schema。
+    无有效字段时返回 None（调用方应回退到 json_object）。
+    """
+    if not json_fields:
+        return None
+
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for f in json_fields:
+        name = f.get("name", "").strip()
+        if not name or name == "[Item]":
+            continue
+        properties[name] = _field_to_schema(f)
+        required.append(name)
+
+    if not properties:
+        return None
+
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def _build_json_desc_recursive(fields: list[dict], indent: int = 1) -> str:
+    parts = []
+    indent_space = "  " * indent
+    for f in fields:
+        name = f.get("name")
+        if not name:
+            continue
+        desc = f.get("description", "")
+        field_type = f.get("type", "string").strip()
+        
+        desc_str = f" ({desc})" if desc else ""
+        
+        if field_type == "object":
+            children_str = _build_json_desc_recursive(f.get("children") or [], indent + 1)
+            parts.append(f'{indent_space}"{name}": {{\n{children_str}\n{indent_space}}}')
+        elif field_type == "array_object":
+            children_str = _build_json_desc_recursive(f.get("children") or [], indent + 2)
+            indent_next = "  " * (indent + 1)
+            parts.append(f'{indent_space}"{name}": [\n{indent_next}{{\n{children_str}\n{indent_next}}}\n{indent_space}]')
+        elif field_type == "array_string":
+            parts.append(f'{indent_space}"{name}": [string{desc_str}]')
+        elif field_type == "array_number":
+            parts.append(f'{indent_space}"{name}": [number{desc_str}]')
+        elif field_type == "array_boolean":
+            parts.append(f'{indent_space}"{name}": [boolean{desc_str}]')
+        elif field_type == "array":
+            children = f.get("children") or []
+            if children:
+                item_field = children[0]
+                item_type = item_field.get("type", "string").strip()
+                if item_type == "object":
+                    item_str = _build_json_desc_recursive(item_field.get("children") or [], indent + 2)
+                    indent_next = "  " * (indent + 1)
+                    parts.append(f'{indent_space}"{name}": [\n{indent_next}{{\n{item_str}\n{indent_next}}}\n{indent_space}]')
+                else:
+                    item_desc = item_field.get("description", "")
+                    item_desc_str = f" ({item_desc})" if item_desc else ""
+                    parts.append(f'{indent_space}"{name}": [{item_type}{item_desc_str}]')
+            else:
+                parts.append(f'{indent_space}"{name}": []')
+        else:
+            parts.append(f'{indent_space}"{name}": {field_type}{desc_str}')
+            
+    return ",\n".join(parts)
+
+
 async def execute_llm_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    LLM 节点执行逻辑
+    LLM 节点执行逻辑，支持分层 JSON 输出：
+    Tier 1: json_schema（有 jsonFields 时自动生成 Schema）
+    Tier 2: json_object（宽松 JSON 模式）
+    Tier 3: 纯文本（无 response_format）
     """
     profile_code = config.get("model_profile_code")
     prompt_template = config.get("prompt_template", "")
     output_variable = config.get("output_variable", "output")
 
-    # 1. JSON 模式自动注入格式指令
     output_format = config.get("output_format", "text")
+    json_fields = config.get("json_fields", [])
+    response_format = None
+
     if output_format == "json":
-        json_fields = config.get("json_fields", [])
+        # Tier 1: json_schema — 有字段定义时生成 Schema
+        schema = _build_json_schema_from_fields(json_fields)
+        if schema:
+            response_format = schema
+        else:
+            # Tier 2: json_object — 无字段定义，宽松模式
+            response_format = {"type": "json_object"}
+
+        # 文本指令始终追加作为兜底
         if json_fields:
-            field_desc = ", ".join(
-                f'"{f["name"]}": ...' for f in json_fields if f.get("name")
-            )
+            field_desc = _build_json_desc_recursive(json_fields, 1)
             prompt_template += (
                 f'\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。\n'
-                f'JSON 结构如下：\n{{{field_desc}}}'
+                f'JSON 结构如下：\n{{\n{field_desc}\n}}'
+            )
+        else:
+            prompt_template += (
+                '\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。'
             )
 
-    # 2. 解析 Prompt 变量渲染
+    elif output_format == "json_object":
+        # Tier 2: json_object — 用户显式选择宽松模式
+        response_format = {"type": "json_object"}
+        prompt_template += (
+            '\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。'
+        )
+
+    # 渲染 Prompt 变量
     prompt = render_template(prompt_template, variables)
 
-    # 3. 调用统一的 AI 对话驱动
-    content = await asyncio.to_thread(run_ai_chat, profile_code, prompt)
+    # 调用统一的 AI 对话驱动
+    content = await asyncio.to_thread(run_ai_chat, profile_code, prompt, response_format)
 
-    # 4. 输出格式处理：JSON 模式自动解析结构化输出
-    if output_format == "json":
+    # JSON 模式自动解析结构化输出
+    if output_format in ("json", "json_object"):
         stripped = content.strip()
         if stripped.startswith("```"):
             stripped = re.sub(r'^```\w*\n?', '', stripped)
@@ -231,91 +412,97 @@ async def execute_intent_classifier_node(variables: Dict[str, Any], config: Dict
 
 async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    循环控制器节点执行逻辑（实现列表/数组遍历）
+    循环控制器节点执行逻辑（子图模式：顺序遍历列表，每项独立调用体子图）。
+    每次迭代深拷贝变量 + 注入当前元素，执行完毕收集结果数组。
     """
-    node_id = config.get("id", "loop_controller")
-    list_var_name = config.get("list_variable", "list_variable")
-    array_list = variables.get(list_var_name) or []
-    if not isinstance(array_list, list):
-        array_list = []
-        
-    loop_index = variables.get("loop_index", 0)
-    item_variable = config.get("item_variable", "loop_item")
-    loop_body_route = config.get("loop_body_route")
-    exit_route = config.get("exit_route")
+    compiled_body = config.get("_compiled_body")
+    if not compiled_body:
+        raise ValueError(
+            "循环控制器节点缺少已编译的体子图。"
+            "请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。"
+        )
+    list_var = config.get("list_variable", "list_variable")
+    item_var = config.get("item_variable", "loop_item")
+    output_var = config.get("output_variable", "loop_results")
 
-    if loop_index < len(array_list):
-        # 还有剩余子项：提取单项，递增索引，走向循环体内
-        current_item = array_list[loop_index]
-        return {
-            item_variable: current_item,
-            "loop_index": loop_index + 1,
-            f"{node_id}_next_route": loop_body_route
-        }
-    else:
-        # 已遍历完毕：重置索引，流向出口
-        return {
-            "loop_index": 0,
-            f"{node_id}_next_route": exit_route
-        }
+    items = variables.get(list_var) or []
+    if not isinstance(items, list) or not items:
+        return {output_var: []}
+
+    results = []
+    for idx, item in enumerate(items):
+        iter_vars = copy.deepcopy(variables)
+        iter_vars[item_var] = item
+        body_state = {"messages": [], "variables": iter_vars, "current_node": "start"}
+        try:
+            body_result = await compiled_body.ainvoke(body_state)
+            results.append(body_result.get("variables", {}))
+            logger.info("[Loop] Iteration %d/%d complete: item=%s", idx + 1, len(items), str(item)[:80])
+        except Exception as e:
+            logger.error("[Loop] Iteration %d/%d failed: %s", idx + 1, len(items), e)
+            results.append({"error": str(e)})
+
+    return {output_var: results}
 
 
 async def execute_batch_processor_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    批处理并发节点执行逻辑
+    批处理并发节点执行逻辑（子图模式：并发遍历列表，每项独立调用体子图）。
+    使用 asyncio.gather + Semaphore 控制并发，return_exceptions=True 容错。
     """
-    batch_list_var_name = config.get("batch_list_variable", "batch_list_variable")
-    input_list = variables.get(batch_list_var_name) or []
-    if not isinstance(input_list, list):
-        input_list = []
-        
-    action_template = config.get("action_template", {})
-    action_type = action_template.get("type", "llm")
-    action_config = action_template.get("config", {})
-    # 限制最大并发数在 1 至 20 之间，防御恶意或过大的并发量导致资源耗尽
+    compiled_body = config.get("_compiled_body")
+    if not compiled_body:
+        raise ValueError(
+            "批处理节点缺少已编译的体子图。"
+            "请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。"
+        )
+    list_var = config.get("list_variable", "batch_list_variable")
+    item_var = config.get("item_variable", "batch_item")
+    output_var = config.get("output_variable", "batch_results")
     concurrency_limit = min(max(int(config.get("concurrency_limit", 5) or 5), 1), 20)
-    output_variable = config.get("output_variable", "batch_results")
 
-    if not input_list:
-        return {output_variable: []}
+    items = variables.get(list_var) or []
+    if not isinstance(items, list) or not items:
+        return {output_var: []}
 
     semaphore = asyncio.Semaphore(concurrency_limit)
 
-    async def run_single_task(item: Any) -> Any:
+    async def run_body(item: Any) -> Dict[str, Any]:
         async with semaphore:
-            if action_type == "llm":
-                profile_code = action_config.get("model_profile_code")
-                prompt_template = action_config.get("prompt_template", "")
-                try:
-                    if isinstance(item, dict):
-                        prompt = render_template(prompt_template, item)
-                    else:
-                        prompt = render_template(prompt_template, {"topic": item, "item": item})
-                except Exception:
-                    prompt = prompt_template
+            iter_vars = copy.deepcopy(variables)
+            iter_vars[item_var] = item
+            body_state = {"messages": [], "variables": iter_vars, "current_node": "start"}
+            body_result = await compiled_body.ainvoke(body_state)
+            return body_result.get("variables", {})
 
-                try:
-                    return await asyncio.to_thread(run_ai_chat, profile_code, prompt)
-                except Exception as e:
-                    logger.error(f"批处理大模型调用失败: {e}")
-                    return f"Error: {e}"
-            
-            await asyncio.sleep(0.1)
-            return f"Processed: {item}"
+    raw_results = await asyncio.gather(
+        *[run_body(item) for item in items],
+        return_exceptions=True
+    )
 
-    tasks = [run_single_task(item) for item in input_list]
-    results = await asyncio.gather(*tasks)
+    results = []
+    for r in raw_results:
+        if isinstance(r, Exception):
+            logger.error("[Batch] Single iteration failed: %s", r)
+            results.append({"error": str(r)})
+        else:
+            results.append(r)
 
-    return {output_variable: results}
+    logger.info("[Batch] All %d iterations complete (concurrency=%d)", len(items), concurrency_limit)
+    return {output_var: results}
 
 
 async def execute_image_generator_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
     生图节点执行逻辑，已增强支持自适应尺寸、参考图、以及自定义 options。
+    生成的图片自动转存到媒体资源库，返回永久存储 URL。
     """
+    from app.core.database import SessionLocal
+    from app.modules.media.service.media_service import MediaAssetService
+
     profile_code = config.get("model_profile_code")
     prompt_template = config.get("prompt_template", "")
-    size = config.get("size") or None  # 不强加默认的 "1024x1024"，以向下继承模型默认设置
+    size = config.get("size") or None
     output_variable = config.get("output_variable", "image_url")
 
     # 1. 渲染提示词模版
@@ -332,23 +519,89 @@ async def execute_image_generator_node(variables: Dict[str, Any], config: Dict[s
         except Exception:
             pass
 
-    # 3. 提取其他自定义参数配置
+    # 3. 合并自定义参数（支持前端 optionsJson 字段）
     custom_options = config.get("options") or {}
+    options_json = config.get("options_json") or ""
+    if options_json.strip():
+        try:
+            parsed = json.loads(options_json)
+            if isinstance(parsed, dict):
+                custom_options = {**custom_options, **parsed}
+        except json.JSONDecodeError:
+            logger.warning(f"生图节点 optionsJson 解析失败: {options_json}")
 
+    # 4. 调用 AI 生图
     try:
-        image_url = await asyncio.to_thread(
-            run_ai_image, 
-            profile_code, 
-            prompt, 
-            size, 
-            image_val, 
-            custom_options
+        ai_result = await asyncio.to_thread(
+            run_ai_image, profile_code, prompt, size, image_val, custom_options
         )
     except Exception as e:
         logger.error(f"工作流生图 API 呼叫失败: {e}")
-        image_url = ""
+        return {output_variable: ""}
 
-    return {output_variable: image_url}
+    temp_url = ai_result["url"]
+    if not temp_url:
+        return {output_variable: ""}
+
+    # 5. 转存到媒体资源库
+    permanent_url = temp_url
+    try:
+        permanent_url = await asyncio.to_thread(
+            _persist_image_to_media,
+            ai_result["result"],
+            ai_result["request_payload"],
+            profile_code,
+        )
+        logger.info(f"工作流生图转存成功: temp={temp_url[:80]}... → permanent={permanent_url}")
+    except Exception as e:
+        logger.warning(f"工作流生图转存失败，使用临时 URL: {e}")
+
+    return {output_variable: permanent_url}
+
+
+def _persist_image_to_media(
+    result: dict[str, Any],
+    request_payload: dict[str, Any],
+    profile_code: str | None = None,
+) -> str:
+    """将 AI 生图结果转存到媒体资源库，返回永久存储 URL。转存失败时抛异常由调用方兜底。"""
+    from app.core.database import SessionLocal
+    from app.modules.media.service.media_service import MediaAssetService
+
+    with SessionLocal() as session:
+        media_service = MediaAssetService(session)
+        assets = media_service.create_from_ai_result(
+            task_type="image",
+            result=result,
+            request_payload=request_payload,
+            source_type="workflow",
+            profile_code=profile_code,
+        )
+        # 正常转存成功
+        if assets:
+            try:
+                url = assets[0].storage_url
+                if url:
+                    return url
+            except Exception:
+                pass  # 去重场景：asset 已被 session.delete，属性访问可能异常
+
+        # 去重兜底：按 original_url 查找已有的同源资产
+        data = result.get("data", [])
+        original_url = data[0].get("url", "") if data else ""
+        if original_url:
+            from app.modules.media.model.media import MediaAsset as MA
+            existing = session.exec(
+                select(MA).where(
+                    MA.original_url == original_url,
+                    MA.status == "success",
+                    MA.delete_time == None,  # noqa: E711
+                ).order_by(MA.created_at.desc())
+            ).first()
+            if existing and existing.storage_url:
+                return existing.storage_url
+
+        raise ValueError("媒体转存未返回有效存储地址")
 
 
 async def tool_web_search(query: str, max_results: int = 3) -> str:
@@ -402,25 +655,49 @@ async def execute_tool_executor_node(variables: Dict[str, Any], config: Dict[str
     return {output_variable: res}
 
 
+def _render_output_field_recursive(field: dict, variables: Dict[str, Any]) -> Any:
+    field_type = field.get("type", "string").strip()
+    
+    if field_type == "object":
+        result = {}
+        for child in (field.get("children") or []):
+            child_name = child.get("name", "")
+            if not child_name:
+                continue
+            result[child_name] = _render_output_field_recursive(child, variables)
+        return result
+        
+    elif field_type == "array":
+        result = []
+        for child in (field.get("children") or []):
+            result.append(_render_output_field_recursive(child, variables))
+        return result
+        
+    else:
+        value_tpl = field.get("value", "")
+        if isinstance(value_tpl, str):
+            rendered = render_template(value_tpl, variables)
+            try:
+                return json.loads(rendered)
+            except (json.JSONDecodeError, ValueError):
+                return rendered
+        return value_tpl
+
+
 async def execute_end_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    结束节点：支持结构化字段输出和文本/JSON 两种模式
+    结束节点：支持结构化字段输出和文本/JSON 两种模式（支持多层嵌套结构）
     """
     output_format = config.get("output_format", "")
 
     if output_format == "json" and config.get("output_fields"):
-        # 结构化字段模式：逐字段渲染，组装 JSON 对象
+        # 结构化字段模式：递归渲染嵌套字段
         result = {}
         for field in config["output_fields"]:
             name = field.get("name", "")
-            value_tpl = field.get("value", "")
             if not name:
                 continue
-            rendered = render_template(value_tpl, variables)
-            try:
-                result[name] = json.loads(rendered)
-            except (json.JSONDecodeError, ValueError):
-                result[name] = rendered
+            result[name] = _render_output_field_recursive(field, variables)
         return {"workflow_output": result}
     else:
         # 文本模式或旧数据兼容（使用 output_template）

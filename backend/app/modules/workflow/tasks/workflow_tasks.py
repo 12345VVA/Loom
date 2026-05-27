@@ -61,8 +61,15 @@ async def _async_execute(
             graph_json_str = definition.graph_json
 
         graph_json = json.loads(graph_json_str)
+        logger.info(
+            "[Workflow] Compiling graph: instance=%d, nodes=%s, edges=%s",
+            instance_id,
+            [n.get("id") for n in graph_json.get("nodes", [])],
+            [(e.get("source"), e.get("target"), e.get("type")) for e in graph_json.get("edges", [])],
+        )
         graph = WorkflowCompiler.compile_graph(graph_json)
         compiled = graph.compile(checkpointer=get_checkpointer())
+        logger.info("[Workflow] Graph compiled successfully, instance=%d", instance_id)
 
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 100}
 
@@ -77,6 +84,7 @@ async def _async_execute(
 
         last_step_time = time.perf_counter()
         current_vars = initial_vars
+        event_count = 0
 
         # 预先构建节点字典映射，避免在事件循环中进行 O(N) 线性查找性能损耗
         nodes_map = {node["id"]: node for node in graph_json.get("nodes", [])}
@@ -84,6 +92,7 @@ async def _async_execute(
         # 3. 迭代执行事件
         async for event in events:
             for node_id, node_output in event.items():
+                event_count += 1
                 current_time = time.perf_counter()
                 latency_ms = int((current_time - last_step_time) * 1000)
                 last_step_time = current_time
@@ -107,6 +116,10 @@ async def _async_execute(
                     return
 
                 new_vars = node_output.get("variables", {})
+                logger.info(
+                    "[Workflow] Event #%d: node=%s, vars_keys=%s, instance=%d",
+                    event_count, node_id, list(new_vars.keys()) if isinstance(new_vars, dict) else None, instance_id,
+                )
 
                 with Session(engine) as session:
                     instance = session.get(WorkflowInstance, instance_id)
@@ -138,6 +151,7 @@ async def _async_execute(
                 })
 
         # 执行完毕
+        logger.info("[Workflow] Execution completed: instance=%d, total_events=%d", instance_id, event_count)
         with Session(engine) as session:
             instance = session.get(WorkflowInstance, instance_id)
             state_data_str = "{}"
