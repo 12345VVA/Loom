@@ -32,12 +32,7 @@
 						<span>{{ $t('按适配器填充常用配置') }}</span>
 						<el-button text type="primary" @click="fillExtraConfig(scope)">{{ $t('填充模板') }}</el-button>
 					</div>
-					<el-input
-						v-model="scope.extraConfig"
-						type="textarea"
-						:rows="7"
-						placeholder='{"timeout": 60}'
-					/>
+						<cl-editor-codemirror v-model="scope.extraConfig" :height="280" />
 				</div>
 			</template>
 		</cl-upsert>

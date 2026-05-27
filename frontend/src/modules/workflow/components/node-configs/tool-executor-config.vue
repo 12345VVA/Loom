@@ -6,12 +6,7 @@
 		</el-select>
 	</el-form-item>
 	<el-form-item :label="$t('工具参数 JSON')" required>
-		<el-input
-			v-model="config.argumentsJson"
-			type="textarea"
-			:rows="5"
-			placeholder='网页搜索参数：{"query": "variables.topic", "max_results": 3}&#10;文件读写参数：{"filename": "out.txt", "content": "variables.output"}'
-		/>
+		<cl-editor-codemirror v-model="config.argumentsJson" :height="200" />
 		<div class="field-hint">支持以 "variables.变量名" 级联绑定上下文值。</div>
 	</el-form-item>
 	<el-form-item :label="$t('输出结果写入变量')" required>

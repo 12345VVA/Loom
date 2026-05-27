@@ -46,7 +46,7 @@
 				<el-input v-model="submitter.profileCode" clearable />
 			</el-form-item>
 			<el-form-item :label="$t('请求 JSON')">
-				<el-input v-model="submitter.payload" type="textarea" :rows="10" />
+				<cl-editor-codemirror v-model="submitter.payload" :height="340" />
 			</el-form-item>
 			<el-button type="primary" @click="submitTask">{{ $t('提交') }}</el-button>
 		</el-form>

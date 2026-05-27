@@ -34,7 +34,7 @@
 				<el-input v-model="preview.code" />
 			</el-form-item>
 			<el-form-item :label="$t('上下文 JSON')">
-				<el-input v-model="preview.context" type="textarea" :rows="8" />
+				<cl-editor-codemirror v-model="preview.context" :height="300" />
 			</el-form-item>
 			<el-button type="primary" @click="doPreview">{{ $t('预览') }}</el-button>
 		</el-form>

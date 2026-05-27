@@ -27,18 +27,22 @@
 		</cl-row>
 
 		<cl-upsert ref="Upsert">
+			<template #slot-pricing-config="{ scope }">
+				<div class="default-config-editor">
+					<div class="default-config-editor__tools">
+						<span>{{ $t('模型调用价格配置') }}</span>
+						<el-button text type="primary" @click="fillPricingConfig(scope)">{{ $t('填充示例') }}</el-button>
+					</div>
+					<cl-editor-codemirror v-model="scope.pricingConfig" :height="200" />
+				</div>
+			</template>
 			<template #slot-default-config="{ scope }">
 				<div class="default-config-editor">
 					<div class="default-config-editor__tools">
 						<span>{{ defaultConfigHint(scope) }}</span>
 						<el-button text type="primary" @click="fillDefaultConfig(scope)">{{ $t('填充示例') }}</el-button>
 					</div>
-					<el-input
-						v-model="scope.defaultConfig"
-						type="textarea"
-						:rows="6"
-						:placeholder="defaultConfigPlaceholder(scope)"
-					/>
+					<cl-editor-codemirror v-model="scope.defaultConfig" :height="260" />
 				</div>
 			</template>
 		</cl-upsert>
@@ -104,7 +108,7 @@ const Upsert = useUpsert({
 		{
 			label: t('价格配置'),
 			prop: 'pricingConfig',
-			component: { name: 'el-input', props: { type: 'textarea', rows: 4, placeholder: '{"input": 0, "output": 0}' } }
+			component: { name: 'slot-pricing-config' }
 		},
 		{
 			label: t('默认参数'),
@@ -174,6 +178,10 @@ function defaultConfigPlaceholder(scope: any) {
 
 function fillDefaultConfig(scope: any) {
 	scope.defaultConfig = defaultConfigPlaceholder(scope);
+}
+
+function fillPricingConfig(scope: any) {
+	scope.pricingConfig = JSON.stringify({ input: 0, output: 0 }, null, 2);
 }
 
 function defaultConfigTemplate(scope: any) {

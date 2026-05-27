@@ -40,13 +40,7 @@
 					<el-input v-model="scope.responseSchemaName" class="mt-2" placeholder="schema_name" />
 					<el-input v-model="scope.responseSchemaDescription" class="mt-2" placeholder="description" />
 					<el-switch v-model="scope.responseSchemaStrict" class="mt-2" active-text="strict" />
-					<el-input
-						v-model="scope.responseSchemaBody"
-						class="mt-2"
-						type="textarea"
-						:rows="8"
-						placeholder='{"type":"object","properties":{},"required":[],"additionalProperties":false}'
-					/>
+					<cl-editor-codemirror v-model="scope.responseSchemaBody" class="mt-2" :height="300" />
 				</template>
 			</div>
 		</template>
@@ -138,7 +132,7 @@ const Upsert = useUpsert({
 		{
 			label: 'tools',
 			prop: 'toolsConfig',
-			component: { name: 'el-input', props: { type: 'textarea', rows: 4, placeholder: '[]' } }
+			component: { name: 'cl-editor', props: { name: 'cl-editor-codemirror', height: 200 } }
 		},
 		{
 			label: 'timeout(s)',

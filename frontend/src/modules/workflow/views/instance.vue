@@ -38,12 +38,7 @@
 				</el-select>
 			</el-form-item>
 			<el-form-item :label="$t('初始输入变量')">
-				<el-input
-					v-model="startDialog.form.inputsJson"
-					type="textarea"
-					:rows="6"
-					placeholder='{"input_query": "关于AI的作文"}'
-				/>
+				<cl-editor-codemirror v-model="startDialog.form.inputsJson" :height="220" />
 			</el-form-item>
 		</el-form>
 		<template #footer>
