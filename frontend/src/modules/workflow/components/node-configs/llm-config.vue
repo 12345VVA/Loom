@@ -10,12 +10,7 @@
 		</el-select>
 	</el-form-item>
 	<el-form-item :label="$t('Prompt 提示词模板')" required>
-		<el-input
-			v-model="config.promptTemplate"
-			type="textarea"
-			:rows="8"
-			placeholder="支持使用变量插值。例如：请写一篇关于 {input_query} 的文章"
-		/>
+		<cl-editor-markdown v-model="config.promptTemplate" :height="320" simple placeholder="支持使用变量插值。例如：请写一篇关于 {input_query} 的文章" />
 	</el-form-item>
 	<el-form-item :label="$t('输出格式')">
 		<el-select v-model="config.outputFormat" style="width: 100%">

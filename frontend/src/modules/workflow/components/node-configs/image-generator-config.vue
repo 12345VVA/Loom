@@ -10,12 +10,7 @@
 		</el-select>
 	</el-form-item>
 	<el-form-item :label="$t('Prompt 提示词模板')" required>
-		<el-input
-			v-model="config.promptTemplate"
-			type="textarea"
-			:rows="4"
-			placeholder="支持插值变量，例如：画一张关于 {topic} 的图片"
-		/>
+		<cl-editor-markdown v-model="config.promptTemplate" :height="220" simple placeholder="支持插值变量，例如：画一张关于 {topic} 的图片" />
 	</el-form-item>
 	<el-form-item :label="$t('图片尺寸 (size)')" required>
 		<el-select v-model="config.size" style="width: 100%">

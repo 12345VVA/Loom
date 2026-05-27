@@ -175,7 +175,7 @@ const Upsert = useUpsert({
 			component: {
 				name: 'cl-editor',
 				props: {
-					name: 'cl-editor-wang'
+					name: 'cl-editor-markdown'
 				}
 			}
 		},

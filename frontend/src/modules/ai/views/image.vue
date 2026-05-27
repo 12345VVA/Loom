@@ -43,7 +43,7 @@
 
 			<div class="section">
 				<div class="section__title">{{ $t('提示词') }}</div>
-				<el-input v-model="form.prompt" type="textarea" :rows="6" :placeholder="$t('输入图片生成提示词')" />
+				<cl-editor-markdown v-model="form.prompt" :height="260" simple />
 				<div v-if="isErnieIrag && form.prompt.length > 220" class="field-tip warning mt-10">
 					<el-icon><info-filled /></el-icon>
 					<span>{{ $t('提示：当前为 ERNIE iRAG 检索增强生图，Prompt 长度超过限额（最大 220 字符），后端将自动截断。') }}</span>

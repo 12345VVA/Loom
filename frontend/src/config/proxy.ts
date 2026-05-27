@@ -9,6 +9,11 @@ const proxy = {
 		target: 'http://127.0.0.1:8000',
 		changeOrigin: true,
 		rewrite: (path: string) => path.replace(/^\/prod/, '/api')
+	},
+
+	'/uploads/': {
+		target: 'http://127.0.0.1:8000',
+		changeOrigin: true
 	}
 };
 

@@ -32,12 +32,7 @@
 	<template v-if="config.outputFormat === 'text'">
 		<el-form-item :label="$t('输出模板')">
 			<div class="field-hint" style="margin-bottom: 8px;">使用 {变量名} 引用上游变量，渲染结果作为纯文本输出。</div>
-			<el-input
-				v-model="config.outputTemplate"
-				type="textarea"
-				:rows="6"
-				placeholder="支持使用变量插值。例如：最终结果为 {LLM节点_output}"
-			/>
+			<cl-editor-markdown v-model="config.outputTemplate" :height="260" placeholder="支持使用变量插值。例如：最终结果为 {LLM节点_output}" />
 		</el-form-item>
 	</template>
 </template>

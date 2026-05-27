@@ -78,7 +78,7 @@ const Upsert = useUpsert({
 			label: t('内容模板'),
 			prop: 'contentTemplate',
 			required: true,
-			component: { name: 'el-input', props: { type: 'textarea', rows: 5 } }
+			component: { name: 'cl-editor', props: { name: 'cl-editor-markdown', height: 280 } }
 		},
 		{ label: t('默认级别'), prop: 'defaultLevel', value: 'info', component: { name: 'el-input' } },
 		{ label: t('默认链接'), prop: 'defaultLinkUrl', component: { name: 'el-input' } },

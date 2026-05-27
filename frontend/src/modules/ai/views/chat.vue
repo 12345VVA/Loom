@@ -22,14 +22,8 @@
 				</div>
 			</div>
 
-			<footer class="composer">
-				<el-input
-					v-model="prompt"
-					type="textarea"
-					:rows="4"
-					:placeholder="$t('输入一段提示词测试 AI 对话')"
-					@keydown.ctrl.enter.prevent="sendChat"
-				/>
+			<footer class="composer" @keydown.ctrl.enter.prevent="sendChat">
+				<cl-editor-markdown v-model="prompt" :height="200" simple />
 
 				<div class="actions">
 					<el-button @click="clearAll">{{ $t('清空') }}</el-button>

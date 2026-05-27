@@ -17,12 +17,7 @@
 		</el-select>
 	</el-form-item>
 	<el-form-item :label="$t('并发 Prompt 模板')" required>
-		<el-input
-			v-model="config.actionTemplate.config.promptTemplate"
-			type="textarea"
-			:rows="4"
-			placeholder="例如：请翻译单词 {item}"
-		/>
+		<cl-editor-markdown v-model="config.actionTemplate.config.promptTemplate" :height="220" simple placeholder="例如：请翻译单词 {item}" />
 	</el-form-item>
 	<el-form-item :label="$t('结果输出变量')" required>
 		<el-input v-model="config.outputVariable" placeholder="默认: batch_results" />
