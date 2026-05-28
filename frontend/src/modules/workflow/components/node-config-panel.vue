@@ -18,22 +18,43 @@
 
 				<el-divider />
 
-				<!-- 上游变量引用提示 -->
+				<!-- 变量引用面板 -->
 				<div v-if="upstreamVariables.length > 0" class="variable-ref-panel">
-					<div class="variable-ref-title">{{ $t('上游可用变量') }}</div>
-					<div class="variable-ref-list">
-						<el-tag
-							v-for="v in flattenedVariables"
-							:key="v.key"
-							size="small"
-							effect="plain"
-							class="variable-tag"
-							@click="insertVariableToField(v.refText)"
-						>
-							{{ v.display }}
-							<span class="variable-source">{{ v.nodeLabel }}</span>
-						</el-tag>
+					<!-- 循环上下文 -->
+					<div v-if="loopContextVars.length > 0" class="variable-section">
+						<div class="variable-section-title">{{ $t('循环上下文') }}</div>
+						<div class="variable-ref-list">
+							<el-tag
+								v-for="v in loopContextVars"
+								:key="v.key"
+								size="small"
+								effect="plain"
+								class="variable-tag variable-tag--loop"
+								@click="insertVariableToField(v.refText)"
+							>
+								{{ v.display }}
+								<span class="variable-source">{{ v.nodeLabel }}</span>
+							</el-tag>
+						</div>
 					</div>
+					<!-- 上游输出 -->
+					<div v-if="upstreamOutputVars.length > 0" class="variable-section">
+						<div class="variable-section-title">{{ $t('上游输出') }}</div>
+						<div class="variable-ref-list">
+							<el-tag
+								v-for="v in upstreamOutputVars"
+								:key="v.key"
+								size="small"
+								effect="plain"
+								class="variable-tag"
+								@click="insertVariableToField(v.refText)"
+							>
+								{{ v.display }}
+								<span class="variable-source">{{ v.nodeLabel }}</span>
+							</el-tag>
+						</div>
+					</div>
+					<!-- 语法提示 -->
 					<div v-if="variableSyntaxHints.length > 0" class="variable-ref-hint">
 						<div v-for="h in variableSyntaxHints" :key="h.label" class="hint-item">
 							<span class="hint-label">{{ h.label }}:</span>
@@ -49,7 +70,9 @@
 					:key="selectedNode.id"
 					v-model="selectedNode.data.config"
 					:profiles="filteredProfiles"
-					:available-target-nodes="availableTargetNodes"
+					:available-target-nodes="selectedNode.type === 'loop_controller' || selectedNode.type === 'batch_processor'
+						? filteredBodyTargetNodes
+						: availableTargetNodes"
 				/>
 			</el-form>
 		</el-scrollbar>
@@ -75,6 +98,7 @@ import LoopControllerConfig from './node-configs/loop-controller-config.vue';
 import BatchProcessorConfig from './node-configs/batch-processor-config.vue';
 import ImageGeneratorConfig from './node-configs/image-generator-config.vue';
 import ToolExecutorConfig from './node-configs/tool-executor-config.vue';
+import LoopBodyGroupConfig from './node-configs/loop-body-group-config.vue';
 
 const { t } = useI18n();
 
@@ -83,6 +107,7 @@ const props = defineProps<{
 	upstreamVariables: any[];
 	variableSyntaxHints: any[];
 	availableTargetNodes: any[];
+	filteredBodyTargetNodes: any[];
 	aiProfiles: any[];
 }>();
 
@@ -100,7 +125,8 @@ const CONFIG_COMPONENTS: Record<string, any> = {
 	loop_controller: LoopControllerConfig,
 	batch_processor: BatchProcessorConfig,
 	image_generator: ImageGeneratorConfig,
-	tool_executor: ToolExecutorConfig
+	tool_executor: ToolExecutorConfig,
+	loop_body_group: LoopBodyGroupConfig
 };
 
 // 节点类型 → 所需的 AI 模型类型映射
@@ -174,6 +200,18 @@ const flattenedVariables = computed(() => {
 		}
 	}
 	return result;
+});
+
+// 循环上下文变量（由 editor.vue 在 group 内节点注入 _isLoopContext 标记）
+const loopContextVars = computed(() => flattenedVariables.value.filter(v => {
+	const src = props.upstreamVariables.find(u => `${u.nodeId}_${u.variableName}` === v.key);
+	return src?._isLoopContext === true;
+}));
+
+// 上游输出变量（非循环上下文）
+const upstreamOutputVars = computed(() => {
+	const loopKeys = new Set(loopContextVars.value.map(v => v.key));
+	return flattenedVariables.value.filter(v => !loopKeys.has(v.key));
 });
 
 // ---------- 变量插入逻辑 ----------
@@ -365,7 +403,25 @@ function insertVariableToField(refText: string) {
 	border: 1px solid var(--el-border-color-lighter);
 }
 
-.variable-ref-title {
+.variable-section {
+		margin-bottom: 8px;
+	}
+
+	.variable-section-title {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--el-text-color-secondary);
+		margin-bottom: 6px;
+		padding-left: 2px;
+	}
+
+	.variable-tag--loop {
+		background: rgba(230, 162, 60, 0.1) !important;
+		border-color: rgba(230, 162, 60, 0.3) !important;
+		color: var(--el-color-warning) !important;
+	}
+
+	.variable-ref-title {
 	font-size: 12px;
 	font-weight: 600;
 	color: var(--el-text-color-secondary);
