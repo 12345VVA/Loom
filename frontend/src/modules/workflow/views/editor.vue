@@ -20,10 +20,17 @@
 			<div class="node-sidebar">
 				<div class="sidebar-title">{{ $t('节点库') }}</div>
 				<div class="sidebar-description">{{ $t('拖拽节点到画布中进行设计') }}</div>
-
+				<el-input
+					v-model="nodeSearch"
+					:prefix-icon="Search"
+					:placeholder="$t('搜索节点...')"
+					clearable
+					size="small"
+					class="node-search"
+				/>
 				<div class="node-templates">
 					<div
-						v-for="item in nodeTemplates"
+						v-for="item in filteredNodeTemplates"
 						:key="item.type"
 						class="node-template-item"
 						:class="'node-template-item--' + item.type"
@@ -42,19 +49,42 @@
 			</div>
 
 			<!-- 画布中央 -->
-			<div class="canvas-wrapper" @drop="onDrop" @dragover.prevent>
+			<div class="canvas-wrapper" @drop="onDrop" @dragover.prevent="onCanvasDragOver" @dragleave="onCanvasDragLeave">
 				<vue-flow
 					v-model="elements"
 					:node-types="nodeTypes"
+					:edge-types="edgeTypes"
 					:default-edge-options="defaultEdgeOptions"
 					@connect="onConnect"
 					@pane-ready="onPaneReady"
 					@node-click="onNodeClick"
 					@pane-click="onPaneClick"
+					@node-contextmenu="onNodeContextMenu"
 				>
 					<background pattern-color="#e0e0e0" :gap="16" />
 					<controls position="bottom-right" />
 				</vue-flow>
+
+				<!-- 右键上下文菜单 -->
+				<div
+					v-if="contextMenu.visible"
+					class="context-menu"
+					:style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+				>
+					<div class="context-menu-item" @click="editContextNode">
+						<el-icon><Edit /></el-icon>
+						<span>{{ $t('配置节点') }}</span>
+					</div>
+					<div class="context-menu-item" @click="duplicateNode">
+						<el-icon><CopyDocument /></el-icon>
+						<span>{{ $t('复制节点') }}</span>
+					</div>
+					<div class="context-menu-divider" />
+					<div class="context-menu-item context-menu-item--danger" @click="deleteContextNode">
+						<el-icon><Delete /></el-icon>
+						<span>{{ $t('删除节点') }}</span>
+					</div>
+				</div>
 			</div>
 
 			<!-- 右侧节点配置面板 -->
@@ -64,6 +94,7 @@
 				:upstream-variables="upstreamVariables"
 				:variable-syntax-hints="variableSyntaxHints"
 				:available-target-nodes="availableTargetNodes"
+				:filtered-body-target-nodes="availableTargetNodes"
 				:ai-profiles="aiProfiles"
 				@delete="deleteSelectedNode"
 			/>
@@ -79,7 +110,7 @@ defineOptions({
 	name: 'workflow-editor'
 });
 
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, computed, watch, provide } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useCool } from '/@/cool';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -105,7 +136,11 @@ import {
 	Picture,
 	ArrowLeft,
 	FolderChecked,
-	Plus
+	Plus,
+	Search,
+	Edit,
+	CopyDocument,
+	Delete
 } from '@element-plus/icons-vue';
 
 // Vue Flow 样式文件
@@ -127,6 +162,8 @@ import LoopControllerNode from '../components/custom-nodes/loop-controller-node.
 import BatchProcessorNode from '../components/custom-nodes/batch-processor-node.vue';
 import ImageGeneratorNode from '../components/custom-nodes/image-generator-node.vue';
 import ToolExecutorNode from '../components/custom-nodes/tool-executor-node.vue';
+import LoopBodyGroupNode from '../components/custom-nodes/loop-body-group-node.vue';
+import LabelEdge from '../components/custom-edges/label-edge.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -148,8 +185,15 @@ const nodeTypes = {
 	loop_controller: LoopControllerNode,
 	batch_processor: BatchProcessorNode,
 	image_generator: ImageGeneratorNode,
-	tool_executor: ToolExecutorNode
+	tool_executor: ToolExecutorNode,
+	loop_body_group: LoopBodyGroupNode
 };
+
+// 注册自定义边组件
+const edgeTypes = { label: LabelEdge };
+
+// 提供获取 elements 的方法给子组件
+provide('getElements', () => elements.value);
 
 const workflowId = ref<string | null>(null);
 const workflowName = ref('');
@@ -158,6 +202,17 @@ const saving = ref(false);
 const selectedNodeId = ref<string | null>(null);
 const isDirty = ref(false);
 const loaded = ref(false);
+
+// 节点搜索
+const nodeSearch = ref('');
+
+// 右键菜单状态
+const contextMenu = reactive({
+	visible: false,
+	x: 0,
+	y: 0,
+	nodeId: ''
+});
 
 interface FlowNode {
 	id: string;
@@ -178,7 +233,9 @@ interface FlowEdge {
 	style?: Record<string, any>;
 	data?: {
 		condition?: string;
+		label?: string;
 	};
+	sourceHandle?: string;
 }
 
 // 可配置大模型配置列表
@@ -203,9 +260,15 @@ const nodeTemplates = [
 	{ type: 'end', name: t('结束节点'), desc: t('工作流汇聚完结点'), icon: CircleCheck }
 ];
 
+// 搜索过滤
+const filteredNodeTemplates = computed(() => {
+	const q = nodeSearch.value.trim().toLowerCase();
+	if (!q) return nodeTemplates;
+	return nodeTemplates.filter(t => t.name.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
+});
+
 // 定义画布连线的默认样式
 const defaultEdgeOptions = {
-	type: 'default',
 	animated: true,
 	style: { stroke: '#409eff', strokeWidth: 2 }
 };
@@ -221,10 +284,27 @@ const availableTargetNodes = computed(() => {
 	return elements.value.filter(el => !('source' in el) && el.id !== selectedNodeId.value) as FlowNode[];
 });
 
+
+
+// 判断节点配置是否不完整
+function isRequiredConfigMissing(node: FlowNode): boolean {
+	const cfg = node.data?.config || {};
+	switch (node.type) {
+		case 'llm': return !cfg.modelProfileCode || !cfg.promptTemplate;
+		case 'condition': return !cfg.expression;
+		case 'switch': return !cfg.variable || !(cfg.cases?.length);
+		case 'image_generator': return !cfg.modelProfileCode || !cfg.promptTemplate;
+		case 'tool_executor': return !cfg.toolCode;
+		case 'human_input': return !cfg.message;
+		case 'intent_classifier': return !cfg.modelProfileCode || !(cfg.intents?.length);
+		default: return false;
+	}
+}
+
 // 收集当前节点的上游可达变量
 const upstreamVariables = computed(() => {
 	if (!selectedNode.value) return [];
-	const result: { nodeId: string; nodeLabel: string; variableName: string; nodeType: string; jsonFields?: any[] }[] = [];
+	const result: { nodeId: string; nodeLabel: string; variableName: string; nodeType: string; jsonFields?: any[]; _isLoopContext?: boolean }[] = [];
 	const visited = new Set<string>();
 	function traceUpstream(nodeId: string) {
 		if (visited.has(nodeId)) return;
@@ -240,7 +320,6 @@ const upstreamVariables = computed(() => {
 			if (src.type === 'start') {
 				if (visited.has(src.id)) continue;
 				visited.add(src.id);
-				// 开始节点提供工作流输入变量
 				const inputVars: string[] = (src.data?.config as any)?.inputVariables || [];
 				for (const varName of inputVars) {
 					if (varName && varName.trim()) {
@@ -262,6 +341,33 @@ const upstreamVariables = computed(() => {
 		}
 	}
 	traceUpstream(selectedNode.value.id);
+
+	// 循环上下文变量注入：当选中节点在 group 内时
+	const parentId = (selectedNode.value as any)?.parentNode;
+	if (parentId) {
+		const groupNode = elements.value.find(
+			el => !('source' in el) && el.id === parentId
+		) as FlowNode | undefined;
+		if (groupNode?.type === 'loop_body_group') {
+			const ctrlId = groupNode.data?.config?.controllerNodeId;
+			if (ctrlId) {
+				const ctrlNode = elements.value.find(
+					el => !('source' in el) && el.id === ctrlId
+				) as FlowNode | undefined;
+				if (ctrlNode) {
+					const itemVar = ctrlNode.data?.config?.itemVariable || 'loop_item';
+					result.unshift({
+						nodeId: ctrlNode.id,
+						nodeLabel: ctrlNode.label,
+						variableName: itemVar,
+						nodeType: ctrlNode.type,
+						_isLoopContext: true
+					});
+				}
+			}
+		}
+	}
+
 	return result;
 });
 
@@ -333,6 +439,14 @@ function deleteSelectedElements() {
 			}
 		});
 
+		// 解除子节点的关联（防止删除 group 时子节点丢失 parentNode 导致渲染异常）
+		elements.value.forEach(el => {
+			if (!('source' in el) && nodeIdsToRemove.has((el as any).parentNode)) {
+				delete (el as any).parentNode;
+				delete (el as any).expandParent;
+			}
+		});
+
 		if (selectedNodeId.value && nodeIdsToRemove.has(selectedNodeId.value)) {
 			selectedNodeId.value = null;
 		}
@@ -356,11 +470,11 @@ async function fetchWorkflowData() {
 		const res = await (service as any).workflow.definition.info({ id: workflowId.value });
 		workflowName.value = res.name;
 		workflowCode.value = res.code;
-		
+
 		// 加载已有的拓扑连线
 		if (res.graphJson && res.graphJson !== '{}') {
 			const graph = JSON.parse(res.graphJson);
-			
+
 			// 转换 JSON 到 Vue Flow 的 elements
 			const loadedElements = graph.elements || [];
 			// 转换 tool_executor 的 arguments
@@ -386,9 +500,51 @@ async function fetchWorkflowData() {
 					el.data.config.jsonFields = [];
 				}
 			});
+
+			// 旧工作流兼容：从 condition/switch/intent_classifier 节点的 config 反向重建边的 sourceHandle
+			const nodesMap = new Map<string, any>();
+			for (const el of loadedElements) {
+				if (!('source' in el)) nodesMap.set(el.id, el);
+			}
+			for (const el of loadedElements) {
+				if (!('source' in el) || el.sourceHandle) continue;
+				const srcNode = nodesMap.get(el.source);
+				if (!srcNode) continue;
+				if (srcNode.type === 'condition') {
+					const cfg = srcNode.data?.config || {};
+					if (el.target === cfg.trueRoute) el.sourceHandle = 'true';
+					else if (el.target === cfg.falseRoute) el.sourceHandle = 'false';
+				} else if (srcNode.type === 'switch') {
+					const cfg = srcNode.data?.config || {};
+					const cases = cfg.cases || [];
+					if (el.target === cfg.defaultRoute) el.sourceHandle = 'default';
+					else {
+						for (let i = 0; i < cases.length; i++) {
+							if (el.target === cases[i].targetRoute) {
+								el.sourceHandle = 'case_' + i;
+								break;
+							}
+						}
+					}
+				} else if (srcNode.type === 'intent_classifier') {
+					const cfg = srcNode.data?.config || {};
+					const intents = cfg.intents || [];
+					if (el.target === cfg.defaultRoute) {
+						el.sourceHandle = 'default';
+					} else {
+						for (let i = 0; i < intents.length; i++) {
+							if (el.target === intents[i].targetRoute) {
+								el.sourceHandle = 'intent_' + i;
+								break;
+							}
+						}
+					}
+				}
+			}
+
 			elements.value = loadedElements;
 		} else {
-			// 初始化一个“开始”和“结束”的默认节点
+			// 初始化一个"开始"和"结束"的默认节点
 			elements.value = [
 				{
 					id: 'node_start',
@@ -478,7 +634,7 @@ function onDrop(event: DragEvent) {
 		config = { outputFormat: 'json', outputFields: [] };
 	}
 
-	const newNode = {
+	const newNode: any = {
 		id,
 		type,
 		label,
@@ -486,7 +642,43 @@ function onDrop(event: DragEvent) {
 		data: { config }
 	};
 
+	// 检查是否落入 group 中
+	const groups = elements.value.filter(
+		(el: any) => !('source' in el) && el.type === 'loop_body_group'
+	) as FlowNode[];
+	
+	let targetGroupId: string | undefined;
+	for (const g of groups) {
+		const gW = parseFloat((g as any).style?.width || '400');
+		const gH = parseFloat((g as any).style?.height || '250');
+		const pos = g.position;
+		if (x + 50 >= pos.x && x + 50 <= pos.x + gW &&
+			y + 20 >= pos.y && y + 20 <= pos.y + gH) {
+			targetGroupId = g.id;
+			// 坐标相对于 parent
+			newNode.position.x = x - pos.x;
+			newNode.position.y = y - pos.y;
+			newNode.parentNode = targetGroupId;
+			newNode.expandParent = true;
+			break;
+		}
+	}
+
 	elements.value.push(newNode);
+
+	// 自动创建组容器（不连线，由用户自行从容器 handle 连出）
+	if (type === 'loop_controller' || type === 'batch_processor') {
+		const groupId = `node_loop_body_group_${Date.now()}`;
+		const groupNode = {
+			id: groupId,
+			type: 'loop_body_group',
+			label: type === 'loop_controller' ? `${label} - 循环体` : `${label} - 批处理体`,
+			position: { x: x + 250, y: y - 50 },
+			style: { width: '400px', height: '250px' },
+			data: { config: { controllerNodeId: id } }
+		};
+		elements.value.push(groupNode);
+	}
 }
 
 function getTypeName(type: string) {
@@ -547,14 +739,100 @@ function getUniqueOutputVar(label: string, defaultVar: string): string {
 
 // 画布内连线
 function onConnect(params: Connection) {
-	const newEdge = {
-		id: `edge_${params.source}_${params.target}`,
-		source: params.source || '',
-		target: params.target || '',
-		animated: true,
-		style: { stroke: '#409eff', strokeWidth: 2 }
+	const source = params.source || '';
+	const target = params.target || '';
+	const sourceHandle = params.sourceHandle;
+
+	// 查找源节点
+	const srcNode = elements.value.find(
+		(el: any) => !('source' in el) && el.id === source
+	) as FlowNode | undefined;
+	if (!srcNode) return;
+
+	// 连线验证
+	if (source === target) { ElMessage.warning(t('不能连接自身')); return; }
+	if (srcNode.type === 'end') { ElMessage.warning(t('结束节点不能有出边')); return; }
+
+	const tgtNode = elements.value.find(
+		(el: any) => !('source' in el) && el.id === target
+	) as FlowNode | undefined;
+	if (tgtNode?.type === 'start') { ElMessage.warning(t('开始节点不能有入边')); return; }
+
+	// condition 每个 Handle 只能连一个目标
+	if (srcNode.type === 'condition' && sourceHandle) {
+		const existing = elements.value.some((el: any) =>
+			'source' in el && el.source === source && (el as any).sourceHandle === sourceHandle
+		);
+		if (existing) {
+			ElMessage.warning(t(sourceHandle === 'true' ? 'True 分支已连线' : 'False 分支已连线'));
+			return;
+		}
+	}
+
+	// intent_classifier / switch 每个 Handle 只能连一个目标
+	if ((srcNode.type === 'intent_classifier' || srcNode.type === 'switch') && sourceHandle) {
+		const existing = elements.value.some((el: any) =>
+			'source' in el && el.source === source && (el as any).sourceHandle === sourceHandle
+		);
+		if (existing) {
+			ElMessage.warning(t('该端口已连线'));
+			return;
+		}
+	}
+
+	// 去重
+	const exists = elements.value.some(
+		(el: any) => 'source' in el && el.source === source && el.target === target
+	);
+	if (exists) return;
+
+	// 写回 config 路由（兼容旧逻辑）
+	if (srcNode.type === 'condition') {
+		const cfg = srcNode.data?.config;
+		if (cfg) {
+			if (sourceHandle === 'true') cfg.trueRoute = target;
+			if (sourceHandle === 'false') cfg.falseRoute = target;
+		}
+	}
+
+	// 推导边标签
+	const label = getEdgeLabel(source, sourceHandle, srcNode);
+	const isConditional = srcNode.type === 'condition' || srcNode.type === 'switch' || srcNode.type === 'intent_classifier';
+
+	const newEdge: any = {
+		id: 'edge_' + source + '_' + target,
+		source,
+		target,
+		sourceHandle,
+		animated: !isConditional,
+		type: label ? 'label' : 'default',
+		data: { label },
+		style: { strokeWidth: 2 }
 	};
 	elements.value.push(newEdge);
+}
+
+function getEdgeLabel(source: string, sourceHandle?: string, srcNode?: FlowNode): string | undefined {
+	if (!srcNode) return undefined;
+	if (srcNode.type === 'condition') {
+		if (sourceHandle === 'true') return 'True';
+		if (sourceHandle === 'false') return 'False';
+	}
+	if (srcNode.type === 'switch') {
+		if (sourceHandle === 'default') return '默认';
+		if (sourceHandle?.startsWith('case_')) {
+			const idx = parseInt(sourceHandle.split('_')[1]);
+			return srcNode.data?.config?.cases?.[idx]?.value || ('Case ' + (idx + 1));
+		}
+	}
+	if (srcNode.type === 'intent_classifier') {
+		if (sourceHandle === 'default') return '默认';
+		if (sourceHandle?.startsWith('intent_')) {
+			const idx = parseInt(sourceHandle.split('_')[1]);
+			return srcNode.data?.config?.intents?.[idx]?.name || ('Intent ' + (idx + 1));
+		}
+	}
+	return undefined;
 }
 
 function onPaneReady(instance: any) {
@@ -563,22 +841,147 @@ function onPaneReady(instance: any) {
 
 function onNodeClick(event: { node: any }) {
 	selectedNodeId.value = event.node.id;
+	contextMenu.visible = false;
 }
 
 function onPaneClick() {
 	selectedNodeId.value = null;
+	contextMenu.visible = false;
+}
+
+// 画布 dragover：group 容器拖入高亮
+function onCanvasDragOver(event: DragEvent) {
+	document.querySelectorAll('.loop-body-group-node.is-drag-over')
+		.forEach(el => el.classList.remove('is-drag-over'));
+	const type = event.dataTransfer?.getData('application/vueflow');
+	if (!type || type === 'loop_body_group') return;
+
+	const canvasEl = document.querySelector('.canvas-wrapper');
+	if (!canvasEl) return;
+	const bounds = canvasEl.getBoundingClientRect();
+	const flowX = event.clientX - bounds.left;
+	const flowY = event.clientY - bounds.top;
+
+	const groups = elements.value.filter(
+		(el: any) => !('source' in el) && el.type === 'loop_body_group'
+	) as FlowNode[];
+	for (const g of groups) {
+		const gW = parseFloat((g as any).style?.width || '400');
+		const gH = parseFloat((g as any).style?.height || '250');
+		const pos = g.position;
+		if (flowX >= pos.x && flowX <= pos.x + gW &&
+			flowY >= pos.y && flowY <= pos.y + gH) {
+			const domNode = document.querySelector(`[data-id="${g.id}"] .loop-body-group-node`);
+			if (domNode) domNode.classList.add('is-drag-over');
+			break;
+		}
+	}
+}
+
+function onCanvasDragLeave() {
+	document.querySelectorAll('.loop-body-group-node.is-drag-over')
+		.forEach(el => el.classList.remove('is-drag-over'));
+}
+
+// 右键上下文菜单
+function onNodeContextMenu(event: any) {
+	event.event?.preventDefault();
+	const node = event.node;
+	if (!node) return;
+	contextMenu.visible = true;
+	contextMenu.x = event.event?.clientX || 0;
+	contextMenu.y = event.event?.clientY || 0;
+	contextMenu.nodeId = node.id;
+}
+
+function editContextNode() {
+	selectedNodeId.value = contextMenu.nodeId;
+	contextMenu.visible = false;
+}
+
+function duplicateNode() {
+	const srcNode = elements.value.find(
+		(el: any) => !('source' in el) && el.id === contextMenu.nodeId
+	) as FlowNode | undefined;
+	if (!srcNode) return;
+
+	if (srcNode.type === 'start' || srcNode.type === 'end') {
+		ElMessage.warning(t(srcNode.type === 'start' ? '开始节点已存在，画布中仅允许一个' : '结束节点已存在，画布中仅允许一个'));
+		contextMenu.visible = false;
+		return;
+	}
+
+	const newId = `node_${srcNode.type}_${Date.now()}`;
+	const newLabel = getNextLabel(srcNode.type);
+	const newNode: any = {
+		...JSON.parse(JSON.stringify(srcNode)),
+		id: newId,
+		label: newLabel,
+		position: {
+			x: srcNode.position.x + 40,
+			y: srcNode.position.y + 40
+		}
+	};
+	
+	// 处理变量名去重
+	if (newNode.data?.config?.outputVariable) {
+		const baseVarName = newNode.data.config.outputVariable.replace(/_\d+$/, '');
+		newNode.data.config.outputVariable = getUniqueOutputVar(newLabel, baseVarName);
+	}
+
+	// 复制出的节点不保留 parentNode（放在主画布）
+	delete newNode.parentNode;
+	delete newNode.extent;
+	delete newNode.expandParent;
+	elements.value.push(newNode);
+	contextMenu.visible = false;
+	ElMessage.success(t('已复制节点'));
+}
+
+function deleteContextNode() {
+	const nodeId = contextMenu.nodeId;
+	elements.value = elements.value.filter(el => {
+		if ('source' in el) {
+			return el.source !== nodeId && el.target !== nodeId;
+		}
+		return el.id !== nodeId;
+	});
+
+	// 解除子节点的关联
+	elements.value.forEach(el => {
+		if (!('source' in el) && (el as any).parentNode === nodeId) {
+			delete (el as any).parentNode;
+			delete (el as any).expandParent;
+		}
+	});
+
+	if (selectedNodeId.value === nodeId) {
+		selectedNodeId.value = null;
+	}
+	contextMenu.visible = false;
+	ElMessage.success(t('已删除节点'));
 }
 
 function deleteSelectedNode() {
 	if (!selectedNodeId.value) return;
+	const nodeId = selectedNodeId.value;
 	// 移除关联的连线
 	elements.value = elements.value.filter(el => {
 		if ('source' in el) {
 			const edge = el as FlowEdge;
-			return edge.id !== selectedNodeId.value && edge.source !== selectedNodeId.value && edge.target !== selectedNodeId.value;
+			return edge.id !== nodeId && edge.source !== nodeId && edge.target !== nodeId;
 		}
-		return el.id !== selectedNodeId.value;
+		return el.id !== nodeId;
 	});
+
+	// 解除子节点的关联
+	elements.value.forEach(el => {
+		if (!('source' in el) && (el as any).parentNode === nodeId) {
+			delete (el as any).parentNode;
+			delete (el as any).expandParent;
+		}
+	});
+
 	selectedNodeId.value = null;
 }
 
@@ -595,9 +998,9 @@ async function saveWorkflow() {
 		const warnings: string[] = [];
 		const startNodes = nodes.filter(n => n.type === 'start');
 		if (startNodes.length === 0) {
-			warnings.push(t('工作流缺失“开始节点”，请在画布中添加唯一入口！'));
+			warnings.push(t('工作流缺失"开始节点"，请在画布中添加唯一入口！'));
 		} else if (startNodes.length > 1) {
-			warnings.push(t('工作流存在多个“开始节点”，请在画布中保留唯一入口！'));
+			warnings.push(t('工作流存在多个"开始节点"，请在画布中保留唯一入口！'));
 		}
 
 		// 检查 Switch 分支节点是否配置完整
@@ -605,23 +1008,17 @@ async function saveWorkflow() {
 		for (const n of switchNodes) {
 			const conf = n.data?.config || {};
 			if (!conf.variable || !conf.variable.trim()) {
-				warnings.push(t('节点“') + (n.label || n.id) + t('”未指定匹配变量名！'));
-			}
-			if (!conf.defaultRoute) {
-				warnings.push(t('节点“') + (n.label || n.id) + t('”未指定默认路由！'));
+				warnings.push(t('节点"') + (n.label || n.id) + t('"未指定匹配变量名！'));
 			}
 			const cases = conf.cases || [];
 			const seenCaseVals = new Set<string>();
 			for (const c of cases) {
 				if (!c.value || !c.value.trim()) {
-					warnings.push(t('节点“') + (n.label || n.id) + t('”存在空白的 Case 匹配值！'));
-				}
-				if (!c.targetRoute) {
-					warnings.push(t('节点“') + (n.label || n.id) + t('”存在未选择目标路由的 Case 分支！'));
+					warnings.push(t('节点"') + (n.label || n.id) + t('"存在空白的 Case 匹配值！'));
 				}
 				if (c.value) {
 					if (seenCaseVals.has(c.value.trim())) {
-						warnings.push(t('节点“') + (n.label || n.id) + t('”中存在重复的 Case 匹配值：') + c.value.trim());
+						warnings.push(t('节点"') + (n.label || n.id) + t('"中存在重复的 Case 匹配值：') + c.value.trim());
 					}
 					seenCaseVals.add(c.value.trim());
 				}
@@ -729,19 +1126,29 @@ async function saveWorkflow() {
 						conf.arguments = {};
 					}
 				}
-				return {
+				const serialized: any = {
 					id: n.id,
 					type: n.type,
 					name: n.label,
 					config: conf
 				};
+				if ((n as any).parentNode) serialized.parentNode = (n as any).parentNode;
+				if ((n as any).extent) serialized.extent = (n as any).extent;
+				if ((n as any).expandParent) serialized.expandParent = (n as any).expandParent;
+				if (n.style) serialized.style = n.style;
+				return serialized;
 			}),
-			edges: edges.map(e => ({
-				source: e.source,
-				target: e.target,
-				type: e.type || 'direct',
-				condition: e.data?.condition || ''
-			}))
+			edges: edges.map(e => {
+				const edge: any = {
+					source: e.source,
+					target: e.target,
+					type: e.type || 'direct',
+					condition: e.data?.condition || ''
+				};
+				if ((e as any).sourceHandle) edge.sourceHandle = (e as any).sourceHandle;
+				if (e.data?.label) edge.data = { label: e.data.label };
+				return edge;
+			})
 		};
 
 		// 4. 更新定义记录
@@ -828,7 +1235,7 @@ function goBack() {
 	padding: 20px;
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: 12px;
 
 	.sidebar-title {
 		font-size: 15px;
@@ -839,8 +1246,12 @@ function goBack() {
 	.sidebar-description {
 		font-size: 12px;
 		color: var(--el-text-color-placeholder);
-		margin-top: -8px;
+		margin-top: -4px;
 	}
+}
+
+.node-search {
+	margin-bottom: 4px;
 }
 
 .node-templates {
@@ -884,42 +1295,18 @@ function goBack() {
 	}
 
 	// 节点特有色彩发光
-	&--start {
-		border-left: 4px solid var(--el-color-success);
-	}
-	&--llm {
-		border-left: 4px solid var(--el-color-primary);
-	}
-	&--tool {
-		border-left: 4px solid #8a2be2;
-	}
-	&--condition {
-		border-left: 4px solid var(--el-color-warning);
-	}
-	&--switch {
-		border-left: 4px solid #e6a23c;
-	}
-	&--human_input {
-		border-left: 4px solid var(--el-color-info);
-	}
-	&--intent_classifier {
-		border-left: 4px solid #20b2aa;
-	}
-	&--loop_controller {
-		border-left: 4px solid #d2691e;
-	}
-	&--batch_processor {
-		border-left: 4px solid #00ced1;
-	}
-	&--image_generator {
-		border-left: 4px solid #ff69b4;
-	}
-	&--tool_executor {
-		border-left: 4px solid #8a2be2;
-	}
-	&--end {
-		border-left: 4px solid var(--el-color-danger);
-	}
+	&--start { border-left: 4px solid var(--el-color-success); }
+	&--llm { border-left: 4px solid var(--el-color-primary); }
+	&--tool { border-left: 4px solid #8a2be2; }
+	&--condition { border-left: 4px solid var(--el-color-warning); }
+	&--switch { border-left: 4px solid #e6a23c; }
+	&--human_input { border-left: 4px solid var(--el-color-info); }
+	&--intent_classifier { border-left: 4px solid #20b2aa; }
+	&--loop_controller { border-left: 4px solid #d2691e; }
+	&--batch_processor { border-left: 4px solid #00ced1; }
+	&--image_generator { border-left: 4px solid #ff69b4; }
+	&--tool_executor { border-left: 4px solid #8a2be2; }
+	&--end { border-left: 4px solid var(--el-color-danger); }
 }
 
 .canvas-wrapper {
@@ -936,5 +1323,44 @@ function goBack() {
 	display: flex;
 	align-items: center;
 	justify-content: center;
+}
+
+.context-menu {
+	position: fixed;
+	z-index: 1000;
+	background: #fff;
+	border: 1px solid var(--el-border-color-light);
+	border-radius: 8px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+	padding: 4px 0;
+	min-width: 160px;
+
+	.context-menu-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 16px;
+		font-size: 13px;
+		cursor: pointer;
+		transition: background 0.15s;
+
+		&:hover {
+			background: var(--el-fill-color-light);
+		}
+
+		.el-icon {
+			font-size: 14px;
+		}
+
+		&--danger {
+			color: var(--el-color-danger);
+		}
+	}
+
+	.context-menu-divider {
+		height: 1px;
+		background: var(--el-border-color-lighter);
+		margin: 4px 0;
+	}
 }
 </style>
