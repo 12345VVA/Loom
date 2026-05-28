@@ -6,6 +6,9 @@
 		node-class="node-batch_processor"
 		:has-target="true"
 		:has-source="true"
+		:is-child="isChild"
+		:group-label="groupLabel"
+		:incomplete="incomplete"
 	/>
 </template>
 
@@ -16,5 +19,9 @@ import { Files } from '@element-plus/icons-vue';
 defineProps<{
 	label: string;
 	selected?: boolean;
+	incomplete?: boolean;
+	isChild?: boolean;
+	groupLabel?: string;
+	data?: any;
 }>();
 </script>

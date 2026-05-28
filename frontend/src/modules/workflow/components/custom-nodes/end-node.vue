@@ -5,6 +5,9 @@
 		:icon="CircleCheck"
 		node-class="node-end"
 		:has-target="true"
+		:is-child="isChild"
+		:group-label="groupLabel"
+		:incomplete="incomplete"
 	/>
 </template>
 
@@ -15,5 +18,9 @@ import { CircleCheck } from '@element-plus/icons-vue';
 defineProps<{
 	label: string;
 	selected?: boolean;
+	incomplete?: boolean;
+	isChild?: boolean;
+	groupLabel?: string;
+	data?: any;
 }>();
 </script>

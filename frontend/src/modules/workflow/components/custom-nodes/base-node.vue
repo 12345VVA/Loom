@@ -1,10 +1,12 @@
 <template>
-	<div class="custom-flow-node" :class="[nodeClass, { 'is-selected': selected }]">
+	<div class="custom-flow-node" :class="[nodeClass, { 'is-selected': selected, 'is-child': isChild }]">
 		<Handle v-if="hasTarget" type="target" :position="Position.Left" />
 		<el-icon class="node-icon">
 			<component :is="icon" />
 		</el-icon>
 		<span class="node-label">{{ label }}</span>
+		<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
+		<span v-if="incomplete" class="node-incomplete-dot" />
 		<Handle v-if="hasSource" type="source" :position="Position.Right" />
 	</div>
 </template>
@@ -19,11 +21,13 @@ defineProps<{
 	nodeClass: string;
 	hasTarget?: boolean;
 	hasSource?: boolean;
+	isChild?: boolean;
+	groupLabel?: string;
+	incomplete?: boolean;
 }>();
 </script>
 
 <style lang="scss" scoped>
-// 可以将一些通用基础样式放在这里，确保节点在独立渲染时依然表现完美
 .custom-flow-node {
 	display: flex;
 	align-items: center;
@@ -49,6 +53,11 @@ defineProps<{
 	&.is-selected {
 		border-color: var(--el-color-primary);
 		box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2), 0 4px 12px rgba(64, 158, 255, 0.1);
+	}
+
+	&.is-child {
+		border-style: dashed;
+		border-width: 1.5px;
 	}
 
 	.node-icon {
@@ -78,6 +87,29 @@ defineProps<{
 			background-color: #66b1ff;
 		}
 	}
+}
+
+.child-badge {
+	position: absolute;
+	top: -8px;
+	right: -4px;
+	font-size: 10px;
+	padding: 1px 6px;
+	background: rgba(230, 162, 60, 0.15);
+	color: var(--el-color-warning);
+	border-radius: 4px;
+	white-space: nowrap;
+}
+
+.node-incomplete-dot {
+	position: absolute;
+	top: -3px;
+	left: 18px;
+	width: 8px;
+	height: 8px;
+	background: var(--el-color-danger);
+	border-radius: 50%;
+	border: 2px solid #fff;
 }
 
 .node-start {
