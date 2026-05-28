@@ -412,8 +412,8 @@ async def execute_intent_classifier_node(variables: Dict[str, Any], config: Dict
 
 async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    循环控制器节点执行逻辑（子图模式：顺序遍历列表，每项独立调用体子图）。
-    每次迭代深拷贝变量 + 注入当前元素，执行完毕收集结果数组。
+    循环控制器节点执行逻辑（状态链式循环：上一次迭代的输出作为下一次的输入）。
+    只在循环开始前做一次 deepcopy，后续迭代链式传递状态，支持跨迭代状态累积。
     """
     compiled_body = config.get("_compiled_body")
     if not compiled_body:
@@ -424,23 +424,34 @@ async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[s
     list_var = config.get("list_variable", "list_variable")
     item_var = config.get("item_variable", "loop_item")
     output_var = config.get("output_variable", "loop_results")
+    stop_on_error = config.get("stop_on_error", True)
 
     items = variables.get(list_var) or []
     if not isinstance(items, list) or not items:
         return {output_var: []}
 
+    # 只做一次初始拷贝，后续迭代链式传递状态
+    iter_vars = copy.deepcopy(variables)
     results = []
+    index_key = f"{item_var}_index"
+
     for idx, item in enumerate(items):
-        iter_vars = copy.deepcopy(variables)
         iter_vars[item_var] = item
+        iter_vars[index_key] = idx
         body_state = {"messages": [], "variables": iter_vars, "current_node": "start"}
         try:
             body_result = await compiled_body.ainvoke(body_state)
-            results.append(body_result.get("variables", {}))
+            iter_vars = body_result.get("variables", {})
+            # 收集本次迭代的关键输出（排除临时注入的循环变量）
+            iter_output = {k: v for k, v in iter_vars.items()
+                          if k != item_var and k != index_key}
+            results.append(iter_output)
             logger.info("[Loop] Iteration %d/%d complete: item=%s", idx + 1, len(items), str(item)[:80])
         except Exception as e:
             logger.error("[Loop] Iteration %d/%d failed: %s", idx + 1, len(items), e)
             results.append({"error": str(e)})
+            if stop_on_error:
+                break
 
     return {output_var: results}
 
