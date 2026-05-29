@@ -130,6 +130,13 @@ def render_template(template: str, variables: dict) -> str:
     return re.sub(r'\{([^}]+)\}', _resolve, template)
 
 
+def strip_braces(val: str) -> str:
+    """剥离变量名两端可能的花括号，如 '{query}' → 'query'。"""
+    if val.startswith("{") and val.endswith("}"):
+        return val[1:-1].strip()
+    return val
+
+
 def camel_to_snake(s: str) -> str:
     return re.sub(r'(?<!^)(?=[A-Z])', '_', s).lower()
 
@@ -402,6 +409,15 @@ def _find_body_nodes_by_parent(
     config = convert_keys_to_snake(ctrl_node.get("config", {}))
     group_id = config.get("body_group_id")
     if not group_id:
+        # 尝试从边推导：找源头为 controller，目标为 loop_body_group 节点的边
+        for e in edges:
+            if e["source"] == controller_id:
+                tgt_node = next((n for n in nodes if n["id"] == e["target"]), None)
+                if tgt_node and tgt_node.get("type") == "loop_body_group":
+                    group_id = tgt_node["id"]
+                    break
+
+    if not group_id:
         return set(), None
 
     # 找 parentNode == group_id 的节点
@@ -485,11 +501,18 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                     true_route = e["target"]
                 elif sh == "false" and not false_route:
                     false_route = e["target"]
-        if true_route and false_route:
+        path_map = {END: END}
+        if true_route:
+            node_config[true_route] = true_route
+            path_map[true_route] = true_route
+        if false_route:
+            node_config[false_route] = false_route
+            path_map[false_route] = false_route
+        if len(path_map) > 1:
             builder.add_conditional_edges(
                 node_id,
                 WorkflowCompiler.create_conditional_router(node_id, node_config),
-                {true_route: true_route, false_route: false_route}
+                path_map
             )
 
     elif node_type == "intent_classifier":
@@ -513,7 +536,9 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
             if target:
                 path_map[target] = target
         if default_route:
+            node_config["default_route"] = default_route
             path_map[default_route] = default_route
+        path_map[END] = END
         if path_map:
             builder.add_conditional_edges(
                 node_id,
@@ -542,7 +567,9 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
             if target:
                 path_map[target] = target
         if default_route:
+            node_config["default_route"] = default_route
             path_map[default_route] = default_route
+        path_map[END] = END
         if path_map:
             builder.add_conditional_edges(
                 node_id,
@@ -805,6 +832,15 @@ class WorkflowCompiler:
                 ctrl = cfg.get("controller_node_id")
                 if ctrl:
                     group_to_controller[node["id"]] = ctrl
+                else:
+                    # 从边中推断：找指向 group 且源头是 controller/batch_processor 的边
+                    for edge in edges:
+                        if edge.get("target") == node["id"]:
+                            src_id = edge.get("source")
+                            src_node = nodes_map.get(src_id)
+                            if src_node and src_node.get("type") in ["loop_controller", "batch_processor"]:
+                                group_to_controller[node["id"]] = src_id
+                                break
 
         for edge in edges:
             source = edge["source"]
@@ -824,7 +860,7 @@ class WorkflowCompiler:
                     real_source = group_to_controller[source]
                     if (target not in all_body_node_ids
                         and target != real_source
-                        and node_types.get(target) != "loop_body_group"):
+                        and target_type != "loop_body_group"):
                         logger.info(f"[Compiler] Edge shortcut: {real_source} → {target} (via group {source})")
                         builder.add_edge(real_source, target)
                         added_edges.append(f"{real_source} → {target} (shortcut via {source})")
@@ -894,7 +930,7 @@ class WorkflowCompiler:
         async def node_runner(state: WorkflowState) -> Dict[str, Any]:
             # 记录当前执行节点
             state["current_node"] = node_id
-            
+
             # 获取对应的注册执行器
             executor = node_registry.get(node_type)
             if not executor:
@@ -904,8 +940,9 @@ class WorkflowCompiler:
             input_mappings = config.get("input_mappings", {})
             node_inputs = apply_input_mappings(state["variables"], input_mappings)
 
-            # 2. 运行执行器
-            updates = await executor(node_inputs, config)
+            # 2. 运行执行器（注入 node_id 供需要路由回写的执行器使用）
+            executor_config = {**config, "id": node_id}
+            updates = await executor(node_inputs, executor_config)
             if updates is None:
                 updates = {}
 
@@ -942,11 +979,11 @@ class WorkflowCompiler:
             try:
                 # 使用自定义安全 AST 语法树评估器，杜绝代码注入漏洞
                 result = safe_eval(expression, eval_context)
-                return true_route if result else false_route
+                return true_route if result else (false_route or END)
             except Exception as e:
                 # 如果求值失败，默认走向 false 路由并记录错误
                 logger.error(f"[Workflow Router Error] Safe evaluate '{expression}' failed: {e}")
-                return false_route
+                return false_route or END
 
         return conditional_router
 
@@ -957,7 +994,7 @@ class WorkflowCompiler:
         """
         def intent_router(state: WorkflowState) -> str:
             target_route = state.get("variables", {}).get(f"{node_id}_selected_route")
-            return target_route or config.get("default_route")
+            return target_route or config.get("default_route") or END
         return intent_router
 
     @classmethod
@@ -966,7 +1003,7 @@ class WorkflowCompiler:
         生成 Switch-Case 多路分支的动态路由逻辑
         """
         def switch_router(state: WorkflowState) -> str:
-            var_name = config.get("variable", "")
+            var_name = strip_braces(config.get("variable", ""))
             val = state.get("variables", {})
             if var_name.startswith("variables."):
                 var_key = var_name.removeprefix("variables.")
@@ -974,12 +1011,8 @@ class WorkflowCompiler:
             else:
                 val = val.get(var_name)
                 
-            cases = config.get("cases", [])
-            default_route = config.get("default_route")
-            
-            for case in cases:
-                case_val_str = str(case.get("value", ""))
-                if str(val) == case_val_str:
-                    return case.get("target_route") or default_route
-            return default_route
+            for case in config.get("cases", []):
+                if str(case.get("value")) == str(val):
+                    return case.get("target_route") or END
+            return config.get("default_route") or END
         return switch_router
