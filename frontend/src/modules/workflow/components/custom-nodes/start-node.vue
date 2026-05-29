@@ -1,5 +1,5 @@
 <template>
-	<BaseNode
+	<base-node
 		:label="label"
 		:selected="selected"
 		:icon="VideoPlay"

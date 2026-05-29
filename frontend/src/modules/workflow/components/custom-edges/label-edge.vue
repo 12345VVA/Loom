@@ -1,9 +1,11 @@
 <template>
 	<path :d="path" fill="none" :stroke="edgeColor" :stroke-width="style?.strokeWidth || 2" />
 	<g v-if="label" :transform="`translate(${labelX}, ${labelY})`">
-		<rect :x="-labelHalfWidth - 4" y="-10" :width="labelWidth + 8" height="20"
+		<rect
+			:x="-labelHalfWidth - 4" y="-10" :width="labelWidth + 8" height="20"
 			rx="4" fill="white" fill-opacity="0.92" stroke="#ddd" stroke-width="0.5" />
-		<text text-anchor="middle" dominant-baseline="middle"
+		<text
+			text-anchor="middle" dominant-baseline="middle"
 			font-size="11" :fill="textColor">{{ label }}</text>
 	</g>
 	<path :d="path" fill="none" stroke="transparent" stroke-width="12" class="edge-interaction" />

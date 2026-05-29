@@ -1,20 +1,23 @@
 <template>
-	<div class="custom-flow-node node-intent_classifier" :class="{ 'is-selected': selected, 'is-child': isChild, 'is-incomplete': incomplete }"
+	<div
+		class="custom-flow-node node-intent_classifier"
+		:class="{ 'is-selected': selected, 'is-child': isChild, 'is-incomplete': incomplete }"
 		:style="{ height: nodeHeight + 'px' }">
-		<Handle type="target" :position="Position.Left" />
-		<el-icon class="node-icon"><MagicStick /></el-icon>
+		<handle type="target" :position="Position.Left" />
+		<el-icon class="node-icon"><magic-stick /></el-icon>
 		<span class="node-label">{{ label }}</span>
 		<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
 		<span v-if="incomplete" class="node-incomplete-dot" />
 		<div class="output-handles">
 			<div v-for="(intent, i) in intents" :key="'intent_' + i" class="handle-group">
-				<span class="handle-label handle-label--intent" :style="{ top: handleTop(i) }">{{ intent.name || ('I' + (i + 1)) }}</span>
-				<Handle :id="'intent_' + i" type="source" :position="Position.Right"
-					:style="{ top: handleTop(i) }" />
+				<span class="handle-label handle-label--intent" :style="{ top: handleTop(Number(i)) }">{{ intent.name || ('I' + (Number(i) + 1)) }}</span>
+				<handle :id="'intent_' + i" type="source" :position="Position.Right"
+					:style="{ top: handleTop(Number(i)) }" />
 			</div>
 			<div class="handle-group">
 				<span class="handle-label handle-label--default" :style="{ top: handleTop(intents.length) }">默认</span>
-				<Handle id="default" type="source" :position="Position.Right"
+				<handle
+					id="default" type="source" :position="Position.Right"
 					:style="{ top: handleTop(intents.length) }" />
 			</div>
 		</div>

@@ -2,20 +2,27 @@
 	<div class="loop-body-group-node" :class="{ 'is-selected': selected, 'is-drag-over': dragOver }">
 		<!-- 标题栏 -->
 		<div class="group-header">
-			<el-icon class="group-icon"><Refresh v-if="isLoop" /><Files v-else /></el-icon>
+			<el-icon class="group-icon"><refresh v-if="isLoop" /><files v-else /></el-icon>
 			<span class="group-label">{{ label }}</span>
 		</div>
 
 		<!-- 空态引导 -->
 		<div v-if="childCount === 0" class="group-empty-hint">
-			<el-icon><Plus /></el-icon>
+			<el-icon><plus /></el-icon>
 			<span>拖入节点以构建{{ isLoop ? '循环' : '批处理' }}体</span>
+			<span class="sub-hint">内部节点首尾相连即可，无需与容器边缘连线</span>
+		</div>
+
+		<!-- 激活态引导底栏 -->
+		<div v-else class="group-active-hint">
+			<el-icon><info-filled /></el-icon>
+			<span>隐式路由：无内部输入边的节点为起点，无输出边的为终点</span>
 		</div>
 
 		<!-- 左侧 Handle（入口） -->
-		<Handle type="target" :position="Position.Left" class="group-handle group-handle-left" />
+		<handle type="target" :position="Position.Left" class="group-handle group-handle-left" />
 		<!-- 右侧 Handle（出口） -->
-		<Handle type="source" :position="Position.Right" class="group-handle group-handle-right" />
+		<handle type="source" :position="Position.Right" class="group-handle group-handle-right" />
 
 		<!-- 右下角 resize 手柄 -->
 		<div class="resize-handle" @mousedown.stop.prevent="startResize" />
@@ -25,7 +32,7 @@
 <script setup lang="ts">
 import { computed, ref, inject } from 'vue';
 import { Handle, Position } from '@vue-flow/core';
-import { Refresh, Files, Plus } from '@element-plus/icons-vue';
+import { Refresh, Files, Plus, InfoFilled } from '@element-plus/icons-vue';
 
 const props = defineProps<{
 	label: string;
@@ -143,15 +150,40 @@ function startResize(e: MouseEvent) {
 		font-size: 13px;
 		user-select: none;
 		pointer-events: none;
+		white-space: nowrap;
 
 		.el-icon {
 			font-size: 24px;
 			opacity: 0.4;
+			margin-bottom: 4px;
 		}
 
 		span {
-			opacity: 0.6;
+			opacity: 0.8;
+			font-weight: 500;
 		}
+
+		.sub-hint {
+			font-size: 11px;
+			opacity: 0.5;
+			font-weight: normal;
+		}
+	}
+
+	.group-active-hint {
+		position: absolute;
+		bottom: 8px;
+		left: 0;
+		right: 0;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		gap: 4px;
+		font-size: 11px;
+		color: var(--el-text-color-secondary);
+		opacity: 0.5;
+		pointer-events: none;
+		user-select: none;
 	}
 
 	.group-handle {

@@ -1,20 +1,23 @@
 <template>
-	<div class="custom-flow-node node-switch" :class="{ 'is-selected': selected, 'is-child': isChild, 'is-incomplete': incomplete }"
+	<div
+		class="custom-flow-node node-switch"
+		:class="{ 'is-selected': selected, 'is-child': isChild, 'is-incomplete': incomplete }"
 		:style="{ height: nodeHeight + 'px' }">
-		<Handle type="target" :position="Position.Left" />
-		<el-icon class="node-icon"><Operation /></el-icon>
+		<handle type="target" :position="Position.Left" />
+		<el-icon class="node-icon"><operation /></el-icon>
 		<span class="node-label">{{ label }}</span>
 		<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
 		<span v-if="incomplete" class="node-incomplete-dot" />
 		<div class="output-handles">
 			<div v-for="(c, i) in cases" :key="'case_' + i" class="handle-group">
-				<span class="handle-label" :style="{ top: handleTop(i) }">{{ c.value || ('C' + (i + 1)) }}</span>
-				<Handle :id="'case_' + i" type="source" :position="Position.Right"
-					:style="{ top: handleTop(i) }" />
+				<span class="handle-label" :style="{ top: handleTop(Number(i)) }">{{ c.value || ('C' + (Number(i) + 1)) }}</span>
+				<handle :id="'case_' + i" type="source" :position="Position.Right"
+					:style="{ top: handleTop(Number(i)) }" />
 			</div>
 			<div class="handle-group">
 				<span class="handle-label handle-label--default" :style="{ top: handleTop(cases.length) }">默认</span>
-				<Handle id="default" type="source" :position="Position.Right"
+				<handle
+					id="default" type="source" :position="Position.Right"
 					:style="{ top: handleTop(cases.length) }" />
 			</div>
 		</div>

@@ -1,13 +1,13 @@
 <template>
 	<div class="custom-flow-node" :class="[nodeClass, { 'is-selected': selected, 'is-child': isChild }]">
-		<Handle v-if="hasTarget" type="target" :position="Position.Left" />
+		<handle v-if="hasTarget" type="target" :position="Position.Left" />
 		<el-icon class="node-icon">
 			<component :is="icon" />
 		</el-icon>
 		<span class="node-label">{{ label }}</span>
 		<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
 		<span v-if="incomplete" class="node-incomplete-dot" />
-		<Handle v-if="hasSource" type="source" :position="Position.Right" />
+		<handle v-if="hasSource" type="source" :position="Position.Right" />
 	</div>
 </template>
 

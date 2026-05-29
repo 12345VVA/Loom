@@ -1,19 +1,21 @@
 <template>
 	<div class="custom-flow-node node-condition" :class="{ 'is-selected': selected, 'is-child': isChild, 'is-incomplete': incomplete }">
-		<Handle type="target" :position="Position.Left" />
-		<el-icon class="node-icon"><Operation /></el-icon>
+		<handle type="target" :position="Position.Left" />
+		<el-icon class="node-icon"><operation /></el-icon>
 		<span class="node-label">{{ label }}</span>
 		<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
 		<span v-if="incomplete" class="node-incomplete-dot" />
 		<div class="output-handles">
 			<div class="handle-group">
 				<span class="handle-label handle-label--true">T</span>
-				<Handle id="true" type="source" :position="Position.Right"
+				<handle
+				id="true" type="source" :position="Position.Right"
 					:style="{ top: '30%' }" class="handle-true" />
 			</div>
 			<div class="handle-group">
 				<span class="handle-label handle-label--false">F</span>
-				<Handle id="false" type="source" :position="Position.Right"
+				<handle
+				id="false" type="source" :position="Position.Right"
 					:style="{ top: '70%' }" class="handle-false" />
 			</div>
 		</div>
