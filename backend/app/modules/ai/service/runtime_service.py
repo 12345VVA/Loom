@@ -211,8 +211,9 @@ class AiModelRuntimeService:
         for index in range(attempts):
             try:
                 call_kwargs = dict(kwargs)
+                effective_timeout = (call_kwargs.get("options") or {}).get("timeout") or profile.timeout
                 call_kwargs["options"] = _options_without_governance(call_kwargs.get("options") or {})
-                with _adapter_timeout(adapter, profile.timeout):
+                with _adapter_timeout(adapter, effective_timeout):
                     return getattr(adapter, method)(model=model_code, **call_kwargs)
             except UnsupportedCapabilityError:
                 raise
