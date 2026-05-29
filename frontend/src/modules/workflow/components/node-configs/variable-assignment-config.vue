@@ -18,7 +18,13 @@
 					</el-select>
 				</el-form-item>
 				<el-form-item :label="$t('赋值内容')" label-width="80px">
-					<el-input v-model="item.value" type="textarea" :rows="2" placeholder="输入值或表达式" />
+					<cl-variable-input 
+						v-model="item.value" 
+						type="textarea" 
+						:rows="2" 
+						:placeholder="item.value_type === 'expression' ? '输入表达式' : '输入值'"
+						:show-variable-btn="item.value_type === 'expression'"
+					/>
 				</el-form-item>
 			</div>
 			<el-button type="primary" plain icon="Plus" style="width: 100%; margin-top: 10px" @click="addAssignment">
@@ -30,6 +36,7 @@
 
 <script setup lang="ts">
 import { Delete, Plus } from '@element-plus/icons-vue';
+import ClVariableInput from '../cl-variable-input.vue';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;

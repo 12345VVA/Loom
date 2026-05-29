@@ -1,7 +1,7 @@
 <template>
 	<div class="variable-transform-config">
 		<el-form-item :label="$t('输入变量')" required>
-			<el-input v-model="config.input_variable" placeholder="例如: loop_results" />
+			<cl-variable-input v-model="config.input_variable" placeholder="例如: loop_results" />
 		</el-form-item>
 		
 		<el-form-item :label="$t('转换动作')" required>
@@ -17,14 +17,14 @@
 		</el-form-item>
 
 		<el-form-item v-if="config.transform_type === 'extract_json_path'" :label="$t('JSON 路径 (Path)')" required>
-			<el-input v-model="config.transform_args.path" placeholder="例如: data.user.name" />
+			<cl-variable-input v-model="config.transform_args.path" placeholder="例如: data.user.name" />
 			<div style="font-size: 12px; color: #999; line-height: 1.2; margin-top: 4px">
 				{{ $t('支持点号访问和数组下标，如 items.0.title') }}
 			</div>
 		</el-form-item>
 		
 		<el-form-item v-if="config.transform_type === 'eval_expression'" :label="$t('Python 表达式')" required>
-			<el-input v-model="config.transform_args.expression" type="textarea" :rows="3" placeholder="例如: ', '.join(input_value)" />
+			<cl-variable-input v-model="config.transform_args.expression" type="textarea" :rows="3" placeholder="例如: ', '.join(input_value)" />
 			<div style="font-size: 12px; color: #999; line-height: 1.2; margin-top: 4px">
 				{{ $t('使用 input_value 引用输入变量的值。支持简单的 Python 函数调用如 len() 等。') }}
 			</div>
@@ -37,6 +37,8 @@
 </template>
 
 <script setup lang="ts">
+import ClVariableInput from '../cl-variable-input.vue';
+
 const props = defineProps<{
 	modelValue: Record<string, any>;
 }>();

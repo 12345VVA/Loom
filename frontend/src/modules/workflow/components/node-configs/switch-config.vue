@@ -1,6 +1,6 @@
 <template>
 	<el-form-item :label="$t('匹配变量名')" required>
-		<el-input v-model="config.variable" placeholder="例如: status" />
+		<cl-variable-input v-model="config.variable" placeholder="例如: status" />
 		<div class="field-hint">
 			支持输入变量路径（如 variables.status 或 status）来进行值匹配。
 		</div>
@@ -29,6 +29,7 @@
 
 <script setup lang="ts">
 import { Delete, Plus, InfoFilled } from '@element-plus/icons-vue';
+import ClVariableInput from '../cl-variable-input.vue';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;

@@ -1,6 +1,6 @@
 <template>
 	<el-form-item :label="$t('条件表达式')" required>
-		<el-input v-model="config.expression" placeholder="例如: score > 80" />
+		<cl-variable-input v-model="config.expression" placeholder="例如: score > 80" />
 		<div class="field-hint">
 			{{ $t('如果求值结果为 True，走 T 端口；反之走 F 端口。') }}
 		</div>
@@ -13,6 +13,7 @@
 
 <script setup lang="ts">
 import { InfoFilled } from '@element-plus/icons-vue';
+import ClVariableInput from '../cl-variable-input.vue';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
