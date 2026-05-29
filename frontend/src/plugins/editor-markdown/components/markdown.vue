@@ -1,5 +1,5 @@
 <template>
-	<div class="cl-editor-markdown" :class="{ disabled, 'is-preview': onlyPreview, simple }">
+	<div ref="containerRef" class="cl-editor-markdown" :class="{ disabled, 'is-preview': onlyPreview, simple }">
 		<!-- 纯渲染模式 -->
 		<md-preview
 			v-if="onlyPreview"
@@ -24,6 +24,29 @@
 			:style="{ height: parsePx(height) }"
 			@onUploadImg="onUploadImg"
 		/>
+
+		<!-- 变量插入悬浮按钮 -->
+		<el-popover v-if="!disabled && !preview && !onlyPreview && (upstreamOutputVars?.length || loopContextVars?.length)" placement="bottom-end" :width="280" trigger="click">
+			<template #reference>
+				<el-button class="md-var-btn" size="small" :icon="Link" plain>{{ $t('变量') }}</el-button>
+			</template>
+			<div class="variable-list">
+				<div v-if="loopContextVars?.length" class="var-group">
+					<div class="var-group-title">{{ $t('循环上下文') }}</div>
+					<div v-for="v in loopContextVars" :key="v.key" class="var-item" @click="insertVariable(v.refText)">
+						<span>{{ v.display }}</span>
+						<small>{{ v.nodeLabel }}</small>
+					</div>
+				</div>
+				<div v-if="upstreamOutputVars?.length" class="var-group">
+					<div class="var-group-title">{{ $t('上游输出') }}</div>
+					<div v-for="v in upstreamOutputVars" :key="v.key" class="var-item" @click="insertVariable(v.refText)">
+						<span>{{ v.display }}</span>
+						<small>{{ v.nodeLabel }}</small>
+					</div>
+				</div>
+			</div>
+		</el-popover>
 	</div>
 </template>
 
@@ -40,6 +63,9 @@ import { parsePx } from '/@/cool/utils';
 import { useUpload } from '/#/upload/hooks';
 import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
+import { inject } from 'vue';
+import { Link } from '@element-plus/icons-vue';
+import type { InjectionKey, Ref } from 'vue';
 
 const props = defineProps({
 	modelValue: {
@@ -66,7 +92,15 @@ const { t } = useI18n();
 const isDark = useDark();
 const { toUpload } = useUpload();
 
+const containerRef = ref<HTMLElement>();
 const id = ref('cl-md-' + Math.random().toString(36).substring(2, 9));
+
+// 跨模块解耦：使用相同的注入 Key 类型，避免硬依赖 workflow 模块
+const UPSTREAM_OUTPUT_VARS_KEY = 'upstreamOutputVars' as unknown as InjectionKey<Ref<any[]>>;
+const LOOP_CONTEXT_VARS_KEY = 'loopContextVars' as unknown as InjectionKey<Ref<any[]>>;
+
+const upstreamOutputVars = inject(UPSTREAM_OUTPUT_VARS_KEY, ref([]));
+const loopContextVars = inject(LOOP_CONTEXT_VARS_KEY, ref([]));
 
 const value = computed({
 	get: () => props.modelValue || '',
@@ -165,11 +199,37 @@ function setValue(val: string) {
 	emit('change', val);
 }
 
+function insertVariable(refText: string) {
+	// md-editor-v3 的内置插入方法
+	const editorEl = containerRef.value?.querySelector('textarea');
+	if (editorEl) {
+		const start = editorEl.selectionStart || 0;
+		const end = editorEl.selectionEnd || 0;
+		const val = value.value;
+		const newVal = val.substring(0, start) + refText + val.substring(end);
+		setValue(newVal);
+		
+		// 稍微延迟以确保视图更新后恢复焦点
+		setTimeout(() => {
+			const newEditorEl = containerRef.value?.querySelector('textarea');
+			if (newEditorEl) {
+				newEditorEl.focus();
+				newEditorEl.setSelectionRange(start + refText.length, start + refText.length);
+			}
+		}, 0);
+	} else {
+		setValue(value.value + refText);
+	}
+}
+
 defineExpose({ getValue, setValue, formatCode: () => {} });
 </script>
 
 <style lang="scss" scoped>
+@use "/@/modules/workflow/components/variable-list.scss";
+
 .cl-editor-markdown {
+	position: relative;
 	border: 1px solid var(--el-border-color);
 	border-radius: var(--el-border-radius-base);
 	overflow: hidden;
@@ -212,6 +272,13 @@ defineExpose({ getValue, setValue, formatCode: () => {} });
 	&.is-preview {
 		border: none;
 		background: transparent;
+	}
+
+	.md-var-btn {
+		position: absolute;
+		right: 8px;
+		top: 6px;
+		z-index: 10;
 	}
 }
 </style>
