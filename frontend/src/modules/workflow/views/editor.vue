@@ -1183,7 +1183,9 @@ async function saveWorkflow() {
 			if (e.source) connectedNodeIds.add(e.source);
 			if (e.target) connectedNodeIds.add(e.target);
 		});
-		const isolatedNodes = nodes.filter(n => n.type !== 'start' && n.type !== 'end' && !connectedNodeIds.has(n.id));
+		const isolatedNodes = nodes.filter(
+			n => n.type !== 'start' && n.type !== 'end' && !n.parentNode && !connectedNodeIds.has(n.id)
+		);
 		if (isolatedNodes.length > 0) {
 			warnings.push(t('发现孤立的工作节点：') + isolatedNodes.map(n => n.label || n.id).join(', ') + t('，请建立输入和输出连线！'));
 		}
