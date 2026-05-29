@@ -12,7 +12,7 @@
 		<el-input v-model="config.outputVariable" placeholder="默认: batch_results" />
 	</el-form-item>
 	<div class="auto-group-hint">
-		<el-icon><InfoFilled /></el-icon>
+		<el-icon><info-filled /></el-icon>
 		<span>批处理体容器已自动创建，将节点拖入容器即可加入批处理体。</span>
 	</div>
 </template>

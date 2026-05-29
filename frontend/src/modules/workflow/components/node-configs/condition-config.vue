@@ -6,7 +6,7 @@
 		</div>
 	</el-form-item>
 	<div class="config-hint">
-		<el-icon><InfoFilled /></el-icon>
+		<el-icon><info-filled /></el-icon>
 		<span>从节点的 T (True) / F (False) 端口直接连线到目标节点。</span>
 	</div>
 </template>

@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, defineProps, defineEmits } from 'vue';
+import { ref } from 'vue';
 import { Plus, DocumentCopy, Upload } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
@@ -213,7 +213,7 @@ function jsonToSchemaNodes(val: any, name: string = ''): any {
 		const first = val[0];
 		const firstType = typeof first;
 		if (firstType === 'object' && first !== null) {
-			const childNodes = [];
+			const childNodes: any[] = [];
 			for (const [k, v] of Object.entries(first)) {
 				childNodes.push(jsonToSchemaNodes(v, k));
 			}
@@ -226,7 +226,7 @@ function jsonToSchemaNodes(val: any, name: string = ''): any {
 			return { name, type: 'array_string', description: '', children: [] };
 		}
 	} else if (t === 'object') {
-		const childNodes = [];
+		const childNodes: any[] = [];
 		for (const [k, v] of Object.entries(val)) {
 			childNodes.push(jsonToSchemaNodes(v, k));
 		}
@@ -237,7 +237,7 @@ function jsonToSchemaNodes(val: any, name: string = ''): any {
 
 function importJsonToSchema(val: any): any[] {
 	if (val && typeof val === 'object' && !Array.isArray(val)) {
-		const result = [];
+		const result: any[] = [];
 		for (const [k, v] of Object.entries(val)) {
 			result.push(jsonToSchemaNodes(v, k));
 		}
@@ -260,7 +260,7 @@ function jsonToValueNodes(val: any, name: string = ''): any {
 		});
 		return { name, type: 'array', children: childNodes };
 	} else if (t === 'object') {
-		const childNodes = [];
+		const childNodes: any[] = [];
 		for (const [k, v] of Object.entries(val)) {
 			childNodes.push(jsonToValueNodes(v, k));
 		}
@@ -271,7 +271,7 @@ function jsonToValueNodes(val: any, name: string = ''): any {
 
 function importJsonToValue(val: any): any[] {
 	if (val && typeof val === 'object' && !Array.isArray(val)) {
-		const result = [];
+		const result: any[] = [];
 		for (const [k, v] of Object.entries(val)) {
 			result.push(jsonToValueNodes(v, k));
 		}
@@ -287,7 +287,7 @@ function confirmImport() {
 	}
 	try {
 		const parsed = JSON.parse(importText.value.trim());
-		let importedNodes = [];
+		let importedNodes: any[] = [];
 		if (props.mode === 'schema') {
 			importedNodes = importJsonToSchema(parsed);
 		} else {

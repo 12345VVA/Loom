@@ -11,13 +11,12 @@
 			<!-- 展开/折叠图标 -->
 			<div class="col-expand-toggle">
 				<el-icon
-					v-slot="icon"
 					v-if="isContainer"
 					class="toggle-icon"
 					:class="{ 'is-expanded': expanded }"
 					@click="expanded = !expanded"
 				>
-					<CaretRight />
+					<caret-right />
 				</el-icon>
 			</div>
 
@@ -116,7 +115,7 @@
 				:key="idx"
 				:node="child"
 				:depth="depth + 1"
-				:index="idx"
+				:index="Number(idx)"
 				:parent-array="node.children"
 				:parent-node="node"
 				:mode="mode"
@@ -127,7 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, defineProps, defineEmits } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Plus, Delete, CaretRight } from '@element-plus/icons-vue';
 
 const props = defineProps<{

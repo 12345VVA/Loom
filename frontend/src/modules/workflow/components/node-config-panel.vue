@@ -99,6 +99,8 @@ import BatchProcessorConfig from './node-configs/batch-processor-config.vue';
 import ImageGeneratorConfig from './node-configs/image-generator-config.vue';
 import ToolExecutorConfig from './node-configs/tool-executor-config.vue';
 import LoopBodyGroupConfig from './node-configs/loop-body-group-config.vue';
+import VariableAssignmentConfig from './node-configs/variable-assignment-config.vue';
+import VariableTransformConfig from './node-configs/variable-transform-config.vue';
 
 const { t } = useI18n();
 
@@ -126,7 +128,9 @@ const CONFIG_COMPONENTS: Record<string, any> = {
 	batch_processor: BatchProcessorConfig,
 	image_generator: ImageGeneratorConfig,
 	tool_executor: ToolExecutorConfig,
-	loop_body_group: LoopBodyGroupConfig
+	loop_body_group: LoopBodyGroupConfig,
+	variable_assignment: VariableAssignmentConfig,
+	variable_transform: VariableTransformConfig
 };
 
 // 节点类型 → 所需的 AI 模型类型映射

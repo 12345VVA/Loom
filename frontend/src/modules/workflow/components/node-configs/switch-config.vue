@@ -6,10 +6,12 @@
 		</div>
 	</el-form-item>
 	<el-form-item :label="$t('Case 分支列表')">
-		<div v-for="(item, index) in (config.cases || [])" :key="index"
+		<div
+			v-for="(item, index) in (config.cases || [])"
+			:key="index"
 			class="case-item">
 			<div class="case-row">
-				<el-input v-model="item.value" :placeholder="'匹配值 ' + (index + 1)" size="small" class="case-value-input" />
+				<el-input v-model="item.value" :placeholder="'匹配值 ' + (Number(index) + 1)" size="small" class="case-value-input" />
 				<el-button type="danger" size="small" link :icon="Delete" @click="config.cases.splice(index, 1)">
 					{{ $t('删除') }}
 				</el-button>
@@ -20,7 +22,7 @@
 		</el-button>
 	</el-form-item>
 	<div class="config-hint">
-		<el-icon><InfoFilled /></el-icon>
+		<el-icon><info-filled /></el-icon>
 		<span>添加 Case 后，节点右侧自动生成对应端口。从端口直接连线到目标节点，最后一个是默认路由。</span>
 	</div>
 </template>

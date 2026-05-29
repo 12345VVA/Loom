@@ -29,7 +29,7 @@
 			{{ $t('添加意图') }}
 		</el-button>
 		<div class="config-hint">
-			<el-icon><InfoFilled /></el-icon>
+			<el-icon><info-filled /></el-icon>
 			<span>{{ $t('添加意图后，节点右侧自动生成对应端口，从端口直接连线到目标节点。未匹配任何意图时走"默认"端口。') }}</span>
 		</div>
 	</el-form-item>

@@ -10,7 +10,7 @@
 		<el-input v-model="config.outputVariable" placeholder="默认: loop_results" />
 	</el-form-item>
 	<div class="auto-group-hint">
-		<el-icon><InfoFilled /></el-icon>
+		<el-icon><info-filled /></el-icon>
 		<span>循环体容器已自动创建，将节点拖入容器即可加入循环体。</span>
 	</div>
 </template>

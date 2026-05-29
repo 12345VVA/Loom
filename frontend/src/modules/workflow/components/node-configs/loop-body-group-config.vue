@@ -4,7 +4,7 @@
 			<el-input v-model="config.label" placeholder="循环体" />
 		</el-form-item>
 		<div class="group-hint">
-			<el-icon><InfoFilled /></el-icon>
+			<el-icon><info-filled /></el-icon>
 			<span>将节点拖入容器即可加入循环体，容器会自动扩展以适应内部节点。</span>
 		</div>
 	</div>
