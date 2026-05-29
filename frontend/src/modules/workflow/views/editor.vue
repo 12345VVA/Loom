@@ -8,6 +8,9 @@
 				<el-tag size="small" type="info" class="workflow-code">{{ workflowCode }}</el-tag>
 			</div>
 			<div class="editor-header__right">
+				<el-button @click="exportWorkflow" :icon="Download">
+					{{ $t('导出工作流') }}
+				</el-button>
 				<el-button type="primary" :icon="FolderChecked" :loading="saving" @click="saveWorkflow">
 					{{ $t('保存工作流') }}
 				</el-button>
@@ -52,14 +55,14 @@
 			<div class="canvas-wrapper" @drop="onDrop" @dragover.prevent="onCanvasDragOver" @dragleave="onCanvasDragLeave">
 				<vue-flow
 					v-model="elements"
-					:node-types="nodeTypes"
-					:edge-types="edgeTypes"
+					:node-types="(nodeTypes as any)"
+					:edge-types="(edgeTypes as any)"
 					:default-edge-options="defaultEdgeOptions"
 					@connect="onConnect"
 					@pane-ready="onPaneReady"
 					@node-click="onNodeClick"
 					@pane-click="onPaneClick"
-					@node-contextmenu="onNodeContextMenu"
+					@node-context-menu="onNodeContextMenu"
 				>
 					<background pattern-color="#e0e0e0" :gap="16" />
 					<controls position="bottom-right" />
@@ -72,16 +75,16 @@
 					:style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
 				>
 					<div class="context-menu-item" @click="editContextNode">
-						<el-icon><Edit /></el-icon>
+						<el-icon><edit /></el-icon>
 						<span>{{ $t('配置节点') }}</span>
 					</div>
 					<div class="context-menu-item" @click="duplicateNode">
-						<el-icon><CopyDocument /></el-icon>
+						<el-icon><copy-document /></el-icon>
 						<span>{{ $t('复制节点') }}</span>
 					</div>
 					<div class="context-menu-divider" />
 					<div class="context-menu-item context-menu-item--danger" @click="deleteContextNode">
-						<el-icon><Delete /></el-icon>
+						<el-icon><delete /></el-icon>
 						<span>{{ $t('删除节点') }}</span>
 					</div>
 				</div>
@@ -140,7 +143,10 @@ import {
 	Search,
 	Edit,
 	CopyDocument,
-	Delete
+	Delete,
+	Download,
+	Collection,
+	Filter
 } from '@element-plus/icons-vue';
 
 // Vue Flow 样式文件
@@ -163,6 +169,8 @@ import BatchProcessorNode from '../components/custom-nodes/batch-processor-node.
 import ImageGeneratorNode from '../components/custom-nodes/image-generator-node.vue';
 import ToolExecutorNode from '../components/custom-nodes/tool-executor-node.vue';
 import LoopBodyGroupNode from '../components/custom-nodes/loop-body-group-node.vue';
+import VariableAssignmentNode from '../components/custom-nodes/variable-assignment-node.vue';
+import VariableTransformNode from '../components/custom-nodes/variable-transform-node.vue';
 import LabelEdge from '../components/custom-edges/label-edge.vue';
 
 const { service } = useCool();
@@ -186,7 +194,9 @@ const nodeTypes = {
 	batch_processor: BatchProcessorNode,
 	image_generator: ImageGeneratorNode,
 	tool_executor: ToolExecutorNode,
-	loop_body_group: LoopBodyGroupNode
+	loop_body_group: LoopBodyGroupNode,
+	variable_assignment: VariableAssignmentNode,
+	variable_transform: VariableTransformNode
 };
 
 // 注册自定义边组件
@@ -198,6 +208,7 @@ provide('getElements', () => elements.value);
 const workflowId = ref<string | null>(null);
 const workflowName = ref('');
 const workflowCode = ref('');
+const workflowDescription = ref('');
 const saving = ref(false);
 const selectedNodeId = ref<string | null>(null);
 const isDirty = ref(false);
@@ -222,6 +233,7 @@ interface FlowNode {
 	data: {
 		config: Record<string, any>;
 	};
+	style?: Record<string, any>;
 }
 
 interface FlowEdge {
@@ -257,6 +269,8 @@ const nodeTemplates = [
 	{ type: 'batch_processor', name: t('并发批处理'), desc: t('大批量数据并发处理'), icon: Files },
 	{ type: 'image_generator', name: t('生图节点'), desc: t('大模型文生图'), icon: Picture },
 	{ type: 'tool_executor', name: t('工具执行器'), desc: t('执行网页搜索/文件读写'), icon: Setting },
+	{ type: 'variable_assignment', name: t('变量赋值'), desc: t('设置全局/局部变量'), icon: Collection },
+	{ type: 'variable_transform', name: t('变量转换'), desc: t('格式转换与数据提取'), icon: Filter },
 	{ type: 'end', name: t('结束节点'), desc: t('工作流汇聚完结点'), icon: CircleCheck }
 ];
 
@@ -297,6 +311,8 @@ function isRequiredConfigMissing(node: FlowNode): boolean {
 		case 'tool_executor': return !cfg.toolCode;
 		case 'human_input': return !cfg.message;
 		case 'intent_classifier': return !cfg.modelProfileCode || !(cfg.intents?.length);
+		case 'variable_assignment': return !(cfg.assignments?.length);
+		case 'variable_transform': return !cfg.input_variable || !cfg.transform_type || !cfg.output_variable;
 		default: return false;
 	}
 }
@@ -470,6 +486,7 @@ async function fetchWorkflowData() {
 		const res = await (service as any).workflow.definition.info({ id: workflowId.value });
 		workflowName.value = res.name;
 		workflowCode.value = res.code;
+		workflowDescription.value = res.description || '';
 
 		// 加载已有的拓扑连线
 		if (res.graphJson && res.graphJson !== '{}') {
@@ -630,6 +647,10 @@ function onDrop(event: DragEvent) {
 		config = { modelProfileCode: '', promptTemplate: '', size: '', imageVariable: '', imageTemplate: '', optionsJson: '{}', outputVariable: getUniqueOutputVar(label, 'image_url') };
 	} else if (type === 'tool_executor') {
 		config = { toolCode: '', argumentsJson: '{}', outputVariable: getUniqueOutputVar(label, 'tool_result') };
+	} else if (type === 'variable_assignment') {
+		config = { assignments: [] };
+	} else if (type === 'variable_transform') {
+		config = { input_variable: '', transform_type: 'join_array', transform_args: {}, output_variable: getUniqueOutputVar(label, 'transformed_value') };
 	} else if (type === 'end') {
 		config = { outputFormat: 'json', outputFields: [] };
 	}
@@ -656,8 +677,19 @@ function onDrop(event: DragEvent) {
 			y + 20 >= pos.y && y + 20 <= pos.y + gH) {
 			targetGroupId = g.id;
 			// 坐标相对于 parent
-			newNode.position.x = x - pos.x;
-			newNode.position.y = y - pos.y;
+			const innerX = x - pos.x;
+			let innerY = y - pos.y;
+
+			// 防止掉落时节点下边缘和上边缘溢出（节点默认高约 56px）
+			if (innerY + 60 > gH) {
+				innerY = gH - 70;
+			}
+			if (innerY < 40) {
+				innerY = 40; // 避开 group-header
+			}
+
+			newNode.position.x = innerX;
+			newNode.position.y = innerY;
 			newNode.parentNode = targetGroupId;
 			newNode.expandParent = true;
 			break;
@@ -694,6 +726,8 @@ function getTypeName(type: string) {
 	if (type === 'batch_processor') return t('并发批处理');
 	if (type === 'image_generator') return t('生图节点');
 	if (type === 'tool_executor') return t('工具执行器');
+	if (type === 'variable_assignment') return t('变量赋值');
+	if (type === 'variable_transform') return t('变量转换');
 	return t('未知节点');
 }
 
@@ -780,6 +814,12 @@ function onConnect(params: Connection) {
 		}
 	}
 
+	// 禁止跨组连线（外部节点不能直连内部节点，内部节点也不能直连外部节点）
+	if ((srcNode as any).parentNode !== (tgtNode as any).parentNode) {
+		ElMessage.warning(t('禁止跨容器连线，内部节点与外部节点须相互独立'));
+		return;
+	}
+
 	// 去重
 	const exists = elements.value.some(
 		(el: any) => 'source' in el && el.source === source && el.target === target
@@ -796,7 +836,7 @@ function onConnect(params: Connection) {
 	}
 
 	// 推导边标签
-	const label = getEdgeLabel(source, sourceHandle, srcNode);
+	const label = getEdgeLabel(source, sourceHandle ?? undefined, srcNode);
 	const isConditional = srcNode.type === 'condition' || srcNode.type === 'switch' || srcNode.type === 'intent_classifier';
 
 	const newEdge: any = {
@@ -985,6 +1025,76 @@ function deleteSelectedNode() {
 	selectedNodeId.value = null;
 }
 
+// 构建后端标准的拓扑 JSON 结构
+function buildGraphPayload() {
+	const nodes = elements.value.filter(el => !('source' in el)) as FlowNode[];
+	const edges = elements.value.filter(el => 'source' in el) as FlowEdge[];
+
+	return {
+		elements: elements.value,
+		nodes: nodes.map(n => {
+			const conf = { ...(n.data?.config || {}) };
+			if (n.type === 'tool_executor') {
+				try {
+					conf.arguments = JSON.parse(conf.argumentsJson || '{}');
+				} catch (e) {
+					conf.arguments = {};
+				}
+			}
+			const serialized: any = {
+				id: n.id,
+				type: n.type,
+				name: n.label,
+				config: conf
+			};
+			if ((n as any).parentNode) serialized.parentNode = (n as any).parentNode;
+			if ((n as any).extent) serialized.extent = (n as any).extent;
+			if ((n as any).expandParent) serialized.expandParent = (n as any).expandParent;
+			if (n.style) serialized.style = n.style;
+			return serialized;
+		}),
+		edges: edges.map(e => {
+			const edge: any = {
+				source: e.source,
+				target: e.target,
+				type: e.type || 'direct',
+				condition: e.data?.condition || ''
+			};
+			if ((e as any).sourceHandle) edge.sourceHandle = (e as any).sourceHandle;
+			if (e.data?.label) edge.data = { label: e.data.label };
+			return edge;
+		})
+	};
+}
+
+// 导出工作流
+function exportWorkflow() {
+	if (!workflowId.value) return;
+
+	const exportData = {
+		version: '1.0',
+		type: 'LoomWorkflow',
+		metadata: {
+			name: workflowName.value,
+			description: workflowDescription.value
+		},
+		graph_json: JSON.stringify(buildGraphPayload())
+	};
+
+	const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+	a.download = `LoomWorkflow_${workflowName.value || 'Untitled'}_${dateStr}.json`;
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	URL.revokeObjectURL(url);
+
+	ElMessage.success(t('导出成功'));
+}
+
 // 将 Vue Flow 画布信息转换打包为后端标准工作流 JSON 格式并存储
 async function saveWorkflow() {
 	if (!workflowId.value) return;
@@ -1001,6 +1111,23 @@ async function saveWorkflow() {
 			warnings.push(t('工作流缺失"开始节点"，请在画布中添加唯一入口！'));
 		} else if (startNodes.length > 1) {
 			warnings.push(t('工作流存在多个"开始节点"，请在画布中保留唯一入口！'));
+		}
+
+		// 检查循环/批处理容器内部是否合法（多个起点或死循环）
+		const groups = nodes.filter(n => n.type === 'loop_body_group');
+		for (const g of groups) {
+			const bodyNodeIds = nodes.filter(n => (n as any).parentNode === g.id).map(n => n.id);
+			if (bodyNodeIds.length > 0) {
+				const entries = bodyNodeIds.filter(nid => 
+					!edges.some(e => e.target === nid && bodyNodeIds.includes(e.source))
+				);
+				if (entries.length > 1) {
+					const names = entries.map(eid => nodes.find(n => n.id === eid)?.label || eid).join(', ');
+					warnings.push(t('容器 "') + (g.label || g.id) + t('" 内存在多个没有输入的起点节点: ') + names + t('。请用内部连线明确它们的执行顺序！'));
+				} else if (entries.length === 0) {
+					warnings.push(t('容器 "') + (g.label || g.id) + t('" 内部形成了死循环闭环，无法确定起始节点！'));
+				}
+			}
 		}
 
 		// 检查 Switch 分支节点是否配置完整
@@ -1083,12 +1210,37 @@ async function saveWorkflow() {
 			);
 		}
 
-		// 检查是否存在重复的输出变量名
+		// 检查是否存在重复的输出变量名（排除互斥条件分支）
+		// 构建条件节点的互斥分组：同一条件节点不同分支上的节点互斥，不会同时执行
+		const exclusiveGroups: Map<string, Set<string>> = new Map();
+		const conditionalTypes = ['condition', 'intent_classifier', 'switch'];
+		for (const n of nodes) {
+			if (conditionalTypes.includes(n.type)) {
+				const downstreamIds = edges
+					.filter(e => e.source === n.id)
+					.map(e => e.target);
+				if (downstreamIds.length > 1) {
+					const group = new Set(downstreamIds);
+					for (const id of downstreamIds) {
+						exclusiveGroups.set(id, group);
+					}
+				}
+			}
+		}
 		const varNameToNodes = new Map<string, string[]>();
 		for (const n of nodes) {
 			const outVar = (n.data?.config as any)?.outputVariable?.trim();
 			if (outVar) {
 				const list = varNameToNodes.get(outVar) || [];
+				// 检查已有的同名节点是否与当前节点互斥
+				const isExclusive = list.every(existingLabel => {
+					const existingNode = nodes.find(nn => (nn.label || nn.id) === existingLabel);
+					if (!existingNode) return false;
+					const groupA = exclusiveGroups.get(n.id);
+					const groupB = exclusiveGroups.get(existingNode.id);
+					return groupA && groupB && groupA === groupB;
+				});
+				if (isExclusive) continue;
 				list.push(n.label || n.id);
 				varNameToNodes.set(outVar, list);
 			}
@@ -1115,41 +1267,7 @@ async function saveWorkflow() {
 		}
 
 		// 3. 验证并构造后端标准解析结构
-		const graphPayload = {
-			elements: elements.value,
-			nodes: nodes.map(n => {
-				const conf = { ...(n.data?.config || {}) };
-				if (n.type === 'tool_executor') {
-					try {
-						conf.arguments = JSON.parse(conf.argumentsJson || '{}');
-					} catch (e) {
-						conf.arguments = {};
-					}
-				}
-				const serialized: any = {
-					id: n.id,
-					type: n.type,
-					name: n.label,
-					config: conf
-				};
-				if ((n as any).parentNode) serialized.parentNode = (n as any).parentNode;
-				if ((n as any).extent) serialized.extent = (n as any).extent;
-				if ((n as any).expandParent) serialized.expandParent = (n as any).expandParent;
-				if (n.style) serialized.style = n.style;
-				return serialized;
-			}),
-			edges: edges.map(e => {
-				const edge: any = {
-					source: e.source,
-					target: e.target,
-					type: e.type || 'direct',
-					condition: e.data?.condition || ''
-				};
-				if ((e as any).sourceHandle) edge.sourceHandle = (e as any).sourceHandle;
-				if (e.data?.label) edge.data = { label: e.data.label };
-				return edge;
-			})
-		};
+		const graphPayload = buildGraphPayload();
 
 		// 4. 更新定义记录
 		await (service as any).workflow.definition.update({

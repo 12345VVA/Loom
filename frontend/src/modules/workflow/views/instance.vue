@@ -220,24 +220,26 @@ const Table = useTable({
 		{
 			type: 'op',
 			width: 260,
-			buttons: [
-				{
-					label: t('执行日志'),
-					type: 'primary',
-					onClick({ scope }: any) {
-						viewExecutionLogs(scope.row);
-					}
-				},
-				{
-					label: t('人工确认'),
-					type: 'warning',
-					hidden: ({ scope }: any) => scope.row.status !== 'paused',
-					onClick({ scope }: any) {
-						openApprovalDialog(scope.row);
-					}
-				},
-				'delete'
-			]
+			buttons({ scope }: any) {
+				return [
+					{
+						label: t('执行日志'),
+						type: 'primary',
+						onClick({ scope }: any) {
+							viewExecutionLogs(scope.row);
+						}
+					},
+					{
+						label: t('人工确认'),
+						type: 'warning',
+						hidden: scope.row.status !== 'paused',
+						onClick({ scope }: any) {
+							openApprovalDialog(scope.row);
+						}
+					},
+					'delete'
+				];
+			}
 		}
 	]
 });
