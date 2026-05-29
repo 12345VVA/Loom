@@ -22,9 +22,10 @@ from app.modules.workflow.model.workflow import (
     WorkflowExecutionLog,
     WorkflowInstance,
 )
-from app.modules.workflow.service.compiler import WorkflowCompiler, WorkflowState, node_registry, render_template
+from app.modules.workflow.service.compiler import WorkflowCompiler, WorkflowState, node_registry, render_template, safe_eval, strip_braces
 
 logger = logging.getLogger(__name__)
+
 
 # 全局工作流事件订阅器，用于实时流式推送（规避循环导入）
 workflow_event_listeners = []
@@ -324,10 +325,16 @@ async def execute_tool_node(variables: Dict[str, Any], config: Dict[str, Any]) -
     """
     tool_name = config.get("tool_name", "unknown")
     output_variable = config.get("output_variable", "tool_result")
-    
+
+    # 优先使用 mock_data 配置，否则返回通用模拟结果
+    mock_data = config.get("mock_data")
+    if mock_data:
+        await asyncio.sleep(0.3)
+        return {output_variable: mock_data}
+
     # 模拟工具执行延迟
     await asyncio.sleep(0.5)
-    
+
     return {output_variable: f"Mock Tool '{tool_name}' executed successfully with context."}
 
 
@@ -366,7 +373,12 @@ async def execute_intent_classifier_node(variables: Dict[str, Any], config: Dict
     意图识别与语义分流节点执行逻辑
     """
     node_id = config.get("id", "intent_classifier")
-    query = variables.get("query") or variables.get("user_query") or ""
+    input_var = config.get("input_variable", "")
+    if input_var:
+        var_name = strip_braces(input_var.strip())
+        query = str(variables.get(var_name, ""))
+    else:
+        query = variables.get("query") or variables.get("user_query") or ""
     intents = config.get("intents", [])
     default_route = config.get("default_route")
     profile_code = config.get("model_profile_code")
@@ -421,7 +433,7 @@ async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[s
             "循环控制器节点缺少已编译的体子图。"
             "请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。"
         )
-    list_var = config.get("list_variable", "list_variable")
+    list_var = strip_braces(config.get("list_variable") or config.get("array_variable", "list_variable"))
     item_var = config.get("item_variable", "loop_item")
     output_var = config.get("output_variable", "loop_results")
     stop_on_error = config.get("stop_on_error", True)
@@ -467,7 +479,7 @@ async def execute_batch_processor_node(variables: Dict[str, Any], config: Dict[s
             "批处理节点缺少已编译的体子图。"
             "请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。"
         )
-    list_var = config.get("list_variable", "batch_list_variable")
+    list_var = strip_braces(config.get("list_variable") or config.get("array_variable", "batch_list_variable"))
     item_var = config.get("item_variable", "batch_item")
     output_var = config.get("output_variable", "batch_results")
     concurrency_limit = min(max(int(config.get("concurrency_limit", 5) or 5), 1), 20)
@@ -633,12 +645,33 @@ async def tool_file_system(filename: str, content: str = None) -> str:
     return f"[本地文件系统] 成功拉取文件 '{filename}'，内容预览：'工作流演示。'"
 
 
+async def tool_mock_weather_api(location: str) -> str:
+    """
+    [Mock] 天气查询占位工具实现
+    """
+    await asyncio.sleep(0.3)
+    return json.dumps({
+        "location": location,
+        "temperature": "26°C",
+        "condition": "晴",
+        "humidity": "45%",
+        "wind": "微风",
+    }, ensure_ascii=False)
+
+
 async def execute_tool_executor_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
     通用工具执行器节点逻辑
     """
     tool_code = config.get("tool_code", "unknown")
-    arguments = variables.get("arguments") or config.get("arguments", {})
+    arguments = variables.get("arguments") or config.get("arguments") or {}
+    if not arguments:
+        arguments_json_str = config.get("arguments_json", "")
+        if arguments_json_str:
+            try:
+                arguments = json.loads(arguments_json_str)
+            except json.JSONDecodeError:
+                arguments = {}
     output_variable = config.get("output_variable", "tool_result")
 
     # 参数级联转换
@@ -658,6 +691,9 @@ async def execute_tool_executor_node(variables: Dict[str, Any], config: Dict[str
             filename = resolved_args.get("filename", "output.txt")
             content = resolved_args.get("content")
             res = await tool_file_system(filename, content)
+        elif tool_code == "mock_weather_api":
+            location = resolved_args.get("location", "未知")
+            res = await tool_mock_weather_api(location)
         else:
             res = f"[工具中心] 找不到系统工具 Code: '{tool_code}'"
     except Exception as e:
@@ -695,6 +731,117 @@ def _render_output_field_recursive(field: dict, variables: Dict[str, Any]) -> An
         return value_tpl
 
 
+async def execute_variable_assignment_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    变量赋值节点执行逻辑。支持按字面量或表达式计算赋值。
+    """
+    assignments = config.get("assignments", [])
+    updates = {}
+    for assign in assignments:
+        var_name = assign.get("variable_name")
+        val_type = assign.get("value_type", "string")
+        val = assign.get("value", "")
+        
+        if not var_name:
+            continue
+            
+        if val_type == "string":
+            updates[var_name] = str(val)
+        elif val_type == "number":
+            try:
+                updates[var_name] = float(val) if "." in str(val) else int(val)
+            except ValueError:
+                updates[var_name] = 0
+        elif val_type == "boolean":
+            updates[var_name] = str(val).lower() in ("true", "1", "yes")
+        elif val_type == "expression":
+            try:
+                # 包含 updates 允许前后变量依赖
+                ctx = {**variables, **updates}
+                updates[var_name] = safe_eval(str(val), ctx)
+            except Exception as e:
+                logger.warning(f"变量赋值表达式 '{val}' 执行失败: {e}")
+                updates[var_name] = None
+        else:
+            updates[var_name] = val
+            
+    return updates
+
+
+async def execute_variable_transform_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    变量转换/聚合节点执行逻辑。
+    """
+    input_var = strip_braces(config.get("input_variable", ""))
+    transform_type = config.get("transform_type", "join_array")
+    transform_args = config.get("transform_args", {})
+    output_var = config.get("output_variable", "transformed_value")
+
+    input_val = variables.get(input_var)
+    result = None
+
+    try:
+        if transform_type == "join_array":
+            separator = transform_args.get("separator", ",")
+            if isinstance(input_val, list):
+                result = separator.join(str(x) for x in input_val)
+            elif input_val is not None:
+                result = str(input_val)
+
+        elif transform_type == "extract_json_path":
+            if input_val is None:
+                result = None
+            else:
+                path = transform_args.get("path", "")
+                if isinstance(input_val, str):
+                    try:
+                        data = json.loads(input_val)
+                    except json.JSONDecodeError:
+                        data = {}
+                else:
+                    data = input_val
+
+                if not path or not isinstance(data, (dict, list)):
+                    result = data
+                else:
+                    parts = path.split(".")
+                    curr = data
+                    for part in parts:
+                        if isinstance(curr, dict) and part in curr:
+                            curr = curr[part]
+                        elif isinstance(curr, list):
+                            try:
+                                idx = int(part)
+                            except ValueError:
+                                curr = None
+                                break
+                            if -len(curr) <= idx < len(curr):
+                                curr = curr[idx]
+                            else:
+                                curr = None
+                                break
+                        else:
+                            curr = None
+                            break
+                    result = curr
+
+        elif transform_type == "eval_expression":
+            expression = transform_args.get("expression", "")
+            ctx = {**variables, "input_value": input_val}
+            result = safe_eval(expression, ctx)
+
+        else:
+            result = input_val
+            
+    except Exception as e:
+        logger.warning(f"变量转换节点执行异常: {e}")
+        result = None
+        
+    if not output_var:
+        return {}
+    return {output_var: result}
+
+
 async def execute_end_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
     结束节点：支持结构化字段输出和文本/JSON 两种模式（支持多层嵌套结构）
@@ -723,6 +870,13 @@ async def execute_end_node(variables: Dict[str, Any], config: Dict[str, Any]) ->
         return {"workflow_output": workflow_output}
 
 
+async def execute_condition_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    二元条件分支节点执行逻辑。路由通过条件边处理，此执行体仅作为节点执行标记。
+    """
+    return {}
+
+
 async def execute_switch_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """
     分支选择器节点执行逻辑。由于路由通过条件边处理，此执行体无需状态修改，仅作为节点执行标记。
@@ -737,7 +891,10 @@ node_registry.register("batch_processor", execute_batch_processor_node)
 node_registry.register("image_generator", execute_image_generator_node)
 node_registry.register("tool_executor", execute_tool_executor_node)
 node_registry.register("end", execute_end_node)
+node_registry.register("condition", execute_condition_node)
 node_registry.register("switch", execute_switch_node)
+node_registry.register("variable_assignment", execute_variable_assignment_node)
+node_registry.register("variable_transform", execute_variable_transform_node)
 
 
 # --- 2. 工作流服务逻辑 ---
