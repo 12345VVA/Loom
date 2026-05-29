@@ -7,7 +7,8 @@
 			</el-button>
 		</div>
 
-		<el-scrollbar class="panel-content" @focusin="onConfigPanelFocusIn">
+		<el-scrollbar class="panel-content">
+
 			<el-form :model="selectedNode.data" label-position="top">
 				<el-form-item :label="$t('节点ID')">
 					<el-input :model-value="selectedNode.id" disabled />
@@ -17,51 +18,6 @@
 				</el-form-item>
 
 				<el-divider />
-
-				<!-- 变量引用面板 -->
-				<div v-if="upstreamVariables.length > 0" class="variable-ref-panel">
-					<!-- 循环上下文 -->
-					<div v-if="loopContextVars.length > 0" class="variable-section">
-						<div class="variable-section-title">{{ $t('循环上下文') }}</div>
-						<div class="variable-ref-list">
-							<el-tag
-								v-for="v in loopContextVars"
-								:key="v.key"
-								size="small"
-								effect="plain"
-								class="variable-tag variable-tag--loop"
-								@click="insertVariableToField(v.refText)"
-							>
-								{{ v.display }}
-								<span class="variable-source">{{ v.nodeLabel }}</span>
-							</el-tag>
-						</div>
-					</div>
-					<!-- 上游输出 -->
-					<div v-if="upstreamOutputVars.length > 0" class="variable-section">
-						<div class="variable-section-title">{{ $t('上游输出') }}</div>
-						<div class="variable-ref-list">
-							<el-tag
-								v-for="v in upstreamOutputVars"
-								:key="v.key"
-								size="small"
-								effect="plain"
-								class="variable-tag"
-								@click="insertVariableToField(v.refText)"
-							>
-								{{ v.display }}
-								<span class="variable-source">{{ v.nodeLabel }}</span>
-							</el-tag>
-						</div>
-					</div>
-					<!-- 语法提示 -->
-					<div v-if="variableSyntaxHints.length > 0" class="variable-ref-hint">
-						<div v-for="h in variableSyntaxHints" :key="h.label" class="hint-item">
-							<span class="hint-label">{{ h.label }}:</span>
-							<code>{{ h.syntax }}</code>
-						</div>
-					</div>
-				</div>
 
 				<!-- 动态载入对应节点的表单配置组件 -->
 				<component
@@ -80,10 +36,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue';
-import { ElMessage } from 'element-plus';
+import { computed, provide } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Delete } from '@element-plus/icons-vue';
+import { UPSTREAM_VARIABLES_KEY, LOOP_CONTEXT_VARS_KEY, UPSTREAM_OUTPUT_VARS_KEY, VARIABLE_SYNTAX_HINTS_KEY } from './constants';
 
 // 导入所有配置组件
 import StartConfig from './node-configs/start-config.vue';
@@ -218,84 +174,11 @@ const upstreamOutputVars = computed(() => {
 	return flattenedVariables.value.filter(v => !loopKeys.has(v.key));
 });
 
-// ---------- 变量插入逻辑 ----------
-
-// 记录最后获得焦点的输入框
-const lastFocusedInput = ref<HTMLTextAreaElement | HTMLInputElement | null>(null);
-// 记住最后聚焦的 Markdown 编辑器绑定的 config 字段路径
-const lastFocusedFieldInfo = ref<{ configKey: string; cursorPos: number } | null>(null);
-
-// 节点类型 → 使用 Markdown 编辑器的 config 字段列表
-const MARKDOWN_FIELDS_MAP: Record<string, string[]> = {
-	llm: ['promptTemplate'],
-	image_generator: ['promptTemplate'],
-	end: ['outputTemplate']
-};
-
-function onConfigPanelFocusIn(event: FocusEvent) {
-	const target = event.target;
-	if (target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && target.type === 'text')) {
-		lastFocusedInput.value = target as any;
-		const fieldInfo = detectMarkdownEditorField(target as HTMLElement);
-		if (fieldInfo) {
-			lastFocusedFieldInfo.value = {
-				configKey: fieldInfo,
-				cursorPos: (target as any).selectionStart ?? 0
-			};
-		} else {
-			lastFocusedFieldInfo.value = null;
-		}
-	}
-}
-
-// 实时追踪游标位置
-function onSelectionChange() {
-	const el = lastFocusedInput.value;
-	if (el && document.body.contains(el) && lastFocusedFieldInfo.value) {
-		lastFocusedFieldInfo.value.cursorPos = el.selectionStart ?? 0;
-	}
-}
-document.addEventListener('selectionchange', onSelectionChange);
-onUnmounted(() => document.removeEventListener('selectionchange', onSelectionChange));
-
-// 检测元素是否处于 cl-editor-markdown 内部，返回对应的 config 字段名
-function detectMarkdownEditorField(el: HTMLElement): string | null {
-	// 向上查找 cl-editor-markdown 容器
-	let node: HTMLElement | null = el;
-	while (node && node !== document.body) {
-		if (node.classList && node.classList.contains('cl-editor-markdown')) {
-			break;
-		}
-		node = node.parentElement;
-	}
-	if (!node || !node.classList.contains('cl-editor-markdown')) return null;
-
-	// 通过 el-form-item label 推断字段名
-	let formItem: HTMLElement | null = el;
-	while (formItem && formItem !== document.body) {
-		if (formItem.classList && formItem.classList.contains('el-form-item')) {
-			break;
-		}
-		formItem = formItem.parentElement;
-	}
-	if (!formItem) return null;
-
-	const nodeType = props.selectedNode?.type;
-	const markdownFields = MARKDOWN_FIELDS_MAP[nodeType] || [];
-	if (markdownFields.length === 0) return null;
-	// 如果只有一个 Markdown 字段，直接返回
-	if (markdownFields.length === 1) return markdownFields[0];
-
-	// 多个 Markdown 字段时，通过 label 推断
-	const labelEl = formItem.querySelector('.el-form-item__label');
-	if (labelEl) {
-		const text = labelEl.textContent?.trim() || '';
-		if (text.toLowerCase().includes('prompt') || text.toLowerCase().includes('提示词')) return 'promptTemplate';
-		if (text.toLowerCase().includes('输出') || text.toLowerCase().includes('output')) return 'outputTemplate';
-	}
-
-	return markdownFields[0];
-}
+// 向下提供变量上下文，供底层组件直接引用（如 cl-variable-input, cl-editor-markdown）
+provide(UPSTREAM_VARIABLES_KEY, flattenedVariables);
+provide(LOOP_CONTEXT_VARS_KEY, loopContextVars);
+provide(UPSTREAM_OUTPUT_VARS_KEY, upstreamOutputVars);
+provide(VARIABLE_SYNTAX_HINTS_KEY, computed(() => props.variableSyntaxHints));
 
 function getVariableRefText(varName: string): string {
 	const nodeType = props.selectedNode?.type;
@@ -303,64 +186,6 @@ function getVariableRefText(varName: string): string {
 		return `variables.${varName}`;
 	}
 	return `{${varName}}`;
-}
-
-// 支持嵌套路径的取值/赋值
-function getNestedValue(obj: any, path: string): any {
-	const parts = path.split('.');
-	let current = obj;
-	for (const part of parts) {
-		if (current == null || typeof current !== 'object') return undefined;
-		current = current[part];
-	}
-	return current;
-}
-
-function setNestedValue(obj: any, path: string, value: any) {
-	const parts = path.split('.');
-	let current = obj;
-	for (let i = 0; i < parts.length - 1; i++) {
-		if (current[parts[i]] == null || typeof current[parts[i]] !== 'object') {
-			current[parts[i]] = {};
-		}
-		current = current[parts[i]];
-	}
-	current[parts[parts.length - 1]] = value;
-}
-
-function insertVariableToField(refText: string) {
-	// 优先尝试插入到 Markdown 编辑器绑定的 config 字段
-	if (lastFocusedFieldInfo.value) {
-		const config = props.selectedNode?.data?.config;
-		if (config) {
-			const key = lastFocusedFieldInfo.value.configKey;
-			const currentVal = getNestedValue(config, key) || '';
-			const pos = lastFocusedFieldInfo.value.cursorPos;
-			const newVal = currentVal.slice(0, pos) + refText + currentVal.slice(pos);
-			setNestedValue(config, key, newVal);
-			lastFocusedFieldInfo.value.cursorPos = pos + refText.length;
-			ElMessage.success(t('已插入: ') + refText);
-			return;
-		}
-	}
-
-	// 其次尝试原生 input/textarea 插入
-	const el = lastFocusedInput.value;
-	if (el && document.body.contains(el)) {
-		const start = el.selectionStart ?? el.value.length;
-		const end = el.selectionEnd ?? el.value.length;
-		el.setRangeText(refText, start, end, 'end');
-		el.dispatchEvent(new Event('input', { bubbles: true }));
-		el.focus();
-		ElMessage.success(t('已插入: ') + refText);
-	} else {
-		// 兜底：复制到剪贴板
-		navigator.clipboard.writeText(refText).then(() => {
-			ElMessage.success(t('已复制: ') + refText);
-		}).catch(() => {
-			ElMessage.info(t('变量引用: ') + refText);
-		});
-	}
 }
 </script>
 
@@ -397,83 +222,5 @@ function insertVariableToField(refText: string) {
 	color: var(--el-text-color-placeholder);
 	margin-top: 4px;
 	line-height: 1.4;
-}
-
-.variable-ref-panel {
-	margin-bottom: 12px;
-	padding: 10px;
-	background: var(--el-fill-color-light);
-	border-radius: 6px;
-	border: 1px solid var(--el-border-color-lighter);
-}
-
-.variable-section {
-		margin-bottom: 8px;
-	}
-
-	.variable-section-title {
-		font-size: 11px;
-		font-weight: 600;
-		color: var(--el-text-color-secondary);
-		margin-bottom: 6px;
-		padding-left: 2px;
-	}
-
-	.variable-tag--loop {
-		background: rgba(230, 162, 60, 0.1) !important;
-		border-color: rgba(230, 162, 60, 0.3) !important;
-		color: var(--el-color-warning) !important;
-	}
-
-	.variable-ref-title {
-	font-size: 12px;
-	font-weight: 600;
-	color: var(--el-text-color-secondary);
-	margin-bottom: 8px;
-}
-
-.variable-ref-list {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-}
-
-.variable-tag {
-	cursor: pointer;
-	transition: all 0.2s;
-
-	&:hover {
-		color: var(--el-color-primary);
-		border-color: var(--el-color-primary);
-	}
-}
-
-.variable-source {
-	margin-left: 4px;
-	font-size: 10px;
-	opacity: 0.6;
-}
-
-.variable-ref-hint {
-	margin-top: 8px;
-	padding-top: 8px;
-	border-top: 1px dashed var(--el-border-color-lighter);
-
-	.hint-item {
-		font-size: 11px;
-		color: var(--el-text-color-placeholder);
-		margin-bottom: 2px;
-
-		.hint-label {
-			font-weight: 500;
-		}
-
-		code {
-			background: var(--el-fill-color);
-			padding: 1px 4px;
-			border-radius: 3px;
-			font-size: 11px;
-		}
-	}
 }
 </style>
