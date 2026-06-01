@@ -28,7 +28,7 @@
 	>
 		<el-form :model="startDialog.form" label-width="120px">
 			<el-form-item :label="$t('工作流定义')" required>
-				<el-select v-model="startDialog.form.definitionId" style="width: 100%">
+				<el-select v-model="startDialog.form.definitionId" style="width: 100%" @change="onDefinitionChange">
 					<el-option
 						v-for="item in definitions"
 						:key="item.id"
@@ -85,6 +85,10 @@
 		destroy-on-close
 	>
 		<div v-loading="logDrawer.loading" style="padding: 10px">
+			<div style="margin-bottom: 15px; display: flex; justify-content: flex-end; gap: 10px;" v-if="logDrawer.items.length > 0">
+				<el-button size="small" @click="expandAllLogs">{{ $t('展开全部') }}</el-button>
+				<el-button size="small" @click="collapseAllLogs">{{ $t('折叠全部') }}</el-button>
+			</div>
 			<el-timeline v-if="logDrawer.items.length > 0">
 				<el-timeline-item
 					v-for="(item, index) in logDrawer.items"
@@ -94,18 +98,31 @@
 				>
 					<el-card shadow="hover" style="margin-bottom: 10px">
 						<template #header>
-							<div style="display: flex; justify-content: space-between; align-items: center">
-								<strong style="font-size: 15px">{{ item.nodeName }}</strong>
+							<div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer" @click="item.isExpanded = !item.isExpanded">
+								<div style="display: flex; align-items: center; gap: 8px">
+									<el-icon><arrow-down v-if="item.isExpanded" /><arrow-right v-else /></el-icon>
+									<strong style="font-size: 15px">{{ item.nodeName }}</strong>
+								</div>
 								<el-tag size="small" type="info">{{ item.nodeType }}</el-tag>
 							</div>
 						</template>
-						<div class="log-payload">
+						<div class="log-payload" v-show="item.isExpanded">
 							<div class="log-payload__section">
-								<strong>{{ $t('上游输入：') }}</strong>
+								<div class="section-header">
+									<strong>{{ $t('上游输入：') }}</strong>
+									<el-button link type="primary" :icon="CopyDocument" @click="copyToClipboard(formatJson(item.inputData))">
+										{{ $t('复制') }}
+									</el-button>
+								</div>
 								<pre>{{ formatJson(item.inputData) }}</pre>
 							</div>
 							<div class="log-payload__section" style="margin-top: 10px">
-								<strong>{{ $t('执行输出：') }}</strong>
+								<div class="section-header">
+									<strong>{{ $t('执行输出：') }}</strong>
+									<el-button link type="primary" :icon="CopyDocument" @click="copyToClipboard(formatJson(item.outputData))">
+										{{ $t('复制') }}
+									</el-button>
+								</div>
 								<pre>{{ formatJson(item.outputData) }}</pre>
 							</div>
 						</div>
@@ -127,6 +144,8 @@ import { useCool } from '/@/cool';
 import { ref, reactive, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
+import { ArrowDown, ArrowRight, CopyDocument } from '@element-plus/icons-vue';
+import { formatJson, copyToClipboard } from '../utils';
 import dayjs from 'dayjs';
 
 const { service } = useCool();
@@ -166,6 +185,7 @@ interface WorkflowExecutionLog {
 	latencyMs: number;
 	status: 'success' | 'error';
 	createTime: string;
+	isExpanded?: boolean;
 }
 
 const definitions = ref<WorkflowDefinition[]>([]);
@@ -266,8 +286,38 @@ async function fetchDefinitions() {
 	}
 }
 
-function openStartDialog() {
+async function openStartDialog() {
 	startDialog.visible = true;
+	startDialog.form.definitionId = undefined;
+	startDialog.form.inputsJson = '{}';
+	await fetchDefinitions();
+}
+
+function onDefinitionChange(val: number) {
+	const def = definitions.value.find(d => d.id === val);
+	if (def && def.graphJson) {
+		try {
+			const graph = JSON.parse(def.graphJson);
+			const elements = graph.elements || [];
+			const startNode = elements.find((el: any) => el.type === 'start');
+			if (startNode && startNode.data?.config?.inputVariables) {
+				const vars: string[] = startNode.data.config.inputVariables;
+				const inputs: Record<string, string> = {};
+				vars.forEach(v => {
+					if (v) inputs[v] = "";
+				});
+				startDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
+			} else {
+				startDialog.form.inputsJson = '{}';
+			}
+		} catch (e) {
+			console.error('Parse graphJson failed', e);
+			ElMessage.error(t('工作流定义数据解析失败'));
+			startDialog.form.inputsJson = '{}';
+		}
+	} else {
+		startDialog.form.inputsJson = '{}';
+	}
 }
 
 async function submitStartInstance() {
@@ -342,7 +392,10 @@ async function viewExecutionLogs(row: WorkflowInstance) {
 	logDrawer.items = [];
 	try {
 		const list = await (service as any).workflow.instance.logs({ instanceId: row.id });
-		logDrawer.items = list;
+		logDrawer.items = list.map((item: any, index: number) => ({
+			...item,
+			isExpanded: item.status !== 'success' || index === list.length - 1
+		}));
 	} catch (err: any) {
 		ElMessage.error(t('获取执行日志失败: ') + (err.message || err));
 	} finally {
@@ -350,23 +403,32 @@ async function viewExecutionLogs(row: WorkflowInstance) {
 	}
 }
 
+function expandAllLogs() {
+	logDrawer.items.forEach(item => {
+		item.isExpanded = true;
+	});
+}
+
+function collapseAllLogs() {
+	logDrawer.items.forEach(item => {
+		item.isExpanded = false;
+	});
+}
+
 function formatTime(value: string) {
 	return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-';
 }
 
-function formatJson(val?: string) {
-	if (!val) return '{}';
-	try {
-		const parsed = JSON.parse(val);
-		return JSON.stringify(parsed, null, 2);
-	} catch (e) {
-		return val;
-	}
-}
 </script>
 
 <style lang="scss" scoped>
 .log-payload {
+	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 4px;
+	}
 	pre {
 		background-color: var(--el-fill-color-light);
 		padding: 10px;

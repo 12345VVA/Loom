@@ -8,6 +8,17 @@
 				<el-tag size="small" type="info" class="workflow-code">{{ workflowCode }}</el-tag>
 			</div>
 			<div class="editor-header__right">
+				<template v-if="testLogDrawer.instanceId">
+					<el-button plain type="info" @click="clearTestStatus">
+						<el-icon><brush /></el-icon>{{ $t('清除状态') }}
+					</el-button>
+					<el-button plain type="primary" @click="reopenTestLogDrawer">
+						<el-icon><document /></el-icon>{{ $t('测试日志') }}
+					</el-button>
+				</template>
+				<el-button @click="openTestDialog" type="success" :icon="CaretRight">
+					{{ $t('测试运行') }}
+				</el-button>
 				<el-button @click="exportWorkflow" :icon="Download">
 					{{ $t('导出工作流') }}
 				</el-button>
@@ -105,6 +116,84 @@
 				<el-empty :description="$t('在画布中点击节点以进行属性配置')" />
 			</div>
 		</div>
+
+		<!-- 测试运行初始变量弹窗 -->
+		<el-dialog
+			v-model="testDialog.visible"
+			:title="$t('测试运行工作流')"
+			width="500px"
+			destroy-on-close
+		>
+			<el-form :model="testDialog.form" label-width="120px">
+				<el-form-item :label="$t('初始输入变量')">
+					<cl-editor-codemirror v-model="testDialog.form.inputsJson" :height="220" />
+				</el-form-item>
+			</el-form>
+			<template #footer>
+				<el-button @click="testDialog.visible = false">{{ $t('取消') }}</el-button>
+				<el-button type="success" :loading="testDialog.loading" @click="startTestRun">
+					{{ $t('运行') }}
+				</el-button>
+			</template>
+		</el-dialog>
+
+		<!-- 测试运行日志抽屉 -->
+		<el-drawer
+			v-model="testLogDrawer.visible"
+			:title="$t('测试运行日志')"
+			size="500px"
+			@close="stopLogPolling"
+			destroy-on-close
+		>
+			<div v-loading="testLogDrawer.loading" style="padding: 10px; padding-top: 0">
+				<div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center">
+					<el-tag :type="testLogDrawer.status === 'success' ? 'success' : (testLogDrawer.status === 'failed' ? 'danger' : 'primary')">
+						{{ $t('状态：') }}{{ testLogDrawer.status || $t('准备中') }}
+					</el-tag>
+					<div>
+						<el-button size="small" @click="expandAllTestLogs">{{ $t('展开') }}</el-button>
+						<el-button size="small" @click="collapseAllTestLogs">{{ $t('折叠') }}</el-button>
+					</div>
+				</div>
+				<el-timeline v-if="testLogDrawer.items.length > 0">
+					<el-timeline-item
+						v-for="(item, index) in testLogDrawer.items"
+						:key="index"
+						:timestamp="formatTime(item.createTime)"
+						:type="item.status === 'success' ? 'success' : 'danger'"
+					>
+						<el-card shadow="hover" style="margin-bottom: 10px">
+							<template #header>
+								<div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer" @click="item.isExpanded = !item.isExpanded">
+									<div style="display: flex; align-items: center; gap: 8px">
+										<el-icon><arrow-down v-if="item.isExpanded" /><arrow-right v-else /></el-icon>
+										<strong style="font-size: 15px">{{ item.nodeName }}</strong>
+									</div>
+									<el-tag size="small" type="info">{{ item.nodeType }}</el-tag>
+								</div>
+							</template>
+							<div class="log-payload" v-show="item.isExpanded">
+								<div class="log-payload__section">
+									<div class="section-header">
+										<strong>{{ $t('上游输入：') }}</strong>
+										<el-button link type="primary" :icon="CopyDocument" @click="copyToClipboard(formatJson(item.inputData))">{{ $t('复制') }}</el-button>
+									</div>
+									<pre>{{ formatJson(item.inputData) }}</pre>
+								</div>
+								<div class="log-payload__section" style="margin-top: 10px">
+									<div class="section-header">
+										<strong>{{ $t('执行输出：') }}</strong>
+										<el-button link type="primary" :icon="CopyDocument" @click="copyToClipboard(formatJson(item.outputData))">{{ $t('复制') }}</el-button>
+									</div>
+									<pre>{{ formatJson(item.outputData) }}</pre>
+								</div>
+							</div>
+						</el-card>
+					</el-timeline-item>
+				</el-timeline>
+				<el-empty v-else :description="$t('暂无执行记录，等待后端运行')" />
+			</div>
+		</el-drawer>
 	</div>
 </template>
 
@@ -113,7 +202,7 @@ defineOptions({
 	name: 'workflow-editor'
 });
 
-import { ref, reactive, onMounted, onUnmounted, computed, watch, provide } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, provide } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useCool } from '/@/cool';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -143,16 +232,24 @@ import {
 	Search,
 	Edit,
 	CopyDocument,
+	ArrowRight,
+	ArrowDown,
+	CaretRight,
 	Delete,
 	Download,
 	Collection,
-	Filter
+	Filter,
+	Document,
+	Brush
 } from '@element-plus/icons-vue';
 
 // Vue Flow 样式文件
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
+
+import { formatJson, copyToClipboard } from '../utils';
+import dayjs from 'dayjs';
 
 // 导入重构的子组件
 import NodeConfigPanel from '../components/node-config-panel.vue';
@@ -225,6 +322,30 @@ const contextMenu = reactive({
 	nodeId: ''
 });
 
+// 测试弹窗
+const testDialog = reactive({
+	visible: false,
+	loading: false,
+	form: {
+		inputsJson: '{}'
+	}
+});
+
+// 测试日志抽屉
+const testLogDrawer = reactive({
+	visible: false,
+	loading: false,
+	instanceId: null as number | null,
+	status: '',
+	items: [] as any[]
+});
+let logPollTimer: ReturnType<typeof setInterval> | null = null;
+
+onBeforeUnmount(() => {
+	stopLogPolling();
+	window.removeEventListener('keydown', handleKeyDown);
+});
+
 interface FlowNode {
 	id: string;
 	type: string;
@@ -232,8 +353,10 @@ interface FlowNode {
 	position: { x: number; y: number };
 	data: {
 		config: Record<string, any>;
+		runLog?: any;
 	};
 	style?: Record<string, any>;
+	parentNode?: string;
 }
 
 interface FlowEdge {
@@ -260,7 +383,6 @@ const elements = ref<(FlowNode | FlowEdge)[]>([]);
 const nodeTemplates = [
 	{ type: 'start', name: t('开始节点'), desc: t('工作流启动入口'), icon: VideoPlay },
 	{ type: 'llm', name: t('LLM 节点'), desc: t('生成文本、总结、格式化'), icon: Cpu },
-	{ type: 'tool', name: t('工具节点 (Mock)'), desc: t('简单 Mock 工具响应'), icon: Setting },
 	{ type: 'condition', name: t('条件分支'), desc: t('根据变量值走向不同分支'), icon: Operation },
 	{ type: 'switch', name: t('分支选择 (Switch)'), desc: t('多分支条件选择流转'), icon: Operation },
 	{ type: 'human_input', name: t('人工审批'), desc: t('中断图运行等待人工干预'), icon: UserFilled },
@@ -416,10 +538,6 @@ onMounted(() => {
 
 	// 监听键盘按键删除元素
 	window.addEventListener('keydown', handleKeyDown);
-});
-
-onUnmounted(() => {
-	window.removeEventListener('keydown', handleKeyDown);
 });
 
 function handleKeyDown(event: KeyboardEvent) {
@@ -629,8 +747,6 @@ function onDrop(event: DragEvent) {
 	let config: Record<string, any> = {};
 	if (type === 'llm') {
 		config = { modelProfileCode: '', promptTemplate: '', outputFormat: 'text', jsonFields: [], outputVariable: getUniqueOutputVar(label, 'output') };
-	} else if (type === 'tool') {
-		config = { toolName: '', outputVariable: getUniqueOutputVar(label, 'tool_result') };
 	} else if (type === 'condition') {
 		config = { expression: '', trueRoute: '', falseRoute: '' };
 	} else if (type === 'switch') {
@@ -717,7 +833,6 @@ function getTypeName(type: string) {
 	if (type === 'start') return t('开始');
 	if (type === 'end') return t('结束');
 	if (type === 'llm') return t('LLM 节点');
-	if (type === 'tool') return t('工具节点');
 	if (type === 'condition') return t('条件分支');
 	if (type === 'switch') return t('分支选择');
 	if (type === 'human_input') return t('人工审批');
@@ -1067,34 +1182,6 @@ function buildGraphPayload() {
 	};
 }
 
-// 导出工作流
-function exportWorkflow() {
-	if (!workflowId.value) return;
-
-	const exportData = {
-		version: '1.0',
-		type: 'LoomWorkflow',
-		metadata: {
-			name: workflowName.value,
-			description: workflowDescription.value
-		},
-		graph_json: JSON.stringify(buildGraphPayload())
-	};
-
-	const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-	const url = URL.createObjectURL(blob);
-	const a = document.createElement('a');
-	a.href = url;
-	const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-	a.download = `LoomWorkflow_${workflowName.value || 'Untitled'}_${dateStr}.json`;
-	document.body.appendChild(a);
-	a.click();
-	document.body.removeChild(a);
-	URL.revokeObjectURL(url);
-
-	ElMessage.success(t('导出成功'));
-}
-
 // 将 Vue Flow 画布信息转换打包为后端标准工作流 JSON 格式并存储
 async function saveWorkflow() {
 	if (!workflowId.value) return;
@@ -1201,17 +1288,6 @@ async function saveWorkflow() {
 			);
 		}
 
-		// 检查旧版 batch_processor 配置（含 actionTemplate 字段，需重新配置）
-		const legacyBatchNodes = nodes.filter(
-			n => n.type === 'batch_processor' && (n.data?.config as any)?.actionTemplate
-		);
-		if (legacyBatchNodes.length > 0) {
-			warnings.push(
-				t('以下批处理节点使用了旧版配置格式：') + legacyBatchNodes.map(n => n.label || n.id).join(', ') +
-				t('。旧版的内嵌 LLM 配置已废弃，请重新配置循环体入口和出口节点。')
-			);
-		}
-
 		// 检查是否存在重复的输出变量名（排除互斥条件分支）
 		// 构建条件节点的互斥分组：同一条件节点不同分支上的节点互斥，不会同时执行
 		const exclusiveGroups: Map<string, Set<string>> = new Map();
@@ -1281,11 +1357,41 @@ async function saveWorkflow() {
 
 		ElMessage.success(t('工作流保存成功'));
 		isDirty.value = false;
+		return true;
 	} catch (err: any) {
 		ElMessage.error(t('保存失败: ') + (err.message || err));
+		return false;
 	} finally {
 		saving.value = false;
 	}
+}
+
+// 导出工作流
+function exportWorkflow() {
+	if (!workflowId.value) return;
+
+	const exportData = {
+		version: '1.0',
+		type: 'LoomWorkflow',
+		metadata: {
+			name: workflowName.value,
+			description: workflowDescription.value
+		},
+		graph_json: JSON.stringify(buildGraphPayload())
+	};
+
+	const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	const dateStr = dayjs().format('YYYYMMDD');
+	a.download = `LoomWorkflow_${workflowName.value || 'Untitled'}_${dateStr}.json`;
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	URL.revokeObjectURL(url);
+
+	ElMessage.success(t('导出成功'));
 }
 
 function goBack() {
@@ -1305,6 +1411,179 @@ function goBack() {
 		router.push('/workflow/definition');
 	}).catch(() => {});
 }
+
+// --- 测试运行与调试 ---
+
+function clearTestStatus() {
+	stopLogPolling();
+	testLogDrawer.instanceId = null;
+	testLogDrawer.visible = false;
+	testLogDrawer.items = [];
+	testLogDrawer.status = '';
+	clearNodeStatus();
+}
+
+function reopenTestLogDrawer() {
+	if (testLogDrawer.instanceId) {
+		testLogDrawer.visible = true;
+	}
+}
+
+async function openTestDialog() {
+	if (!workflowId.value) {
+		ElMessage.warning(t('请先保存新建的工作流然后再进行测试。'));
+		return;
+	}
+	if (isDirty.value) {
+		const saved = await saveWorkflow();
+		if (!saved) return;
+	}
+	const startNode = elements.value.find(el => !('source' in el) && el.type === 'start') as FlowNode | undefined;
+	if (startNode && startNode.data?.config?.inputVariables) {
+		const vars: string[] = startNode.data.config.inputVariables;
+		const inputs: Record<string, string> = {};
+		vars.forEach(v => {
+			if (v) inputs[v] = "";
+		});
+		testDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
+	} else {
+		testDialog.form.inputsJson = '{}';
+	}
+	testDialog.visible = true;
+}
+
+async function startTestRun() {
+	let inputs = {};
+	try {
+		inputs = JSON.parse(testDialog.form.inputsJson);
+	} catch (e) {
+		ElMessage.warning(t('初始输入变量 JSON 格式错误！'));
+		return;
+	}
+
+	testDialog.loading = true;
+	try {
+		const res = await (service as any).workflow.instance.start({
+			definitionId: Number(workflowId.value),
+			inputs
+		});
+		ElMessage.success(t('工作流测试实例已启动'));
+		testDialog.visible = false;
+		
+		const instId = res?.id;
+		if (!instId) {
+			ElMessage.error(t('启动测试失败，无法获取实例ID'));
+			return;
+		}
+
+		testLogDrawer.instanceId = instId;
+		testLogDrawer.visible = true;
+		testLogDrawer.items = [];
+		testLogDrawer.status = 'running';
+		
+		clearNodeStatus();
+		startLogPolling();
+	} catch (err: any) {
+		ElMessage.error(t('启动测试失败: ') + (err.message || err));
+	} finally {
+		testDialog.loading = false;
+	}
+}
+
+let logPollDelay = 2000;
+
+function startLogPolling() {
+	stopLogPolling();
+	logPollDelay = 2000;
+	pollInstanceStatus();
+}
+
+function stopLogPolling() {
+	if (logPollTimer) {
+		clearTimeout(logPollTimer);
+		logPollTimer = null;
+	}
+}
+
+async function pollInstanceStatus() {
+	if (!testLogDrawer.instanceId) return;
+	try {
+		const info = await (service as any).workflow.instance.info({ id: testLogDrawer.instanceId });
+		testLogDrawer.status = info.status;
+		
+		let logs: any[] = [];
+		try {
+			logs = await (service as any).workflow.instance.logs({ instanceId: testLogDrawer.instanceId });
+		} catch (logsErr) {
+			console.warn('Fetch logs failed', logsErr);
+		}
+		
+		const oldExpanded = new Set(testLogDrawer.items.filter(i => i.isExpanded).map(i => i.id));
+		testLogDrawer.items = logs.map((item: any, index: number) => ({
+			...item,
+			isExpanded: oldExpanded.has(item.id) || item.status !== 'success' || index === logs.length - 1
+		}));
+
+		updateNodeStatus(logs, info.status, info.currentNode);
+
+		if (info.status === 'success' || info.status === 'failed' || info.status === 'paused') {
+			stopLogPolling();
+		} else {
+			// 指数退避，但不超过 10 秒
+			if (logPollDelay < 10000) logPollDelay += 1000;
+			logPollTimer = setTimeout(pollInstanceStatus, logPollDelay);
+		}
+	} catch (err) {
+		console.error('Poll failed', err);
+		logPollTimer = setTimeout(pollInstanceStatus, logPollDelay);
+	}
+}
+
+function clearNodeStatus() {
+	elements.value.forEach(el => {
+		if (!('source' in el)) {
+			(el as any).class = '';
+			if (el.data) {
+				delete el.data.runLog;
+			}
+		}
+	});
+}
+
+function updateNodeStatus(logs: any[], instanceStatus: string, currentNode: string | null) {
+	clearNodeStatus();
+	const logMap = new Map(logs.map(log => [log.nodeId, log]));
+	elements.value.forEach(el => {
+		if (!('source' in el)) {
+			let customClass = '';
+			const nodeLog = logMap.get(el.id);
+			if (nodeLog) {
+				if (nodeLog.status === 'success') {
+					customClass = 'node-status-success';
+				} else if (nodeLog.status === 'error') {
+					customClass = 'node-status-error';
+				}
+				if (!el.data) el.data = { config: {} };
+				el.data.runLog = nodeLog;
+			}
+			
+			if (instanceStatus === 'running' && currentNode && el.id === currentNode) {
+				customClass = 'node-status-running';
+				if (!el.data) el.data = { config: {} };
+				// 如果已经在执行中，可能还没有产生完成的 log，我们可以塞一个 mock 的 log 用于显示状态
+				if (!el.data.runLog) {
+					el.data.runLog = { status: 'running' };
+				}
+			}
+
+			(el as any).class = customClass;
+		}
+	});
+}
+
+function expandAllTestLogs() { testLogDrawer.items.forEach(i => i.isExpanded = true); }
+function collapseAllTestLogs() { testLogDrawer.items.forEach(i => i.isExpanded = false); }
+function formatTime(value: string) { return value ? dayjs(value).format('HH:mm:ss') : '-'; }
 </script>
 
 <style lang="scss" scoped>
@@ -1481,6 +1760,52 @@ function goBack() {
 		height: 1px;
 		background: var(--el-border-color-lighter);
 		margin: 4px 0;
+	}
+}
+
+.log-payload {
+	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 4px;
+	}
+	pre {
+		background-color: var(--el-fill-color-light);
+		padding: 10px;
+		border-radius: 4px;
+		font-family: monospace;
+		font-size: 12px;
+		margin: 4px 0 0 0;
+		overflow-x: auto;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
+}
+
+:deep(.node-status-success .custom-flow-node) {
+	border: 2px solid #67c23a !important;
+	box-shadow: 0 0 10px rgba(103, 194, 58, 0.2) !important;
+}
+:deep(.node-status-error .custom-flow-node) {
+	border: 2px solid #f56c6c !important;
+	box-shadow: 0 0 10px rgba(245, 108, 108, 0.3) !important;
+}
+:deep(.node-status-running .custom-flow-node) {
+	border: 2px solid #409eff !important;
+	box-shadow: 0 0 12px rgba(64, 158, 255, 0.6) !important;
+	animation: node-pulse 1.5s infinite;
+}
+
+@keyframes node-pulse {
+	0% {
+		box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.7);
+	}
+	70% {
+		box-shadow: 0 0 0 10px rgba(64, 158, 255, 0);
+	}
+	100% {
+		box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
 	}
 }
 </style>

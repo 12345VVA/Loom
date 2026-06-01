@@ -61,10 +61,10 @@ class WorkflowInstanceController(BaseController):
         payload: WorkflowInstanceStartRequest,
         _: User = Depends(get_current_user),
         session: Session = Depends(get_session),
-    ):
+    ) -> dict:
         service = WorkflowInstanceService(session)
         instance = await service.start_instance(payload.definition_id, payload.inputs)
-        return instance
+        return {"id": instance.id}
 
     @Post("/resume", summary="提供人工确认恢复执行", permission="workflow:instance:resume")
     async def resume(
