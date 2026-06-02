@@ -15,6 +15,7 @@ from app.modules.ai.service.adapters import build_adapter
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.governance_service import AiGovernanceBlocked, AiGovernanceService
 from app.modules.ai.service.registry_service import AiModelRegistryService
+from app.modules.ai.service.security_service import AiSecurityService
 from app.modules.ai.service.utils import _adapter_timeout, _calculate_cost_micro_usd, _is_structured_response, _options_without_governance, _parse_content, _sse_event, _with_parsed_content, normalize_response_format, sanitize_options_for_log, summarize_image_result_items, summarize_prompt
 from app.modules.base.model.auth import User
 from app.core.config import settings
@@ -44,6 +45,7 @@ class AiModelRuntimeService:
         self.session = session
 
     def chat(self, payload: AiChatRequest, current_user: User | None = None) -> dict:
+        AiSecurityService.check_input_safety(payload.messages)
         resolved, options, response_format_overridden = self._resolve_chat(payload)
         return self._invoke(
             resolved,
@@ -52,11 +54,13 @@ class AiModelRuntimeService:
             request_options=payload.options,
             structured_response=options.get("response_format"),
             response_format_overridden=response_format_overridden,
+            skip_masking=payload.skip_masking,
             messages=[item.model_dump() if hasattr(item, "model_dump") else item for item in payload.messages],
             options=options,
         )
 
     def stream_chat(self, payload: AiChatRequest, current_user: User | None = None) -> Iterable[str]:
+        AiSecurityService.check_input_safety(payload.messages)
         resolved, options, response_format_overridden = self._resolve_chat(payload)
         messages = [item.model_dump() if hasattr(item, "model_dump") else item for item in payload.messages]
         return self._stream_invoke(
@@ -124,6 +128,7 @@ class AiModelRuntimeService:
         request_options: dict[str, Any] | None = None,
         structured_response: dict[str, Any] | None = None,
         response_format_overridden: bool = False,
+        skip_masking: bool = False,
         **kwargs: Any,
     ) -> dict:
         provider: AiProvider = resolved["provider"]
@@ -173,6 +178,11 @@ class AiModelRuntimeService:
                 )
             if method == "chat" and _is_structured_response(structured_response):
                 result = _with_parsed_content(result)
+                
+            # 对聊天结果进行 PII 脱敏（跳过结构化数据，避免破坏 JSON，或配置跳过）
+            if method == "chat" and "content" in result and result["content"] and not skip_masking and not _is_structured_response(structured_response):
+                result["content"] = AiSecurityService.mask_sensitive_output(result["content"])
+                
             return {"success": True, "provider": provider.code, "model": model.code, "profile": profile.code, **result}
         except AiGovernanceBlocked as exc:
             governance.block_invocation(invocation)
@@ -246,6 +256,7 @@ class AiModelRuntimeService:
         request_options: dict[str, Any] | None = None,
         structured_response: dict[str, Any] | None = None,
         response_format_overridden: bool = False,
+        skip_masking: bool = False,
     ) -> Iterable[str]:
         provider: AiProvider = resolved["provider"]
         model: AiModel = resolved["model"]
@@ -260,6 +271,7 @@ class AiModelRuntimeService:
         governance = AiGovernanceService(self.session)
         invocation: AiRuntimeInvocation | None = None
         invocation_closed = False
+
 
         try:
             invocation = governance.begin(user=current_user, provider=provider, model=model, profile=profile)
@@ -276,6 +288,7 @@ class AiModelRuntimeService:
                         if event_name == "delta":
                             content_parts.append(text)
                             emitted_delta = True
+                        # 流式输出阶段跳过脱敏（保证实时性和不破坏思考片段），仅在 done 中做全量脱敏
                         yield _sse_event({"event": event_name, "content": text})
                         continue
                     if event_name == "error":
@@ -291,6 +304,9 @@ class AiModelRuntimeService:
                         if event.get("requestId"):
                             request_id = event.get("requestId")
             content = "".join(content_parts)
+            # 对流式完成后的完整内容进行脱敏（跳过结构化数据，或配置跳过）
+            if not skip_masking and not _is_structured_response(structured_response):
+                content = AiSecurityService.mask_sensitive_output(content)
             done_payload = {"event": "done", "content": content, "usage": usage or {}}
             if _is_structured_response(structured_response):
                 parsed = _parse_content(content)

@@ -410,6 +410,7 @@ class AiChatRequest(BaseModel):
     messages: list[AiRuntimeMessage]
     options: dict[str, Any] = PydanticField(default_factory=dict)
     response_format: Optional[AiResponseFormatRequest | dict[str, Any]] = None
+    skip_masking: bool = False
 
 
 class AiEmbeddingRequest(BaseModel):
