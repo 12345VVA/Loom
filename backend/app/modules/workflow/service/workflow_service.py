@@ -40,7 +40,8 @@ from app.modules.workflow.service.event_bus import publish_event
 
 def run_ai_chat(
     profile_code: str,
-    prompt: str,
+    user_prompt: str,
+    system_prompt: str | None = None,
     response_format: dict[str, Any] | None = None,
 ) -> str:
     """
@@ -50,10 +51,17 @@ def run_ai_chat(
     from app.core.database import SessionLocal
     with SessionLocal() as session:
         runtime_service = AiModelRuntimeService(session)
+        
+        messages = []
+        if system_prompt and system_prompt.strip():
+            messages.append(AiRuntimeMessage(role="system", content=system_prompt))
+        messages.append(AiRuntimeMessage(role="user", content=user_prompt))
+
         chat_request = AiChatRequest(
             profile_code=profile_code,
-            messages=[AiRuntimeMessage(role="user", content=prompt)],
+            messages=messages,
             response_format=response_format,
+            skip_masking=True,
         )
         result = runtime_service.chat(chat_request)
 
@@ -264,12 +272,16 @@ async def execute_llm_node(variables: Dict[str, Any], config: Dict[str, Any]) ->
     Tier 3: 纯文本（无 response_format）
     """
     profile_code = config.get("model_profile_code")
-    prompt_template = config.get("prompt_template", "")
+    system_prompt_template = config.get("system_prompt_template", "")
+    user_prompt_template = config.get("prompt_template", "")
     output_variable = config.get("output_variable", "output")
 
     output_format = config.get("output_format", "text")
     json_fields = config.get("json_fields", [])
     response_format = None
+    
+    # 确定格式化指令应该追加到哪里（优先追加到 System Prompt）
+    format_instructions = ""
 
     if output_format == "json":
         # Tier 1: json_schema — 有字段定义时生成 Schema
@@ -283,27 +295,36 @@ async def execute_llm_node(variables: Dict[str, Any], config: Dict[str, Any]) ->
         # 文本指令始终追加作为兜底
         if json_fields:
             field_desc = _build_json_desc_recursive(json_fields, 1)
-            prompt_template += (
+            format_instructions = (
                 f'\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。\n'
                 f'JSON 结构如下：\n{{\n{field_desc}\n}}'
             )
         else:
-            prompt_template += (
+            format_instructions = (
                 '\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。'
             )
 
     elif output_format == "json_object":
         # Tier 2: json_object — 用户显式选择宽松模式
         response_format = {"type": "json_object"}
-        prompt_template += (
+        format_instructions = (
             '\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。'
         )
 
+    if format_instructions:
+        if system_prompt_template.strip():
+            system_prompt_template += format_instructions
+        else:
+            user_prompt_template += format_instructions
+
+    # 移除强制的系统级安全指令，交给统一的 AiSecurityService 处理
+
     # 渲染 Prompt 变量
-    prompt = render_template(prompt_template, variables)
+    system_prompt = render_template(system_prompt_template, variables) if system_prompt_template else None
+    user_prompt = render_template(user_prompt_template, variables)
 
     # 调用统一的 AI 对话驱动
-    content = await asyncio.to_thread(run_ai_chat, profile_code, prompt, response_format)
+    content = await asyncio.to_thread(run_ai_chat, profile_code, user_prompt, system_prompt, response_format)
 
     # JSON 模式自动解析结构化输出
     if output_format in ("json", "json_object"):
@@ -404,6 +425,7 @@ async def execute_intent_classifier_node(variables: Dict[str, Any], config: Dict
 
     # 2. 调用 AI 运行时大模型 (通过 asyncio.to_thread 避免同步阻塞)
     try:
+        # 这里仅使用 user_prompt 即可
         matched_intent_name = (await asyncio.to_thread(run_ai_chat, profile_code, prompt)).strip()
     except Exception as e:
         logger.error(f"意图分类大模型调用失败: {e}")
