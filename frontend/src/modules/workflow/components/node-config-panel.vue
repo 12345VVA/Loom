@@ -1,13 +1,20 @@
 <template>
-	<div class="config-panel">
+	<div class="config-panel" :style="{ width: panelWidth + 'px' }">
+		<div class="panel-resizer" @mousedown="startResize"></div>
 		<div class="panel-header">
-			<div class="panel-header__title">{{ $t('参数配置') }}</div>
-			<el-button link type="danger" :icon="Delete" @click="emit('delete')">
-				{{ $t('删除节点') }}
-			</el-button>
+			<div class="panel-header__title">
+				<el-icon v-if="nodeIcon" class="panel-header__icon"><component :is="nodeIcon" /></el-icon>
+				{{ selectedNode.label || $t('未命名节点') }}
+			</div>
+			<div class="panel-header__actions">
+				<el-button link :icon="Close" @click="emit('close')" />
+				<el-button link type="danger" :icon="Delete" @click="emit('delete')">
+					{{ $t('删除节点') }}
+				</el-button>
+			</div>
 		</div>
 
-		<el-scrollbar class="panel-content">
+		<el-scrollbar class="panel-content" ref="scrollbarRef">
 
 			<el-form :model="selectedNode.data" label-position="top">
 				<el-form-item :label="$t('节点ID')">
@@ -36,10 +43,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, provide } from 'vue';
+import { computed, provide, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Delete } from '@element-plus/icons-vue';
+import { Delete, Close } from '@element-plus/icons-vue';
 import { UPSTREAM_VARIABLES_KEY, LOOP_CONTEXT_VARS_KEY, UPSTREAM_OUTPUT_VARS_KEY, VARIABLE_SYNTAX_HINTS_KEY } from './constants';
+import type { ElScrollbar } from 'element-plus';
+import { getNodeMeta } from '../utils/node-type-registry';
 
 // 导入所有配置组件
 import StartConfig from './node-configs/start-config.vue';
@@ -69,7 +78,7 @@ const props = defineProps<{
 	aiProfiles: any[];
 }>();
 
-const emit = defineEmits(['delete']);
+const emit = defineEmits(['delete', 'close']);
 
 const CONFIG_COMPONENTS: Record<string, any> = {
 	start: StartConfig,
@@ -95,6 +104,58 @@ const NODE_MODEL_TYPE_MAP: Record<string, string> = {
 	intent_classifier: 'chat',
 	image_generator: 'image',
 };
+
+const nodeIcon = computed(() => getNodeMeta(props.selectedNode?.type).icon);
+
+// 滚动条引用
+const scrollbarRef = ref<InstanceType<typeof ElScrollbar>>();
+
+// 监听选中节点变化，重置滚动位置
+watch(() => props.selectedNode?.id, () => {
+	scrollbarRef.value?.setScrollTop(0);
+});
+
+// 面板宽度调整
+const defaultWidth = 360;
+const panelWidth = ref(parseInt(localStorage.getItem('loom_editor_panel_width') || String(defaultWidth)));
+let isResizing = false;
+let startX = 0;
+let startWidth = 0;
+
+function startResize(e: MouseEvent) {
+	isResizing = true;
+	startX = e.clientX;
+	startWidth = panelWidth.value;
+	document.addEventListener('mousemove', onMouseMove);
+	document.addEventListener('mouseup', onMouseUp);
+	document.body.style.cursor = 'ew-resize';
+	document.body.style.userSelect = 'none';
+}
+
+function onMouseMove(e: MouseEvent) {
+	if (!isResizing) return;
+	const delta = startX - e.clientX;
+	let newWidth = startWidth + delta;
+	if (newWidth < 280) newWidth = 280;
+	if (newWidth > 600) newWidth = 600;
+	panelWidth.value = newWidth;
+}
+
+function onMouseUp() {
+	if (isResizing) {
+		isResizing = false;
+		document.removeEventListener('mousemove', onMouseMove);
+		document.removeEventListener('mouseup', onMouseUp);
+		document.body.style.cursor = '';
+		document.body.style.userSelect = '';
+		localStorage.setItem('loom_editor_panel_width', String(panelWidth.value));
+	}
+}
+
+onBeforeUnmount(() => {
+	document.removeEventListener('mousemove', onMouseMove);
+	document.removeEventListener('mouseup', onMouseUp);
+});
 
 // 根据当前选中节点类型过滤模型 Profile 列表
 const filteredProfiles = computed(() => {
@@ -191,12 +252,35 @@ function getVariableRefText(varName: string): string {
 
 <style lang="scss" scoped>
 .config-panel {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
 	width: 360px;
 	background-color: #fff;
 	border-left: 1px solid var(--el-border-color-light);
+	box-shadow: -4px 0 16px rgba(0, 0, 0, 0.06);
 	display: flex;
 	flex-direction: column;
-	z-index: 5;
+	z-index: 10;
+
+	.panel-resizer {
+		position: absolute;
+		left: -4px;
+		top: 0;
+		bottom: 0;
+		width: 8px;
+		cursor: ew-resize;
+		z-index: 11;
+		
+		&:hover {
+			background-color: rgba(64, 158, 255, 0.2);
+		}
+	}
+
+	@media (max-width: 1200px) {
+		width: min(360px, 40vw) !important;
+	}
 
 	.panel-header {
 		display: flex;
@@ -208,6 +292,23 @@ function getVariableRefText(varName: string): string {
 		&__title {
 			font-size: 15px;
 			font-weight: 600;
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		&__icon {
+			font-size: 16px;
+			color: var(--el-color-primary);
+		}
+
+		&__actions {
+			display: flex;
+			align-items: center;
+			gap: 4px;
 		}
 	}
 

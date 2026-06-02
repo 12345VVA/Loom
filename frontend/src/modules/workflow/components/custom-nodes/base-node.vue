@@ -1,13 +1,15 @@
 <template>
-	<div class="custom-flow-node-wrapper">
-		<div class="custom-flow-node" :class="[nodeClass, { 'is-selected': selected, 'is-child': isChild }]">
+	<div class="custom-flow-node-wrapper" :class="{ 'node-entering': isEntering }">
+		<div class="custom-flow-node" :class="[meta.colorClass, { 'is-selected': selected, 'is-child': isChild }]">
 			<handle v-if="hasTarget" type="target" :position="Position.Left" />
 			<el-icon class="node-icon">
-				<component :is="icon" />
+				<component :is="meta.icon" />
 			</el-icon>
 			<span class="node-label">{{ label }}</span>
 			<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
-			<span v-if="incomplete" class="node-incomplete-dot" />
+			<el-tooltip v-if="incomplete" effect="dark" :content="$t('节点存在未完成的必填配置')" placement="top">
+				<span class="node-incomplete-dot" />
+			</el-tooltip>
 			<handle v-if="hasSource" type="source" :position="Position.Right" />
 		</div>
 		
@@ -54,26 +56,38 @@
 
 <script setup lang="ts">
 import { Handle, Position, useNode } from '@vue-flow/core';
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { CircleCheckFilled, CircleCloseFilled, Loading, InfoFilled, ArrowDown, ArrowRight, CopyDocument } from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
 import { formatJson, copyToClipboard } from '../../utils';
+import { getNodeMeta } from '../../utils/node-type-registry';
 
 const { t } = useI18n();
 
-const props = defineProps<{
+interface Props {
 	label: string;
 	selected?: boolean;
-	icon: any;
-	nodeClass: string;
+	icon?: any;
+	nodeClass?: string;
 	hasTarget?: boolean;
 	hasSource?: boolean;
 	isChild?: boolean;
 	groupLabel?: string;
 	incomplete?: boolean;
-}>();
+}
+
+const props = defineProps<Props>();
+
+const isEntering = ref(true);
+
+onMounted(() => {
+	setTimeout(() => {
+		isEntering.value = false;
+	}, 300);
+});
 
 const { node } = useNode();
+const meta = computed(() => getNodeMeta(node.type));
 const runLog = computed(() => node.data?.runLog);
 const isLogExpanded = ref(true);
 
@@ -216,8 +230,29 @@ const statusText = computed(() => {
 	.node-icon { color: var(--el-color-danger); }
 }
 
+/*
+ * ⚠️ 节点动画防坑说明 ⚠️
+ * 节点相关的入场/缩放动画必须加在 `.custom-flow-node-wrapper` 这个内部容器上，
+ * 而绝不能加在 Vue Flow 的外部容器 `.vue-flow__node` 上。
+ * 因为外层容器的坐标是通过内联的 `transform: translate(x, y)` 计算渲染的，
+ * 如果 CSS animation 携带了 `transform: scale`，会把内联的位移覆盖为0，导致所有节点塌陷重叠！
+ */
 .custom-flow-node-wrapper {
 	position: relative;
+	&.node-entering {
+		animation: pop-in 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+	}
+}
+
+@keyframes pop-in {
+	0% {
+		opacity: 0;
+		transform: scale(0.85);
+	}
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
 }
 
 .node-run-log {

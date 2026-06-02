@@ -1,74 +1,32 @@
 <template>
 	<div class="workflow-editor-container">
 		<!-- 头部工具栏 -->
-		<div class="editor-header">
-			<div class="editor-header__left">
-				<el-button :icon="ArrowLeft" circle @click="goBack" />
-				<span class="workflow-title">{{ workflowName || $t('未命名工作流') }}</span>
-				<el-tag size="small" type="info" class="workflow-code">{{ workflowCode }}</el-tag>
-			</div>
-			<div class="editor-header__right">
-				<template v-if="testLogDrawer.instanceId">
-					<el-button plain type="info" @click="clearTestStatus">
-						<el-icon><brush /></el-icon>{{ $t('清除状态') }}
-					</el-button>
-					<el-button plain type="primary" @click="reopenTestLogDrawer">
-						<el-icon><document /></el-icon>{{ $t('测试日志') }}
-					</el-button>
-				</template>
-				<el-button @click="openTestDialog" type="success" :icon="CaretRight">
-					{{ $t('测试运行') }}
-				</el-button>
-				<el-button @click="exportWorkflow" :icon="Download">
-					{{ $t('导出工作流') }}
-				</el-button>
-				<el-button type="primary" :icon="FolderChecked" :loading="saving" @click="saveWorkflow">
-					{{ $t('保存工作流') }}
-				</el-button>
-			</div>
-		</div>
+		<editor-header
+			:workflow-name="workflowName"
+			:workflow-code="workflowCode"
+			:test-log-drawer-instance-id="testLogDrawer.instanceId"
+			:saving="saving"
+			@go-back="goBack"
+			@clear-test-status="clearTestStatus"
+			@reopen-test-log-drawer="reopenTestLogDrawer"
+			@export-workflow="exportWorkflow"
+			@save-workflow="saveWorkflow"
+		/>
 
 		<!-- 主画布区 -->
 		<div class="editor-body">
-			<!-- 左侧节点库 -->
-			<div class="node-sidebar">
-				<div class="sidebar-title">{{ $t('节点库') }}</div>
-				<div class="sidebar-description">{{ $t('拖拽节点到画布中进行设计') }}</div>
-				<el-input
-					v-model="nodeSearch"
-					:prefix-icon="Search"
-					:placeholder="$t('搜索节点...')"
-					clearable
-					size="small"
-					class="node-search"
-				/>
-				<div class="node-templates">
-					<div
-						v-for="item in filteredNodeTemplates"
-						:key="item.type"
-						class="node-template-item"
-						:class="'node-template-item--' + item.type"
-						draggable="true"
-						@dragstart="onDragStart($event, item.type)"
-					>
-						<el-icon class="template-icon">
-							<component :is="item.icon" />
-						</el-icon>
-						<div class="template-info">
-							<div class="template-name">{{ item.name }}</div>
-							<div class="template-desc">{{ item.desc }}</div>
-						</div>
-					</div>
-				</div>
-			</div>
-
 			<!-- 画布中央 -->
-			<div class="canvas-wrapper" @drop="onDrop" @dragover.prevent="onCanvasDragOver" @dragleave="onCanvasDragLeave">
+			<div class="canvas-wrapper"
+				:class="{ 'has-config-panel': !!selectedNode }"
+				@drop="onDrop" @dragover.prevent="onCanvasDragOver" @dragleave="onCanvasDragLeave"
+			>
 				<vue-flow
 					v-model="elements"
 					:node-types="(nodeTypes as any)"
 					:edge-types="(edgeTypes as any)"
 					:default-edge-options="defaultEdgeOptions"
+					:pan-on-scroll="true"
+					:selection-on-drag="true"
 					@connect="onConnect"
 					@pane-ready="onPaneReady"
 					@node-click="onNodeClick"
@@ -77,6 +35,14 @@
 				>
 					<background pattern-color="#e0e0e0" :gap="16" />
 					<controls position="bottom-right" />
+					<mini-map />
+					<editor-bottom-toolbar
+						:is-dirty="isDirty"
+						:has-incomplete-nodes="hasIncompleteNodes"
+						@drag-start="onDragStart"
+						@add-node="onAddNodeClick"
+						@open-test-dialog="openTestDialog"
+					/>
 				</vue-flow>
 
 				<!-- 右键上下文菜单 -->
@@ -99,22 +65,37 @@
 						<span>{{ $t('删除节点') }}</span>
 					</div>
 				</div>
+
+				<!-- 半透明遮罩 -->
+				<transition name="panel-backdrop">
+					<div v-if="selectedNode" class="config-panel-backdrop" @click="selectedNodeId = null" />
+				</transition>
+
+				<!-- 浮层配置面板（滑入动画） -->
+				<transition name="config-panel-slide">
+					<node-config-panel
+						v-if="selectedNode"
+						:selected-node="selectedNode"
+						:upstream-variables="upstreamVariables"
+						:variable-syntax-hints="variableSyntaxHints"
+						:available-target-nodes="availableTargetNodes"
+						:filtered-body-target-nodes="availableTargetNodes"
+						:ai-profiles="aiProfiles"
+						@delete="deleteSelectedNode"
+						@close="selectedNodeId = null"
+					/>
+				</transition>
+
+				<!-- 首次使用引导 -->
+				<transition name="empty-hint-fade">
+					<div v-if="!selectedNode && elements.length <= 2" class="canvas-empty-hint">
+						<el-icon class="empty-hint-icon"><info-filled /></el-icon>
+						<span class="empty-hint-text">{{ $t('点击节点以编辑配置') }}</span>
+						<span class="empty-hint-sub">{{ $t('使用下方按钮添加节点，拖拽连线构建工作流') }}</span>
+					</div>
+				</transition>
 			</div>
 
-			<!-- 右侧节点配置面板 -->
-			<node-config-panel
-				v-if="selectedNode"
-				:selected-node="selectedNode"
-				:upstream-variables="upstreamVariables"
-				:variable-syntax-hints="variableSyntaxHints"
-				:available-target-nodes="availableTargetNodes"
-				:filtered-body-target-nodes="availableTargetNodes"
-				:ai-profiles="aiProfiles"
-				@delete="deleteSelectedNode"
-			/>
-			<div v-else class="config-panel-empty">
-				<el-empty :description="$t('在画布中点击节点以进行属性配置')" />
-			</div>
 		</div>
 
 		<!-- 测试运行初始变量弹窗 -->
@@ -213,6 +194,8 @@ import { VueFlow, useVueFlow } from '@vue-flow/core';
 import type { Connection } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
+import { MiniMap } from '@vue-flow/minimap';
+import '@vue-flow/minimap/dist/style.css';
 
 // 导入 Element Plus 图标
 import {
@@ -249,10 +232,15 @@ import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
 
 import { formatJson, copyToClipboard } from '../utils';
+import { getNodeMeta } from '../utils/node-type-registry';
 import dayjs from 'dayjs';
 
+import { useWorkflowTest } from '../composables/useWorkflowTest';
+
 // 导入重构的子组件
+import EditorHeader from '../components/editor-header.vue';
 import NodeConfigPanel from '../components/node-config-panel.vue';
+import EditorBottomToolbar from '../components/editor-bottom-toolbar.vue';
 import StartNode from '../components/custom-nodes/start-node.vue';
 import EndNode from '../components/custom-nodes/end-node.vue';
 import LlmNode from '../components/custom-nodes/llm-node.vue';
@@ -275,7 +263,7 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-const { toObject } = useVueFlow();
+const { toObject, project, viewport } = useVueFlow();
 
 // 注册自定义节点组件
 const nodeTypes = {
@@ -311,8 +299,6 @@ const selectedNodeId = ref<string | null>(null);
 const isDirty = ref(false);
 const loaded = ref(false);
 
-// 节点搜索
-const nodeSearch = ref('');
 
 // 右键菜单状态
 const contextMenu = reactive({
@@ -322,24 +308,6 @@ const contextMenu = reactive({
 	nodeId: ''
 });
 
-// 测试弹窗
-const testDialog = reactive({
-	visible: false,
-	loading: false,
-	form: {
-		inputsJson: '{}'
-	}
-});
-
-// 测试日志抽屉
-const testLogDrawer = reactive({
-	visible: false,
-	loading: false,
-	instanceId: null as number | null,
-	status: '',
-	items: [] as any[]
-});
-let logPollTimer: ReturnType<typeof setInterval> | null = null;
 
 onBeforeUnmount(() => {
 	stopLogPolling();
@@ -379,29 +347,27 @@ const aiProfiles = ref<Eps.profile[]>([]);
 // 节点元素集合，包括 Nodes 和 Edges
 const elements = ref<(FlowNode | FlowEdge)[]>([]);
 
-// 定义支持拖拽的组件库
-const nodeTemplates = [
-	{ type: 'start', name: t('开始节点'), desc: t('工作流启动入口'), icon: VideoPlay },
-	{ type: 'llm', name: t('LLM 节点'), desc: t('生成文本、总结、格式化'), icon: Cpu },
-	{ type: 'condition', name: t('条件分支'), desc: t('根据变量值走向不同分支'), icon: Operation },
-	{ type: 'switch', name: t('分支选择 (Switch)'), desc: t('多分支条件选择流转'), icon: Operation },
-	{ type: 'human_input', name: t('人工审批'), desc: t('中断图运行等待人工干预'), icon: UserFilled },
-	{ type: 'intent_classifier', name: t('意图分类'), desc: t('大模型意图识别分流'), icon: MagicStick },
-	{ type: 'loop_controller', name: t('循环控制'), desc: t('列表/数组循环遍历'), icon: Refresh },
-	{ type: 'batch_processor', name: t('并发批处理'), desc: t('大批量数据并发处理'), icon: Files },
-	{ type: 'image_generator', name: t('生图节点'), desc: t('大模型文生图'), icon: Picture },
-	{ type: 'tool_executor', name: t('工具执行器'), desc: t('执行网页搜索/文件读写'), icon: Setting },
-	{ type: 'variable_assignment', name: t('变量赋值'), desc: t('设置全局/局部变量'), icon: Collection },
-	{ type: 'variable_transform', name: t('变量转换'), desc: t('格式转换与数据提取'), icon: Filter },
-	{ type: 'end', name: t('结束节点'), desc: t('工作流汇聚完结点'), icon: CircleCheck }
-];
+// 测试运行相关方法使用 composable
+const {
+	testDialog,
+	testLogDrawer,
+	clearTestStatus,
+	reopenTestLogDrawer,
+	openTestDialog,
+	startTestRun,
+	stopLogPolling,
+	expandAllTestLogs,
+	collapseAllTestLogs,
+	formatTime
+} = useWorkflowTest(service, t, workflowId, isDirty, elements, saveWorkflow);
 
-// 搜索过滤
-const filteredNodeTemplates = computed(() => {
-	const q = nodeSearch.value.trim().toLowerCase();
-	if (!q) return nodeTemplates;
-	return nodeTemplates.filter(t => t.name.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
+// 监听测试抽屉打开，如果打开则关闭配置面板
+watch(() => testLogDrawer.visible, (val) => {
+	if (val) {
+		selectedNodeId.value = null;
+	}
 });
+
 
 // 定义画布连线的默认样式
 const defaultEdgeOptions = {
@@ -438,6 +404,10 @@ function isRequiredConfigMissing(node: FlowNode): boolean {
 		default: return false;
 	}
 }
+
+const hasIncompleteNodes = computed(() => {
+	return elements.value.some((el: any) => !('source' in el) && isRequiredConfigMissing(el));
+});
 
 // 收集当前节点的上游可达变量
 const upstreamVariables = computed(() => {
@@ -550,6 +520,16 @@ function handleKeyDown(event: KeyboardEvent) {
 			activeEl.hasAttribute('contenteditable'))
 	) {
 		return;
+	}
+
+	if (event.key === 'Escape') {
+		selectedNodeId.value = null;
+		contextMenu.visible = false;
+	}
+
+	if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+		event.preventDefault();
+		saveWorkflow();
 	}
 
 	if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -720,11 +700,8 @@ function onDragStart(event: DragEvent, type: string) {
 	}
 }
 
-// 画布放置时实例化新节点
-function onDrop(event: DragEvent) {
-	const type = event.dataTransfer?.getData('application/vueflow');
-	if (!type) return;
-
+// 提取的公共添加节点逻辑
+function handleAddNode(type: string, x: number, y: number) {
 	// 开始/结束节点全局唯一，已存在时阻止添加
 	if (type === 'start' || type === 'end') {
 		const exists = elements.value.some(el => !('source' in el) && el.type === type);
@@ -734,19 +711,13 @@ function onDrop(event: DragEvent) {
 		}
 	}
 
-	// 计算在画布内的放置坐标
-	const react = event.currentTarget as HTMLElement;
-	const bounds = react.getBoundingClientRect();
-	const x = event.clientX - bounds.left - 50;
-	const y = event.clientY - bounds.top - 20;
-
 	const id = `node_${type}_${Date.now()}`;
 	const label = getNextLabel(type);
 
 	// 初始化节点特定 config
 	let config: Record<string, any> = {};
 	if (type === 'llm') {
-		config = { modelProfileCode: '', promptTemplate: '', outputFormat: 'text', jsonFields: [], outputVariable: getUniqueOutputVar(label, 'output') };
+		config = { modelProfileCode: '', systemPromptTemplate: '', promptTemplate: '', outputFormat: 'text', jsonFields: [], outputVariable: getUniqueOutputVar(label, 'output') };
 	} else if (type === 'condition') {
 		config = { expression: '', trueRoute: '', falseRoute: '' };
 	} else if (type === 'switch') {
@@ -829,21 +800,43 @@ function onDrop(event: DragEvent) {
 	}
 }
 
+// 通过点击面板添加节点
+function onAddNodeClick(type: string) {
+	// 获取画布中心
+	let wrapper = document.querySelector('.vue-flow');
+	if (!wrapper) return;
+	const rect = wrapper.getBoundingClientRect();
+	
+	const centerX = rect.width / 2;
+	const centerY = rect.height / 2;
+	
+	// 投影到 vue-flow 坐标系
+	const pos = project({ x: centerX, y: centerY });
+	handleAddNode(type, pos.x - 50, pos.y - 20);
+}
+
+// 画布放置时实例化新节点
+function onDrop(event: DragEvent) {
+	const type = event.dataTransfer?.getData('application/vueflow');
+	if (!type) return;
+
+	// 计算在画布内的放置坐标
+	const react = event.currentTarget as HTMLElement;
+	const bounds = react.getBoundingClientRect();
+	
+	// 首先投影鼠标所在的真实屏幕相对坐标
+	const projected = project({
+		x: event.clientX - bounds.left,
+		y: event.clientY - bounds.top
+	});
+	
+	// 在 VueFlow 坐标系中减去节点的半宽和半高，使其在鼠标居中
+	handleAddNode(type, projected.x - 50, projected.y - 20);
+}
+
 function getTypeName(type: string) {
-	if (type === 'start') return t('开始');
-	if (type === 'end') return t('结束');
-	if (type === 'llm') return t('LLM 节点');
-	if (type === 'condition') return t('条件分支');
-	if (type === 'switch') return t('分支选择');
-	if (type === 'human_input') return t('人工审批');
-	if (type === 'intent_classifier') return t('意图分类');
-	if (type === 'loop_controller') return t('循环控制');
-	if (type === 'batch_processor') return t('并发批处理');
-	if (type === 'image_generator') return t('生图节点');
-	if (type === 'tool_executor') return t('工具执行器');
-	if (type === 'variable_assignment') return t('变量赋值');
-	if (type === 'variable_transform') return t('变量转换');
-	return t('未知节点');
+	const meta = getNodeMeta(type);
+	return t(meta.labelKey || '未知节点');
 }
 
 function getNextLabel(type: string): string {
@@ -1412,178 +1405,7 @@ function goBack() {
 	}).catch(() => {});
 }
 
-// --- 测试运行与调试 ---
 
-function clearTestStatus() {
-	stopLogPolling();
-	testLogDrawer.instanceId = null;
-	testLogDrawer.visible = false;
-	testLogDrawer.items = [];
-	testLogDrawer.status = '';
-	clearNodeStatus();
-}
-
-function reopenTestLogDrawer() {
-	if (testLogDrawer.instanceId) {
-		testLogDrawer.visible = true;
-	}
-}
-
-async function openTestDialog() {
-	if (!workflowId.value) {
-		ElMessage.warning(t('请先保存新建的工作流然后再进行测试。'));
-		return;
-	}
-	if (isDirty.value) {
-		const saved = await saveWorkflow();
-		if (!saved) return;
-	}
-	const startNode = elements.value.find(el => !('source' in el) && el.type === 'start') as FlowNode | undefined;
-	if (startNode && startNode.data?.config?.inputVariables) {
-		const vars: string[] = startNode.data.config.inputVariables;
-		const inputs: Record<string, string> = {};
-		vars.forEach(v => {
-			if (v) inputs[v] = "";
-		});
-		testDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
-	} else {
-		testDialog.form.inputsJson = '{}';
-	}
-	testDialog.visible = true;
-}
-
-async function startTestRun() {
-	let inputs = {};
-	try {
-		inputs = JSON.parse(testDialog.form.inputsJson);
-	} catch (e) {
-		ElMessage.warning(t('初始输入变量 JSON 格式错误！'));
-		return;
-	}
-
-	testDialog.loading = true;
-	try {
-		const res = await (service as any).workflow.instance.start({
-			definitionId: Number(workflowId.value),
-			inputs
-		});
-		ElMessage.success(t('工作流测试实例已启动'));
-		testDialog.visible = false;
-		
-		const instId = res?.id;
-		if (!instId) {
-			ElMessage.error(t('启动测试失败，无法获取实例ID'));
-			return;
-		}
-
-		testLogDrawer.instanceId = instId;
-		testLogDrawer.visible = true;
-		testLogDrawer.items = [];
-		testLogDrawer.status = 'running';
-		
-		clearNodeStatus();
-		startLogPolling();
-	} catch (err: any) {
-		ElMessage.error(t('启动测试失败: ') + (err.message || err));
-	} finally {
-		testDialog.loading = false;
-	}
-}
-
-let logPollDelay = 2000;
-
-function startLogPolling() {
-	stopLogPolling();
-	logPollDelay = 2000;
-	pollInstanceStatus();
-}
-
-function stopLogPolling() {
-	if (logPollTimer) {
-		clearTimeout(logPollTimer);
-		logPollTimer = null;
-	}
-}
-
-async function pollInstanceStatus() {
-	if (!testLogDrawer.instanceId) return;
-	try {
-		const info = await (service as any).workflow.instance.info({ id: testLogDrawer.instanceId });
-		testLogDrawer.status = info.status;
-		
-		let logs: any[] = [];
-		try {
-			logs = await (service as any).workflow.instance.logs({ instanceId: testLogDrawer.instanceId });
-		} catch (logsErr) {
-			console.warn('Fetch logs failed', logsErr);
-		}
-		
-		const oldExpanded = new Set(testLogDrawer.items.filter(i => i.isExpanded).map(i => i.id));
-		testLogDrawer.items = logs.map((item: any, index: number) => ({
-			...item,
-			isExpanded: oldExpanded.has(item.id) || item.status !== 'success' || index === logs.length - 1
-		}));
-
-		updateNodeStatus(logs, info.status, info.currentNode);
-
-		if (info.status === 'success' || info.status === 'failed' || info.status === 'paused') {
-			stopLogPolling();
-		} else {
-			// 指数退避，但不超过 10 秒
-			if (logPollDelay < 10000) logPollDelay += 1000;
-			logPollTimer = setTimeout(pollInstanceStatus, logPollDelay);
-		}
-	} catch (err) {
-		console.error('Poll failed', err);
-		logPollTimer = setTimeout(pollInstanceStatus, logPollDelay);
-	}
-}
-
-function clearNodeStatus() {
-	elements.value.forEach(el => {
-		if (!('source' in el)) {
-			(el as any).class = '';
-			if (el.data) {
-				delete el.data.runLog;
-			}
-		}
-	});
-}
-
-function updateNodeStatus(logs: any[], instanceStatus: string, currentNode: string | null) {
-	clearNodeStatus();
-	const logMap = new Map(logs.map(log => [log.nodeId, log]));
-	elements.value.forEach(el => {
-		if (!('source' in el)) {
-			let customClass = '';
-			const nodeLog = logMap.get(el.id);
-			if (nodeLog) {
-				if (nodeLog.status === 'success') {
-					customClass = 'node-status-success';
-				} else if (nodeLog.status === 'error') {
-					customClass = 'node-status-error';
-				}
-				if (!el.data) el.data = { config: {} };
-				el.data.runLog = nodeLog;
-			}
-			
-			if (instanceStatus === 'running' && currentNode && el.id === currentNode) {
-				customClass = 'node-status-running';
-				if (!el.data) el.data = { config: {} };
-				// 如果已经在执行中，可能还没有产生完成的 log，我们可以塞一个 mock 的 log 用于显示状态
-				if (!el.data.runLog) {
-					el.data.runLog = { status: 'running' };
-				}
-			}
-
-			(el as any).class = customClass;
-		}
-	});
-}
-
-function expandAllTestLogs() { testLogDrawer.items.forEach(i => i.isExpanded = true); }
-function collapseAllTestLogs() { testLogDrawer.items.forEach(i => i.isExpanded = false); }
-function formatTime(value: string) { return value ? dayjs(value).format('HH:mm:ss') : '-'; }
 </script>
 
 <style lang="scss" scoped>
@@ -1596,29 +1418,6 @@ function formatTime(value: string) { return value ? dayjs(value).format('HH:mm:s
 	overflow: hidden;
 }
 
-.editor-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	height: 60px;
-	padding: 0 20px;
-	background-color: #fff;
-	border-bottom: 1px solid var(--el-border-color-light);
-	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-	z-index: 10;
-
-	&__left {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-
-		.workflow-title {
-			font-size: 16px;
-			font-weight: 600;
-			color: var(--el-text-color-primary);
-		}
-	}
-}
 
 .editor-body {
 	display: flex;
@@ -1627,102 +1426,87 @@ function formatTime(value: string) { return value ? dayjs(value).format('HH:mm:s
 	overflow: hidden;
 }
 
-.node-sidebar {
-	width: 280px;
-	background-color: #fff;
-	border-right: 1px solid var(--el-border-color-light);
-	padding: 20px;
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-
-	.sidebar-title {
-		font-size: 15px;
-		font-weight: 600;
-		color: var(--el-text-color-primary);
-	}
-
-	.sidebar-description {
-		font-size: 12px;
-		color: var(--el-text-color-placeholder);
-		margin-top: -4px;
-	}
-}
-
-.node-search {
-	margin-bottom: 4px;
-}
-
-.node-templates {
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-	overflow-y: auto;
-}
-
-.node-template-item {
-	display: flex;
-	align-items: center;
-	gap: 12px;
-	padding: 12px;
-	background-color: var(--el-fill-color-blank);
-	border: 1px dashed var(--el-border-color);
-	border-radius: 6px;
-	cursor: grab;
-	transition: all 0.3s;
-
-	&:hover {
-		border-color: var(--el-color-primary);
-		box-shadow: 0 4px 10px rgba(64, 158, 255, 0.08);
-	}
-
-	.template-icon {
-		font-size: 20px;
-		color: var(--el-text-color-secondary);
-	}
-
-	.template-name {
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--el-text-color-primary);
-	}
-
-	.template-desc {
-		font-size: 11px;
-		color: var(--el-text-color-placeholder);
-		margin-top: 2px;
-	}
-
-	// 节点特有色彩发光
-	&--start { border-left: 4px solid var(--el-color-success); }
-	&--llm { border-left: 4px solid var(--el-color-primary); }
-	&--tool { border-left: 4px solid #8a2be2; }
-	&--condition { border-left: 4px solid var(--el-color-warning); }
-	&--switch { border-left: 4px solid #e6a23c; }
-	&--human_input { border-left: 4px solid var(--el-color-info); }
-	&--intent_classifier { border-left: 4px solid #20b2aa; }
-	&--loop_controller { border-left: 4px solid #d2691e; }
-	&--batch_processor { border-left: 4px solid #00ced1; }
-	&--image_generator { border-left: 4px solid #ff69b4; }
-	&--tool_executor { border-left: 4px solid #8a2be2; }
-	&--end { border-left: 4px solid var(--el-color-danger); }
-}
 
 .canvas-wrapper {
 	flex: 1;
 	height: 100%;
 	position: relative;
 	background-color: #f7f9fb;
+	overflow: hidden;
 }
 
-.config-panel-empty {
-	width: 320px;
-	background-color: #fff;
-	border-left: 1px solid var(--el-border-color-light);
-	display: flex;
-	align-items: center;
-	justify-content: center;
+// 面板打开时，底部工具栏左移保持居中
+.canvas-wrapper.has-config-panel {
+	:deep(.editor-bottom-toolbar) {
+		transform: translateX(calc(-50% - 180px));
+	}
 }
+
+// 半透明遮罩
+.config-panel-backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.08);
+	z-index: 8;
+	cursor: pointer;
+}
+.panel-backdrop-enter-active,
+.panel-backdrop-leave-active {
+	transition: opacity 0.25s ease;
+}
+.panel-backdrop-enter-from,
+.panel-backdrop-leave-to {
+	opacity: 0;
+}
+
+// 配置面板滑入/出动画
+.config-panel-slide-enter-active,
+.config-panel-slide-leave-active {
+	transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.config-panel-slide-enter-from,
+.config-panel-slide-leave-to {
+	transform: translateX(100%);
+}
+
+// 首次使用引导
+.canvas-empty-hint {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	pointer-events: none;
+	user-select: none;
+	z-index: 3;
+
+	.empty-hint-icon {
+		font-size: 32px;
+		color: var(--el-text-color-placeholder);
+		opacity: 0.35;
+	}
+	.empty-hint-text {
+		font-size: 14px;
+		color: var(--el-text-color-secondary);
+		font-weight: 500;
+	}
+	.empty-hint-sub {
+		font-size: 12px;
+		color: var(--el-text-color-placeholder);
+	}
+}
+.empty-hint-fade-enter-active,
+.empty-hint-fade-leave-active {
+	transition: opacity 0.3s ease;
+}
+.empty-hint-fade-enter-from,
+.empty-hint-fade-leave-to {
+	opacity: 0;
+}
+
 
 .context-menu {
 	position: fixed;
@@ -1807,5 +1591,46 @@ function formatTime(value: string) { return value ? dayjs(value).format('HH:mm:s
 	100% {
 		box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
 	}
+}
+
+/* 
+ * ⚠️ 极其重要的防坑警告 ⚠️
+ * 绝对不要对 `:deep(.vue-flow__node)` 等外层容器应用包含 `transform` 的动画（如 scale/translate 等）。
+ * Vue Flow 引擎在底层高度依赖内联的 `transform: translate(x, y)` 来固定所有节点的物理绝对坐标。
+ * 如果在 CSS 中使用 `transform` 动画，会强制覆盖掉引擎的定位坐标，导致所有节点塌陷到 (0,0) 并互相重叠（节点漂移/消失）。
+ *
+ * 如需节点入场、选中或状态切换的动态效果（例如 scale 放缩），必须将动画加在自定义节点组件的最内层 wrapper 上。
+ * （见 base-node.vue 中的 `.custom-flow-node-wrapper` 控制逻辑）
+ */
+
+/* 边交互增强 */
+:deep(.vue-flow__edge) {
+	.vue-flow__edge-interaction {
+		stroke: transparent;
+		stroke-width: 20px;
+		cursor: pointer;
+	}
+
+	&:hover {
+		.vue-flow__edge-path {
+			stroke: var(--el-color-primary) !important;
+			stroke-width: 3px !important;
+			opacity: 0.8;
+		}
+	}
+	
+	&.selected {
+		.vue-flow__edge-path {
+			stroke: var(--el-color-danger) !important;
+			stroke-width: 3px !important;
+			opacity: 1;
+		}
+	}
+}
+
+/* 多选框颜色调整 */
+:deep(.vue-flow__selection) {
+	background: rgba(64, 158, 255, 0.08);
+	border: 1px solid var(--el-color-primary);
 }
 </style>

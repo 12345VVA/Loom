@@ -64,6 +64,11 @@ function startResize(e: MouseEvent) {
 	const nodeEl = (e.target as HTMLElement).closest('.vue-flow__node') as HTMLElement;
 	if (!nodeEl) return;
 
+	// 从 VueFlow 拿到节点实例对象，以便修改并持久化 style
+	const nodeId = nodeEl.getAttribute('data-id');
+	const elements = getElements();
+	const nodeObj = elements.find((el: any) => el.id === nodeId);
+
 	const startX = e.clientX;
 	const startY = e.clientY;
 	const startW = nodeEl.offsetWidth;
@@ -81,6 +86,13 @@ function startResize(e: MouseEvent) {
 	function onMouseUp() {
 		document.removeEventListener('mousemove', onMouseMove);
 		document.removeEventListener('mouseup', onMouseUp);
+
+		// 尺寸调整结束时，写入 node 的 style 中以持久化保存
+		if (nodeObj) {
+			if (!nodeObj.style) nodeObj.style = {};
+			nodeObj.style.width = nodeEl.style.width;
+			nodeObj.style.height = nodeEl.style.height;
+		}
 	}
 
 	document.addEventListener('mousemove', onMouseMove);
