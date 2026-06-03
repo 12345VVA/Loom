@@ -14,7 +14,7 @@
 			v-model="value"
 			:theme="isDark ? 'dark' : 'light'"
 			:editorId="id"
-			:preview="showPreview"
+			v-model:preview="showPreview"
 			:readOnly="disabled || preview"
 			:noMermaid="true"
 			:noKatex="true"
@@ -55,7 +55,7 @@ defineOptions({
 	name: 'cl-editor-markdown'
 });
 
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { MdEditor, MdPreview, type ToolbarNames } from 'md-editor-v3';
 import 'md-editor-v3/lib/style.css';
 import { useDark } from '@vueuse/core';
@@ -110,8 +110,12 @@ const value = computed({
 	}
 });
 
-// preview 模式：编辑器只读 + 隐藏编辑工具栏
-const showPreview = computed(() => props.preview || undefined);
+// 局部状态管理 md-editor 的预览区是否展示
+const showPreview = ref(props.preview || false);
+
+watch(() => props.preview, (val) => {
+	showPreview.value = val || false;
+});
 
 // 不常用按钮，始终隐藏
 const alwaysExclude: ToolbarNames[] = [
