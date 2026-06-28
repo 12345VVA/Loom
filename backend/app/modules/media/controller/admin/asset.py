@@ -49,7 +49,7 @@ from app.modules.media.service.media_service import MediaAssetService
 )
 class MediaAssetController(BaseController):
     @Post("/upload", summary="上传媒体资源", permission="media:asset:upload")
-    async def upload(
+    def upload(
         self,
         file: UploadFile = File(...),
         current_user: User = Depends(get_current_user),
@@ -58,7 +58,7 @@ class MediaAssetController(BaseController):
         return MediaAssetService(session).upload(file, current_user)
 
     @Get("/stats", summary="媒体资源统计", permission="media:asset:stats")
-    async def stats(
+    def stats(
         self,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),

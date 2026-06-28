@@ -49,7 +49,7 @@ from app.modules.base.service.security_service import get_current_user
 )
 class AiProviderController(BaseController):
     @Post("/test", summary="测试模型厂商连接", permission="ai:provider:test")
-    async def test(
+    def test(
         self,
         payload: AiProviderTestRequest,
         _: User = Depends(get_current_user),
@@ -58,7 +58,7 @@ class AiProviderController(BaseController):
         return AiProviderService(session).test(payload.id)
 
     @Post("/catalog", summary="获取模型厂商预设清单", permission="ai:provider:catalog")
-    async def catalog(
+    def catalog(
         self,
         _: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -66,7 +66,7 @@ class AiProviderController(BaseController):
         return AiProviderService(session).catalog()
 
     @Post("/importCatalog", summary="导入模型厂商预设", permission="ai:provider:importCatalog")
-    async def import_catalog(
+    def import_catalog(
         self,
         payload: AiCatalogImportRequest,
         _: User = Depends(get_current_user),
@@ -75,7 +75,7 @@ class AiProviderController(BaseController):
         return AiProviderService(session).import_catalog(payload)
 
     @Post("/syncModels", summary="同步厂商模型列表", permission="ai:provider:syncModels")
-    async def sync_models(
+    def sync_models(
         self,
         payload: AiProviderSyncModelsRequest,
         _: User = Depends(get_current_user),

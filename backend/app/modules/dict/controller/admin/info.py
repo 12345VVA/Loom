@@ -55,7 +55,7 @@ from app.modules.dict.service.dict_service import DictInfoService
 )
 class DictInfoController(BaseController):
     @Post("/data", summary="获得字典数据")
-    async def data(
+    def data(
         self,
         payload: dict | None = None,
         session: Session = Depends(get_session),
@@ -64,7 +64,7 @@ class DictInfoController(BaseController):
         return DictInfoService(session).data(types)
 
     @Get("/types", summary="获得所有字典类型", anonymous=True)
-    async def types(
+    def types(
         self,
         session: Session = Depends(get_session),
     ) -> list[dict]:

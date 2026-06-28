@@ -23,7 +23,7 @@ from app.modules.base.service.security_service import get_current_user
 )
 class BaseAppHealthController(BaseController):
     @Get("/ping", summary="App 健康检查", anonymous=True)
-    async def health_check(self) -> dict:
+    def health_check(self) -> dict:
         return {
             "status": "healthy",
             "scope": "app",
@@ -31,7 +31,7 @@ class BaseAppHealthController(BaseController):
         }
 
     @Get("/secure", summary="App 鉴权检查")
-    async def secure(self, current_user: User = Depends(get_current_user)) -> dict:
+    def secure(self, current_user: User = Depends(get_current_user)) -> dict:
         return {
             "status": "ok",
             "scope": "app",

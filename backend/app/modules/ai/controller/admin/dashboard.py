@@ -33,7 +33,7 @@ class _NoopService(BaseAdminCrudService):
 )
 class AiDashboardController(BaseController):
     @Post("/cost", summary="AI 成本看板统计", permission="ai:dashboard:cost")
-    async def cost(
+    def cost(
         self,
         payload: AiCallStatsRequest | None = None,
         _: User = Depends(get_current_user),

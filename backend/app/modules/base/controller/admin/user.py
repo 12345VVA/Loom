@@ -104,7 +104,7 @@ class BaseUserController(BaseController):
         permission="base:sys:user:me",
         role_codes=("admin", "task_operator"),
     )
-    async def get_me(
+    def get_me(
         self,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -117,7 +117,7 @@ class BaseUserController(BaseController):
         summary="分配用户角色",
         permission="base:sys:user:assign_roles",
     )
-    async def assign_roles(
+    def assign_roles(
         self,
         payload: UserRoleAssignRequest,
         _: User = Depends(get_current_user),
@@ -131,7 +131,7 @@ class BaseUserController(BaseController):
         summary="移动部门",
         permission="base:sys:user:move",
     )
-    async def move(
+    def move(
         self,
         payload: UserMoveRequest,
         _: User = Depends(get_current_user),

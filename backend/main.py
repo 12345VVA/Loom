@@ -5,6 +5,7 @@ Loom API - FastAPI 主入口
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anyio
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +43,8 @@ configure_logging(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
+    # 调大 anyio 线程池上限：承载 offload 的同步阻塞调用（同步 DB/HTTP service、同步 def 路由）
+    anyio.to_thread.current_default_thread_limiter().total = settings.ASYNC_THREAD_POOL_SIZE
     # 启动时执行
     assert_startup_settings()
     init_db()

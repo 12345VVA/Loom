@@ -23,7 +23,7 @@ from app.modules.base.service.cache_service import get_redis_client
 )
 class BaseHealthController(BaseController):
     @Get("/ping", summary="健康检查接口", anonymous=True)
-    async def health_check(self) -> dict:
+    def health_check(self) -> dict:
         checks = {
             "database": _check_database(),
             "redis": _check_redis(),

@@ -26,7 +26,7 @@ from app.modules.base.service.security_service import get_current_user
 )
 class BaseOpenController(BaseController):
     @Post("/login", summary="账号密码登录", anonymous=True)
-    async def login(
+    def login(
         self,
         request: Request,
         payload: LoginRequest,
@@ -36,7 +36,7 @@ class BaseOpenController(BaseController):
         return service.login(payload, request=request)
 
     @Post("/refresh", summary="刷新访问令牌", anonymous=True)
-    async def refresh_token(
+    def refresh_token(
         self,
         payload: RefreshTokenRequest,
         session: Session = Depends(get_session),
@@ -45,7 +45,7 @@ class BaseOpenController(BaseController):
         return service.refresh_token(payload)
 
     @Get("/captcha", summary="验证码", anonymous=True)
-    async def captcha(
+    def captcha(
         self,
         width: int = 150,
         height: int = 50,
@@ -56,7 +56,7 @@ class BaseOpenController(BaseController):
         return service.captcha(width, height, color)
 
     @Post("/refreshToken", summary="刷新访问令牌", anonymous=True)
-    async def refresh_token_compat(
+    def refresh_token_compat(
         self,
         payload: RefreshTokenRequest,
         session: Session = Depends(get_session),
@@ -65,7 +65,7 @@ class BaseOpenController(BaseController):
         return service.refresh_token(payload)
 
     @Get("/refreshToken", summary="刷新访问令牌", anonymous=True)
-    async def refresh_token_get(
+    def refresh_token_get(
         self,
         refreshToken: str,
         session: Session = Depends(get_session),
@@ -79,7 +79,7 @@ class BaseOpenController(BaseController):
         permission="base:session:logout",
         role_codes=("admin", "task_operator"),
     )
-    async def logout(
+    def logout(
         self,
         request: Request,
         current_user: User = Depends(get_current_user),
@@ -90,7 +90,7 @@ class BaseOpenController(BaseController):
         return {"success": True}
 
     @Get("/eps", summary="导出 EPS 扫描元数据", anonymous=True)
-    async def eps(self, request: Request) -> dict:
+    def eps(self, request: Request) -> dict:
         return EpsService(request.app).export_admin()
 
 

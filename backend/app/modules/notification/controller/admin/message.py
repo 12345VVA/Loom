@@ -48,7 +48,7 @@ from app.modules.notification.service.notification_service import NotificationMe
 )
 class NotificationMessageController(BaseController):
     @Get("/mine", summary="我的通知", permission="notification:message:mine", role_codes=("admin", "task_operator"))
-    async def mine(
+    def mine(
         self,
         includeArchived: bool = False,
         messageType: str | None = None,
@@ -66,7 +66,7 @@ class NotificationMessageController(BaseController):
     @Get(
         "/myInfo", summary="我的通知详情", permission="notification:message:mine", role_codes=("admin", "task_operator")
     )
-    async def my_info(
+    def my_info(
         self,
         id: int,
         current_user: User = Depends(get_current_user),
@@ -80,7 +80,7 @@ class NotificationMessageController(BaseController):
         permission="notification:message:unreadCount",
         role_codes=("admin", "task_operator"),
     )
-    async def unread_count(
+    def unread_count(
         self,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -88,7 +88,7 @@ class NotificationMessageController(BaseController):
         return {"count": NotificationMessageService(session).unread_count(current_user.id)}
 
     @Post("/read", summary="标记已读", permission="notification:message:read", role_codes=("admin", "task_operator"))
-    async def read(
+    def read(
         self,
         payload: dict,
         current_user: User = Depends(get_current_user),
@@ -100,7 +100,7 @@ class NotificationMessageController(BaseController):
     @Post(
         "/readAll", summary="全部已读", permission="notification:message:readAll", role_codes=("admin", "task_operator")
     )
-    async def read_all(
+    def read_all(
         self,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -110,7 +110,7 @@ class NotificationMessageController(BaseController):
     @Post(
         "/archive", summary="归档通知", permission="notification:message:archive", role_codes=("admin", "task_operator")
     )
-    async def archive(
+    def archive(
         self,
         payload: dict,
         current_user: User = Depends(get_current_user),
@@ -125,7 +125,7 @@ class NotificationMessageController(BaseController):
         permission="notification:message:unarchive",
         role_codes=("admin", "task_operator"),
     )
-    async def unarchive(
+    def unarchive(
         self,
         payload: dict,
         current_user: User = Depends(get_current_user),
@@ -135,7 +135,7 @@ class NotificationMessageController(BaseController):
         return NotificationMessageService(session).unarchive(current_user.id, ids)
 
     @Post("/send", summary="发送通知", permission="notification:message:send")
-    async def send(
+    def send(
         self,
         payload: NotificationMessageSendRequest,
         current_user: User = Depends(get_current_user),
@@ -155,7 +155,7 @@ class NotificationMessageController(BaseController):
         return NotificationMessageService(session)._finalize_data(message.model_dump())
 
     @Post("/previewRecipients", summary="预览通知接收人", permission="notification:message:previewRecipients")
-    async def preview_recipients(
+    def preview_recipients(
         self,
         payload: NotificationRecipientPreviewRequest,
         _: User = Depends(get_current_user),
@@ -164,7 +164,7 @@ class NotificationMessageController(BaseController):
         return NotificationService(session).preview_recipients(payload.audience)
 
     @Get("/stats", summary="通知统计", permission="notification:message:stats")
-    async def stats(
+    def stats(
         self,
         _: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -172,7 +172,7 @@ class NotificationMessageController(BaseController):
         return NotificationMessageService(session).stats()
 
     @Get("/recipients", summary="通知接收人明细", permission="notification:message:recipients")
-    async def recipients(
+    def recipients(
         self,
         id: int,
         _: User = Depends(get_current_user),
@@ -181,7 +181,7 @@ class NotificationMessageController(BaseController):
         return NotificationMessageService(session).recipients(id)
 
     @Post("/recall", summary="撤回通知", permission="notification:message:recall")
-    async def recall(
+    def recall(
         self,
         payload: dict,
         current_user: User = Depends(get_current_user),

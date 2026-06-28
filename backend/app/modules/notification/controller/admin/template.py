@@ -47,7 +47,7 @@ from app.modules.notification.service.notification_service import NotificationSe
 )
 class NotificationTemplateController(BaseController):
     @Post("/preview", summary="预览通知模板", permission="notification:template:preview")
-    async def preview(
+    def preview(
         self,
         payload: NotificationTemplatePreviewRequest,
         _: User = Depends(get_current_user),

@@ -222,7 +222,7 @@ function highlightJson(data: any): string {
 </script>
 
 <style lang="scss" scoped>
-@import '../workflow-shared.scss';
+@use '../workflow-shared.scss';
 
 .custom-flow-node {
 	display: flex;

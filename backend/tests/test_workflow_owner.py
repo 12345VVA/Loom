@@ -146,7 +146,7 @@ class WorkflowOwnerTestCase(unittest.TestCase):
         svc = WorkflowInstanceService(self.session)
         with patch("app.modules.workflow.tasks.workflow_tasks.execute_workflow") as mock_exec:
             mock_exec.delay.return_value = Mock(id="task-1")
-            instance = asyncio.run(svc.start_instance(definition.id, {"q": "hi"}, _user(7)))
+            instance = svc.start_instance(definition.id, {"q": "hi"}, _user(7))
         self.assertEqual(instance.user_id, 7)
 
     def test_resume_rejects_non_owner(self):
@@ -155,7 +155,7 @@ class WorkflowOwnerTestCase(unittest.TestCase):
         self.session.commit()
         svc = WorkflowInstanceService(self.session)
         with self.assertRaises(HTTPException) as cm:
-            asyncio.run(svc.resume_instance(instance.id, "ok", current_user=_user(2)))
+            svc.resume_instance(instance.id, "ok", current_user=_user(2))
         self.assertEqual(cm.exception.status_code, 403)
 
     def test_test_node_rejects_non_owner(self):

@@ -34,7 +34,7 @@ from app.modules.base.service.sys_manage_service import SysLogService
 )
 class BaseSysLogController(BaseController):
     @Post("/clear", summary="清理", permission="base:sys:log:clear")
-    async def clear(
+    def clear(
         self,
         _: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -42,7 +42,7 @@ class BaseSysLogController(BaseController):
         return SysLogService(session).clear()
 
     @Post("/setKeep", summary="日志保存时间", permission="base:sys:log:setKeep")
-    async def set_keep(
+    def set_keep(
         self,
         payload: SysLogKeepRequest,
         _: User = Depends(get_current_user),
@@ -51,7 +51,7 @@ class BaseSysLogController(BaseController):
         return SysLogService(session).set_keep(payload.model_dump())
 
     @Get("/getKeep", summary="获得日志保存时间", permission="base:sys:log:getKeep")
-    async def get_keep(
+    def get_keep(
         self,
         _: User = Depends(get_current_user),
         session: Session = Depends(get_session),

@@ -52,7 +52,7 @@ class BaseRoleController(BaseController):
         summary="分配角色菜单",
         permission="base:sys:role:assign_menus",
     )
-    async def assign_menus(
+    def assign_menus(
         self,
         payload: RoleMenuAssignRequest,
         _: User = Depends(get_current_user),

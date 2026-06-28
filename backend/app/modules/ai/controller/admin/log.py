@@ -45,7 +45,7 @@ from app.modules.base.service.security_service import get_current_user
 )
 class AiModelCallLogController(BaseController):
     @Post("/stats", summary="AI 调用日志统计", permission="ai:log:stats")
-    async def stats(
+    def stats(
         self,
         payload: AiCallStatsRequest | None = None,
         _: User = Depends(get_current_user),

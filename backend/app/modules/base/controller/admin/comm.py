@@ -4,6 +4,7 @@ Base 模块通用后台接口
 
 from fastapi import Depends, File, UploadFile
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
@@ -27,7 +28,7 @@ class BaseCommController(BaseController):
     @Get(
         "/person", summary="获取当前用户个人信息", permission="base:comm:person", role_codes=("admin", "task_operator")
     )
-    async def person(
+    def person(
         self,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -35,7 +36,7 @@ class BaseCommController(BaseController):
         return AuthService(session).person(current_user)
 
     @Get("/permmenu", summary="获取权限与菜单", permission="base:comm:permmenu", role_codes=("admin", "task_operator"))
-    async def permmenu(
+    def permmenu(
         self,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -48,7 +49,7 @@ class BaseCommController(BaseController):
         permission="base:comm:person_update",
         role_codes=("admin", "task_operator"),
     )
-    async def person_update(
+    def person_update(
         self,
         payload: UserPersonUpdateRequest,
         current_user: User = Depends(get_current_user),
@@ -57,7 +58,7 @@ class BaseCommController(BaseController):
         return AuthService(session).person_update(current_user, payload)
 
     @Post("/logout", summary="退出登录", permission="base:session:logout", role_codes=("admin", "task_operator"))
-    async def logout(
+    def logout(
         self,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -68,11 +69,11 @@ class BaseCommController(BaseController):
     @Get(
         "/uploadMode", summary="文件上传模式", permission="base:comm:upload_mode", role_codes=("admin", "task_operator")
     )
-    async def upload_mode(self) -> dict:
+    def upload_mode(self) -> dict:
         return {"mode": "local", "type": "local"}
 
     @Get("/program", summary="编程语言", anonymous=True)
-    async def program(self) -> str:
+    def program(self) -> str:
         return "Python"
 
     @Post("/upload", summary="文件上传")
@@ -86,7 +87,9 @@ class BaseCommController(BaseController):
 
         file_content = await file.read()
         try:
-            path = StorageService.get_instance().upload(file_content, file.filename)
+            path = await run_in_threadpool(
+                StorageService.get_instance().upload, file_content, file.filename
+            )
         except UploadRejectedError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"url": path, "name": file.filename}

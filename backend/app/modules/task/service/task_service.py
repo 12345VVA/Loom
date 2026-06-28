@@ -71,7 +71,7 @@ class TaskInfoService(BaseAdminCrudService):
 
         return PageResult(items=data_list, total=total, page=page, page_size=page_size)
 
-    async def start(self, id: int):
+    def start(self, id: int):
         """启动任务"""
         row = self.session.get(TaskInfo, id)
         if not row:
@@ -83,7 +83,7 @@ class TaskInfoService(BaseAdminCrudService):
         sync_task_schedule_state(row)
         return {"success": True}
 
-    async def stop(self, id: int):
+    def stop(self, id: int):
         """停止任务"""
         row = self.session.get(TaskInfo, id)
         if not row:
@@ -95,7 +95,7 @@ class TaskInfoService(BaseAdminCrudService):
         clear_task_schedule_state(id)
         return {"success": True}
 
-    async def once(self, id: int):
+    def once(self, id: int):
         """立即执行一次"""
         row = self.session.get(TaskInfo, id)
         if not row:

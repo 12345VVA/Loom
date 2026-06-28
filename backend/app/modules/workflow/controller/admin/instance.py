@@ -62,36 +62,36 @@ logger = logging.getLogger(__name__)
 )
 class WorkflowInstanceController(BaseController):
     @Post("/start", summary="启动工作流实例", permission="workflow:instance:start")
-    async def start(
+    def start(
         self,
         payload: WorkflowInstanceStartRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ) -> dict:
         service = WorkflowInstanceService(session)
-        instance = await service.start_instance(payload.definition_id, payload.inputs, current_user)
+        instance = service.start_instance(payload.definition_id, payload.inputs, current_user)
         return {"id": instance.id}
 
     @Post("/resume", summary="提供人工确认恢复执行", permission="workflow:instance:resume")
-    async def resume(
+    def resume(
         self,
         payload: WorkflowInstanceResumeRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ):
         service = WorkflowInstanceService(session)
-        instance = await service.resume_instance(payload.instance_id, payload.user_input, current_user)
+        instance = service.resume_instance(payload.instance_id, payload.user_input, current_user)
         return instance
 
     @Post("/cancel", summary="取消运行中的工作流实例", permission="workflow:instance:cancel")
-    async def cancel(
+    def cancel(
         self,
         payload: WorkflowInstanceCancelRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ) -> dict:
         service = WorkflowInstanceService(session)
-        instance = await service.cancel_instance(payload.instance_id, current_user)
+        instance = service.cancel_instance(payload.instance_id, current_user)
         return {"id": instance.id, "status": instance.status}
 
     @Post("/testNode", summary="单节点测试运行", permission="workflow:instance:testNode")
@@ -106,7 +106,7 @@ class WorkflowInstanceController(BaseController):
         return result
 
     @Get("/logs", summary="获取执行日志步骤列表", permission="workflow:instance:logs")
-    async def get_logs(
+    def get_logs(
         self,
         instance_id: int = Query(..., alias="instanceId"),
         current_user: User = Depends(get_current_user),

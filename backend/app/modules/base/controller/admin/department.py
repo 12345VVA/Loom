@@ -69,7 +69,7 @@ class BaseDepartmentController(BaseController):
         summary="部门排序",
         permission="base:sys:department:order",
     )
-    async def order(
+    def order(
         self,
         payload: list[DepartmentOrderItem],
         _: User = Depends(get_current_user),

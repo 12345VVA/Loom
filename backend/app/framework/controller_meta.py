@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_session
 from app.framework.router.route_meta import CoolRouteMeta, TagTypes, cool_tag, get_route_meta
@@ -340,10 +341,8 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     background_tasks=background_tasks,
                     current_user=current_user,
                 )
-                _run_before_hooks(service, meta.before_hooks, _action_name, available_kwargs)
-                result = _invoke_service(
-                    service.list,
-                    **available_kwargs,
+                result = await run_in_threadpool(
+                    _run_action_sync, service, meta.before_hooks, _action_name, service.list, available_kwargs
                 )
                 return await _resolve_result(result)
 
@@ -415,10 +414,8 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     background_tasks=background_tasks,
                     current_user=current_user,
                 )
-                _run_before_hooks(service, meta.before_hooks, _action_name, available_kwargs)
-                result = _invoke_service(
-                    service.page,
-                    **available_kwargs,
+                result = await run_in_threadpool(
+                    _run_action_sync, service, meta.before_hooks, _action_name, service.page, available_kwargs
                 )
                 return await _resolve_result(result)
 
@@ -453,10 +450,8 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                         background_tasks=background_tasks,
                         current_user=current_user,
                     )
-                    _run_before_hooks(service, meta.before_hooks, _action_name, available_kwargs)
-                    result = _invoke_service(
-                        service.info,
-                        **available_kwargs,
+                    result = await run_in_threadpool(
+                        _run_action_sync, service, meta.before_hooks, _action_name, service.info, available_kwargs
                     )
                     return _strip_ignored_properties(await _resolve_result(result), meta.info_ignore_property)
             else:
@@ -478,10 +473,8 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                         background_tasks=background_tasks,
                         current_user=current_user,
                     )
-                    _run_before_hooks(service, meta.before_hooks, _action_name, available_kwargs)
-                    result = _invoke_service(
-                        service.info,
-                        **available_kwargs,
+                    result = await run_in_threadpool(
+                        _run_action_sync, service, meta.before_hooks, _action_name, service.info, available_kwargs
                     )
                     return _strip_ignored_properties(await _resolve_result(result), meta.info_ignore_property)
 
@@ -511,10 +504,8 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     background_tasks=background_tasks,
                     current_user=current_user,
                 )
-                _run_before_hooks(service, meta.before_hooks, _action_name, available_kwargs)
-                result = _invoke_service(
-                    service.add,
-                    **available_kwargs,
+                result = await run_in_threadpool(
+                    _run_action_sync, service, meta.before_hooks, _action_name, service.add, available_kwargs
                 )
                 return await _resolve_result(result)
 
@@ -545,10 +536,8 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     background_tasks=background_tasks,
                     current_user=current_user,
                 )
-                _run_before_hooks(service, meta.before_hooks, _action_name, available_kwargs)
-                result = _invoke_service(
-                    service.update,
-                    **available_kwargs,
+                result = await run_in_threadpool(
+                    _run_action_sync, service, meta.before_hooks, _action_name, service.update, available_kwargs
                 )
                 return await _resolve_result(result)
 
@@ -579,10 +568,8 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     background_tasks=background_tasks,
                     current_user=current_user,
                 )
-                _run_before_hooks(service, meta.before_hooks, _action_name, available_kwargs)
-                result = _invoke_service(
-                    service.delete,
-                    **available_kwargs,
+                result = await run_in_threadpool(
+                    _run_action_sync, service, meta.before_hooks, _action_name, service.delete, available_kwargs
                 )
                 return await _resolve_result(result)
 
@@ -697,10 +684,8 @@ def _register_service_routes(router: APIRouter, meta: CoolControllerMeta) -> Non
                 background_tasks=background_tasks,
                 current_user=current_user,
             )
-            _run_before_hooks(service, meta.before_hooks, _service_method, available_kwargs)
-            result = _invoke_service(
-                method,
-                **available_kwargs,
+            result = await run_in_threadpool(
+                _run_action_sync, service, meta.before_hooks, _service_method, method, available_kwargs
             )
             return await _resolve_result(result)
 
@@ -722,6 +707,16 @@ def _invoke_service(method, **available_kwargs):
     signature = inspect.signature(method)
     kwargs = {name: value for name, value in available_kwargs.items() if name in signature.parameters}
     return method(**kwargs)
+
+
+def _run_action_sync(service, hooks, action_name, method, kwargs):
+    """同步执行 before_hooks + service 方法。
+
+    供 run_in_threadpool 在 anyio 线程池中调用，使同步阻塞的 service/DB 操作
+    不再独占事件循环线程。
+    """
+    _run_before_hooks(service, hooks, action_name, kwargs)
+    return _invoke_service(method, **kwargs)
 
 
 def _build_service_kwargs(meta: CoolControllerMeta, action_name: str, **available_kwargs):

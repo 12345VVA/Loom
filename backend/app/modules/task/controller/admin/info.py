@@ -48,7 +48,7 @@ from app.modules.task.service.task_service import TaskInfoService
 )
 class TaskInfoController(BaseController):
     @Get("/log", summary="任务日志", permission="task:info:log")
-    async def log(
+    def log(
         self,
         request: Request,
         session: Session = Depends(get_session),
@@ -57,31 +57,31 @@ class TaskInfoController(BaseController):
         return TaskInfoService(session).log(query)
 
     @Post("/start", summary="开始任务", permission="task:info:start")
-    async def start(
+    def start(
         self,
         payload: dict,
         session: Session = Depends(get_session),
     ):
         task_id = payload.get("id")
-        return await TaskInfoService(session).start(task_id)
+        return TaskInfoService(session).start(task_id)
 
     @Post("/stop", summary="停止任务", permission="task:info:stop")
-    async def stop(
+    def stop(
         self,
         payload: dict,
         session: Session = Depends(get_session),
     ):
         task_id = payload.get("id")
-        return await TaskInfoService(session).stop(task_id)
+        return TaskInfoService(session).stop(task_id)
 
     @Post("/once", summary="立即执行一次", permission="task:info:once")
-    async def once(
+    def once(
         self,
         payload: dict,
         session: Session = Depends(get_session),
     ):
         task_id = payload.get("id")
-        return await TaskInfoService(session).once(task_id)
+        return TaskInfoService(session).once(task_id)
 
 
 router = TaskInfoController.router

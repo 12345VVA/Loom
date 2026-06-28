@@ -49,7 +49,7 @@ class _NoopService(BaseAdminCrudService):
 )
 class AiRuntimeController(BaseController):
     @Post("/chat", summary="统一文本模型调用")
-    async def chat(
+    def chat(
         self,
         payload: AiChatRequest,
         current_user: User = Depends(get_current_user),
@@ -75,7 +75,7 @@ class AiRuntimeController(BaseController):
         )
 
     @Post("/embedding", summary="统一向量模型调用")
-    async def embedding(
+    def embedding(
         self,
         payload: AiEmbeddingRequest,
         current_user: User = Depends(get_current_user),
@@ -122,7 +122,7 @@ class AiRuntimeController(BaseController):
         return result
 
     @Post("/rerank", summary="统一重排模型调用")
-    async def rerank(
+    def rerank(
         self,
         payload: AiRerankRequest,
         current_user: User = Depends(get_current_user),
@@ -131,7 +131,7 @@ class AiRuntimeController(BaseController):
         return AiModelRuntimeService(session).rerank(payload, current_user=current_user)
 
     @Post("/audio", summary="统一音频模型调用")
-    async def audio(
+    def audio(
         self,
         payload: AiAudioRequest,
         current_user: User = Depends(get_current_user),
@@ -140,7 +140,7 @@ class AiRuntimeController(BaseController):
         return AiModelRuntimeService(session).audio(payload, current_user=current_user)
 
     @Post("/video", summary="统一视频模型调用")
-    async def video(
+    def video(
         self,
         payload: AiVideoRequest,
         current_user: User = Depends(get_current_user),

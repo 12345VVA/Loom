@@ -44,7 +44,7 @@ from app.modules.base.service.security_service import get_current_user
 )
 class AiGenerationTaskController(BaseController):
     @Post("/submit", summary="提交 AI 生成任务", permission="ai:task:submit")
-    async def submit(
+    def submit(
         self,
         payload: AiTaskSubmitRequest,
         current_user: User = Depends(get_current_user),
@@ -53,7 +53,7 @@ class AiGenerationTaskController(BaseController):
         return AiGenerationTaskService(session).submit(payload, current_user)
 
     @Post("/cancel", summary="取消 AI 生成任务", permission="ai:task:cancel")
-    async def cancel(
+    def cancel(
         self,
         payload: AiTaskActionRequest,
         _: User = Depends(get_current_user),
@@ -62,7 +62,7 @@ class AiGenerationTaskController(BaseController):
         return AiGenerationTaskService(session).cancel(payload.id)
 
     @Post("/retry", summary="重试 AI 生成任务", permission="ai:task:retry")
-    async def retry(
+    def retry(
         self,
         payload: AiTaskActionRequest,
         _: User = Depends(get_current_user),
@@ -71,7 +71,7 @@ class AiGenerationTaskController(BaseController):
         return AiGenerationTaskService(session).retry(payload.id)
 
     @Post("/stats", summary="AI 生成任务统计", permission="ai:task:stats")
-    async def stats(
+    def stats(
         self,
         _: User = Depends(get_current_user),
         session: Session = Depends(get_session),

@@ -62,7 +62,7 @@ from app.modules.base.service.security_service import get_current_user
 )
 class AiGovernanceEventController(BaseController):
     @Post("/stats", summary="AI 治理事件统计", permission="ai:governanceEvent:stats")
-    async def stats(
+    def stats(
         self,
         payload: AiGovernanceStatsRequest | None = None,
         _: User = Depends(get_current_user),

@@ -54,7 +54,7 @@ from app.modules.base.service.sys_manage_service import SysParamService
 )
 class BaseSysParamController(BaseController):
     @Get("/html", summary="获得网页内容的参数值", permission="base:sys:param:html")
-    async def html_by_key(
+    def html_by_key(
         self,
         key: str,
         _: User = Depends(get_current_user),

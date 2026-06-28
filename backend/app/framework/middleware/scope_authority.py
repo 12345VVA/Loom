@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import HTTPException
 from sqlmodel import Session
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -37,9 +39,13 @@ class ScopeAuthorityMiddleware(BaseHTTPMiddleware):
         scope_whitelists = getattr(request.app.state, "scope_whitelists", {})
         scope_whitelist = scope_whitelists.get(effective_scope, set())
 
-        try:
+        def _authorize():
             with Session(engine) as session:
                 authorize_request(session, request, effective_scope, route_tags, scope_whitelist, matched_route)
+
+        try:
+            # 同步 DB 权限校验 offload 到线程池，避免阻塞事件循环
+            await asyncio.to_thread(_authorize)
         except HTTPException as exc:
             code = (
                 UNAUTHORIZED_CODE

@@ -1059,7 +1059,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
                 assert_workflow_owner(self.session, instance, current_user)
         return super().delete(ids, payload=payload, soft_delete=soft_delete)
 
-    async def start_instance(
+    def start_instance(
         self, definition_id: int, inputs: dict[str, Any], current_user: User | None = None
     ) -> WorkflowInstance:
         """
@@ -1110,7 +1110,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         return instance
 
-    async def resume_instance(
+    def resume_instance(
         self, instance_id: int, user_input: Any, current_user: User | None = None
     ) -> WorkflowInstance:
         """
@@ -1156,7 +1156,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         return instance
 
-    async def cancel_instance(self, instance_id: int, current_user: User | None = None) -> WorkflowInstance:
+    def cancel_instance(self, instance_id: int, current_user: User | None = None) -> WorkflowInstance:
         """
         主动取消运行中或暂停中的工作流实例（修复审查报告 S4）。
         原子迁移到 cancelled + revoke Celery 任务（强制后背）+ 发布 cancelled 事件。

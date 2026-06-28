@@ -55,7 +55,7 @@ from app.modules.base.service.security_service import get_current_user
 )
 class AiModelProfileController(BaseController):
     @Post("/setDefault", summary="设为默认调用配置", permission="ai:profile:setDefault")
-    async def set_default(
+    def set_default(
         self,
         payload: AiProfileActionRequest,
         _: User = Depends(get_current_user),
@@ -64,7 +64,7 @@ class AiModelProfileController(BaseController):
         return AiModelProfileService(session).set_default(payload.id)
 
     @Post("/test", summary="测试模型调用配置", permission="ai:profile:test")
-    async def test(
+    def test(
         self,
         payload: AiProfileTestRequest,
         _: User = Depends(get_current_user),

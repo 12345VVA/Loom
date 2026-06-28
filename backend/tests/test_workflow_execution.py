@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -164,7 +163,7 @@ class ResumeAndCancelTestCase(unittest.TestCase):
         svc = WorkflowInstanceService(self.session)
         with patch("app.modules.workflow.tasks.workflow_tasks.execute_workflow"):
             with self.assertRaises(HTTPException) as cm:
-                asyncio.run(svc.resume_instance(instance.id, None, _user(1)))
+                svc.resume_instance(instance.id, None, _user(1))
         self.assertEqual(cm.exception.status_code, 400)
 
     def test_resume_dto_rejects_none(self):
@@ -184,7 +183,7 @@ class ResumeAndCancelTestCase(unittest.TestCase):
         svc = WorkflowInstanceService(self.session)
         with patch("app.modules.workflow.tasks.workflow_tasks.execute_workflow") as mock_exec:
             mock_exec.delay.return_value.id = "task-9"
-            updated = asyncio.run(svc.resume_instance(instance.id, "answer", _user(1)))
+            updated = svc.resume_instance(instance.id, "answer", _user(1))
         self.assertEqual(updated.status, "running")
         self.assertEqual(updated.celery_task_id, "task-9")
         mock_exec.delay.assert_called_once()
@@ -194,7 +193,7 @@ class ResumeAndCancelTestCase(unittest.TestCase):
         instance = self._add_instance(definition, status="running")
         svc = WorkflowInstanceService(self.session)
         with self.assertRaises(HTTPException) as cm:
-            asyncio.run(svc.resume_instance(instance.id, "answer", _user(1)))
+            svc.resume_instance(instance.id, "answer", _user(1))
         self.assertEqual(cm.exception.status_code, 400)
 
     def test_cas_predicate_only_matches_paused(self):
@@ -224,7 +223,7 @@ class ResumeAndCancelTestCase(unittest.TestCase):
         instance = self._add_instance(definition, status="paused", owner_uid=1)
         svc = WorkflowInstanceService(self.session)
         with self.assertRaises(HTTPException) as cm:
-            asyncio.run(svc.resume_instance(instance.id, "answer", _user(2)))
+            svc.resume_instance(instance.id, "answer", _user(2))
         self.assertEqual(cm.exception.status_code, 403)
 
     # --- S4 ---
@@ -238,7 +237,7 @@ class ResumeAndCancelTestCase(unittest.TestCase):
 
         svc = WorkflowInstanceService(self.session)
         with patch("app.celery_app.celery_app") as mock_celery:
-            updated = asyncio.run(svc.cancel_instance(instance.id, _user(1)))
+            updated = svc.cancel_instance(instance.id, _user(1))
         self.assertEqual(updated.status, "cancelled")
         mock_celery.control.revoke.assert_called_once_with("task-1", terminate=True)
 
@@ -247,7 +246,7 @@ class ResumeAndCancelTestCase(unittest.TestCase):
         instance = self._add_instance(definition, status="paused")
         svc = WorkflowInstanceService(self.session)
         with patch("app.celery_app.celery_app"):
-            updated = asyncio.run(svc.cancel_instance(instance.id, _user(1)))
+            updated = svc.cancel_instance(instance.id, _user(1))
         self.assertEqual(updated.status, "cancelled")
 
     def test_cancel_terminal_rejected(self):
@@ -256,7 +255,7 @@ class ResumeAndCancelTestCase(unittest.TestCase):
             instance = self._add_instance(definition, status=terminal)
             svc = WorkflowInstanceService(self.session)
             with self.assertRaises(HTTPException) as cm:
-                asyncio.run(svc.cancel_instance(instance.id, _user(1)))
+                svc.cancel_instance(instance.id, _user(1))
             self.assertEqual(cm.exception.status_code, 400)
 
     def test_cancel_non_owner_403(self):
@@ -264,13 +263,13 @@ class ResumeAndCancelTestCase(unittest.TestCase):
         instance = self._add_instance(definition, status="running", owner_uid=1)
         svc = WorkflowInstanceService(self.session)
         with self.assertRaises(HTTPException) as cm:
-            asyncio.run(svc.cancel_instance(instance.id, _user(2)))
+            svc.cancel_instance(instance.id, _user(2))
         self.assertEqual(cm.exception.status_code, 403)
 
     def test_cancel_not_found_404(self):
         svc = WorkflowInstanceService(self.session)
         with self.assertRaises(HTTPException) as cm:
-            asyncio.run(svc.cancel_instance(99999, _user(1)))
+            svc.cancel_instance(99999, _user(1))
         self.assertEqual(cm.exception.status_code, 404)
 
     def test_cancel_without_celery_task_id_skips_revoke(self):
@@ -279,7 +278,7 @@ class ResumeAndCancelTestCase(unittest.TestCase):
         # celery_task_id 为 None
         svc = WorkflowInstanceService(self.session)
         with patch("app.celery_app.celery_app") as mock_celery:
-            updated = asyncio.run(svc.cancel_instance(instance.id, _user(1)))
+            updated = svc.cancel_instance(instance.id, _user(1))
         self.assertEqual(updated.status, "cancelled")
         mock_celery.control.revoke.assert_not_called()
 

@@ -48,7 +48,7 @@ from app.modules.base.service.security_service import get_current_user
 )
 class AiGovernanceRuleController(BaseController):
     @Post("/toggle", summary="启停 AI 治理规则", permission="ai:governanceRule:toggle")
-    async def toggle(
+    def toggle(
         self,
         payload: AiGovernanceRuleActionRequest,
         _: User = Depends(get_current_user),
@@ -57,7 +57,7 @@ class AiGovernanceRuleController(BaseController):
         return AiGovernanceRuleService(session).toggle(payload.id)
 
     @Post("/match", summary="测试 AI 治理规则匹配", permission="ai:governanceRule:match")
-    async def match(
+    def match(
         self,
         payload: AiGovernanceRuleMatchRequest,
         _: User = Depends(get_current_user),

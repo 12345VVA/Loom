@@ -124,6 +124,9 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE: int = 1800
     DB_POOL_PRE_PING: bool = True
+    # anyio 线程池上限：承载 offload 到线程池的同步阻塞调用（同步 DB/HTTP service、同步 def 路由）。
+    # Starlette 默认 40，调大以支撑更多并发慢请求；超出此值的请求会排队而非挂起事件循环。
+    ASYNC_THREAD_POOL_SIZE: int = 100
 
     @field_validator("DEBUG", mode="before")
     @classmethod

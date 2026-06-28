@@ -73,7 +73,7 @@ class BaseMenuController(BaseController):
         summary="获取菜单树",
         permission="base:sys:menu:tree",
     )
-    async def menu_tree(
+    def menu_tree(
         self,
         _: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -86,7 +86,7 @@ class BaseMenuController(BaseController):
         summary="获取角色菜单 ID 列表",
         permission="base:sys:menu:role_menu_ids",
     )
-    async def role_menu_ids(
+    def role_menu_ids(
         self,
         role_id: int,
         _: User = Depends(get_current_user),
@@ -101,7 +101,7 @@ class BaseMenuController(BaseController):
         permission="base:sys:menu:current_tree",
         role_codes=("admin", "task_operator"),
     )
-    async def current_tree(
+    def current_tree(
         self,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
@@ -114,7 +114,7 @@ class BaseMenuController(BaseController):
         summary="导出菜单",
         permission="base:sys:menu:export",
     )
-    async def export_menu(
+    def export_menu(
         self,
         payload: MenuExportRequest,
         _: User = Depends(get_current_user),
@@ -128,7 +128,7 @@ class BaseMenuController(BaseController):
         summary="导入菜单",
         permission="base:sys:menu:import",
     )
-    async def import_menu(
+    def import_menu(
         self,
         payload: MenuImportRequest,
         _: User = Depends(get_current_user),
@@ -142,7 +142,7 @@ class BaseMenuController(BaseController):
         summary="解析菜单候选",
         permission="base:sys:menu:parse",
     )
-    async def parse_menu(
+    def parse_menu(
         self,
         request: Request,
         payload: MenuParseRequest,
@@ -157,7 +157,7 @@ class BaseMenuController(BaseController):
         summary="快速创建菜单",
         permission="base:sys:menu:create",
     )
-    async def create_menu(
+    def create_menu(
         self,
         payload: MenuCreateAutoRequest,
         _: User = Depends(get_current_user),
