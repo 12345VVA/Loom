@@ -12,7 +12,7 @@ MENU_ITEMS = (
         module="base",
         resource="dashboard",
         path="/base/info",
-        component="modules/base/views/info.vue",
+        component="modules/base/views/home.vue",
         sort_order=10,
         role_codes=("admin", "task_operator"),
     ),

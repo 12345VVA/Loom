@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import quote_plus
 
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -214,9 +214,8 @@ class Settings(BaseSettings):
         items = [item.strip() for item in value.split(",") if item.strip()]
         return items or fallback
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # extra="ignore"：容许 .env 中存在未在 Settings 声明的键（如临时调试变量），不再因 forbid 而启动失败
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
 
 
 settings = Settings()

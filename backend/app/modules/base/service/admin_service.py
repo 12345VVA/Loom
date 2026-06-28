@@ -671,7 +671,7 @@ class UserAdminService(BaseAdminCrudService):
         else:
             clear_login_caches(entity.id)
 
-    def _before_delete(self, ids: list[int]) -> list[int]:
+    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
         users = list(self.session.exec(select(User).where(User.id.in_(ids))).all())
         protected_users = [user.username for user in users if user.is_super_admin]
         if protected_users:
@@ -680,7 +680,7 @@ class UserAdminService(BaseAdminCrudService):
             )
         return ids
 
-    def _after_delete(self, ids: list[int]) -> None:
+    def _after_delete(self, ids: list[int], payload: Any = None) -> None:
         """用户删除后记录安全审计日志"""
         try:
             from app.modules.base.service.sys_manage_service import SysSecurityLogService
@@ -841,8 +841,9 @@ class RoleAdminService(BaseAdminCrudService):
         if hasattr(payload, "department_ids"):
             self._replace_role_departments(entity.id, payload.department_ids)
         clear_login_caches_for_roles(self.session, [entity.id])
+        self._clear_role_related_caches([entity.id])
 
-    def _after_delete(self, ids: list[int]) -> None:
+    def _after_delete(self, ids: list[int], payload: Any = None) -> None:
         """角色删除后记录安全审计日志"""
         try:
             from app.modules.base.service.sys_manage_service import SysSecurityLogService
@@ -872,6 +873,7 @@ class RoleAdminService(BaseAdminCrudService):
             logger.warning(f"记录角色删除审计日志失败 - role_ids: {ids}", exc_info=exc)
 
         clear_login_caches_for_roles(self.session, ids)
+        self._after_delete_cache(ids)
 
     def _row_to_dict(self, row: Any) -> dict:
         data = super()._row_to_dict(row)
@@ -896,11 +898,6 @@ class RoleAdminService(BaseAdminCrudService):
         data["data_scope"] = "department" if data.get("department_ids") else "self"
         return data
 
-    def _after_add(self, entity: Role, payload: Any) -> None:
-        if hasattr(payload, "menu_ids"):
-            self._replace_role_menus(entity.id, payload.menu_ids)
-        if hasattr(payload, "department_ids"):
-            self._replace_role_departments(entity.id, payload.department_ids)
 
     def _before_update(self, data: dict, entity: Role) -> dict:
         label = data.get("label") or entity.label
@@ -916,14 +913,8 @@ class RoleAdminService(BaseAdminCrudService):
             data["data_scope"] = "department" if data["department_ids"] else "self"
         return data
 
-    def _after_update(self, entity: Role, payload: Any) -> None:
-        if hasattr(payload, "menu_ids"):
-            self._replace_role_menus(entity.id, payload.menu_ids)
-        if hasattr(payload, "department_ids"):
-            self._replace_role_departments(entity.id, payload.department_ids)
-        self._clear_role_related_caches([entity.id])
 
-    def _before_delete(self, ids: list[int]) -> list[int]:
+    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
         roles = list(self.session.exec(select(Role).where(Role.id.in_(ids))).all())
         if any(role.code == "admin" for role in roles):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不能删除系统管理员角色")
@@ -935,7 +926,7 @@ class RoleAdminService(BaseAdminCrudService):
         self._affected_user_ids_storage = affected_user_ids  # 临时存储
         return ids
 
-    def _after_delete(self, ids: list[int]) -> None:
+    def _after_delete_cache(self, ids: list[int]) -> None:
         if hasattr(self, "_affected_user_ids_storage"):
             clear_login_caches_for_users(self._affected_user_ids_storage)
             del self._affected_user_ids_storage

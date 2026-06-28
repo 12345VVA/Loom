@@ -650,13 +650,18 @@ class AuthService:
             menus_by_code[item.code] = menu
 
         for item in navigation_definitions:
-            parent_code = item.parent_code
-            if not parent_code:
-                continue
             menu = menus_by_code[item.code]
-            parent_menu = menus_by_code[parent_code]
-            if menu.parent_id != parent_menu.id:
-                menu.parent_id = parent_menu.id
+            parent_code = item.parent_code
+            if parent_code:
+                parent_menu = menus_by_code[parent_code]
+                desired_parent_id = parent_menu.id
+            else:
+                # parent_code 为空表示该菜单应作为顶级节点；
+                # 需主动清空已存在的 parent_id，否则历史挂载关系无法回滚
+                # （例如将分组从“系统管理”下提升为一级菜单）
+                desired_parent_id = None
+            if menu.parent_id != desired_parent_id:
+                menu.parent_id = desired_parent_id
                 self.session.add(menu)
                 self.session.commit()
                 self.session.refresh(menu)

@@ -6,7 +6,7 @@
     "module": "base",
     "resource": "dashboard",
     "path": "/",
-    "component": "modules/base/views/info.vue",
+    "component": "modules/base/views/home.vue",
     "icon": "icon-home",
     "keep_alive": true,
     "is_show": true,

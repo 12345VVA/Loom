@@ -309,20 +309,21 @@ class AiModelRuntimeService:
                 cost_micro_usd=0,
             )
             self._log_call(provider, model, profile, "error", start, usage, str(exc), user=current_user)
-            if method == "image":
-                logger.error(
-                    "AI 生图调用失败",
-                    extra={
-                        **log_context,
-                        "latency_ms": int((time.perf_counter() - start) * 1000),
-                        "error_type": type(exc).__name__,
-                        "error_message": str(exc),
-                        "prompt": summarize_prompt(kwargs.get("prompt")),
-                        "options": sanitize_options_for_log(kwargs.get("options")),
-                        "fallback_profile_id": profile.fallback_profile_id,
-                    },
-                    exc_info=exc,
-                )
+            # 所有方法失败统一打一条结构化 ERROR（含完整 traceback）；
+            # request_id 由 Formatter 自动从 contextvar 注入，无需在此重复
+            logger.error(
+                "AI 模型调用失败",
+                extra={
+                    **log_context,
+                    "latency_ms": int((time.perf_counter() - start) * 1000),
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    "prompt": summarize_prompt(kwargs.get("prompt")),
+                    "options": sanitize_options_for_log(kwargs.get("options")),
+                    "fallback_profile_id": profile.fallback_profile_id,
+                },
+                exc_info=exc,
+            )
             fallback = self._fallback(
                 profile,
                 method,
@@ -518,6 +519,23 @@ class AiModelRuntimeService:
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 501})
         except Exception as exc:
+            logger.error(
+                "AI 模型调用失败",
+                extra={
+                    "method": "stream_chat",
+                    "provider": provider.code,
+                    "provider_adapter": provider.adapter,
+                    "model": model.code,
+                    "profile": profile.code,
+                    "scenario": profile.scenario,
+                    "latency_ms": int((time.perf_counter() - start) * 1000),
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    "request_id": request_id,
+                    "fallback_profile_id": profile.fallback_profile_id,
+                },
+                exc_info=exc,
+            )
             if not emitted_delta:
                 fallback = self._stream_fallback(
                     profile,

@@ -112,6 +112,8 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         try:
             response = self.client.images.generate(model=model, prompt=prompt, **allowed_options)
         except Exception as exc:
+            # 仅记录 adapter 层业务上下文（不含 traceback）；
+            # 完整堆栈由 runtime_service 统一打印，避免同一异常被重复输出。
             logger.error(
                 "OpenAI Compatible 生图上游请求失败",
                 extra={
@@ -123,7 +125,6 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
                     "error_message": str(exc),
                     "filtered_options": sanitize_options_for_log(allowed_options),
                 },
-                exc_info=exc,
             )
             raise
         data = response.model_dump(mode="json") if hasattr(response, "model_dump") else {}

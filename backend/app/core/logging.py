@@ -8,6 +8,7 @@ import contextvars
 import json
 import logging
 import sys
+import traceback
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -66,6 +67,105 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
+# 控制台 traceback 过滤：跳过这些第三方框架的内部帧，让堆栈聚焦业务代码。
+# filename 统一成正斜杠后再做子串匹配，兼容 Windows 路径分隔符。
+_FRAME_FILTER_SUBSTRINGS: tuple[str, ...] = (
+    "starlette/middleware/base.py",
+    "starlette/middleware/errors.py",
+    "starlette/_exception_handler.py",
+    "starlette/exceptions.py",
+    "anyio/",
+    "uvicorn/protocols/",
+    "uvicorn/middleware/",
+)
+
+
+def _frame_is_framework(frame) -> bool:
+    """判断单帧是否属于需过滤的第三方框架内部帧。"""
+    return any(sub in (frame.filename or "").replace("\\", "/") for sub in _FRAME_FILTER_SUBSTRINGS)
+
+
+def _append_filtered_traceback(te: traceback.TracebackException, lines: list[str]) -> None:
+    """递归渲染 TracebackException：过滤每段的框架内部帧，并保留异常链（__cause__/__context__）。
+
+    渲染顺序与标准 traceback.format_exception 一致：先 cause/context，再分隔句，最后当前异常。
+    """
+    if te.__cause__:
+        _append_filtered_traceback(te.__cause__, lines)
+        lines.append("")
+        lines.append("The above exception was the direct cause of the following exception:")
+        lines.append("")
+    elif te.__context__ and not te.__suppress_context__:
+        _append_filtered_traceback(te.__context__, lines)
+        lines.append("")
+        lines.append("During handling of the above exception, another exception occurred:")
+        lines.append("")
+    lines.append("Traceback (most recent call last):")
+    for frame in te.stack:
+        if _frame_is_framework(frame):
+            continue
+        lines.append(f'  File "{frame.filename}", line {frame.lineno}, in {frame.name}')
+        if frame.line:
+            lines.append(f"    {frame.line}")
+    lines.extend(line.rstrip("\n") for line in te.format_exception_only())
+
+
+def _format_filtered_traceback(exc_info) -> str:
+    """格式化异常堆栈：过滤第三方框架内部帧，并保留异常链根因。
+
+    渲染异常时回退标准完整堆栈，避免误伤。
+    """
+    etype, value, tb = exc_info
+    lines: list[str] = []
+    _append_filtered_traceback(traceback.TracebackException.from_exception(value), lines)
+    text = "\n".join(lines).rstrip("\n")
+    if text:
+        return text
+    return "".join(traceback.format_exception(etype, value, tb)).rstrip("\n")
+
+
+class ConsoleFormatter(logging.Formatter):
+    """人类可读的多行控制台 formatter。
+
+    - 行首：时间 级别 logger 消息
+    - 上下文：request_id / user_id / method / path（来自 contextvar）
+    - extra 字段：业务附加字段（与 JsonFormatter 同源）
+    - 多行 traceback：过滤框架内部帧，业务帧靠前可见
+
+    文件侧仍使用 JsonFormatter 以保留结构化检索能力。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        ts = self.formatTime(record, self.datefmt)
+        parts = [f"{ts} {record.levelname:<7} [{record.name}] {record.getMessage()}"]
+
+        ctx_parts = []
+        for label, value in {
+            "rid": request_id_ctx.get(),
+            "user": current_user_id_ctx.get(),
+            "verb": request_method_ctx.get(),
+            "path": request_path_ctx.get(),
+        }.items():
+            if value is not None:
+                ctx_parts.append(f"{label}={value}")
+        if ctx_parts:
+            parts.append("  " + " ".join(ctx_parts))
+
+        extra_items = []
+        for key, value in record.__dict__.items():
+            if key in _STANDARD_LOG_KEYS or key.startswith("_"):
+                continue
+            extra_items.append(f"{key}={value}")
+        if extra_items:
+            parts.append("  " + " ".join(extra_items))
+
+        if record.exc_info:
+            parts.append(_format_filtered_traceback(record.exc_info))
+        if record.stack_info:
+            parts.append(self.formatStack(record.stack_info))
+        return "\n".join(parts)
+
+
 _THIRD_PARTY_LOG_LEVELS: dict[str, int] = {
     "httpx": logging.WARNING,
     "httpcore": logging.WARNING,
@@ -114,22 +214,44 @@ class SafeTimedRotatingFileHandler(TimedRotatingFileHandler):
             self.stream = self._open()
 
 
+def _ensure_utf8_stderr() -> None:
+    """确保控制台 stderr 以 UTF-8 输出。
+
+    Windows 默认 stderr 编码常为 cp936(GBK)，当日志含 emoji/生僻字等字符时会触发
+    UnicodeEncodeError，导致日志写入失败（logging 仅在内部 handleError 吞掉，日志丢失）。
+    reconfigure 为 UTF-8；环境不支持时（stderr 被重定向等）静默跳过。
+    """
+    stream = sys.stderr
+    encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+    if encoding == "utf8":
+        return
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is None:
+        return
+    try:
+        reconfigure(encoding="utf-8", errors="replace")
+    except (ValueError, OSError):
+        pass
+
+
 def configure_logging(
     log_level: str = "INFO",
     log_dir: str = "logs",
     retention_days: int = 30,
     file_prefix: str = "",
 ) -> None:
-    formatter = JsonFormatter()
+    _ensure_utf8_stderr()
+    json_formatter = JsonFormatter()
+    console_formatter = ConsoleFormatter()
     root = logging.getLogger()
     root.handlers.clear()
 
     level = getattr(logging, log_level.upper(), logging.INFO)
     root.setLevel(level)
 
-    # 控制台输出
+    # 控制台输出：人类可读的多行文本
     console = logging.StreamHandler()
-    console.setFormatter(formatter)
+    console.setFormatter(console_formatter)
     root.addHandler(console)
 
     # 按天轮转的文件输出
@@ -145,7 +267,7 @@ def configure_logging(
             backupCount=retention_days,
             encoding="utf-8",
         )
-        handler.setFormatter(formatter)
+        handler.setFormatter(json_formatter)
         if min_level is not None:
             handler.addFilter(_MinLevelFilter(min_level))
         root.addHandler(handler)

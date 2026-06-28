@@ -5,7 +5,6 @@
     "type": "group",
     "icon": "icon-task",
     "sort_order": 38,
-    "parent_code": "nav_system",
     "role_codes": ["admin"],
     "children": [
       {

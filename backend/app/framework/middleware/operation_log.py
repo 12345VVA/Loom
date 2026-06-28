@@ -174,7 +174,8 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
             "status": 1 if response.status_code < 400 else 0,
             "message": f"Status: {response.status_code}",
         }
-        asyncio.create_task(asyncio.to_thread(_write_operation_log, log_payload))
+        task = asyncio.create_task(asyncio.to_thread(_write_operation_log, log_payload))
+        task.add_done_callback(_on_op_log_task_done)
 
         return response
 
@@ -193,3 +194,15 @@ def _write_operation_log(payload: dict[str, Any]) -> None:
             payload.get("user_id"),
             exc_info=exc,
         )
+
+
+def _on_op_log_task_done(task: asyncio.Task) -> None:
+    """兜底：避免 'Task exception was never retrieved' 警告。
+
+    _write_operation_log 内部已有 try/except 记录业务失败，这里只兜未被捕获的意外。
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("操作日志异步任务未捕获异常: %s: %s", type(exc).__name__, exc, exc_info=exc)

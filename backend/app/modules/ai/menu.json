@@ -5,7 +5,6 @@
     "type": "group",
     "icon": "icon-ai",
     "sort_order": 35,
-    "parent_code": "nav_system",
     "role_codes": ["admin"],
     "children": [
       {
