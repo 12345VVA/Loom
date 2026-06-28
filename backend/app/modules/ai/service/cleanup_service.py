@@ -34,6 +34,10 @@ class AiGovernanceCleanupService:
         log_result = self.session.exec(delete(AiModelCallLog).where(AiModelCallLog.created_at < log_cutoff))
         event_result = self.session.exec(delete(AiGovernanceEvent).where(AiGovernanceEvent.created_at < event_cutoff))
         self.session.commit()
+        # 删除调用日志后失效统计看板缓存（与 _log_call 写入后的失效对齐，避免清理后看板短时陈旧）
+        from app.modules.ai.service.stats_service import invalidate_summary_cache
+
+        invalidate_summary_cache()
         return {
             "success": True,
             "taskPayloadCleared": len(tasks),

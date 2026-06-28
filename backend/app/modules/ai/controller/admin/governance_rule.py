@@ -23,7 +23,7 @@ from app.modules.base.service.security_service import get_current_user
 @CoolController(
     CoolControllerMeta(
         module="ai",
-        resource="governanceRule",
+        resource="governance_rule",
         scope="admin",
         service=AiGovernanceRuleService,
         tags=("ai", "governance-rule"),
@@ -47,7 +47,7 @@ from app.modules.base.service.security_service import get_current_user
     )
 )
 class AiGovernanceRuleController(BaseController):
-    @Post("/toggle", summary="启停 AI 治理规则", permission="ai:governanceRule:toggle")
+    @Post("/toggle", summary="启停 AI 治理规则", permission="ai:governance_rule:toggle")
     def toggle(
         self,
         payload: AiGovernanceRuleActionRequest,
@@ -56,7 +56,7 @@ class AiGovernanceRuleController(BaseController):
     ):
         return AiGovernanceRuleService(session).toggle(payload.id)
 
-    @Post("/match", summary="测试 AI 治理规则匹配", permission="ai:governanceRule:match")
+    @Post("/match", summary="测试 AI 治理规则匹配", permission="ai:governance_rule:match")
     def match(
         self,
         payload: AiGovernanceRuleMatchRequest,

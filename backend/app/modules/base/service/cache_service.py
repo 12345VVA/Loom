@@ -182,6 +182,38 @@ def cache_incr(key: str, ttl_seconds: int | None = None) -> int:
     return current
 
 
+def cache_decr(key: str, ttl_seconds: int | None = None) -> int:
+    """
+    原子递减计数器，结果不低于 0。返回递减后的值。
+    与 cache_incr 配对使用，Redis 不可用时降级为非原子的 get+set（单进程下可接受）。
+    """
+    client = get_redis_client()
+    if client is not None:
+        try:
+            pipe = client.pipeline(transaction=True)
+            pipe.decr(key)
+            if ttl_seconds is not None:
+                pipe.expire(key, ttl_seconds)
+            current = pipe.execute()[0]
+            if current < 0:
+                client.set(key, 0, ex=ttl_seconds)
+                current = 0
+            return current
+        except RedisError as exc:
+            logger.warning("Redis DECR 失败 %s: %s", key, exc)
+
+    # 降级：内存缓存（单进程下无竞争），结果不低于 0
+    entry = _memory_cache.get(key)
+    if entry is not None:
+        value, _ = entry
+        current = max(0, int(value) - 1)
+    else:
+        current = 0
+    expires_at = time.time() + ttl_seconds if ttl_seconds else None
+    _memory_cache[key] = (str(current), expires_at)
+    return current
+
+
 def cache_get_json(key: str) -> Any | None:
     value = cache_get(key)
     if value is None:

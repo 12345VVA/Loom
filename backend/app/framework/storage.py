@@ -25,6 +25,11 @@ class BaseStorageProvider(ABC):
         """删除文件"""
         pass
 
+    @abstractmethod
+    def read(self, path: str) -> bytes:
+        """读取文件内容（按 save 返回的路径）"""
+        pass
+
 
 class UploadRejectedError(ValueError):
     """文件上传被拒绝"""
@@ -111,6 +116,12 @@ class LocalStorageProvider(BaseStorageProvider):
             return True
         return False
 
+    def read(self, path: str) -> bytes:
+        relative_path = path.replace(self.base_url, "").lstrip("/")
+        full_path = self._resolve_safe_path(relative_path)
+        with open(full_path, "rb") as f:
+            return f.read()
+
 
 class S3StorageProvider(BaseStorageProvider):
     """S3-compatible 对象存储提供者。"""
@@ -156,6 +167,13 @@ class S3StorageProvider(BaseStorageProvider):
         self.client.delete_object(Bucket=self.bucket, Key=object_key)
         return True
 
+    def read(self, path: str) -> bytes:
+        object_key = _extract_s3_key(path, self.bucket, self.public_base_url)
+        if not object_key:
+            raise ValueError(f"无法解析 S3 对象 key: {path}")
+        response = self.client.get_object(Bucket=self.bucket, Key=object_key)
+        return response["Body"].read()
+
 
 class StorageService:
     """存储服务管理器"""
@@ -182,6 +200,9 @@ class StorageService:
     def delete(self, path: str) -> bool:
         return self.provider.delete(path)
 
+    def read(self, path: str) -> bytes:
+        return self.provider.read(path)
+
 
 def _extract_s3_key(path: str, bucket: str, public_base_url: str) -> str | None:
     if public_base_url and path.startswith(public_base_url):
@@ -192,3 +213,23 @@ def _extract_s3_key(path: str, bucket: str, public_base_url: str) -> str | None:
     if path.startswith("uploads/"):
         return path
     return None
+
+
+def offload_payload(content: str) -> tuple[str, str | None]:
+    """T8：超阈值载荷落对象存储，返回 (inline_or_empty, storage_ref_or_None)。
+
+    供 workflow 节点日志与评估 case 输出共用。载荷应由调用方提前脱敏。
+    """
+    if len(content.encode("utf-8")) <= settings.PAYLOAD_STORAGE_THRESHOLD:
+        return content, None
+    ref = StorageService.get_instance().save(
+        content.encode("utf-8"), f"wf_payload_{uuid.uuid4().hex}.json"
+    )
+    return "", ref
+
+
+def resolve_payload(content: str, ref: str | None) -> str:
+    """T8 还原：ref 非空则从对象存储读回内容，否则原样返回 content。"""
+    if ref:
+        return StorageService.get_instance().read(ref).decode("utf-8")
+    return content

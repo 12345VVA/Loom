@@ -45,7 +45,8 @@ const aiService = service.ai as any;
 const eventOptions = [
 	{ label: t('放行'), value: 'allowed' },
 	{ label: t('拦截'), value: 'blocked' },
-	{ label: t('告警'), value: 'warn' }
+	{ label: t('告警'), value: 'warn' },
+	{ label: t('超限'), value: 'breach' }
 ];
 const metricOptions = [
 	{ label: t('请求'), value: 'request' },
@@ -63,6 +64,7 @@ const statItems = computed(() => [
 	{ label: t('总数'), value: stats.total || 0 },
 	{ label: t('拦截'), value: stats.byType.blocked || 0 },
 	{ label: t('告警'), value: stats.byType.warn || 0 },
+	{ label: t('超限'), value: stats.byType.breach || 0 },
 	{ label: t('请求'), value: stats.byMetric.request || 0 },
 	{ label: t('成本'), value: stats.byMetric.cost || 0 }
 ]);
@@ -95,7 +97,7 @@ const Table = useTable({
 
 const Crud = useCrud(
 	{
-		service: aiService.governanceEvent
+		service: aiService.governance_event
 	},
 	app => {
 		app.refresh();
@@ -106,7 +108,7 @@ const Crud = useCrud(
 onMounted(loadStats);
 
 async function loadStats() {
-	const res = await aiService.governanceEvent.stats({ days: 14 });
+	const res = await aiService.governance_event.stats({ days: 14 });
 	stats.total = res?.total || 0;
 	stats.byType = res?.byType || {};
 	stats.byMetric = res?.byMetric || {};

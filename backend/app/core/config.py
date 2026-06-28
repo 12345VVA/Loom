@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     WORKFLOW_CHECKPOINT_BACKEND: str = "sqlite"  # "memory" | "sqlite" | "postgres"
     WORKFLOW_NODE_TEST_TIMEOUT: int = 180  # 单节点测试超时秒数（LLM 节点常需 60-180 秒）
     WORKFLOW_NODE_TIMEOUT: int = 600  # 正式执行单节点超时秒数（比 30 分钟硬上限短，留足图像节点空间）
+    # 评测系统 llm_judge 兜底模型 Profile（用例未单独配置 judge_profile_code 时使用；空表示未配置）
+    WORKFLOW_EVAL_JUDGE_PROFILE: str = ""
+    # 节点载荷冷热分离阈值（T8）：单字段字节超此值则落对象存储、主表存引用
+    PAYLOAD_STORAGE_THRESHOLD: int = 32 * 1024
 
     # OpenAI / Ollama 配置
     OPENAI_API_KEY: str  # 启动时自动从 .env 中读取
@@ -124,6 +128,10 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE: int = 1800
     DB_POOL_PRE_PING: bool = True
+    # 跳过启动时自动补建索引（CREATE INDEX IF NOT EXISTS）。
+    # Field(index=True) 仅对 create_all 新建表生效，现有库不会自动补索引；_ensure_indexes 为现有库补齐查询关键索引。
+    # 生产 PostgreSQL 大表建议由 DBA 在维护窗口用 CREATE INDEX CONCURRENTLY 建立后置 True，避免启动时锁表。
+    SKIP_INDEX_ENSURE: bool = False
     # anyio 线程池上限：承载 offload 到线程池的同步阻塞调用（同步 DB/HTTP service、同步 def 路由）。
     # Starlette 默认 40，调大以支撑更多并发慢请求；超出此值的请求会排队而非挂起事件循环。
     ASYNC_THREAD_POOL_SIZE: int = 100

@@ -1,0 +1,291 @@
+<template>
+	<cl-crud ref="Crud">
+		<cl-row>
+			<cl-refresh-btn />
+			<el-button type="success" @click="openStartDialog">{{ $t('发起新评估') }}</el-button>
+			<el-button
+				type="warning"
+				:disabled="selectedRuns.length !== 2"
+				@click="goCompare"
+			>{{ $t('回归对比(选2个)') }}</el-button
+			>
+			<cl-flex1 />
+			<cl-search-key :placeholder="$t('搜索版本号')" />
+		</cl-row>
+
+		<cl-row>
+			<cl-table ref="Table" @selection-change="onSelectionChange">
+				<template #slot-status="{ scope }">
+					<el-tag :type="statusTagType(scope.row.status)" size="small">{{ statusLabel(scope.row.status) }}</el-tag>
+				</template>
+				<template #slot-detail="{ scope }">
+					<el-button text type="primary" @click="openDetail(scope.row)">{{ $t('详情') }}</el-button>
+				</template>
+				<template #slot-cancel="{ scope }">
+					<el-button
+						text
+						type="danger"
+						:disabled="!['pending', 'running'].includes(scope.row.status)"
+						@click="cancelRun(scope.row)"
+					>{{ $t('取消') }}</el-button
+					>
+				</template>
+			</cl-table>
+		</cl-row>
+
+		<cl-row>
+			<cl-flex1 />
+			<cl-pagination />
+		</cl-row>
+	</cl-crud>
+
+	<!-- 发起评估对话框 -->
+	<el-dialog v-model="startDialog.visible" :title="$t('发起新评估')" width="520px">
+		<el-form label-width="110px">
+			<el-form-item :label="$t('测试集')" required>
+				<el-select v-model="startDialog.form.testSetId" :placeholder="$t('选择测试集')" filterable>
+					<el-option
+						v-for="ts in testSetOptions"
+						:key="ts.id"
+						:label="`${ts.name} (${ts.itemsCount}例)`"
+						:value="ts.id"
+					/>
+				</el-select>
+			</el-form-item>
+			<el-form-item :label="$t('工作流(可选)')">
+				<el-select
+					v-model="startDialog.form.definitionId"
+					:placeholder="$t('缺省用测试集关联的')"
+					filterable
+					clearable
+				>
+					<el-option
+						v-for="d in definitionOptions"
+						:key="d.id"
+						:label="d.name"
+						:value="d.id"
+					/>
+				</el-select>
+			</el-form-item>
+			<el-form-item :label="$t('版本号')">
+				<el-input v-model="startDialog.form.versionLabel" :placeholder="$t('如 v1.2 / commit hash')" />
+			</el-form-item>
+			<el-form-item :label="$t('评估器')">
+				<el-select v-model="startDialog.form.evaluatorType">
+					<el-option :label="$t('规则匹配')" value="rule_match" />
+					<el-option :label="$t('LLM 评分')" value="llm_judge" />
+					<el-option :label="$t('组合')" value="composite" />
+				</el-select>
+			</el-form-item>
+		</el-form>
+		<template #footer>
+			<el-button @click="startDialog.visible = false">{{ $t('取消') }}</el-button>
+			<el-button type="primary" :loading="startDialog.loading" @click="submitStart">{{ $t('发起') }}</el-button>
+		</template>
+	</el-dialog>
+
+	<!-- 运行详情抽屉 -->
+	<el-drawer v-model="detail.visible" :title="$t('评估运行详情')" size="900px">
+		<el-descriptions v-if="detail.run" :column="3" border class="detail-summary">
+			<el-descriptions-item :label="$t('状态')">
+				<el-tag :type="statusTagType(detail.run.status)" size="small">{{ statusLabel(detail.run.status) }}</el-tag>
+			</el-descriptions-item>
+			<el-descriptions-item :label="$t('通过率')">{{ ((detail.run.passRate ?? 0) * 100).toFixed(1) }}%</el-descriptions-item>
+			<el-descriptions-item :label="$t('平均分')">{{ (detail.run.avgScore ?? 0).toFixed(3) }}</el-descriptions-item>
+			<el-descriptions-item :label="$t('总数/通过/失败/异常')">
+				{{ detail.run.total }} / {{ detail.run.passed }} / {{ detail.run.failed }} / {{ detail.run.errored }}
+			</el-descriptions-item>
+			<el-descriptions-item :label="$t('P95 延迟')">{{ detail.run.p95LatencyMs ?? 0 }}ms</el-descriptions-item>
+			<el-descriptions-item>
+				<template #label>
+					<el-tooltip :content="$t('按本次评估关联的工作流实例精确聚合')" placement="top">
+						<span>{{ $t('Token/成本') }}</span>
+					</el-tooltip>
+				</template>
+				{{ detail.run.totalTokens ?? 0 }} / ${{ ((detail.run.totalCostMicroUsd ?? 0) / 1e6).toFixed(4) }}
+			</el-descriptions-item>
+		</el-descriptions>
+
+		<el-table :data="detail.cases" border style="margin-top: 16px">
+			<el-table-column prop="caseKey" :label="$t('用例')" min-width="120" />
+			<el-table-column prop="status" :label="$t('状态')" width="90">
+				<template #default="{ row }">
+					<el-tag :type="caseStatusType(row.status)" size="small">{{ row.status }}</el-tag>
+				</template>
+			</el-table-column>
+			<el-table-column prop="score" :label="$t('得分')" width="80" />
+			<el-table-column prop="latencyMs" :label="$t('耗时(ms)')" width="100" />
+			<el-table-column prop="actualOutput" :label="$t('实际输出')" min-width="220" show-overflow-tooltip />
+			<el-table-column prop="errorMessage" :label="$t('错误')" min-width="160" show-overflow-tooltip />
+		</el-table>
+		<div class="detail-pager">
+			<el-pagination
+				background
+				layout="prev, pager, next"
+				:total="detail.total"
+				:page-size="detail.size"
+				:current-page="detail.page"
+				@current-change="onDetailPage"
+			/>
+		</div>
+	</el-drawer>
+</template>
+
+<script lang="ts" setup>
+defineOptions({ name: 'workflow-eval-run' });
+
+import { useCrud, useTable } from '@cool-vue/crud';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { reactive, ref } from 'vue';
+import { useCool } from '/@/cool';
+import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
+
+const { service } = useCool();
+const { t } = useI18n();
+const router = useRouter();
+const evalService = (service as any).workflow_eval;
+
+const testSetOptions = ref<any[]>([]);
+const definitionOptions = ref<any[]>([]);
+(async () => {
+	try {
+		const [ts, defs] = await Promise.all([
+			evalService.test_set.list(),
+			(service as any).workflow.definition.list()
+		]);
+		testSetOptions.value = ts || [];
+		definitionOptions.value = defs || [];
+	} catch (e) {
+		// ignore
+	}
+})();
+
+const Crud = useCrud({ service: evalService.eval_run }, (app) => app.refresh());
+
+const selectedRuns = ref<any[]>([]);
+function onSelectionChange(rows: any[]) {
+	selectedRuns.value = rows;
+}
+
+const Table = useTable({
+	columns: [
+		{ type: 'selection' },
+		{ label: t('版本号'), prop: 'versionLabel', minWidth: 120 },
+		{ label: t('状态'), prop: 'status', minWidth: 100 },
+		{ label: t('通过率'), prop: 'passRate', width: 90 },
+		{ label: t('平均分'), prop: 'avgScore', width: 90 },
+		{ label: t('P95(ms)'), prop: 'p95LatencyMs', width: 90 },
+		{ label: t('总数'), prop: 'total', width: 70 },
+		{ label: t('创建时间'), prop: 'createTime', minWidth: 170, sortable: 'desc' },
+		{ type: 'op', buttons: ['slot-detail', 'slot-cancel'], width: 140 }
+	]
+});
+
+function statusLabel(s: string) {
+	return { pending: t('等待'), running: t('运行中'), succeeded: t('成功'), failed: t('失败'), partial: t('部分成功'), cancelled: t('已取消') }[s] || s;
+}
+function statusTagType(s: string): any {
+	return { succeeded: 'success', failed: 'danger', running: 'warning', cancelled: 'info', partial: 'warning', pending: 'info' }[s] || '';
+}
+function caseStatusType(s: string): any {
+	return { success: 'success', fail: 'danger', error: 'danger', timeout: 'warning', blocked: 'info' }[s] || '';
+}
+
+// 发起评估
+const startDialog = reactive<{ visible: boolean; loading: boolean; form: any }>({
+	visible: false,
+	loading: false,
+	form: { testSetId: null, definitionId: null, versionLabel: '', evaluatorType: 'rule_match' }
+});
+function openStartDialog() {
+	startDialog.form = { testSetId: null, definitionId: null, versionLabel: '', evaluatorType: 'rule_match' };
+	startDialog.visible = true;
+}
+async function submitStart() {
+	if (!startDialog.form.testSetId) {
+		ElMessage.warning(t('请选择测试集'));
+		return;
+	}
+	startDialog.loading = true;
+	try {
+		await evalService.eval_run.start(startDialog.form);
+		ElMessage.success(t('评估已发起'));
+		startDialog.visible = false;
+		Crud.value?.refresh();
+	} catch (err: any) {
+		ElMessage.error(`${t('发起失败')}: ${err.message || err}`);
+	} finally {
+		startDialog.loading = false;
+	}
+}
+
+async function cancelRun(row: any) {
+	try {
+		await ElMessageBox.confirm(t('确认取消该评估运行？'), t('提示'), { type: 'warning' });
+		const res = await evalService.eval_run.cancel({ evalRunId: row.id });
+		if (res?.cancelled === false) {
+			ElMessage.warning(t('运行已结束，无需取消'));
+		} else {
+			ElMessage.success(t('已取消'));
+		}
+		Crud.value?.refresh();
+	} catch (err: any) {
+		// 用户点「取消」按钮（ElMessageBox 抛 'cancel'）不算错误
+		if (err !== 'cancel' && err?.message !== 'cancel') {
+			ElMessage.error(`${t('取消失败')}: ${err?.message || err}`);
+		}
+	}
+}
+
+function goCompare() {
+	if (selectedRuns.value.length !== 2) return;
+	// 按创建时间升序：A=基线 B=新版，保证 diff 方向稳定（B 相对 A）
+	const [baseline, newer] = [...selectedRuns.value].sort(
+		(a: any, b: any) => new Date(a.createTime).getTime() - new Date(b.createTime).getTime()
+	);
+	router.push({
+		path: '/workflow/eval/compare',
+		query: { runA: baseline.id, runB: newer.id }
+	});
+}
+
+// 详情抽屉
+const detail = reactive<{ visible: boolean; runId: number | null; run: any; cases: any[]; total: number; page: number; size: number }>({
+	visible: false,
+	runId: null,
+	run: null,
+	cases: [],
+	total: 0,
+	page: 1,
+	size: 20
+});
+async function openDetail(row: any) {
+	detail.runId = row.id;
+	detail.run = row; // 先用列表行兜底
+	detail.page = 1;
+	detail.visible = true;
+	await loadCases();
+	// 拉取最新完整 run 数据，避免列表快照过时（运行中状态/汇总可能已变化）
+	try {
+		detail.run = await evalService.eval_run.info({ id: row.id });
+	} catch {
+		// 拉取失败保留列表行兜底
+	}
+}
+async function loadCases() {
+	if (!detail.runId) return;
+	const res = await evalService.eval_run.cases({ evalRunId: detail.runId, page: detail.page, size: detail.size });
+	detail.cases = res.list || [];
+	detail.total = res.pagination?.total || 0;
+}
+function onDetailPage(p: number) {
+	detail.page = p;
+	loadCases();
+}
+</script>
+
+<style scoped>
+.detail-summary { margin-bottom: 8px; }
+.detail-pager { margin-top: 12px; text-align: right; }
+</style>

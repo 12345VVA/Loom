@@ -265,7 +265,7 @@ function flattenTreeFields(
 	displayPrefix: string,
 	nodeLabel: string,
 	nodeId: string
-): { key: string; display: string; refText: string; nodeLabel: string }[] {
+): { key: string; display: string; refText: string; nodeLabel: string; nodeId: string; variableName: string }[] {
 	const result: any[] = [];
 	if (!fields || !Array.isArray(fields)) return result;
 
@@ -328,7 +328,7 @@ watch(
 
 // 展平上游变量：对 LLM JSON 输出模式的节点，额外展示子字段
 const flattenedVariables = computed(() => {
-	const result: { key: string; display: string; refText: string; nodeLabel: string }[] = [];
+	const result: { key: string; display: string; refText: string; nodeLabel: string; nodeId: string; variableName: string }[] = [];
 	for (const v of cachedUpstreamVariables.value) {
 		const baseRef = getVariableRefText(v.variableName);
 		result.push({

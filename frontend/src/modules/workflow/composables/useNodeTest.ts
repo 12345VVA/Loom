@@ -1,7 +1,6 @@
 import { reactive, computed, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { findInvalidNodeInput } from '../utils';
-import type { Eps } from '/@/cool';
 
 /** 单节点测试结果 */
 interface NodeTestResult {

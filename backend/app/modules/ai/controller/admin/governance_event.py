@@ -17,7 +17,7 @@ from app.modules.base.service.security_service import get_current_user
 @CoolController(
     CoolControllerMeta(
         module="ai",
-        resource="governanceEvent",
+        resource="governance_event",
         scope="admin",
         service=AiGovernanceEventService,
         tags=("ai", "governance-event"),
@@ -61,7 +61,7 @@ from app.modules.base.service.security_service import get_current_user
     )
 )
 class AiGovernanceEventController(BaseController):
-    @Post("/stats", summary="AI 治理事件统计", permission="ai:governanceEvent:stats")
+    @Post("/stats", summary="AI 治理事件统计", permission="ai:governance_event:stats")
     def stats(
         self,
         payload: AiGovernanceStatsRequest | None = None,

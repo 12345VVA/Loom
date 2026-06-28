@@ -32,7 +32,7 @@ AI_MODEL_TYPES = {"chat", "embedding", "image", "audio", "video", "rerank"}
 AI_GOVERNANCE_SCOPE_TYPES = {"global", "user", "profile"}
 AI_GOVERNANCE_PERIODS = {"minute", "day", "month"}
 AI_GOVERNANCE_MODES = {"enforce", "observe"}
-AI_GOVERNANCE_EVENT_TYPES = {"allowed", "blocked", "warn"}
+AI_GOVERNANCE_EVENT_TYPES = {"allowed", "blocked", "warn", "breach"}
 AI_INVOCATION_STATUSES = {"running", "success", "error", "blocked"}
 
 
@@ -105,6 +105,8 @@ class AiModelCallLog(BaseEntity, table=True):
     currency: str = Field(default="USD", max_length=20)
     error_message: str | None = Field(default=None, max_length=500)
     request_id: str | None = Field(default=None, index=True, max_length=100)
+    # 工作流实例关联：评估按 instance 精确聚合 token/cost（手动 chat 等非工作流调用为空）
+    workflow_instance_id: int | None = Field(default=None, index=True)
 
 
 class AiGenerationTask(BaseEntity, table=True):

@@ -1,0 +1,71 @@
+[
+  {
+    "code": "nav_workflow_eval",
+    "name": "工作流评价",
+    "type": "group",
+    "icon": "icon-task",
+    "sort_order": 39,
+    "role_codes": ["admin"],
+    "children": [
+      {
+        "code": "nav_workflow_eval_test_set",
+        "name": "测试集",
+        "type": "menu",
+        "module": "workflow_eval",
+        "resource": "test_set",
+        "path": "/workflow/eval/test_set",
+        "component": "modules/workflow_eval/views/suite.vue",
+        "icon": "icon-list",
+        "sort_order": 1,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "workflow_eval_test_set_add", "name": "新增", "type": "button", "permission": "workflow_eval:test_set:add", "role_codes": ["admin"] },
+          { "code": "workflow_eval_test_set_delete", "name": "删除", "type": "button", "permission": "workflow_eval:test_set:delete", "role_codes": ["admin"] },
+          { "code": "workflow_eval_test_set_update", "name": "修改", "type": "button", "permission": "workflow_eval:test_set:update", "role_codes": ["admin"] },
+          { "code": "workflow_eval_test_set_page", "name": "分页", "type": "button", "permission": "workflow_eval:test_set:page", "role_codes": ["admin"] },
+          { "code": "workflow_eval_test_set_importCases", "name": "导入用例", "type": "button", "permission": "workflow_eval:test_set:importCases", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_workflow_eval_test_case",
+        "name": "测试用例",
+        "type": "menu",
+        "module": "workflow_eval",
+        "resource": "test_case",
+        "path": "/workflow/eval/test_case",
+        "component": "modules/workflow_eval/views/case.vue",
+        "icon": "icon-list",
+        "sort_order": 2,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "workflow_eval_test_case_add", "name": "新增", "type": "button", "permission": "workflow_eval:test_case:add", "role_codes": ["admin"] },
+          { "code": "workflow_eval_test_case_update", "name": "修改", "type": "button", "permission": "workflow_eval:test_case:update", "role_codes": ["admin"] },
+          { "code": "workflow_eval_test_case_delete", "name": "删除", "type": "button", "permission": "workflow_eval:test_case:delete", "role_codes": ["admin"] },
+          { "code": "workflow_eval_test_case_page", "name": "分页", "type": "button", "permission": "workflow_eval:test_case:page", "role_codes": ["admin"] },
+          { "code": "workflow_eval_test_case_info", "name": "详情", "type": "button", "permission": "workflow_eval:test_case:info", "role_codes": ["admin"] }
+        ]
+      },
+      {
+        "code": "nav_workflow_eval_run",
+        "name": "评估运行",
+        "type": "menu",
+        "module": "workflow_eval",
+        "resource": "eval_run",
+        "path": "/workflow/eval/eval_run",
+        "component": "modules/workflow_eval/views/run.vue",
+        "icon": "icon-log",
+        "sort_order": 3,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "workflow_eval_eval_run_page", "name": "分页", "type": "button", "permission": "workflow_eval:eval_run:page", "role_codes": ["admin"] },
+          { "code": "workflow_eval_eval_run_info", "name": "详情", "type": "button", "permission": "workflow_eval:eval_run:info", "role_codes": ["admin"] },
+          { "code": "workflow_eval_eval_run_delete", "name": "删除", "type": "button", "permission": "workflow_eval:eval_run:delete", "role_codes": ["admin"] },
+          { "code": "workflow_eval_eval_run_start", "name": "发起评估", "type": "button", "permission": "workflow_eval:eval_run:start", "role_codes": ["admin"] },
+          { "code": "workflow_eval_eval_run_cases", "name": "用例结果", "type": "button", "permission": "workflow_eval:eval_run:cases", "role_codes": ["admin"] },
+          { "code": "workflow_eval_eval_run_cancel", "name": "取消", "type": "button", "permission": "workflow_eval:eval_run:cancel", "role_codes": ["admin"] },
+          { "code": "workflow_eval_eval_run_compare", "name": "回归对比", "type": "button", "permission": "workflow_eval:eval_run:compare", "role_codes": ["admin"] }
+        ]
+      }
+    ]
+  }
+]

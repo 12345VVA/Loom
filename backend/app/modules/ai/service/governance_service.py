@@ -22,6 +22,7 @@ from app.modules.ai.model.ai import (
     AiRuntimeInvocation,
 )
 from app.modules.ai.service.utils import _window_bounds
+from app.modules.base.service.cache_service import cache_decr, cache_incr
 from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.notification.model.notification import AudienceRule
@@ -50,17 +51,17 @@ class AiGovernanceRuleService(BaseAdminCrudService):
         is_tree: bool | None = None,
         parent_field: str | None = None,
     ) -> list[dict]:
-        return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
+        return self._batch_decorate(list(super().list(query, current_user, relations, is_tree, parent_field)))
 
     def page(
         self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
     ) -> PageResult[dict]:
         result = super().page(query, current_user, relations)
-        result.items = [self._decorate(item) for item in result.items]
+        result.items = self._batch_decorate(list(result.items))
         return result
 
     def info(self, id: Any, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> dict:
-        return self._decorate(super().info(id, current_user, relations))
+        return self._batch_decorate([super().info(id, current_user, relations)])[0]
 
     def toggle(self, id: int) -> dict:
         rule = self.session.get(AiGovernanceRule, id)
@@ -75,10 +76,8 @@ class AiGovernanceRuleService(BaseAdminCrudService):
         if isinstance(payload, dict):
             payload = AiGovernanceRuleMatchRequest(**payload)
         rules = AiGovernanceService(self.session).match_rules(user_id=payload.user_id, profile_id=payload.profile_id)
-        return {
-            "count": len(rules),
-            "items": [self._decorate(self._finalize_data(rule.model_dump())) for rule in rules],
-        }
+        items = [self._finalize_data(rule.model_dump()) for rule in rules]
+        return {"count": len(items), "items": self._batch_decorate(items)}
 
     def _ensure_unique_code(self, code: str | None, exclude_id: int | None = None) -> None:
         if not code:
@@ -97,19 +96,19 @@ class AiGovernanceRuleService(BaseAdminCrudService):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Profile 规则必须选择调用配置")
 
     def _decorate(self, data: dict) -> dict:
-        user = (
-            self.session.get(User, data.get("userId") or data.get("user_id"))
-            if data.get("userId") or data.get("user_id")
-            else None
+        return self._batch_decorate([data])[0]
+
+    def _batch_decorate(self, items: list[dict]) -> list[dict]:
+        user_map = _bulk_attr_map(self.session, User, _collect_ids(items, "userId", "user_id"), "username")
+        profile_map = _bulk_attr_map(
+            self.session, AiModelProfile, _collect_ids(items, "profileId", "profile_id"), "name"
         )
-        profile = (
-            self.session.get(AiModelProfile, data.get("profileId") or data.get("profile_id"))
-            if data.get("profileId") or data.get("profile_id")
-            else None
-        )
-        data["username"] = user.username if user else None
-        data["profileName"] = profile.name if profile else None
-        return data
+        for d in items:
+            uid = d.get("userId") if d.get("userId") is not None else d.get("user_id")
+            pid = d.get("profileId") if d.get("profileId") is not None else d.get("profile_id")
+            d["username"] = user_map.get(uid)
+            d["profileName"] = profile_map.get(pid)
+        return items
 
 
 class AiGovernanceEventService(BaseAdminCrudService):
@@ -124,60 +123,83 @@ class AiGovernanceEventService(BaseAdminCrudService):
         is_tree: bool | None = None,
         parent_field: str | None = None,
     ) -> list[dict]:
-        return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
+        return self._batch_decorate(list(super().list(query, current_user, relations, is_tree, parent_field)))
 
     def page(
         self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
     ) -> PageResult[dict]:
         result = super().page(query, current_user, relations)
-        result.items = [self._decorate(item) for item in result.items]
+        result.items = self._batch_decorate(list(result.items))
         return result
 
     def info(self, id: Any, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> dict:
-        return self._decorate(super().info(id, current_user, relations))
+        return self._batch_decorate([super().info(id, current_user, relations)])[0]
 
     def stats(self, days: int = 14) -> dict:
         since = datetime.utcnow() - timedelta(days=max(1, min(days, 365)))
-        rows = self.session.exec(select(AiGovernanceEvent).where(AiGovernanceEvent.created_at >= since)).all()
-        by_type: dict[str, int] = {}
-        by_metric: dict[str, int] = {}
-        for row in rows:
-            by_type[row.event_type] = by_type.get(row.event_type, 0) + 1
-            by_metric[row.metric] = by_metric.get(row.metric, 0) + 1
-        return {"total": len(rows), "byType": by_type, "byMetric": by_metric}
+        base_filter = AiGovernanceEvent.created_at >= since
+        total = int(self.session.exec(select(func.count()).where(base_filter)).one() or 0)
+        type_rows = self.session.exec(
+            select(AiGovernanceEvent.event_type, func.count().label("cnt"))
+            .where(base_filter)
+            .group_by(AiGovernanceEvent.event_type)
+        ).all()
+        metric_rows = self.session.exec(
+            select(AiGovernanceEvent.metric, func.count().label("cnt"))
+            .where(base_filter)
+            .group_by(AiGovernanceEvent.metric)
+        ).all()
+        by_type = {row[0]: int(row[1]) for row in type_rows}
+        by_metric = {row[0]: int(row[1]) for row in metric_rows}
+        return {"total": total, "byType": by_type, "byMetric": by_metric}
 
     def _decorate(self, data: dict) -> dict:
-        rule = (
-            self.session.get(AiGovernanceRule, data.get("ruleId") or data.get("rule_id"))
-            if data.get("ruleId") or data.get("rule_id")
-            else None
+        return self._batch_decorate([data])[0]
+
+    def _batch_decorate(self, items: list[dict]) -> list[dict]:
+        rule_map = _bulk_attr_map(self.session, AiGovernanceRule, _collect_ids(items, "ruleId", "rule_id"), "name")
+        user_map = _bulk_attr_map(self.session, User, _collect_ids(items, "userId", "user_id"), "username")
+        provider_map = _bulk_attr_map(self.session, AiProvider, _collect_ids(items, "providerId", "provider_id"), "name")
+        model_map = _bulk_attr_map(self.session, AiModel, _collect_ids(items, "modelId", "model_id"), "name")
+        profile_map = _bulk_attr_map(
+            self.session, AiModelProfile, _collect_ids(items, "profileId", "profile_id"), "name"
         )
-        user = (
-            self.session.get(User, data.get("userId") or data.get("user_id"))
-            if data.get("userId") or data.get("user_id")
-            else None
-        )
-        provider = (
-            self.session.get(AiProvider, data.get("providerId") or data.get("provider_id"))
-            if data.get("providerId") or data.get("provider_id")
-            else None
-        )
-        model = (
-            self.session.get(AiModel, data.get("modelId") or data.get("model_id"))
-            if data.get("modelId") or data.get("model_id")
-            else None
-        )
-        profile = (
-            self.session.get(AiModelProfile, data.get("profileId") or data.get("profile_id"))
-            if data.get("profileId") or data.get("profile_id")
-            else None
-        )
-        data["ruleName"] = rule.name if rule else None
-        data["username"] = user.username if user else None
-        data["providerName"] = provider.name if provider else None
-        data["modelName"] = model.name if model else None
-        data["profileName"] = profile.name if profile else None
-        return data
+        for d in items:
+            rid = d.get("ruleId") if d.get("ruleId") is not None else d.get("rule_id")
+            uid = d.get("userId") if d.get("userId") is not None else d.get("user_id")
+            pid = d.get("providerId") if d.get("providerId") is not None else d.get("provider_id")
+            mid = d.get("modelId") if d.get("modelId") is not None else d.get("model_id")
+            pfid = d.get("profileId") if d.get("profileId") is not None else d.get("profile_id")
+            d["ruleName"] = rule_map.get(rid)
+            d["username"] = user_map.get(uid)
+            d["providerName"] = provider_map.get(pid)
+            d["modelName"] = model_map.get(mid)
+            d["profileName"] = profile_map.get(pfid)
+        return items
+
+
+# 并发计数 Redis key 的兜底 TTL（秒），防止僵尸调用永久占用配额
+_CONCURRENT_TTL = 7200
+
+
+def _collect_ids(items: list[dict], camel: str, snake: str) -> set:
+    """从一批 dict 中收集关联 id（兼容 camelCase / snake_case 两种 key）。"""
+    ids: set = set()
+    for d in items:
+        value = d.get(camel)
+        if value is None:
+            value = d.get(snake)
+        if value is not None:
+            ids.add(value)
+    return ids
+
+
+def _bulk_attr_map(session: Session, model: Any, ids: set, attr: str) -> dict:
+    """一次性按 id 批量加载关联实体的某个属性，返回 id→属性值 映射。"""
+    if not ids:
+        return {}
+    rows = session.exec(select(model).where(model.id.in_(ids))).all()
+    return {row.id: getattr(row, attr) for row in rows}
 
 
 class AiGovernanceBlocked(Exception):
@@ -215,8 +237,11 @@ class AiGovernanceService:
     ) -> AiRuntimeInvocation | None:
         user_id = user.id if user else None
         rules = self.match_rules(user_id=user_id, profile_id=profile.id)
+        # 1) 预检 request/token/cost（SQL 窗口聚合）
         for rule in rules:
             self._check_pre_rule(rule, user_id=user_id, provider=provider, model=model, profile=profile)
+        # 2) 并发检查：Redis 原子计数，超限回退，通过则保留预占
+        concurrent_keys = self._acquire_concurrent(rules, user_id, provider, model, profile)
         invocation = AiRuntimeInvocation(
             invocation_id=str(uuid.uuid4()),
             user_id=user_id,
@@ -226,6 +251,7 @@ class AiGovernanceService:
             status="running",
             started_at=datetime.utcnow(),
         )
+        invocation._cc_keys = concurrent_keys
         self.session.add(invocation)
         self.session.commit()
         return invocation
@@ -242,6 +268,7 @@ class AiGovernanceService:
         usage: dict[str, Any],
         cost_micro_usd: int,
     ) -> None:
+        self._release_concurrent(invocation)
         if invocation:
             invocation.status = "success" if status_value == "success" else "error"
             invocation.finished_at = datetime.utcnow()
@@ -253,12 +280,95 @@ class AiGovernanceService:
         self.session.commit()
 
     def block_invocation(self, invocation: AiRuntimeInvocation | None) -> None:
+        self._release_concurrent(invocation)
         if not invocation:
             return
         invocation.status = "blocked"
         invocation.finished_at = datetime.utcnow()
         self.session.add(invocation)
         self.session.commit()
+
+    def _acquire_concurrent(
+        self,
+        rules: list[AiGovernanceRule],
+        user_id: int | None,
+        provider: AiProvider,
+        model: AiModel,
+        profile: AiModelProfile,
+    ) -> list[str]:
+        """对命中规则做并发预占，返回成功预占的 Redis key 列表。enforce 模式超限会抛 AiGovernanceBlocked。"""
+        acquired: list[str] = []
+        for rule in rules:
+            limit = rule.max_concurrent
+            if not limit or limit <= 0:
+                continue
+            key = self._concurrent_key(rule)
+            current = cache_incr(key, ttl_seconds=_CONCURRENT_TTL)
+            if current > limit:
+                cache_decr(key, ttl_seconds=_CONCURRENT_TTL)
+                window_start, window_end = _window_bounds(rule.period)
+                message = f"AI 治理规则 {rule.name} 已超出 concurrent 限制: {current}/{limit}"
+                notified = (
+                    self._notify_once(rule, "concurrent", "blocked", window_start, window_end, message)
+                    if rule.notify_enabled
+                    else False
+                )
+                self._event(
+                    rule,
+                    user_id,
+                    profile,
+                    model,
+                    provider,
+                    "blocked",
+                    "concurrent",
+                    current,
+                    limit,
+                    window_start,
+                    window_end,
+                    message,
+                    notified,
+                )
+                if rule.mode == "enforce":
+                    for prev_key in acquired:
+                        cache_decr(prev_key, ttl_seconds=_CONCURRENT_TTL)
+                    raise AiGovernanceBlocked(message, metric="concurrent")
+            else:
+                acquired.append(key)
+                if current == limit:
+                    window_start, window_end = _window_bounds(rule.period)
+                    message = f"AI 治理规则 {rule.name} 即将达到 concurrent 限制: {current}/{limit}"
+                    self._event(
+                        rule,
+                        user_id,
+                        profile,
+                        model,
+                        provider,
+                        "warn",
+                        "concurrent",
+                        current,
+                        limit,
+                        window_start,
+                        window_end,
+                        message,
+                        False,
+                    )
+        return acquired
+
+    def _release_concurrent(self, invocation: AiRuntimeInvocation | None) -> None:
+        """释放本次调用预占的并发计数。幂等。"""
+        if not invocation:
+            return
+        keys = getattr(invocation, "_cc_keys", None) or []
+        for key in keys:
+            cache_decr(key, ttl_seconds=_CONCURRENT_TTL)
+        invocation._cc_keys = []
+
+    def _concurrent_key(self, rule: AiGovernanceRule) -> str:
+        if rule.scope_type == "user":
+            return f"ai:gov:cc:user:{rule.user_id}"
+        if rule.scope_type == "profile":
+            return f"ai:gov:cc:profile:{rule.profile_id}"
+        return "ai:gov:cc:global"
 
     def _check_pre_rule(
         self,
@@ -277,7 +387,6 @@ class AiGovernanceService:
                 self._request_count(rule, user_id, profile.id, window_start, window_end) + 1,
                 False,
             ),
-            ("concurrent", rule.max_concurrent, self._concurrent_count(rule, user_id, profile.id) + 1, False),
             ("token", rule.max_tokens, self._token_sum(rule, user_id, profile.id, window_start, window_end), True),
             (
                 "cost",
@@ -355,7 +464,7 @@ class AiGovernanceService:
             ):
                 if limit is None or limit <= 0 or current < limit:
                     continue
-                event_type = "blocked" if current > limit else "warn"
+                event_type = "breach" if current > limit else "warn"
                 message = f"AI 治理规则 {rule.name} 已达到 {metric} 限制: {current}/{limit}"
                 notified = (
                     self._notify_once(rule, metric, event_type, window_start, window_end, message)
@@ -403,15 +512,6 @@ class AiGovernanceService:
             AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end
         )
         statement = self._apply_rule_filter(statement, rule, user_id, profile_id, AiModelCallLog)
-        return int(self.session.exec(statement).one() or 0)
-
-    def _concurrent_count(self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None) -> int:
-        cutoff = datetime.utcnow() - timedelta(hours=2)
-        statement = select(func.count(AiRuntimeInvocation.id)).where(
-            AiRuntimeInvocation.status == "running",
-            AiRuntimeInvocation.started_at >= cutoff,
-        )
-        statement = self._apply_rule_filter(statement, rule, user_id, profile_id, AiRuntimeInvocation)
         return int(self.session.exec(statement).one() or 0)
 
     def _apply_rule_filter(self, statement, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, table):

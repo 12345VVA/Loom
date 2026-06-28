@@ -16,6 +16,10 @@ request_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("req
 request_path_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_path", default=None)
 request_method_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_method", default=None)
 current_user_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_user_id", default=None)
+# 工作流实例关联：评估按 instance 精确聚合 token/cost 时，由 runtime_service._log_call 读取
+workflow_instance_id_ctx: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "workflow_instance_id", default=None
+)
 _STANDARD_LOG_KEYS = {
     "name",
     "msg",

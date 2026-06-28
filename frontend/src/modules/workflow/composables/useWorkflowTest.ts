@@ -1,6 +1,7 @@
 import { reactive, ref, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { findInvalidNodeInput } from '../utils';
+import { useStream } from '/@/cool/service/stream';
 import dayjs from 'dayjs';
 
 interface FlowNode {
@@ -15,6 +16,13 @@ interface FlowNode {
 	style?: Record<string, any>;
 	parentNode?: string;
 }
+
+// 实例终态：收到这些状态后停止 SSE 流
+const TERMINAL_STATUSES = new Set(['success', 'failed', 'paused', 'cancelled']);
+// 节点完成事件触发 logs 刷新的防抖间隔（合并快速工作流的连续事件）
+const LOG_REFRESH_DEBOUNCE_MS = 300;
+// SSE 异常断开后的最大重连次数
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 export function useWorkflowTest(
 	service: any,
@@ -42,13 +50,15 @@ export function useWorkflowTest(
 		items: [] as any[]
 	});
 
-	let logPollTimer: ReturnType<typeof setInterval> | null = null;
-	let logPollDelay = 2000;
-	let consecutiveErrors = 0;
-	const maxErrors = 10;
+	// SSE 实时流（替代原定时轮询）
+	const stream = useStream();
+	let streamActive = false;
+	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let logRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let reconnectAttempts = 0;
 
 	function clearTestStatus() {
-		stopLogPolling();
+		stopStream();
 		testLogDrawer.instanceId = null;
 		testLogDrawer.visible = false;
 		testLogDrawer.items = [];
@@ -59,6 +69,10 @@ export function useWorkflowTest(
 	function reopenTestLogDrawer() {
 		if (testLogDrawer.instanceId) {
 			testLogDrawer.visible = true;
+			// 重开抽屉时，若实例仍在运行且 SSE 已断开，重连续接
+			if (!streamActive && !TERMINAL_STATUSES.has(testLogDrawer.status)) {
+				startStream();
+			}
 		}
 	}
 
@@ -123,7 +137,7 @@ export function useWorkflowTest(
 			testLogDrawer.status = 'running';
 
 			clearNodeStatus();
-			startLogPolling();
+			startStream();
 		} catch (err: any) {
 			ElMessage.error(t('启动测试失败: ') + (err.message || err));
 		} finally {
@@ -131,28 +145,96 @@ export function useWorkflowTest(
 		}
 	}
 
-	function startLogPolling() {
-		stopLogPolling();
-		logPollDelay = 2000;
-		consecutiveErrors = 0;
-		pollInstanceStatus();
+	// ===== SSE 实时流：替代原 info+logs 定时轮询 =====
+
+	async function startStream() {
+		stopStream();
+		streamActive = true;
+		reconnectAttempts = 0;
+		// 先对齐一次状态：断线/重开期间实例可能已进入终态（SSE 不会重发终态事件）
+		await fetchLogsAndRefresh(null);
+		// await 期间组件可能已卸载/抽屉关闭触发 stopStream（streamActive=false），复查避免遗留 SSE 连接
+		if (!streamActive) return;
+		if (TERMINAL_STATUSES.has(testLogDrawer.status)) {
+			streamActive = false;
+			return;
+		}
+		// 订阅 SSE：后端 /stream 推送命名事件，前端按 data.status 分流（useStream.parseSse 仅解析 data 字段）
+		stream.invoke({
+			url: `/admin/workflow/instance/stream?instanceId=${testLogDrawer.instanceId}`,
+			method: 'GET',
+			cb: handleStreamEvent
+		}).catch(() => {
+			// SSE 异常断开：非终态则指数退避重连
+			if (streamActive && !TERMINAL_STATUSES.has(testLogDrawer.status)) {
+				scheduleReconnect();
+			}
+		});
 	}
 
-	function stopLogPolling() {
-		if (logPollTimer) {
-			clearTimeout(logPollTimer);
-			logPollTimer = null;
+	function stopStream() {
+		streamActive = false;
+		stream.cancel();
+		if (reconnectTimer) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+		}
+		if (logRefreshTimer) {
+			clearTimeout(logRefreshTimer);
+			logRefreshTimer = null;
 		}
 	}
 
-	async function pollInstanceStatus() {
-		if (!testLogDrawer.instanceId) return;
-		try {
-			// 如果是初次获取列表（items 为空），显示 loading
-			if (testLogDrawer.items.length === 0) {
-				testLogDrawer.loading = true;
-			}
+	function scheduleReconnect() {
+		if (!streamActive || TERMINAL_STATUSES.has(testLogDrawer.status)) return;
+		if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+			ElMessage.error(t('实时连接断开，请刷新后重试'));
+			return;
+		}
+		reconnectAttempts++;
+		const delay = Math.min(1000 * reconnectAttempts, 8000);
+		reconnectTimer = setTimeout(() => startStream(), delay);
+	}
 
+	function handleStreamEvent(data: any) {
+		const status = data?.status;
+		if (!status) return;
+		const currentNode = data.node_id || null;
+		testLogDrawer.status = status;
+
+		// 即时高亮当前推进到的节点（不等 logs 刷新，避免 ~300ms 视觉延迟）
+		if (currentNode && status === 'running') {
+			highlightRunningNode(currentNode);
+		}
+		// 节点完成/状态变化 → 防抖拉 logs 刷新画布与抽屉的详细 runLog
+		scheduleLogRefresh(currentNode);
+
+		if (TERMINAL_STATUSES.has(status)) {
+			stopStream();
+		}
+	}
+
+	function highlightRunningNode(nodeId: string) {
+		elements.value.forEach(el => {
+			if (!('source' in el) && el.id === nodeId) {
+				(el as any).class = 'node-status-running';
+				if (!el.data) el.data = { config: {} };
+				if (!el.data.runLog) el.data.runLog = { status: 'running' };
+			}
+		});
+	}
+
+	function scheduleLogRefresh(currentNode: string | null) {
+		if (logRefreshTimer) clearTimeout(logRefreshTimer);
+		logRefreshTimer = setTimeout(() => fetchLogsAndRefresh(currentNode), LOG_REFRESH_DEBOUNCE_MS);
+	}
+
+	async function fetchLogsAndRefresh(currentNode: string | null) {
+		if (!testLogDrawer.instanceId) return;
+		if (testLogDrawer.items.length === 0) {
+			testLogDrawer.loading = true;
+		}
+		try {
 			const infoPromise = (service as any).workflow.instance.info({
 				id: testLogDrawer.instanceId
 			});
@@ -177,25 +259,13 @@ export function useWorkflowTest(
 					index === logs.length - 1
 			}));
 
-			updateNodeStatus(logs, info.status, info.currentNode);
+			updateNodeStatus(logs, info.status, currentNode || info.currentNode);
 
-			if (info.status === 'success' || info.status === 'failed' || info.status === 'paused') {
-				stopLogPolling();
-			} else {
-				consecutiveErrors = 0; // Reset on successful poll
-				if (logPollDelay < 10000) logPollDelay += 1000;
-				logPollTimer = setTimeout(pollInstanceStatus, logPollDelay);
+			if (TERMINAL_STATUSES.has(info.status)) {
+				stopStream();
 			}
 		} catch (err) {
-			console.error('Poll failed', err);
-			consecutiveErrors++;
-			if (consecutiveErrors >= maxErrors) {
-				stopLogPolling();
-				testLogDrawer.loading = false;
-				ElMessage.error(t('获取日志失败，请稍后重试'));
-			} else {
-				logPollTimer = setTimeout(pollInstanceStatus, logPollDelay);
-			}
+			console.error('Fetch logs failed', err);
 		} finally {
 			testLogDrawer.loading = false;
 		}
@@ -259,7 +329,8 @@ export function useWorkflowTest(
 		reopenTestLogDrawer,
 		openTestDialog,
 		startTestRun,
-		stopLogPolling,
+		// 保留原导出名 stopLogPolling，editor.vue 调用方零改动；内部已切换为 SSE 流
+		stopLogPolling: stopStream,
 		expandAllTestLogs,
 		collapseAllTestLogs,
 		formatTime

@@ -21,6 +21,8 @@ from app.modules.media.model import media as _media_models  # noqa: F401
 from app.modules.notification.model import notification as _notification_models  # noqa: F401
 from app.modules.task.model import task as _task_models  # noqa: F401
 from app.modules.workflow.model import workflow as _workflow_models  # noqa: F401
+from app.modules.workflow_eval.model import eval_run as _workflow_eval_eval_run_models  # noqa: F401
+from app.modules.workflow_eval.model import test_set as _workflow_eval_test_set_models  # noqa: F401
 
 
 @event.listens_for(BaseEntity, "before_update", propagate=True)
@@ -70,6 +72,7 @@ def init_db():
     """初始化数据库"""
     SQLModel.metadata.create_all(engine)
     _ensure_sqlite_compatible_schema()
+    _ensure_indexes()
 
 
 def get_db_path() -> Path | None:
@@ -181,6 +184,7 @@ def _ensure_sqlite_compatible_schema() -> None:
             "user_id": "ALTER TABLE ai_model_call_log ADD COLUMN user_id INTEGER",
             "cost_micro_usd": "ALTER TABLE ai_model_call_log ADD COLUMN cost_micro_usd INTEGER DEFAULT 0",
             "currency": "ALTER TABLE ai_model_call_log ADD COLUMN currency VARCHAR DEFAULT 'USD'",
+            "workflow_instance_id": "ALTER TABLE ai_model_call_log ADD COLUMN workflow_instance_id INTEGER",
         },
         "ai_generation_task": {
             "task_type": "ALTER TABLE ai_generation_task ADD COLUMN task_type VARCHAR DEFAULT 'chat'",
@@ -242,6 +246,15 @@ def _ensure_sqlite_compatible_schema() -> None:
             "celery_task_id": "ALTER TABLE workflow_instance ADD COLUMN celery_task_id VARCHAR",
             "user_id": "ALTER TABLE workflow_instance ADD COLUMN user_id INTEGER",
         },
+        "workflow_execution_log": {
+            "payload_type": "ALTER TABLE workflow_execution_log ADD COLUMN payload_type VARCHAR DEFAULT 'full'",
+            "diff_base_log_id": "ALTER TABLE workflow_execution_log ADD COLUMN diff_base_log_id INTEGER",
+            "input_storage_ref": "ALTER TABLE workflow_execution_log ADD COLUMN input_storage_ref VARCHAR",
+            "output_storage_ref": "ALTER TABLE workflow_execution_log ADD COLUMN output_storage_ref VARCHAR",
+        },
+        "workflow_eval_case_result": {
+            "actual_output_storage_ref": "ALTER TABLE workflow_eval_case_result ADD COLUMN actual_output_storage_ref VARCHAR",
+        },
         "workflow_definition": {
             "user_id": "ALTER TABLE workflow_definition ADD COLUMN user_id INTEGER",
         },
@@ -297,6 +310,8 @@ def _ensure_sqlite_compatible_schema() -> None:
         "media_asset",
         "workflow_definition",
         "workflow_instance",
+        "workflow_execution_log",
+        "workflow_eval_case_result",
         "sys_user_role",
         "sys_role_menu",
         "sys_role_department",
@@ -328,3 +343,64 @@ def _ensure_sqlite_compatible_schema() -> None:
                             connection.execute(text(ddl))
                         except Exception as e:
                             print(f"Failed to add specific column {col_name} to {table_name}: {e}")
+
+
+# 幂等索引清单：每条 = (索引名, 表名, 列 SQL 片段, 可选 WHERE)。
+# Field(index=True) 仅对 create_all 新建表生效，现有库不会自动补索引；这里为现有库补齐查询关键索引。
+# 复合索引优先服务统计聚合（按时间范围扫描）与分页（keyset），单列索引由 create_all 对新表建立，此处为旧库补齐。
+INDEX_DEFINITIONS: list[tuple[str, str, str, str | None]] = [
+    # ai_model_call_log：统计看板/日志统计(P0-1)的主查询路径——按 created_at 范围扫描
+    ("ix_ai_model_call_log_created_at", "ai_model_call_log", "created_at", None),
+    ("ix_ai_model_call_log_status_created_at", "ai_model_call_log", "status, created_at", None),
+    ("ix_ai_model_call_log_user_id_created_at", "ai_model_call_log", "user_id, created_at", None),
+    ("ix_ai_model_call_log_model_id_created_at", "ai_model_call_log", "model_id, created_at", None),
+    # workflow_execution_log：节点日志按实例 + 时间排序/分页(T7)
+    ("ix_workflow_execution_log_instance_id_created_at", "workflow_execution_log", "instance_id, created_at", None),
+    # workflow_instance：实例列表按定义 + 时间查询
+    ("ix_workflow_instance_definition_id_created_at", "workflow_instance", "definition_id, created_at", None),
+    # workflow_eval：回归对比（同测试集按时间）与 P95 排序（同 run 按 latency）的复合索引（T9）
+    ("ix_workflow_eval_run_test_set_id_created_at", "workflow_eval_run", "test_set_id, created_at", None),
+    ("ix_workflow_eval_case_result_eval_run_id_latency_ms", "workflow_eval_case_result", "eval_run_id, latency_ms", None),
+    ("ix_workflow_eval_case_result_eval_run_id_case_key", "workflow_eval_case_result", "eval_run_id, case_key", None),
+    ("ix_workflow_eval_test_case_test_set_id_case_key", "workflow_eval_test_case", "test_set_id, case_key", None),
+]
+
+
+def _ensure_indexes() -> None:
+    """为现有库幂等补建查询关键索引（CREATE INDEX IF NOT EXISTS）。
+
+    与 _ensure_sqlite_compatible_schema 的补列机制互补。SQLite 与 PostgreSQL 均支持
+    `CREATE INDEX IF NOT EXISTS` 与部分索引（WHERE 子句）。生产 PG 大表可设
+    SKIP_INDEX_ENSURE=True 跳过，由 DBA 在维护窗口用 CREATE INDEX CONCURRENTLY 建立。
+    """
+    if settings.SKIP_INDEX_ENSURE:
+        return
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    # 收集涉及的现有索引名，跳过已存在项，避免重复 DDL
+    existing_indexes: set[str] = set()
+    for table_name in {item[1] for item in INDEX_DEFINITIONS}:
+        if table_name in existing_tables:
+            for ix in inspector.get_indexes(table_name):
+                if ix.get("name"):
+                    existing_indexes.add(ix["name"])
+
+    created = 0
+    with engine.begin() as connection:
+        for index_name, table_name, columns, where_clause in INDEX_DEFINITIONS:
+            if table_name not in existing_tables:
+                continue
+            if index_name in existing_indexes:
+                continue
+            sql = f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns})"
+            if where_clause:
+                sql += f" WHERE {where_clause}"
+            try:
+                connection.execute(text(sql))
+                created += 1
+            except Exception as e:
+                print(f"Failed to create index {index_name} on {table_name}: {e}")
+    if created:
+        print(f"[db] ensured {created} missing index(es).")

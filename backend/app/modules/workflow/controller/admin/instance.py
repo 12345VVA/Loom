@@ -40,6 +40,22 @@ from app.modules.workflow.service.workflow_service import (
 logger = logging.getLogger(__name__)
 
 
+def _restore_logs_payload(logs: list[WorkflowExecutionLog]) -> None:
+    """T8+T6 还原节点载荷：先按 storage_ref 回填对象存储内容，再用前一条 output 填充 ref_prev 的 input。
+
+    前端拿到的 input_data/output_data 为还原后的完整脱敏载荷字符串，base-node 零改动。
+    """
+    from app.framework.storage import resolve_payload
+
+    prev_output: str | None = None
+    for log in logs:
+        log.input_data = resolve_payload(log.input_data, log.input_storage_ref)
+        log.output_data = resolve_payload(log.output_data, log.output_storage_ref)
+        if getattr(log, "payload_type", "full") == "ref_prev":
+            log.input_data = prev_output if prev_output is not None else "{}"
+        prev_output = log.output_data
+
+
 @CoolController(
     CoolControllerMeta(
         module="workflow",
@@ -109,6 +125,8 @@ class WorkflowInstanceController(BaseController):
     def get_logs(
         self,
         instance_id: int = Query(..., alias="instanceId"),
+        since_log_id: int | None = Query(None, alias="sinceLogId", description="仅返回 id 大于此值的日志（增量拉取）"),
+        limit: int | None = Query(None, le=500, description="最多返回条数，缺省全量"),
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ) -> list[WorkflowExecutionLogRead]:
@@ -116,12 +134,14 @@ class WorkflowInstanceController(BaseController):
         if not instance:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工作流实例不存在")
         assert_workflow_owner(session, instance, current_user)
-        stmt = (
-            select(WorkflowExecutionLog)
-            .where(WorkflowExecutionLog.instance_id == instance_id)
-            .order_by(WorkflowExecutionLog.created_at.asc())
-        )
+        stmt = select(WorkflowExecutionLog).where(WorkflowExecutionLog.instance_id == instance_id)
+        if since_log_id is not None:
+            stmt = stmt.where(WorkflowExecutionLog.id > since_log_id)
+        stmt = stmt.order_by(WorkflowExecutionLog.created_at.asc(), WorkflowExecutionLog.id.asc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
         logs = session.exec(stmt).all()
+        _restore_logs_payload(logs)
         return logs
 
     @Get("/stream", summary="SSE 实时推送工作流进度", permission="workflow:instance:page")

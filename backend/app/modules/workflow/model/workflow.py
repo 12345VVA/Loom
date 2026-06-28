@@ -55,6 +55,12 @@ class WorkflowExecutionLog(BaseEntity, table=True):
     output_data: str = Field(default="{}", max_length=100000)
     latency_ms: int = Field(default=0)
     status: str = Field(default="success", max_length=50)  # success, error
+    # T6：full=全量输入；ref_prev=输入引用上一条 log 的 output（消除 input 冗余）
+    payload_type: str = Field(default="full", max_length=20)
+    diff_base_log_id: int | None = Field(default=None, index=True)
+    # T8：超大载荷分离到对象存储后的引用（ref 非空时，input_data/output_data 为空）
+    input_storage_ref: str | None = Field(default=None, max_length=500)
+    output_storage_ref: str | None = Field(default=None, max_length=500)
 
 
 # --- DTO 传输对象定义 ---

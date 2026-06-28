@@ -105,20 +105,20 @@
         "name": "治理规则",
         "type": "menu",
         "module": "ai",
-        "resource": "governanceRule",
+        "resource": "governance_rule",
         "path": "/ai/governance-rule",
         "component": "modules/ai/views/governance-rule.vue",
         "icon": "icon-set",
         "sort_order": 8,
         "role_codes": ["admin"],
         "children": [
-          { "code": "ai_governance_rule_add", "name": "新增", "type": "button", "permission": "ai:governanceRule:add", "role_codes": ["admin"] },
-          { "code": "ai_governance_rule_delete", "name": "删除", "type": "button", "permission": "ai:governanceRule:delete", "role_codes": ["admin"] },
-          { "code": "ai_governance_rule_update", "name": "修改", "type": "button", "permission": "ai:governanceRule:update", "role_codes": ["admin"] },
-          { "code": "ai_governance_rule_page", "name": "分页查询", "type": "button", "permission": "ai:governanceRule:page", "role_codes": ["admin"] },
-          { "code": "ai_governance_rule_info", "name": "详情", "type": "button", "permission": "ai:governanceRule:info", "role_codes": ["admin"] },
-          { "code": "ai_governance_rule_toggle", "name": "启停", "type": "button", "permission": "ai:governanceRule:toggle", "role_codes": ["admin"] },
-          { "code": "ai_governance_rule_match", "name": "测试匹配", "type": "button", "permission": "ai:governanceRule:match", "role_codes": ["admin"] }
+          { "code": "ai_governance_rule_add", "name": "新增", "type": "button", "permission": "ai:governance_rule:add", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_delete", "name": "删除", "type": "button", "permission": "ai:governance_rule:delete", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_update", "name": "修改", "type": "button", "permission": "ai:governance_rule:update", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_page", "name": "分页查询", "type": "button", "permission": "ai:governance_rule:page", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_info", "name": "详情", "type": "button", "permission": "ai:governance_rule:info", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_toggle", "name": "启停", "type": "button", "permission": "ai:governance_rule:toggle", "role_codes": ["admin"] },
+          { "code": "ai_governance_rule_match", "name": "测试匹配", "type": "button", "permission": "ai:governance_rule:match", "role_codes": ["admin"] }
         ]
       },
       {
@@ -126,17 +126,17 @@
         "name": "治理事件",
         "type": "menu",
         "module": "ai",
-        "resource": "governanceEvent",
+        "resource": "governance_event",
         "path": "/ai/governance-event",
         "component": "modules/ai/views/governance-event.vue",
         "icon": "icon-log",
         "sort_order": 9,
         "role_codes": ["admin"],
         "children": [
-          { "code": "ai_governance_event_page", "name": "分页查询", "type": "button", "permission": "ai:governanceEvent:page", "role_codes": ["admin"] },
-          { "code": "ai_governance_event_info", "name": "详情", "type": "button", "permission": "ai:governanceEvent:info", "role_codes": ["admin"] },
-          { "code": "ai_governance_event_list", "name": "列表查询", "type": "button", "permission": "ai:governanceEvent:list", "role_codes": ["admin"] },
-          { "code": "ai_governance_event_stats", "name": "统计", "type": "button", "permission": "ai:governanceEvent:stats", "role_codes": ["admin"] }
+          { "code": "ai_governance_event_page", "name": "分页查询", "type": "button", "permission": "ai:governance_event:page", "role_codes": ["admin"] },
+          { "code": "ai_governance_event_info", "name": "详情", "type": "button", "permission": "ai:governance_event:info", "role_codes": ["admin"] },
+          { "code": "ai_governance_event_list", "name": "列表查询", "type": "button", "permission": "ai:governance_event:list", "role_codes": ["admin"] },
+          { "code": "ai_governance_event_stats", "name": "统计", "type": "button", "permission": "ai:governance_event:stats", "role_codes": ["admin"] }
         ]
       },
       {

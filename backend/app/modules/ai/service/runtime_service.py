@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.core.logging import workflow_instance_id_ctx
 from app.modules.ai.model.ai import (
     AiAudioRequest,
     AiChatRequest,
@@ -30,6 +31,7 @@ from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.governance_service import AiGovernanceBlocked, AiGovernanceService
 from app.modules.ai.service.registry_service import AiModelRegistryService
 from app.modules.ai.service.security_service import AiSecurityService
+from app.modules.ai.service.stats_service import invalidate_summary_cache
 from app.modules.ai.service.utils import (
     _adapter_timeout,
     _calculate_cost_micro_usd,
@@ -708,6 +710,9 @@ class AiModelRuntimeService:
             currency="USD",
             error_message=(error or "")[:500] or None,
             request_id=request_id,
+            workflow_instance_id=workflow_instance_id_ctx.get(),
         )
         self.session.add(log)
         self.session.commit()
+        # 失效统计看板缓存：新调用日志已落库，旧聚合结果不再准确
+        invalidate_summary_cache()

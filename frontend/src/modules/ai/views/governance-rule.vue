@@ -4,6 +4,7 @@
 			<cl-refresh-btn />
 			<cl-add-btn />
 			<cl-multi-delete-btn />
+			<el-button type="primary" plain @click="openMatch">{{ $t('测试匹配') }}</el-button>
 			<cl-filter :label="$t('范围')">
 				<cl-select :options="scopeOptions" prop="scopeType" :width="130" />
 			</cl-filter>
@@ -30,6 +31,66 @@
 		</cl-row>
 
 		<cl-upsert ref="Upsert" />
+
+		<el-dialog v-model="matcher.visible" :title="$t('测试匹配')" width="900px">
+			<el-form label-position="top">
+				<el-row :gutter="16">
+					<el-col :span="12">
+						<el-form-item :label="$t('用户')">
+							<cl-select-table
+								v-model="matcher.form.userId"
+								:service="service.base.sys.user"
+								:multiple="false"
+								:dict="{ text: 'fullName' }"
+								:columns="[
+									{ label: $t('用户名'), prop: 'username', minWidth: 140 },
+									{ label: $t('姓名'), prop: 'fullName', minWidth: 140 }
+								]"
+							/>
+						</el-form-item>
+					</el-col>
+					<el-col :span="12">
+						<el-form-item label="Profile">
+							<cl-select-table
+								v-model="matcher.form.profileId"
+								:service="service.ai.profile"
+								:multiple="false"
+								:dict="{ text: 'name' }"
+								:columns="[
+									{ label: $t('编码'), prop: 'code', minWidth: 140 },
+									{ label: $t('名称'), prop: 'name', minWidth: 140 },
+									{ label: $t('模型'), prop: 'modelName', minWidth: 140 }
+								]"
+							/>
+						</el-form-item>
+					</el-col>
+				</el-row>
+			</el-form>
+
+			<div v-if="matcher.result" class="match-summary">
+				{{ $t('命中规则数') }}：{{ matcher.result.count }}
+			</div>
+
+			<el-table :data="matcher.result?.items || []" max-height="380">
+				<el-table-column prop="code" :label="$t('编码')" min-width="140" />
+				<el-table-column prop="name" :label="$t('名称')" min-width="140" />
+				<el-table-column prop="scopeType" :label="$t('范围')" width="100">
+					<template #default="{ row }">{{ optionLabel(scopeOptions, row.scopeType) }}</template>
+				</el-table-column>
+				<el-table-column prop="username" :label="$t('用户')" min-width="120" />
+				<el-table-column prop="profileName" label="Profile" min-width="140" />
+				<el-table-column prop="period" :label="$t('周期')" width="90">
+					<template #default="{ row }">{{ optionLabel(periodOptions, row.period) }}</template>
+				</el-table-column>
+				<el-table-column prop="maxRequests" :label="$t('请求')" width="90" />
+				<el-table-column prop="maxTokens" label="Tokens" width="100" />
+			</el-table>
+
+			<template #footer>
+				<el-button @click="matcher.visible = false">{{ $t('关闭') }}</el-button>
+				<el-button type="primary" :loading="matcher.loading" @click="runMatch">{{ $t('测试匹配') }}</el-button>
+			</template>
+		</el-dialog>
 	</cl-crud>
 </template>
 
@@ -42,6 +103,7 @@ import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import { reactive } from 'vue';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -61,6 +123,16 @@ const modeOptions = [
 	{ label: t('拦截'), value: 'enforce' },
 	{ label: t('观察'), value: 'observe' }
 ];
+
+const matcher = reactive({
+	visible: false,
+	loading: false,
+	form: {
+		userId: undefined as any,
+		profileId: undefined as any
+	},
+	result: null as { count: number; items: any[] } | null
+});
 
 const Upsert = useUpsert({
 	dialog: { width: '860px' },
@@ -183,7 +255,7 @@ const Table = useTable({
 
 const Crud = useCrud(
 	{
-		service: aiService.governanceRule
+		service: aiService.governance_rule
 	},
 	app => {
 		app.refresh();
@@ -191,9 +263,32 @@ const Crud = useCrud(
 );
 
 async function toggleRule(row: any) {
-	await aiService.governanceRule.toggle({ id: row.id });
+	await aiService.governance_rule.toggle({ id: row.id });
 	ElMessage.success(t('操作成功'));
 	Crud.value?.refresh();
+}
+
+function openMatch() {
+	matcher.form.userId = undefined;
+	matcher.form.profileId = undefined;
+	matcher.result = null;
+	matcher.visible = true;
+}
+
+async function runMatch() {
+	matcher.loading = true;
+	try {
+		const res = await aiService.governance_rule.match({
+			userId: matcher.form.userId,
+			profileId: matcher.form.profileId
+		});
+		matcher.result = res || { count: 0, items: [] };
+	} catch (err: any) {
+		ElMessage.error(err.message || t('匹配失败'));
+		matcher.result = { count: 0, items: [] };
+	} finally {
+		matcher.loading = false;
+	}
 }
 
 function optionLabel(options: { label: string; value: string }[], value: string) {

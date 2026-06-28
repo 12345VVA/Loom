@@ -31,6 +31,7 @@ celery_app = Celery(
         "app.modules.task.tasks.system_tasks",
         "app.modules.ai.tasks.generation_tasks",
         "app.modules.workflow.tasks.workflow_tasks",
+        "app.modules.workflow_eval.tasks.eval_tasks",
     ],
 )
 
@@ -46,10 +47,13 @@ celery_app.conf.update(
         Queue("celery"),
         Queue("default"),
         Queue("workflow"),
+        Queue("workflow.eval"),  # T9：批量评估独立队列，生产用 -Q workflow.eval 独占 worker，避免饿死正式工作流
         *(Queue(queue_name) for queue_name in AI_TASK_QUEUES),
     ),
     task_routes={
         "workflow.execute": {"queue": "workflow"},
+        "workflow.eval.run": {"queue": "workflow.eval"},
+        "workflow.eval.sweep_timeouts": {"queue": "default"},
         "ai.execute_generation_task": {"queue": "ai.chat"},
         "ai.clean_expired_governance_data": {"queue": "default"},
         # 系统任务统一走 default 队列，避免落到匿名 celery 队列造成分流混乱
@@ -74,5 +78,10 @@ celery_app.conf.beat_schedule = {
     "clean-expired-ai-governance-data-daily": {
         "task": "ai.clean_expired_governance_data",
         "schedule": crontab(hour=3, minute=0),
+    },
+    # 每 15 分钟巡检超时未终结的评估运行（兜底 worker 进程级死亡/OOM kill）
+    "sweep-timed-out-eval-runs": {
+        "task": "workflow.eval.sweep_timeouts",
+        "schedule": 900.0,
     },
 }
