@@ -23,7 +23,13 @@
           { "code": "workflow_definition_delete", "name": "删除", "type": "button", "permission": "workflow:definition:delete", "role_codes": ["admin"] },
           { "code": "workflow_definition_update", "name": "修改", "type": "button", "permission": "workflow:definition:update", "role_codes": ["admin"] },
           { "code": "workflow_definition_page", "name": "分页", "type": "button", "permission": "workflow:definition:page", "role_codes": ["admin"] },
-          { "code": "workflow_definition_info", "name": "详情", "type": "button", "permission": "workflow:definition:info", "role_codes": ["admin"] }
+          { "code": "workflow_definition_info", "name": "详情", "type": "button", "permission": "workflow:definition:info", "role_codes": ["admin"] },
+          { "code": "workflow_version_page", "name": "版本列表", "type": "button", "permission": "workflow:version:page", "role_codes": ["admin"] },
+          { "code": "workflow_version_info", "name": "版本详情", "type": "button", "permission": "workflow:version:info", "role_codes": ["admin"] },
+          { "code": "workflow_version_list", "name": "版本查询", "type": "button", "permission": "workflow:version:list", "role_codes": ["admin"] },
+          { "code": "workflow_version_publish", "name": "发布版本", "type": "button", "permission": "workflow:version:publish", "role_codes": ["admin"] },
+          { "code": "workflow_version_rollback", "name": "回滚版本", "type": "button", "permission": "workflow:version:rollback", "role_codes": ["admin"] },
+          { "code": "workflow_version_diff", "name": "版本对比", "type": "button", "permission": "workflow:version:diff", "role_codes": ["admin"] }
         ]
       },
       {

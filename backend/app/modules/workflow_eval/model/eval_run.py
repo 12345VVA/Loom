@@ -20,9 +20,10 @@ class WorkflowEvalRun(BaseEntity, table=True):
 
     test_set_id: int = Field(index=True)
     definition_id: int | None = Field(default=None, index=True)
-    # 本次评估用的工作流图快照（JSON）：不依赖 definition 当前版本，保证历史回归可比
+    # 存量兼容：旧 run 的图快照；新 run 改用 definition_version_id，此列保留作 fallback
     graph_json_snapshot: str = Field(default="{}")
-    version_label: str | None = Field(default=None, max_length=100)  # 用户打的版本号
+    definition_version_id: int | None = Field(default=None, index=True)  # 评估执行的精确版本（替代 snapshot）
+    version_label: str | None = Field(default=None, max_length=100)  # 展示标签（仅前端显示，不再作关联键）
     status: str = Field(default=EvalRunStatus.PENDING, index=True, max_length=50)
 
     total: int = Field(default=0)
@@ -91,6 +92,7 @@ class WorkflowEvalRunRead(BaseModel):
     id: int
     test_set_id: int
     definition_id: int | None = None
+    definition_version_id: int | None = None
     version_label: str | None = None
     status: str
     total: int = 0
@@ -118,6 +120,7 @@ class WorkflowEvalRunStartRequest(BaseModel):
 
     test_set_id: int
     definition_id: int | None = None  # 缺省取测试集关联的定义
+    definition_version_id: int | None = None  # 缺省取 definition 的 current_version_id
     version_label: str | None = None
     evaluator_type: str = "rule_match"
 

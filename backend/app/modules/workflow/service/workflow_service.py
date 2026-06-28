@@ -961,16 +961,7 @@ class WorkflowService(BaseAdminCrudService):
             if existing:
                 raise HTTPException(status_code=400, detail=f"工作流编码 '{code}' 已存在。")
 
-        # 2. 拓扑 JSON 基础校验
-        graph_json_str = data.get("graph_json")
-        if graph_json_str and graph_json_str != "{}":
-            try:
-                graph_json = json.loads(graph_json_str)
-                if not isinstance(graph_json, dict) or "nodes" not in graph_json or "edges" not in graph_json:
-                    raise ValueError("工作流拓扑结构不合法")
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"保存失败：画布拓扑 JSON 校验失败: {e}")
-
+        # 注：graph_json 已移至版本表，拓扑校验改由 WorkflowVersionService.save_draft 承担
         return data
 
     def _before_update(self, data: dict, entity: Any) -> dict:
@@ -985,16 +976,7 @@ class WorkflowService(BaseAdminCrudService):
             if existing:
                 raise HTTPException(status_code=400, detail=f"工作流编码 '{code}' 已存在。")
 
-        # 2. 拓扑 JSON 基础校验
-        graph_json_str = data.get("graph_json")
-        if graph_json_str and graph_json_str != "{}":
-            try:
-                graph_json = json.loads(graph_json_str)
-                if not isinstance(graph_json, dict) or "nodes" not in graph_json or "edges" not in graph_json:
-                    raise ValueError("工作流拓扑结构不合法")
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"保存失败：画布拓扑 JSON 校验失败: {e}")
-
+        # 注：graph_json 已移至版本表，update 不再处理 graph；拓扑校验由 save_draft 承担
         # 注意：此处过滤 None 值（即未显式传递的 Optional 字段）是为了在 cl-switch 局部更新
         # （只传递了 id 和 status/is_active 等）场景下，避免将其余未传字段覆盖更新为 Null。
         # 其副作用是无法通过传递 None/Null 的更新请求将某个字段显式清空。
@@ -1033,6 +1015,62 @@ class WorkflowService(BaseAdminCrudService):
                 assert_workflow_owner(self.session, entity, current_user)
         return super().delete(ids, payload=payload, soft_delete=soft_delete)
 
+    def info(self, id, current_user=None, relations=()):
+        """详情额外回填版本字段：currentVersionNo/currentPublishedAt/draftGraphJson。"""
+        result = super().info(id, current_user, relations)
+        if isinstance(result, dict):
+            self._enrich_with_version_info(result)
+        return result
+
+    def list(self, query=None, current_user=None, relations=None, is_tree=None, parent_field=None):
+        data = super().list(query, current_user, relations, is_tree, parent_field)
+        self._enrich_list_with_version(data)
+        return data
+
+    def page(self, query, current_user=None, relations=()):
+        result = super().page(query, current_user, relations)
+        self._enrich_list_with_version(result.items)
+        return result
+
+    def _enrich_list_with_version(self, items: list) -> None:
+        """列表批量回填 currentVersionNo/currentPublishedAt（一次 IN 查询）。"""
+        if not items:
+            return
+        from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
+
+        vids = {it.get("currentVersionId") for it in items if isinstance(it, dict) and it.get("currentVersionId")}
+        if not vids:
+            return
+        versions = {
+            v.id: v
+            for v in self.session.exec(
+                select(WorkflowDefinitionVersion).where(WorkflowDefinitionVersion.id.in_(vids))
+            ).all()
+        }
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            v = versions.get(it.get("currentVersionId"))
+            if v:
+                it["currentVersionNo"] = v.version_no
+                it["currentPublishedAt"] = v.published_at
+
+    def _enrich_with_version_info(self, data: dict) -> None:
+        """info 单条回填 currentVersionNo/currentPublishedAt/draftGraphJson。"""
+        from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
+
+        cur_vid = data.get("currentVersionId")
+        if cur_vid is not None:
+            v = self.session.get(WorkflowDefinitionVersion, cur_vid)
+            if v:
+                data["currentVersionNo"] = v.version_no
+                data["currentPublishedAt"] = v.published_at
+        draft_vid = data.get("draftVersionId")
+        if draft_vid is not None:
+            v = self.session.get(WorkflowDefinitionVersion, draft_vid)
+            if v:
+                data["draftGraphJson"] = v.graph_json
+
 
 class WorkflowInstanceService(BaseAdminCrudService):
     """
@@ -1059,6 +1097,43 @@ class WorkflowInstanceService(BaseAdminCrudService):
                 assert_workflow_owner(self.session, instance, current_user)
         return super().delete(ids, payload=payload, soft_delete=soft_delete)
 
+    def info(self, id, current_user=None, relations=()):
+        result = super().info(id, current_user, relations)
+        if isinstance(result, dict):
+            self._enrich_version_no([result])
+        return result
+
+    def list(self, query=None, current_user=None, relations=None, is_tree=None, parent_field=None):
+        data = super().list(query, current_user, relations, is_tree, parent_field)
+        self._enrich_version_no(data)
+        return data
+
+    def page(self, query, current_user=None, relations=()):
+        result = super().page(query, current_user, relations)
+        self._enrich_version_no(result.items)
+        return result
+
+    def _enrich_version_no(self, items: list) -> None:
+        """回填 versionNo（join 版本表，一次 IN 查询）。"""
+        if not items:
+            return
+        from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
+
+        vids = {it.get("versionId") for it in items if isinstance(it, dict) and it.get("versionId")}
+        if not vids:
+            return
+        version_nos = {
+            v.id: v.version_no
+            for v in self.session.exec(
+                select(WorkflowDefinitionVersion).where(WorkflowDefinitionVersion.id.in_(vids))
+            ).all()
+        }
+        for it in items:
+            if isinstance(it, dict):
+                vno = version_nos.get(it.get("versionId"))
+                if vno is not None:
+                    it["versionNo"] = vno
+
     def start_instance(
         self, definition_id: int, inputs: dict[str, Any], current_user: User | None = None
     ) -> WorkflowInstance:
@@ -1068,6 +1143,8 @@ class WorkflowInstanceService(BaseAdminCrudService):
         definition = self.session.get(WorkflowDefinition, definition_id)
         if not definition or not definition.is_active:
             raise HTTPException(status_code=404, detail="工作流定义不存在或未启用")
+        if definition.current_version_id is None:
+            raise HTTPException(status_code=400, detail="该工作流尚未发布任何版本，无法启动实例")
         # 注：start_instance 不校验 definition owner —— 设计上任何用户均可启动已启用的工作流
         # 定义、实例归属启动者；definition 的可见性已由 DataScope 在 page/list/info 限制。
 
@@ -1090,6 +1167,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
         thread_id = str(uuid4())
         instance = WorkflowInstance(
             definition_id=definition.id,
+            version_id=definition.current_version_id,
             thread_id=thread_id,
             status="running",
             state_data=json.dumps(inputs),
@@ -1228,8 +1306,17 @@ class WorkflowInstanceService(BaseAdminCrudService):
             raise HTTPException(status_code=404, detail="工作流定义不存在")
         assert_workflow_owner(self.session, definition, current_user)
 
+        # 节点测试在 editor 编辑草稿过程中，测草稿版（无草稿回退 current）
+        from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
+
+        draft_vid = definition.draft_version_id or definition.current_version_id
+        if draft_vid is None:
+            raise HTTPException(status_code=400, detail="该工作流尚无任何版本，无法测试节点")
+        version = self.session.get(WorkflowDefinitionVersion, draft_vid)
+        if not version:
+            raise HTTPException(status_code=404, detail="版本不存在")
         try:
-            graph_json = json.loads(definition.graph_json)
+            graph_json = json.loads(version.graph_json)
         except Exception:
             raise HTTPException(status_code=400, detail="工作流拓扑解析失败")
 

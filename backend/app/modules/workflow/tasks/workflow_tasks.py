@@ -26,6 +26,7 @@ from app.modules.workflow.model.workflow import (
     WorkflowExecutionLog,
     WorkflowInstance,
 )
+from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
 from app.modules.workflow.service.checkpointer import get_async_checkpointer
 from app.modules.workflow.service.compiler import WorkflowCompiler
 from app.modules.workflow.service.event_bus import publish_event
@@ -169,11 +170,24 @@ def execute_workflow(self, instance_id: int, definition_id: int, initial_vars_js
     asyncio.run(_async_execute(instance_id, definition_id, initial_vars, resume_val))
 
 
+@celery_app.task(name="workflow.version.sweep_archived")
+def sweep_archived_versions() -> None:
+    """周期清理过期归档工作流版本（兜底版本表无限增长，跳过被引用版本）。"""
+    from app.modules.workflow.service.workflow_version_service import WorkflowVersionService
+
+    with Session(engine) as session:
+        swept = WorkflowVersionService(session).sweep_old_archived()
+    if swept:
+        logger.info("清理 %d 个过期归档工作流版本", swept)
+
+
 async def _async_execute(
     instance_id: int,
     definition_id: int,
     initial_vars: dict,
     resume_val: Any = None,
+    *,
+    version_id: int | None = None,
     graph_json_override: dict | None = None,
 ):
     """异步工作流执行体，逻辑与 WorkflowInstanceService._run_workflow 对齐。
@@ -216,10 +230,20 @@ async def _async_execute(
                 logger.error("工作流执行失败: 找不到实例 %d 或定义 %d", instance_id, definition_id)
                 return
             thread_id = instance.thread_id
-            graph_json_str = definition.graph_json
-
-        # graph_json_override 非空时用传入快照（eval 回归可比），否则读 definition（正式执行）
-        graph_json = graph_json_override if graph_json_override is not None else json.loads(graph_json_str)
+            # 版本解析优先级：graph_json_override（eval 存量 fallback）> version_id > instance.version_id
+            # > definition.current_version_id。graph_json 现已存版本表（纯版本表模型）。
+            if graph_json_override is not None:
+                graph_json = graph_json_override
+            else:
+                effective_vid = version_id or instance.version_id or definition.current_version_id
+                if effective_vid is None:
+                    logger.error("工作流执行失败: 实例 %d 无可用版本（未发布？）", instance_id)
+                    return
+                version = session.get(WorkflowDefinitionVersion, effective_vid)
+                if not version:
+                    logger.error("工作流执行失败: 版本 %d 不存在", effective_vid)
+                    return
+                graph_json = json.loads(version.graph_json)
         logger.info(
             "[Workflow] Compiling graph: instance=%d, nodes=%s, edges=%s",
             instance_id,

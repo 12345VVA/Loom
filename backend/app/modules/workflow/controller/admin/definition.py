@@ -2,6 +2,10 @@
 工作流定义管理 API 接口。
 """
 
+from fastapi import Depends
+from sqlmodel import Session
+
+from app.core.database import get_session
 from app.framework.controller_meta import (
     BaseController,
     CoolController,
@@ -10,12 +14,20 @@ from app.framework.controller_meta import (
     QueryConfig,
     QueryFieldConfig,
 )
+from app.framework.router.route_meta import Post
+from app.modules.base.model.auth import User
+from app.modules.base.service.security_service import get_current_user
 from app.modules.workflow.model.workflow import (
     WorkflowDefinitionCreateRequest,
     WorkflowDefinitionRead,
     WorkflowDefinitionUpdateRequest,
 )
+from app.modules.workflow.model.workflow_version import (
+    WorkflowDefinitionVersionRead,
+    WorkflowSaveDraftRequest,
+)
 from app.modules.workflow.service.workflow_service import WorkflowService
+from app.modules.workflow.service.workflow_version_service import WorkflowVersionService
 
 
 @CoolController(
@@ -45,7 +57,23 @@ from app.modules.workflow.service.workflow_service import WorkflowService
     )
 )
 class WorkflowDefinitionController(BaseController):
-    pass
+    @Post("/saveDraft", summary="保存草稿", permission="workflow:definition:update")
+    def save_draft(
+        self,
+        payload: WorkflowSaveDraftRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        """保存草稿（editor 保存入口）。无草稿建 draft 版本，有则覆盖；同步 code/name/description。"""
+        version = WorkflowVersionService(session).save_draft(
+            payload.definition_id,
+            payload.graph_json,
+            code=payload.code,
+            name=payload.name,
+            description=payload.description,
+            current_user=current_user,
+        )
+        return WorkflowDefinitionVersionRead.model_validate(version).model_dump(by_alias=True)
 
 
 router = WorkflowDefinitionController.router

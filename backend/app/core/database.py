@@ -245,6 +245,7 @@ def _ensure_sqlite_compatible_schema() -> None:
         "workflow_instance": {
             "celery_task_id": "ALTER TABLE workflow_instance ADD COLUMN celery_task_id VARCHAR",
             "user_id": "ALTER TABLE workflow_instance ADD COLUMN user_id INTEGER",
+            "version_id": "ALTER TABLE workflow_instance ADD COLUMN version_id INTEGER",
         },
         "workflow_execution_log": {
             "payload_type": "ALTER TABLE workflow_execution_log ADD COLUMN payload_type VARCHAR DEFAULT 'full'",
@@ -255,8 +256,13 @@ def _ensure_sqlite_compatible_schema() -> None:
         "workflow_eval_case_result": {
             "actual_output_storage_ref": "ALTER TABLE workflow_eval_case_result ADD COLUMN actual_output_storage_ref VARCHAR",
         },
+        "workflow_eval_run": {
+            "definition_version_id": "ALTER TABLE workflow_eval_run ADD COLUMN definition_version_id INTEGER",
+        },
         "workflow_definition": {
             "user_id": "ALTER TABLE workflow_definition ADD COLUMN user_id INTEGER",
+            "current_version_id": "ALTER TABLE workflow_definition ADD COLUMN current_version_id INTEGER",
+            "draft_version_id": "ALTER TABLE workflow_definition ADD COLUMN draft_version_id INTEGER",
         },
         "media_asset": {
             "asset_type": "ALTER TABLE media_asset ADD COLUMN asset_type VARCHAR DEFAULT 'file'",
@@ -309,9 +315,11 @@ def _ensure_sqlite_compatible_schema() -> None:
         "ai_runtime_invocation",
         "media_asset",
         "workflow_definition",
+        "workflow_definition_version",
         "workflow_instance",
         "workflow_execution_log",
         "workflow_eval_case_result",
+        "workflow_eval_run",
         "sys_user_role",
         "sys_role_menu",
         "sys_role_department",
@@ -363,6 +371,9 @@ INDEX_DEFINITIONS: list[tuple[str, str, str, str | None]] = [
     ("ix_workflow_eval_case_result_eval_run_id_latency_ms", "workflow_eval_case_result", "eval_run_id, latency_ms", None),
     ("ix_workflow_eval_case_result_eval_run_id_case_key", "workflow_eval_case_result", "eval_run_id, case_key", None),
     ("ix_workflow_eval_test_case_test_set_id_case_key", "workflow_eval_test_case", "test_set_id, case_key", None),
+    # workflow_definition_version：版本历史（按定义+时间）与状态过滤（查 draft/发布版）
+    ("ix_workflow_definition_version_definition_id_created_at", "workflow_definition_version", "definition_id, created_at", None),
+    ("ix_workflow_definition_version_definition_id_status", "workflow_definition_version", "definition_id, status", None),
 ]
 
 

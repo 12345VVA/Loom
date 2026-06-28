@@ -73,8 +73,8 @@ def compare_runs(
     }
 
     return {
-        "runA": {"id": run_a.id, "versionLabel": run_a.version_label, "metrics": ma},
-        "runB": {"id": run_b.id, "versionLabel": run_b.version_label, "metrics": mb},
+        "runA": {"id": run_a.id, "versionId": run_a.definition_version_id, "versionLabel": run_a.version_label, "metrics": ma},
+        "runB": {"id": run_b.id, "versionId": run_b.definition_version_id, "versionLabel": run_b.version_label, "metrics": mb},
         "metricsDiff": metrics_diff,
         "onlyA": only_a,
         "onlyB": only_b,

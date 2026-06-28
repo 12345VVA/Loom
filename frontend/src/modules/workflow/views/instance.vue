@@ -252,6 +252,7 @@ const Table = useTable({
 	columns: [
 		{ label: t('实例ID'), prop: 'id', width: 90 },
 		{ label: t('关联工作流ID'), prop: 'definitionId', width: 130 },
+		{ label: t('版本'), prop: 'versionNo', width: 90 },
 		{
 			label: t('运行时 Thread ID'),
 			prop: 'threadId',
@@ -329,11 +330,17 @@ async function openStartDialog() {
 	await fetchDefinitions();
 }
 
-function onDefinitionChange(val: number) {
-	const def = definitions.value.find(d => d.id === val);
-	if (def && def.graphJson) {
-		try {
-			const graph = JSON.parse(def.graphJson);
+async function onDefinitionChange(val: number) {
+	if (!val) {
+		startDialog.form.inputsJson = '{}';
+		return;
+	}
+	try {
+		// definition.list 不再返回 graphJson（纯版本表模型），改为 info 取草稿拓扑
+		const def = await (service as any).workflow.definition.info({ id: val });
+		const graphJson = def.draftGraphJson || def.graphJson;
+		if (graphJson) {
+			const graph = JSON.parse(graphJson);
 			const elements = graph.elements || [];
 			const startNode = elements.find((el: any) => el.type === 'start');
 			if (startNode && startNode.data?.config?.inputVariables) {
@@ -346,12 +353,12 @@ function onDefinitionChange(val: number) {
 			} else {
 				startDialog.form.inputsJson = '{}';
 			}
-		} catch (e) {
-			console.error('Parse graphJson failed', e);
-			ElMessage.error(t('工作流定义数据解析失败'));
+		} else {
 			startDialog.form.inputsJson = '{}';
 		}
-	} else {
+	} catch (e) {
+		console.error('Parse graphJson failed', e);
+		ElMessage.error(t('工作流定义数据解析失败'));
 		startDialog.form.inputsJson = '{}';
 	}
 }

@@ -92,6 +92,10 @@
 				{{ $t('保存') }}
 			</el-button>
 
+			<el-button type="warning" :icon="Upload" @click="$emit('publish-workflow')">
+				{{ $t('发布') }}
+			</el-button>
+
 			<el-tooltip :content="runButtonTooltip" placement="top" :disabled="!isTestRunDisabled">
 				<div style="display: inline-block; margin-left: 12px">
 					<el-button
@@ -133,7 +137,8 @@ import {
 	Brush,
 	Document,
 	Download,
-	FolderChecked
+	FolderChecked,
+	Upload
 } from '@element-plus/icons-vue';
 import { NODE_REGISTRY } from '../utils/node-type-registry';
 
@@ -220,6 +225,7 @@ const emit = defineEmits([
 	'reopen-test-log-drawer',
 	'export-workflow',
 	'save-workflow',
+	'publish-workflow',
 	'undo',
 	'redo'
 ]);

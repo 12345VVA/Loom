@@ -58,12 +58,29 @@
 					:placeholder="$t('缺省用测试集关联的')"
 					filterable
 					clearable
+					@change="onDefinitionChange"
 				>
 					<el-option
 						v-for="d in definitionOptions"
 						:key="d.id"
 						:label="d.name"
 						:value="d.id"
+					/>
+				</el-select>
+			</el-form-item>
+			<el-form-item :label="$t('版本(可选)')">
+				<el-select
+					v-model="startDialog.form.definitionVersionId"
+					:placeholder="$t('缺省取当前发布版')"
+					filterable
+					clearable
+					:disabled="!startDialog.form.definitionId"
+				>
+					<el-option
+						v-for="v in versionOptions"
+						:key="v.id"
+						:label="`v${v.versionNo} (${versionStatusLabel(v.status)})`"
+						:value="v.id"
 					/>
 				</el-select>
 			</el-form-item>
@@ -161,6 +178,26 @@ const definitionOptions = ref<any[]>([]);
 	}
 })();
 
+// 版本下拉：选 definition 后拉其版本列表（缺省取当前发布版）
+const versionOptions = ref<any[]>([]);
+function versionStatusLabel(s: string) {
+	return { draft: t('草稿'), published: t('已发布'), archived: t('已归档') }[s] || s;
+}
+async function onDefinitionChange() {
+	startDialog.form.definitionVersionId = null;
+	versionOptions.value = [];
+	if (!startDialog.form.definitionId) return;
+	try {
+		const res = await (service as any).workflow.version.page({
+			definitionId: startDialog.form.definitionId,
+			size: 50
+		});
+		versionOptions.value = res.list || [];
+	} catch (e) {
+		// ignore
+	}
+}
+
 const Crud = useCrud({ service: evalService.eval_run }, (app) => app.refresh());
 
 const selectedRuns = ref<any[]>([]);
@@ -196,10 +233,11 @@ function caseStatusType(s: string): any {
 const startDialog = reactive<{ visible: boolean; loading: boolean; form: any }>({
 	visible: false,
 	loading: false,
-	form: { testSetId: null, definitionId: null, versionLabel: '', evaluatorType: 'rule_match' }
+	form: { testSetId: null, definitionId: null, definitionVersionId: null, versionLabel: '', evaluatorType: 'rule_match' }
 });
 function openStartDialog() {
-	startDialog.form = { testSetId: null, definitionId: null, versionLabel: '', evaluatorType: 'rule_match' };
+	startDialog.form = { testSetId: null, definitionId: null, definitionVersionId: null, versionLabel: '', evaluatorType: 'rule_match' };
+	versionOptions.value = [];
 	startDialog.visible = true;
 }
 async function submitStart() {

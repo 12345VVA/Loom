@@ -22,8 +22,10 @@ class WorkflowDefinition(BaseEntity, table=True):
     code: str = Field(index=True, unique=True, max_length=100)
     name: str = Field(index=True, max_length=150)
     description: str | None = Field(default=None, max_length=500)
-    graph_json: str = Field(default="{}", max_length=100000)  # 可视化连线与配置生成的拓扑数据
-    is_active: bool = Field(default=True, index=True)
+    # 纯版本表模型：graph_json 已移至 workflow_definition_version 表（草稿/发布均存版本表）
+    current_version_id: int | None = Field(default=None, index=True)  # 线上发布版指针（实例/eval 默认走此版）
+    draft_version_id: int | None = Field(default=None, index=True)  # 草稿指针（editor/test_node 走此版）
+    is_active: bool = Field(default=True, index=True)  # 启停开关（is_active=False 不可启动实例/发起评估）
     user_id: int | None = Field(default=None, index=True)  # 创建者，用于数据权限隔离
 
 
@@ -33,6 +35,7 @@ class WorkflowInstance(BaseEntity, table=True):
     __tablename__ = "workflow_instance"
 
     definition_id: int = Field(index=True)
+    version_id: int | None = Field(default=None, index=True)  # 本次执行所用 definition_version_id（存量 NULL）
     thread_id: str = Field(index=True, max_length=100)  # LangGraph checkpoint 隔离 thread
     status: str = Field(default="pending", index=True, max_length=50)  # pending, running, paused, success, failed
     current_node: str | None = Field(default=None, max_length=100)
@@ -73,9 +76,13 @@ class WorkflowDefinitionRead(BaseModel):
     code: str
     name: str
     description: str | None = None
-    graph_json: str
     is_active: bool
     user_id: int | None = None
+    current_version_id: int | None = None
+    draft_version_id: int | None = None
+    current_version_no: int | None = None  # join 版本表回填（线上发布版号）
+    current_published_at: datetime | None = None  # join 回填（线上发布时间）
+    draft_graph_json: str | None = None  # 仅 info 接口回填（供 editor 加载草稿）
     created_at: datetime
     updated_at: datetime
 
@@ -90,7 +97,6 @@ class WorkflowDefinitionCreateRequest(BaseModel):
     code: str
     name: str
     description: str | None = None
-    graph_json: str = "{}"
     is_active: bool = True
 
     @field_validator("is_active", mode="before")
@@ -108,7 +114,6 @@ class WorkflowDefinitionUpdateRequest(BaseModel):
     code: str | None = None
     name: str | None = None
     description: str | None = None
-    graph_json: str | None = None
     is_active: bool | None = None
 
     @field_validator("is_active", mode="before")
@@ -124,6 +129,8 @@ class WorkflowInstanceRead(BaseModel):
 
     id: int
     definition_id: int
+    version_id: int | None = None
+    version_no: int | None = None  # join 版本表回填（展示用）
     thread_id: str
     status: str
     current_node: str | None = None

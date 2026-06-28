@@ -23,6 +23,19 @@
 						{{ $t('设计工作流') }}
 					</el-button>
 				</template>
+				<template #slot-publish="{ scope }">
+					<el-button
+						text
+						type="success"
+						:disabled="!scope.row.draftVersionId"
+						@click="publishDraft(scope.row)"
+					>{{ $t('发布') }}</el-button>
+				</template>
+				<template #slot-version="{ scope }">
+					<el-button text type="primary" @click="versionHistory(scope.row)">
+						{{ $t('版本') }}
+					</el-button>
+				</template>
 			</cl-table>
 		</cl-row>
 
@@ -45,7 +58,7 @@ import { useCool } from '/@/cool';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { Upload } from '@element-plus/icons-vue';
 
 const { service } = useCool();
@@ -72,12 +85,21 @@ const Upsert = useUpsert({
 			component: { name: 'el-switch', props: { activeValue: 1, inactiveValue: 0 } }
 		}
 	],
-	onSubmit(data, { next }) {
-		if (tempGraphJson.value) {
-			data.graphJson = tempGraphJson.value;
-			tempGraphJson.value = ''; // clear
+	async onSubmit(data, { next }) {
+		// 导入的拓扑暂存：definition 创建后存为草稿（纯版本表模型：graph 不在主表）
+		const graphJson = tempGraphJson.value;
+		tempGraphJson.value = '';
+		const res: any = await next(data);
+		if (graphJson && res?.id) {
+			try {
+				await (service as any).workflow.definition.saveDraft({
+					definitionId: res.id,
+					graphJson
+				});
+			} catch (e: any) {
+				ElMessage.warning(t('拓扑草稿保存失败：') + (e?.message || e));
+			}
 		}
-		next(data);
 	},
 	onClosed() {
 		tempGraphJson.value = '';
@@ -91,11 +113,13 @@ const Table = useTable({
 		{ label: t('工作流名称'), prop: 'name', minWidth: 180 },
 		{ label: t('描述'), prop: 'description', minWidth: 260, showOverflowTooltip: true },
 		{ label: t('启用'), prop: 'status', width: 100, component: { name: 'cl-switch' } },
+		{ label: t('当前版本'), prop: 'currentVersionNo', width: 100 },
+		{ label: t('发布时间'), prop: 'currentPublishedAt', minWidth: 170 },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
 		{
 			type: 'op',
-			width: 320,
-			buttons: ['edit', 'delete', 'slot-design']
+			width: 480,
+			buttons: ['edit', 'delete', 'slot-design', 'slot-publish', 'slot-version']
 		}
 	]
 });
@@ -126,6 +150,27 @@ function designWorkflow(scope: WorkflowDefinition) {
 		path: '/workflow/editor',
 		query: { id: scope.id }
 	});
+}
+
+// 发布当前草稿（草稿→发布一步上线；运行中实例按其版本继续跑，不受影响）
+async function publishDraft(row: any) {
+	try {
+		await ElMessageBox.confirm(
+			t('确认发布当前草稿？发布后新启动的实例将使用此版本，正在运行的实例不受影响。'),
+			t('提示'),
+			{ type: 'warning' }
+		);
+		await (service as any).workflow.version.publish({ definitionId: row.id });
+		ElMessage.success(t('发布成功'));
+		Crud.value?.refresh();
+	} catch (e: any) {
+		if (e !== 'cancel') ElMessage.error(t('发布失败：') + (e?.message || e));
+	}
+}
+
+// 跳转版本历史页（版本列表 / 对比 / 回滚）
+function versionHistory(scope: WorkflowDefinition) {
+	router.push({ path: '/workflow/version', query: { definitionId: scope.id } });
 }
 
 function triggerImport() {

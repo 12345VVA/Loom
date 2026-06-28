@@ -54,6 +54,7 @@ celery_app.conf.update(
         "workflow.execute": {"queue": "workflow"},
         "workflow.eval.run": {"queue": "workflow.eval"},
         "workflow.eval.sweep_timeouts": {"queue": "default"},
+        "workflow.version.sweep_archived": {"queue": "default"},
         "ai.execute_generation_task": {"queue": "ai.chat"},
         "ai.clean_expired_governance_data": {"queue": "default"},
         # 系统任务统一走 default 队列，避免落到匿名 celery 队列造成分流混乱
@@ -83,5 +84,10 @@ celery_app.conf.beat_schedule = {
     "sweep-timed-out-eval-runs": {
         "task": "workflow.eval.sweep_timeouts",
         "schedule": 900.0,
+    },
+    # 每天凌晨 4 点清理过期归档工作流版本（兜底版本表无限增长，跳过被引用版本）
+    "sweep-archived-versions": {
+        "task": "workflow.version.sweep_archived",
+        "schedule": crontab(hour=4, minute=0),
     },
 }

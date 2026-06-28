@@ -26,7 +26,7 @@ from fastapi import HTTPException
 def _make_echo_execute(engine):
     """fake _async_execute：把 initial_vars.q 回写成 workflow_output='echo:{q}'，模拟成功执行。"""
 
-    async def fake(instance_id, definition_id, initial_vars, resume_val=None, graph_json_override=None):
+    async def fake(instance_id, definition_id, initial_vars, resume_val=None, *, version_id=None, graph_json_override=None):
         with Session(engine) as s:
             inst = s.get(WorkflowInstance, instance_id)
             if inst:
@@ -94,7 +94,7 @@ class EvalRunTestCase(unittest.TestCase):
     def test_case_exception_isolated(self):
         """_async_execute 全部抛异常 → 每 case 写 error，整批不崩；全 error 时 run 为 FAILED（非 PARTIAL）。"""
 
-        async def always_boom(instance_id, definition_id, initial_vars, resume_val=None, graph_json_override=None):
+        async def always_boom(instance_id, definition_id, initial_vars, resume_val=None, *, version_id=None, graph_json_override=None):
             raise RuntimeError("boom")
 
         with patch.object(eval_tasks, "_async_execute", always_boom), \

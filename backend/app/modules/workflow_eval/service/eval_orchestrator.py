@@ -49,10 +49,23 @@ def load_eval_context(eval_run_id: int) -> dict | None:
             ).all()
         )
         definition_id = run.definition_id or (test_set.definition_id if test_set else None)
-        graph_snapshot = json.loads(run.graph_json_snapshot) if run.graph_json_snapshot else None
+        version_id = run.definition_version_id
+        # 优先按 version_id 查版本表 graph；fallback 存量 run 的 graph_json_snapshot（旧 run）
+        graph_snapshot = None
+        if version_id is not None:
+            from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
+
+            v = session.get(WorkflowDefinitionVersion, version_id)
+            graph_snapshot = json.loads(v.graph_json) if v and v.graph_json and v.graph_json != "{}" else None
+        elif run.graph_json_snapshot and run.graph_json_snapshot != "{}":
+            try:
+                graph_snapshot = json.loads(run.graph_json_snapshot)
+            except Exception:
+                graph_snapshot = None
         return {
             "run_id": run.id,
             "definition_id": definition_id,
+            "definition_version_id": version_id,
             "graph_json_snapshot": graph_snapshot,
             "user_id": run.user_id,
             "cases": cases,
@@ -101,12 +114,15 @@ def mark_failed(eval_run_id: int, error_msg: str) -> bool:
         return result.rowcount > 0
 
 
-def create_eval_instance(definition_id: int, case: WorkflowTestCase, user_id: int | None) -> int:
-    """为单条用例创建运行实例（status=running，新 thread_id），返回 instance_id。"""
+def create_eval_instance(
+    definition_id: int, definition_version_id: int | None, case: WorkflowTestCase, user_id: int | None
+) -> int:
+    """为单条用例创建运行实例（status=running，新 thread_id，记 version_id），返回 instance_id。"""
     inputs = json.loads(case.input_data) if case.input_data else {}
     with Session(engine) as session:
         instance = WorkflowInstance(
             definition_id=definition_id,
+            version_id=definition_version_id,
             thread_id=str(uuid4()),
             status="running",
             state_data=json.dumps(inputs),

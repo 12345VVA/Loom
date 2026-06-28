@@ -60,6 +60,16 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         if not definition:
             raise HTTPException(status_code=404, detail="工作流定义不存在")
 
+        # 版本解析：优先用例指定版本，否则 definition 的线上发布版
+        from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
+
+        version_id = payload.definition_version_id or definition.current_version_id
+        if version_id is None:
+            raise HTTPException(status_code=400, detail="该工作流尚未发布任何版本，无法发起评估")
+        version = self.session.get(WorkflowDefinitionVersion, version_id)
+        if not version:
+            raise HTTPException(status_code=404, detail="工作流版本不存在")
+
         evaluator_type = payload.evaluator_type or "rule_match"
         if evaluator_type not in EvaluatorRegistry.available():
             raise HTTPException(status_code=400, detail=f"未知评估器类型: {evaluator_type}")
@@ -83,8 +93,8 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         run = WorkflowEvalRun(
             test_set_id=test_set_id,
             definition_id=definition_id,
-            graph_json_snapshot=definition.graph_json,
-            version_label=payload.version_label,
+            definition_version_id=version_id,
+            version_label=payload.version_label or f"v{version.version_no}",
             status=EvalRunStatus.PENDING,
             user_id=current_user.id if current_user else None,
         )

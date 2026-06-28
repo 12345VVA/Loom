@@ -78,6 +78,7 @@
 						@reopen-test-log-drawer="reopenTestLogDrawer"
 						@export-workflow="exportWorkflow"
 						@save-workflow="saveWorkflow"
+						@publish-workflow="publishWorkflow"
 						@undo="undo()"
 						@redo="redo()"
 					/>
@@ -890,9 +891,9 @@ async function fetchWorkflowData() {
 		workflowCode.value = res.code;
 		workflowDescription.value = res.description || '';
 
-		// 加载已有的拓扑连线
-		if (res.graphJson && res.graphJson !== '{}') {
-			const graph = JSON.parse(res.graphJson);
+		// 加载草稿拓扑（纯版本表模型：graph 存版本表，info 回填 draftGraphJson）
+		if (res.draftGraphJson && res.draftGraphJson !== '{}') {
+			const graph = JSON.parse(res.draftGraphJson);
 
 			// 转换 JSON 到 Vue Flow 的 elements
 			const loadedElements = graph.elements || [];
@@ -1937,15 +1938,16 @@ async function saveWorkflow() {
 		// 3. 验证并构造后端标准解析结构
 		const graphPayload = buildGraphPayload();
 
-		// 4. 更新定义记录
-		await (service as any).workflow.definition.update({
-			id: Number(workflowId.value),
+		// 4. 保存草稿（纯版本表模型：graph 存版本表草稿，未发布不上线）
+		await (service as any).workflow.definition.saveDraft({
+			definitionId: Number(workflowId.value),
 			code: workflowCode.value,
 			name: workflowName.value,
+			description: workflowDescription.value,
 			graphJson: JSON.stringify(graphPayload)
 		});
 
-		ElMessage.success(t('工作流保存成功'));
+		ElMessage.success(t('草稿保存成功（发布后生效）'));
 		isDirty.value = false;
 		// 保存成功：以当前拓扑签名重置 isDirty 比较基线
 		_persistSig = persistSignature(elements.value);
@@ -1955,6 +1957,29 @@ async function saveWorkflow() {
 		return false;
 	} finally {
 		saving.value = false;
+	}
+}
+
+// 发布草稿：先保存最新草稿，再 publish（一步上线；运行中实例按其版本继续跑、不受影响）
+async function publishWorkflow() {
+	if (!workflowId.value) return;
+	try {
+		await ElMessageBox.confirm(
+			t('发布后新启动的实例将使用此版本，正在运行的实例按其版本继续跑、不受影响。是否先保存并发布？'),
+			t('发布'),
+			{ type: 'warning' }
+		);
+	} catch {
+		return; // 用户取消
+	}
+	const saved = await saveWorkflow();
+	if (!saved) return;
+	try {
+		await (service as any).workflow.version.publish({ definitionId: Number(workflowId.value) });
+		ElMessage.success(t('发布成功'));
+		await fetchWorkflowData();
+	} catch (err: any) {
+		ElMessage.error(t('发布失败: ') + (err.message || err));
 	}
 }
 

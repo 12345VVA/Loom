@@ -52,16 +52,42 @@ class WorkflowOwnerTestCase(unittest.TestCase):
         self.session.close()
 
     def _add_definition(self, code: str = "wf1", owner_uid: int | None = None) -> WorkflowDefinition:
-        definition = WorkflowDefinition(
-            code=code,
-            name=code.upper(),
-            graph_json="{}",
-            is_active=True,
-            user_id=owner_uid,
+        from app.modules.workflow.model.workflow_version import (
+            WorkflowDefinitionVersion,
+            WorkflowVersionStatus,
         )
+
+        definition = WorkflowDefinition(code=code, name=code.upper(), is_active=True, user_id=owner_uid)
         self.session.add(definition)
         self.session.commit()
         self.session.refresh(definition)
+        # 建一个 published + draft 版本并设指针，让 start_instance / test_node 可用
+        graph = '{"nodes":[],"edges":[]}'
+        pub = WorkflowDefinitionVersion(
+            definition_id=definition.id,
+            version_no=1,
+            status=WorkflowVersionStatus.PUBLISHED,
+            graph_json=graph,
+            user_id=owner_uid,
+        )
+        self.session.add(pub)
+        self.session.commit()
+        self.session.refresh(pub)
+        draft = WorkflowDefinitionVersion(
+            definition_id=definition.id,
+            version_no=2,
+            status=WorkflowVersionStatus.DRAFT,
+            graph_json=graph,
+            parent_version_id=pub.id,
+            user_id=owner_uid,
+        )
+        self.session.add(draft)
+        self.session.commit()
+        self.session.refresh(draft)
+        definition.current_version_id = pub.id
+        definition.draft_version_id = draft.id
+        self.session.add(definition)
+        self.session.commit()
         return definition
 
     # --- WorkflowDefinition CRUD ---

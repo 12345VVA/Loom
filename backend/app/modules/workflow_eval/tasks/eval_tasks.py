@@ -97,14 +97,21 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
             instance_id: int | None = None
             start_t = time.perf_counter()
             try:
-                instance_id = await asyncio.to_thread(create_eval_instance, definition_id, case, user_id)
+                instance_id = await asyncio.to_thread(
+                    create_eval_instance, definition_id, ctx["definition_version_id"], case, user_id
+                )
                 inputs = json.loads(case.input_data) if case.input_data else {}
 
                 # 复用 _async_execute 全链路；用 graph 快照保证回归可比
                 try:
                     await asyncio.wait_for(
                         _async_execute(
-                            instance_id, definition_id, inputs, None, graph_json_override=graph_snapshot
+                            instance_id,
+                            definition_id,
+                            inputs,
+                            None,
+                            version_id=ctx["definition_version_id"],
+                            graph_json_override=graph_snapshot,
                         ),
                         timeout=CASE_TIMEOUT_SECONDS,
                     )
