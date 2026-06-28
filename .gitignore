@@ -49,6 +49,8 @@ logs/
 
 # IDE
 .vscode/
+.workbuddy/
+.gstack/
 .idea/
 .claude/
 *.swp
