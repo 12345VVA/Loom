@@ -38,7 +38,7 @@
 				</el-select>
 			</el-form-item>
 			<el-form-item :label="$t('初始输入变量')">
-				<cl-editor-codemirror v-model="startDialog.form.inputsJson" :height="220" />
+				<cl-editor-codemirror v-model="startDialog.form.inputsJson" :height="220" style="width: 100%" />
 			</el-form-item>
 		</el-form>
 		<template #footer>

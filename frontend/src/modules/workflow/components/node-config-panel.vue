@@ -1,52 +1,68 @@
 <template>
-	<div class="config-panel" :style="{ width: panelWidth + 'px' }">
+	<div class="config-panel" role="complementary" aria-label="节点配置" :style="{ width: panelWidth + 'px' }">
 		<div class="panel-resizer" @mousedown="startResize"></div>
 		<div class="panel-header">
-			<div class="panel-header__title">
+			<div class="panel-header__title" @dblclick="startEditTitle" style="flex: 1; min-width: 0;">
 				<el-icon v-if="nodeIcon" class="panel-header__icon"><component :is="nodeIcon" /></el-icon>
-				{{ selectedNode.label || $t('未命名节点') }}
+				<template v-if="isEditingTitle">
+					<el-input
+						ref="titleInputRef"
+						v-model="selectedNode.label"
+						size="small"
+						style="flex: 1;"
+						@blur="isEditingTitle = false"
+						@keyup.enter="isEditingTitle = false"
+					/>
+				</template>
+				<template v-else>
+					<span style="cursor: pointer; user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="`ID: ${selectedNode.id} (双击重命名)`">
+						{{ selectedNode.label || $t('未命名节点') }}
+					</span>
+				</template>
 			</div>
 			<div class="panel-header__actions">
+				<el-tooltip v-if="canTestNode" :content="$t('测试节点')" placement="top">
+					<el-button link type="success" :icon="VideoPlay" @click="handleTestNode" />
+				</el-tooltip>
+				<el-tooltip :content="$t('删除节点')" placement="top">
+					<el-button link type="danger" :icon="Delete" @click="emit('delete')" />
+				</el-tooltip>
 				<el-button link :icon="Close" @click="emit('close')" />
-				<el-button link type="danger" :icon="Delete" @click="emit('delete')">
-					{{ $t('删除节点') }}
-				</el-button>
 			</div>
 		</div>
 
 		<el-scrollbar class="panel-content" ref="scrollbarRef">
 
 			<el-form :model="selectedNode.data" label-position="top">
-				<el-form-item :label="$t('节点ID')">
-					<el-input :model-value="selectedNode.id" disabled />
-				</el-form-item>
-				<el-form-item :label="$t('节点名称')">
-					<el-input v-model="selectedNode.label" />
-				</el-form-item>
-
-				<el-divider />
+				<!-- 统一的节点输入配置 (Strict Mode) -->
+				<node-inputs-editor
+					v-if="selectedNode.type !== 'start'"
+					v-model="selectedNode.data.config.inputs"
+					:upstream-vars="upstreamOutputVarsOriginal"
+				/>
 
 				<!-- 动态载入对应节点的表单配置组件 -->
-				<component
-					:is="CONFIG_COMPONENTS[selectedNode.type]"
-					v-if="CONFIG_COMPONENTS[selectedNode.type]"
-					:key="selectedNode.id"
-					v-model="selectedNode.data.config"
-					:profiles="filteredProfiles"
-					:available-target-nodes="selectedNode.type === 'loop_controller' || selectedNode.type === 'batch_processor'
-						? filteredBodyTargetNodes
-						: availableTargetNodes"
-				/>
+				<div :key="selectedNode.id">
+					<component
+						:is="CONFIG_COMPONENTS[selectedNode.type]"
+						v-if="CONFIG_COMPONENTS[selectedNode.type]"
+						v-model="selectedNode.data.config"
+						:profiles="filteredProfiles"
+						:available-target-nodes="selectedNode.type === 'loop_controller' || selectedNode.type === 'batch_processor'
+							? filteredBodyTargetNodes
+							: availableTargetNodes"
+					/>
+				</div>
 			</el-form>
 		</el-scrollbar>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { computed, provide, ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { computed, provide, inject, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Delete, Close } from '@element-plus/icons-vue';
-import { UPSTREAM_VARIABLES_KEY, LOOP_CONTEXT_VARS_KEY, UPSTREAM_OUTPUT_VARS_KEY, VARIABLE_SYNTAX_HINTS_KEY } from './constants';
+import { Check, Edit, Close, MagicStick, SwitchButton, CaretRight, Delete, VideoPlay } from '@element-plus/icons-vue';
+import { UNTESTABLE_NODE_TYPES, OPEN_NODE_TEST_DIALOG_KEY, UPSTREAM_VARIABLES_KEY, LOOP_CONTEXT_VARS_KEY, UPSTREAM_OUTPUT_VARS_KEY, VARIABLE_SYNTAX_HINTS_KEY, SECTION_COLLAPSE_STATE_KEY, CONFIG_PANEL_NODE_ID_KEY } from './constants';
 import type { ElScrollbar } from 'element-plus';
 import { getNodeMeta } from '../utils/node-type-registry';
 
@@ -66,6 +82,7 @@ import ToolExecutorConfig from './node-configs/tool-executor-config.vue';
 import LoopBodyGroupConfig from './node-configs/loop-body-group-config.vue';
 import VariableAssignmentConfig from './node-configs/variable-assignment-config.vue';
 import VariableTransformConfig from './node-configs/variable-transform-config.vue';
+import NodeInputsEditor from './node-inputs-editor.vue';
 
 const { t } = useI18n();
 
@@ -76,9 +93,10 @@ const props = defineProps<{
 	availableTargetNodes: any[];
 	filteredBodyTargetNodes: any[];
 	aiProfiles: any[];
+	workflowId?: string | number;
 }>();
 
-const emit = defineEmits(['delete', 'close']);
+const emit = defineEmits(['delete', 'close', 'update:width']);
 
 const CONFIG_COMPONENTS: Record<string, any> = {
 	start: StartConfig,
@@ -107,17 +125,42 @@ const NODE_MODEL_TYPE_MAP: Record<string, string> = {
 
 const nodeIcon = computed(() => getNodeMeta(props.selectedNode?.type).icon);
 
+const openNodeTestDialog = inject(OPEN_NODE_TEST_DIALOG_KEY);
+
+const canTestNode = computed(() => {
+	return props.selectedNode?.type && !UNTESTABLE_NODE_TYPES.includes(props.selectedNode.type);
+});
+
+function handleTestNode() {
+	if (openNodeTestDialog && props.selectedNode) {
+		openNodeTestDialog(props.selectedNode.id);
+	}
+}
+
 // 滚动条引用
 const scrollbarRef = ref<InstanceType<typeof ElScrollbar>>();
 
-// 监听选中节点变化，重置滚动位置
+// 监听选中节点变化，重置滚动位置和编辑状态
 watch(() => props.selectedNode?.id, () => {
 	scrollbarRef.value?.setScrollTop(0);
+	isEditingTitle.value = false;
 });
 
+// 标题编辑逻辑
+const isEditingTitle = ref(false);
+const titleInputRef = ref();
+
+function startEditTitle() {
+	isEditingTitle.value = true;
+	nextTick(() => {
+		titleInputRef.value?.focus();
+	});
+}
+
 // 面板宽度调整
-const defaultWidth = 360;
-const panelWidth = ref(parseInt(localStorage.getItem('loom_editor_panel_width') || String(defaultWidth)));
+const defaultWidth = 420;
+const storageKey = computed(() => `loom_editor_panel_width_${props.workflowId || 'default'}`);
+const panelWidth = ref(Math.max(parseInt(localStorage.getItem(storageKey.value) || String(defaultWidth)), defaultWidth));
 let isResizing = false;
 let startX = 0;
 let startWidth = 0;
@@ -148,7 +191,8 @@ function onMouseUp() {
 		document.removeEventListener('mouseup', onMouseUp);
 		document.body.style.cursor = '';
 		document.body.style.userSelect = '';
-		localStorage.setItem('loom_editor_panel_width', String(panelWidth.value));
+		localStorage.setItem(storageKey.value, String(panelWidth.value));
+			emit('update:width', panelWidth.value);
 	}
 }
 
@@ -189,7 +233,9 @@ function flattenTreeFields(
 			key: `${nodeId}_${currentRefPath}`,
 			display: `{${currentDisplayPath}}`,
 			refText: refText,
-			nodeLabel: `${nodeLabel} → .${name}`
+			nodeLabel: `${nodeLabel} → .${name}`,
+			nodeId: nodeId,
+			variableName: currentRefPath
 		});
 
 		if (field.children && Array.isArray(field.children) && field.children.length > 0) {
@@ -212,7 +258,9 @@ const flattenedVariables = computed(() => {
 			key: `${v.nodeId}_${v.variableName}`,
 			display: `{${v.variableName}}`,
 			refText: baseRef,
-			nodeLabel: v.nodeLabel
+			nodeLabel: v.nodeLabel,
+			nodeId: v.nodeId,
+			variableName: v.variableName
 		});
 
 		// 如果上游节点是 LLM 且 JSON 输出模式，递归展开其 jsonFields
@@ -229,17 +277,38 @@ const loopContextVars = computed(() => flattenedVariables.value.filter(v => {
 	return src?._isLoopContext === true;
 }));
 
-// 上游输出变量（非循环上下文）
-const upstreamOutputVars = computed(() => {
+// 真实的全局上游输出变量，传递给 node-inputs-editor 供用户选择映射
+const upstreamOutputVarsOriginal = computed(() => {
 	const loopKeys = new Set(loopContextVars.value.map(v => v.key));
 	return flattenedVariables.value.filter(v => !loopKeys.has(v.key));
+});
+
+// 严格模式：只提供本节点定义的局部 inputs 给子组件
+const localInputsVars = computed(() => {
+	const inputs = props.selectedNode?.data?.config?.inputs || [];
+	return inputs.map((inp: any) => ({
+		key: inp.name,
+		display: inp.name,
+		nodeId: props.selectedNode?.id,
+		nodeLabel: '本节点输入',
+		variableName: inp.name,
+		nodeType: 'local',
+		refText: getVariableRefText(inp.name)
+	}));
 });
 
 // 向下提供变量上下文，供底层组件直接引用（如 cl-variable-input, cl-editor-markdown）
 provide(UPSTREAM_VARIABLES_KEY, flattenedVariables);
 provide(LOOP_CONTEXT_VARS_KEY, loopContextVars);
-provide(UPSTREAM_OUTPUT_VARS_KEY, upstreamOutputVars);
+provide(UPSTREAM_OUTPUT_VARS_KEY, localInputsVars);
 provide(VARIABLE_SYNTAX_HINTS_KEY, computed(() => props.variableSyntaxHints));
+
+// 节点配置区域折叠状态持久化（跨节点切换保持）
+const sectionCollapseState = ref<Map<string, boolean>>(new Map());
+provide(SECTION_COLLAPSE_STATE_KEY, sectionCollapseState);
+
+// 当前选中节点 ID，供 node-config-section 生成唯一存储键
+provide(CONFIG_PANEL_NODE_ID_KEY, computed(() => props.selectedNode?.id || ''));
 
 function getVariableRefText(varName: string): string {
 	const nodeType = props.selectedNode?.type;
@@ -256,7 +325,7 @@ function getVariableRefText(varName: string): string {
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: 360px;
+	width: 420px;
 	background-color: #fff;
 	border-left: 1px solid var(--el-border-color-light);
 	box-shadow: -4px 0 16px rgba(0, 0, 0, 0.06);
@@ -314,7 +383,8 @@ function getVariableRefText(varName: string): string {
 
 	.panel-content {
 		flex: 1;
-		padding: 16px;
+		padding: 0;
+		background: #fafafa;
 	}
 }
 

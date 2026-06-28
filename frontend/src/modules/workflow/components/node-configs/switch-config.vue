@@ -1,5 +1,6 @@
 <template>
-	<el-form-item :label="$t('匹配变量名')" required>
+	<node-config-section :title="$t('条件分支')">
+		<el-form-item :label="$t('匹配变量名')" required>
 		<cl-variable-input v-model="config.variable" placeholder="例如: status" />
 		<div class="field-hint">
 			支持输入变量路径（如 variables.status 或 status）来进行值匹配。
@@ -21,14 +22,16 @@
 			{{ $t('添加 Case 分支') }}
 		</el-button>
 	</el-form-item>
-	<div class="config-hint">
-		<el-icon><info-filled /></el-icon>
-		<span>添加 Case 后，节点右侧自动生成对应端口。从端口直接连线到目标节点，最后一个是默认路由。</span>
-	</div>
+		<node-config-hint style="margin-top: 8px;">
+			<span>添加 Case 后，节点右侧自动生成对应端口。从端口直接连线到目标节点，最后一个是默认路由。</span>
+		</node-config-hint>
+	</node-config-section>
 </template>
 
 <script setup lang="ts">
-import { Delete, Plus, InfoFilled } from '@element-plus/icons-vue';
+import { Delete, Plus } from '@element-plus/icons-vue';
+import NodeConfigHint from './node-config-hint.vue';
+import NodeConfigSection from './node-config-section.vue';
 import ClVariableInput from '../cl-variable-input.vue';
 
 const props = defineProps<{
@@ -70,22 +73,4 @@ function addCase() {
 	flex: 1;
 }
 
-.config-hint {
-	display: flex;
-	align-items: flex-start;
-	gap: 6px;
-	padding: 8px 10px;
-	background: var(--el-fill-color-light);
-	border-radius: 6px;
-	border: 1px solid var(--el-border-color-lighter);
-	font-size: 12px;
-	color: var(--el-text-color-secondary);
-	line-height: 1.5;
-
-	.el-icon {
-		margin-top: 2px;
-		color: var(--el-color-info);
-		flex-shrink: 0;
-	}
-}
 </style>

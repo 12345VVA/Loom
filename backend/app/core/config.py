@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # 工作流引擎
     WORKFLOW_CHECKPOINT_BACKEND: str = "memory"  # "memory" | "sqlite" | "postgres"
+    WORKFLOW_NODE_TEST_TIMEOUT: int = 180  # 单节点测试超时秒数（LLM 节点常需 60-180 秒）
 
     # OpenAI / Ollama 配置
     OPENAI_API_KEY: str  # 启动时自动从 .env 中读取

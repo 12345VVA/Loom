@@ -25,7 +25,7 @@
 			</div>
 		</div>
 
-		<div class="tree-footer">
+		<div v-if="!hideFooter" class="tree-footer">
 			<el-button type="primary" link :icon="Plus" @click="addRootNode">
 				{{ mode === 'schema' ? $t('添加根字段') : $t('添加根键值对') }}
 			</el-button>
@@ -77,9 +77,11 @@ const props = withDefaults(
 	defineProps<{
 		modelValue: any[];
 		mode?: 'schema' | 'value';
+		hideFooter?: boolean;
 	}>(),
 	{
-		mode: 'schema'
+		mode: 'schema',
+		hideFooter: false
 	}
 );
 
@@ -301,6 +303,12 @@ function confirmImport() {
 		ElMessage.error(t('JSON 解析失败: ') + e.message);
 	}
 }
+
+defineExpose({
+	addRootNode,
+	copyJson,
+	openImportDialog
+});
 </script>
 
 <style lang="scss" scoped>
@@ -323,11 +331,11 @@ function confirmImport() {
 		gap: 4px;
 
 		.col-name {
-			width: 90px;
+			width: 110px;
 			flex-shrink: 0;
 		}
 		.col-type {
-			width: 70px;
+			width: 85px;
 			flex-shrink: 0;
 		}
 		.col-value-desc {

@@ -1,6 +1,6 @@
 <template>
 	<div class="custom-flow-node-wrapper" :class="{ 'node-entering': isEntering }">
-		<div class="custom-flow-node" :class="[meta.colorClass, { 'is-selected': selected, 'is-child': isChild }]">
+		<div class="custom-flow-node" :class="[meta.colorClass, { 'is-selected': selected, 'is-child': isChild }]" :style="nodeStyle">
 			<handle v-if="hasTarget" type="target" :position="Position.Left" />
 			<el-icon class="node-icon">
 				<component :is="meta.icon" />
@@ -10,9 +10,24 @@
 			<el-tooltip v-if="incomplete" effect="dark" :content="$t('节点存在未完成的必填配置')" placement="top">
 				<span class="node-incomplete-dot" />
 			</el-tooltip>
-			<handle v-if="hasSource" type="source" :position="Position.Right" />
+			<div class="node-actions" v-if="canTestNode">
+				<el-tooltip effect="dark" :content="$t('测试节点')" placement="top">
+					<el-icon class="play-btn" @click.stop="handleTestNode"><VideoPlay /></el-icon>
+				</el-tooltip>
+			</div>
+
+			<!-- 默认单输出 Handle -->
+			<handle v-if="hasSource && !customOutputHandles?.length" type="source" :position="Position.Right" />
+
+			<!-- 自定义多输出 Handle（condition / switch 等分支节点） -->
+			<div v-if="customOutputHandles?.length" class="output-handles">
+				<div v-for="h in customOutputHandles" :key="h.id" class="handle-group">
+					<span class="handle-label" :class="h.labelClass" :style="{ top: h.topPercent + '%' }">{{ h.label }}</span>
+					<handle :id="h.id" type="source" :position="Position.Right" :style="{ top: h.topPercent + '%' }" class="custom-handle" :class="h.handleClass" />
+				</div>
+			</div>
 		</div>
-		
+
 		<!-- 节点下方的执行日志展示 -->
 		<div v-if="runLog" class="node-run-log" :class="'status-' + runLog.status">
 			<!-- 头部状态栏 -->
@@ -22,7 +37,7 @@
 					<el-icon v-else-if="runLog.status === 'error'" color="#f56c6c"><CircleCloseFilled /></el-icon>
 					<el-icon v-else-if="runLog.status === 'running'" class="is-loading" color="#409eff"><Loading /></el-icon>
 					<el-icon v-else color="#909399"><InfoFilled /></el-icon>
-					
+
 					<span class="status-text" v-if="runLog">
 						{{ statusText }}
 					</span>
@@ -30,21 +45,21 @@
 				</div>
 				<el-icon class="expand-icon"><ArrowDown v-if="isLogExpanded" /><ArrowRight v-else /></el-icon>
 			</div>
-			
+
 			<div v-show="isLogExpanded" class="log-body">
 				<div v-if="runLog.inputData" class="log-section">
 					<div class="log-title">
 						<span>{{ $t('输入') }}</span>
 						<el-icon class="copy-btn" @click.stop="copyToClipboard(formatJson(runLog.inputData))"><CopyDocument /></el-icon>
 					</div>
-					<div class="log-content">{{ formatJson(runLog.inputData) }}</div>
+					<div class="log-content" v-html="highlightJson(runLog.inputData)"></div>
 				</div>
 				<div v-if="runLog.outputData" class="log-section">
 					<div class="log-title">
 						<span>{{ $t('输出') }}</span>
 						<el-icon class="copy-btn" @click.stop="copyToClipboard(formatJson(runLog.outputData))"><CopyDocument /></el-icon>
 					</div>
-					<div class="log-content">{{ formatJson(runLog.outputData) }}</div>
+					<div class="log-content" v-html="highlightJson(runLog.outputData)"></div>
 				</div>
 				<div v-if="!runLog.inputData && !runLog.outputData" class="log-empty">
 					{{ $t('本次运行暂无数据') }}
@@ -56,11 +71,13 @@
 
 <script setup lang="ts">
 import { Handle, Position, useNode } from '@vue-flow/core';
-import { computed, ref, onMounted } from 'vue';
-import { CircleCheckFilled, CircleCloseFilled, Loading, InfoFilled, ArrowDown, ArrowRight, CopyDocument } from '@element-plus/icons-vue';
+import { computed, ref, onMounted, inject } from 'vue';
+import { CircleCheckFilled, CircleCloseFilled, Loading, InfoFilled, ArrowDown, ArrowRight, CopyDocument, VideoPlay } from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
 import { formatJson, copyToClipboard } from '../../utils';
 import { getNodeMeta } from '../../utils/node-type-registry';
+import { UNTESTABLE_NODE_TYPES, OPEN_NODE_TEST_DIALOG_KEY } from '../constants';
+import type { CustomOutputHandle } from './types';
 
 const { t } = useI18n();
 
@@ -74,9 +91,15 @@ interface Props {
 	isChild?: boolean;
 	groupLabel?: string;
 	incomplete?: boolean;
+	nodeHeight?: number;
+	customOutputHandles?: CustomOutputHandle[];
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+	hasTarget: true,
+	hasSource: true,
+	nodeHeight: 42,
+});
 
 const isEntering = ref(true);
 
@@ -91,6 +114,18 @@ const meta = computed(() => getNodeMeta(node.type));
 const runLog = computed(() => node.data?.runLog);
 const isLogExpanded = ref(true);
 
+const openNodeTestDialog = inject(OPEN_NODE_TEST_DIALOG_KEY);
+
+const canTestNode = computed(() => {
+	return !UNTESTABLE_NODE_TYPES.includes(node.type);
+});
+
+function handleTestNode() {
+	if (openNodeTestDialog) {
+		openNodeTestDialog(node.id);
+	}
+}
+
 const statusText = computed(() => {
 	const s = runLog.value?.status;
 	if (s === 'success') return t('运行成功');
@@ -98,9 +133,40 @@ const statusText = computed(() => {
 	if (s === 'running') return t('试运行中...');
 	return t('准备中');
 });
+
+const nodeStyle = computed(() => {
+	if (props.customOutputHandles?.length) {
+		return { height: props.nodeHeight + 'px' };
+	}
+	return {};
+});
+
+function highlightJson(data: any): string {
+	const jsonStr = formatJson(data);
+	if (!jsonStr) return '';
+	let html = jsonStr.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	html = html.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+		let cls = 'json-number';
+		if (/^"/.test(match)) {
+			if (/:$/.test(match)) {
+				cls = 'json-key';
+			} else {
+				cls = 'json-string';
+			}
+		} else if (/true|false/.test(match)) {
+			cls = 'json-boolean';
+		} else if (/null/.test(match)) {
+			cls = 'json-null';
+		}
+		return '<span class="' + cls + '">' + match + '</span>';
+	});
+	return html;
+}
 </script>
 
 <style lang="scss" scoped>
+@import '../workflow-shared.scss';
+
 .custom-flow-node {
 	display: flex;
 	align-items: center;
@@ -147,6 +213,25 @@ const statusText = computed(() => {
 		text-overflow: ellipsis;
 	}
 
+	.node-actions {
+		display: flex;
+		align-items: center;
+		margin-left: auto;
+		padding-left: 6px;
+	}
+
+	.play-btn {
+		cursor: pointer;
+		color: var(--el-text-color-secondary);
+		font-size: 16px;
+		transition: all 0.2s;
+
+		&:hover {
+			color: var(--el-color-success);
+			transform: scale(1.1);
+		}
+	}
+
 	:deep(.vue-flow__handle) {
 		width: 8px;
 		height: 8px;
@@ -154,10 +239,82 @@ const statusText = computed(() => {
 		border: 2px solid #ffffff;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 		border-radius: 50%;
-		transition: background-color 0.2s;
+		transition: background-color 0.2s, transform 0.2s;
 
 		&:hover {
 			background-color: #66b1ff;
+			transform: scale(1.3);
+		}
+	}
+}
+
+/* 自定义多输出 Handle 区域 */
+.output-handles {
+	position: absolute;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	width: 12px;
+}
+
+.handle-group {
+	display: flex;
+	align-items: center;
+}
+
+.handle-label {
+	position: absolute;
+	right: 16px;
+	font-size: 10px;
+	font-weight: 700;
+	transform: translateY(-50%);
+	z-index: 2;
+	user-select: none;
+
+	&--true {
+		color: #67c23a;
+	}
+
+	&--false {
+		color: #f56c6c;
+	}
+
+	&--default {
+		color: #909399;
+		font-weight: 400;
+	}
+
+	&--case {
+		color: #e6a23c;
+		max-width: 60px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+}
+
+.custom-handle {
+	&.handle-true {
+		:deep(.vue-flow__handle) {
+			background-color: #67c23a !important;
+		}
+	}
+
+	&.handle-false {
+		:deep(.vue-flow__handle) {
+			background-color: #f56c6c !important;
+		}
+	}
+
+	&.handle-default {
+		:deep(.vue-flow__handle) {
+			background-color: #909399 !important;
+		}
+	}
+
+	&.handle-case {
+		:deep(.vue-flow__handle) {
+			background-color: #e6a23c !important;
 		}
 	}
 }
@@ -186,48 +343,48 @@ const statusText = computed(() => {
 }
 
 .node-start {
-	border-left: 4px solid var(--el-color-success);
-	.node-icon { color: var(--el-color-success); }
+	border-left: 4px solid var(--wf-color-start);
+	.node-icon { color: var(--wf-color-start); }
 }
 .node-llm {
-	border-left: 4px solid var(--el-color-primary);
-	.node-icon { color: var(--el-color-primary); }
+	border-left: 4px solid var(--wf-color-llm);
+	.node-icon { color: var(--wf-color-llm); }
 }
 .node-tool, .node-tool_executor {
-	border-left: 4px solid #8a2be2;
-	.node-icon { color: #8a2be2; }
+	border-left: 4px solid var(--wf-color-tool);
+	.node-icon { color: var(--wf-color-tool); }
 }
 .node-condition {
-	border-left: 4px solid var(--el-color-warning);
-	.node-icon { color: var(--el-color-warning); }
+	border-left: 4px solid var(--wf-color-condition);
+	.node-icon { color: var(--wf-color-condition); }
 }
 .node-switch {
-	border-left: 4px solid #e6a23c;
-	.node-icon { color: #e6a23c; }
+	border-left: 4px solid var(--wf-color-switch);
+	.node-icon { color: var(--wf-color-switch); }
 }
 .node-human_input {
-	border-left: 4px solid var(--el-color-info);
-	.node-icon { color: var(--el-color-info); }
+	border-left: 4px solid var(--wf-color-human-input);
+	.node-icon { color: var(--wf-color-human-input); }
 }
 .node-intent_classifier {
-	border-left: 4px solid #20b2aa;
-	.node-icon { color: #20b2aa; }
+	border-left: 4px solid var(--wf-color-intent-classifier);
+	.node-icon { color: var(--wf-color-intent-classifier); }
 }
 .node-loop_controller {
-	border-left: 4px solid #d2691e;
-	.node-icon { color: #d2691e; }
+	border-left: 4px solid var(--wf-color-loop-controller);
+	.node-icon { color: var(--wf-color-loop-controller); }
 }
 .node-batch_processor {
-	border-left: 4px solid #00ced1;
-	.node-icon { color: #00ced1; }
+	border-left: 4px solid var(--wf-color-batch-processor);
+	.node-icon { color: var(--wf-color-batch-processor); }
 }
 .node-image_generator {
-	border-left: 4px solid #ff69b4;
-	.node-icon { color: #ff69b4; }
+	border-left: 4px solid var(--wf-color-image-generator);
+	.node-icon { color: var(--wf-color-image-generator); }
 }
 .node-end {
-	border-left: 4px solid var(--el-color-danger);
-	.node-icon { color: var(--el-color-danger); }
+	border-left: 4px solid var(--wf-color-end);
+	.node-icon { color: var(--wf-color-end); }
 }
 
 /*
@@ -240,20 +397,11 @@ const statusText = computed(() => {
 .custom-flow-node-wrapper {
 	position: relative;
 	&.node-entering {
-		animation: pop-in 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+		animation: wf-pop-in 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
 	}
 }
 
-@keyframes pop-in {
-	0% {
-		opacity: 0;
-		transform: scale(0.85);
-	}
-	100% {
-		opacity: 1;
-		transform: scale(1);
-	}
-}
+
 
 .node-run-log {
 	position: absolute;
@@ -269,11 +417,11 @@ const statusText = computed(() => {
 	pointer-events: auto;
 	display: flex;
 	flex-direction: column;
-	
+
 	&.status-success { border-top: 3px solid var(--el-color-success); }
 	&.status-error { border-top: 3px solid var(--el-color-danger); }
 	&.status-running { border-top: 3px solid var(--el-color-primary); }
-	
+
 	.log-header {
 		display: flex;
 		justify-content: space-between;
@@ -283,11 +431,11 @@ const statusText = computed(() => {
 		background: #fcfcfc;
 		border-radius: 8px 8px 0 0;
 		transition: background 0.2s;
-		
+
 		&:hover {
 			background: var(--el-fill-color-light);
 		}
-		
+
 		.log-status {
 			display: flex;
 			align-items: center;
@@ -295,7 +443,7 @@ const statusText = computed(() => {
 			font-size: 13px;
 			font-weight: 600;
 			color: var(--el-text-color-primary);
-			
+
 			.time-cost {
 				font-size: 11px;
 				color: var(--el-text-color-secondary);
@@ -305,29 +453,29 @@ const statusText = computed(() => {
 				margin-left: 4px;
 			}
 		}
-		
+
 		.expand-icon {
 			font-size: 14px;
 			color: var(--el-text-color-secondary);
 		}
 	}
-	
+
 	.log-body {
 		padding: 12px;
 		border-top: 1px solid var(--el-border-color-lighter);
 		max-height: 280px;
 		overflow-y: auto;
-		
+
 		/* 滚动条美化 */
 		&::-webkit-scrollbar { width: 4px; height: 4px; }
 		&::-webkit-scrollbar-thumb { background: #dcdfe6; border-radius: 2px; }
 		&::-webkit-scrollbar-track { background: transparent; }
 	}
-	
+
 	.log-section {
 		margin-bottom: 12px;
 		&:last-child { margin-bottom: 0; }
-		
+
 		.log-title {
 			display: flex;
 			align-items: center;
@@ -336,7 +484,7 @@ const statusText = computed(() => {
 			color: var(--el-text-color-regular);
 			margin-bottom: 6px;
 			font-size: 12px;
-			
+
 			.copy-btn {
 				cursor: pointer;
 				color: var(--el-text-color-secondary);
@@ -346,7 +494,7 @@ const statusText = computed(() => {
 				}
 			}
 		}
-		
+
 		.log-content {
 			background: #f7f8fa;
 			padding: 8px;
@@ -358,9 +506,15 @@ const statusText = computed(() => {
 			font-size: 11px;
 			line-height: 1.4;
 			border: 1px solid var(--el-border-color-lighter);
+
+			:deep(.json-string) { color: #067b14; }
+			:deep(.json-number) { color: #098658; }
+			:deep(.json-boolean) { color: #0000ff; }
+			:deep(.json-null) { color: #0000ff; }
+			:deep(.json-key) { color: #a31515; font-weight: bold; }
 		}
 	}
-	
+
 	.log-empty {
 		font-size: 12px;
 		color: var(--el-text-color-placeholder);

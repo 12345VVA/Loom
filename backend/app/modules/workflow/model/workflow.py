@@ -3,6 +3,7 @@
 """
 from datetime import datetime
 from typing import Any, Optional
+import json
 
 from pydantic import BaseModel, ConfigDict, Field as PydanticField, field_validator, field_serializer
 from sqlmodel import Field
@@ -144,3 +145,29 @@ class WorkflowExecutionLogRead(BaseModel):
     latency_ms: int
     status: str
     created_at: datetime
+
+
+class NodeTestRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    definition_id: int
+    node_id: str = PydanticField(max_length=100)
+    mock_variables: dict[str, Any] = PydanticField(default_factory=dict)
+
+    @field_validator("mock_variables")
+    @classmethod
+    def validate_mock_variables_size(cls, v: dict) -> dict:
+        """限制 mock_variables 序列化后不超过 100KB，防止超大 payload 耗尽内存"""
+        size = len(json.dumps(v, ensure_ascii=False).encode('utf-8'))
+        if size > 100 * 1024:
+            raise ValueError(f"模拟变量数据过大（{size // 1024}KB），限制为 100KB 以内")
+        return v
+
+
+class NodeTestResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    output: dict[str, Any]
+    latency_ms: int
+    error: Optional[str] = None
+    is_timeout: bool = False

@@ -1,6 +1,7 @@
 <template>
 	<div class="variable-transform-config">
-		<el-form-item :label="$t('输入变量')" required>
+		<node-config-section :title="$t('转换配置')">
+			<el-form-item :label="$t('输入变量')" required style="margin-bottom: 0;">
 			<cl-variable-input v-model="config.input_variable" placeholder="例如: loop_results" />
 		</el-form-item>
 		
@@ -29,15 +30,19 @@
 				{{ $t('使用 input_value 引用输入变量的值。支持简单的 Python 函数调用如 len() 等。') }}
 			</div>
 		</el-form-item>
+		</node-config-section>
 
-		<el-form-item :label="$t('输出写入变量')" required>
-			<el-input v-model="config.output_variable" placeholder="例如: transformed_value" />
-		</el-form-item>
+		<node-config-section :title="$t('输出')">
+			<el-form-item :label="$t('输出变量写入')" required style="margin-bottom: 0;">
+				<el-input v-model="config.output_variable" placeholder="例如: transformed_value" />
+			</el-form-item>
+		</node-config-section>
 	</div>
 </template>
 
 <script setup lang="ts">
 import ClVariableInput from '../cl-variable-input.vue';
+import NodeConfigSection from './node-config-section.vue';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;

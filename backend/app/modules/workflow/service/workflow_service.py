@@ -1066,6 +1066,84 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         return instance
 
+    # ==========================================
+    # 节点级运行（开发期调试 / 强一致性）
+    # ==========================================
+
+    async def test_node(self, definition_id: int, node_id: str, mock_variables: Dict[str, Any]) -> "NodeTestResponse":
+        """
+        单节点测试：直接调用注册的节点执行器，不走完整的 LangGraph，不创建实例和日志。
+        """
+        from app.modules.workflow.model.workflow import NodeTestResponse
+        from app.modules.workflow.service.compiler import UNTESTABLE_NODE_TYPES, convert_keys_to_snake, apply_input_mappings, apply_output_mappings, node_registry, resolve_node_inputs
+        from app.core.redis import redis_client
+
+        definition = self.session.get(WorkflowDefinition, definition_id)
+        if not definition:
+            raise HTTPException(status_code=404, detail="工作流定义不存在")
+
+        try:
+            graph_json = json.loads(definition.graph_json)
+        except Exception:
+            raise HTTPException(status_code=400, detail="工作流拓扑解析失败")
+
+        nodes = graph_json.get("nodes", [])
+        node = next((n for n in nodes if n.get("id") == node_id), None)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"节点 '{node_id}' 不存在")
+
+        node_type = node.get("type")
+        # 拦截不可单独测试的节点类型
+        if node_type in UNTESTABLE_NODE_TYPES:
+            raise HTTPException(status_code=400, detail=f"节点类型 '{node_type}' 不支持单节点测试")
+
+        config = convert_keys_to_snake(node.get("config", {}))
+        executor = node_registry.get(node_type)
+        if not executor:
+            raise HTTPException(status_code=400, detail=f"工作流中使用了未注册的节点类型: '{node_type}'")
+
+        # 防重放：同一节点 2 秒内不重复执行 (使用 Redis)
+        dedup_key = f"loom:workflow:test_node:{definition_id}:{node_id}"
+        if not redis_client.set(dedup_key, "1", nx=True, ex=2):
+            raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
+
+        # 1. 提炼入参
+        node_inputs = resolve_node_inputs(mock_variables, config)
+
+        start_time = time.perf_counter()
+        error_msg = None
+        is_timeout = False
+        updates = {}
+        try:
+            executor_config = {**config, "id": node_id}
+            # 执行节点（可配置超时，默认 180 秒；LLM 节点常需 60-180 秒响应）
+            from app.core.config import settings
+            timeout_seconds = settings.WORKFLOW_NODE_TEST_TIMEOUT
+            updates = await asyncio.wait_for(
+                executor(node_inputs, executor_config),
+                timeout=timeout_seconds
+            )
+            if updates is None:
+                updates = {}
+        except asyncio.TimeoutError:
+            logger.warning("单节点测试超时 [%s] (%ds)", node_id, timeout_seconds)
+            error_msg = f"节点执行超时（{timeout_seconds}秒），可能是模型响应过慢或配置有误"
+            is_timeout = True
+        except Exception as e:
+            logger.error("单节点测试执行失败 [%s]: %s", node_id, e, exc_info=True)
+            error_msg = str(e)
+            is_timeout = False
+
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+        # 单节点测试主要关心节点本身的输出 updates，不关心写回全局后的完整 variables 状态
+        return NodeTestResponse(
+            output=updates,
+            latency_ms=latency_ms,
+            error=error_msg,
+            is_timeout=is_timeout
+        )
+
 
 def recover_orphaned_instances(session: Session):
     """

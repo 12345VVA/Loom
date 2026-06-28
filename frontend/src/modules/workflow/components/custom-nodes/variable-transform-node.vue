@@ -2,8 +2,6 @@
 	<base-node
 		:label="label"
 		:selected="selected"
-		:icon="Filter"
-		node-class="node-variable-transform"
 		:has-target="true"
 		:has-source="true"
 		:is-child="isChild"
@@ -14,8 +12,6 @@
 
 <script setup lang="ts">
 import BaseNode from './base-node.vue';
-import { Filter } from '@element-plus/icons-vue';
-
 defineProps<{
 	label: string;
 	selected?: boolean;

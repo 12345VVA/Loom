@@ -137,7 +137,8 @@ export const NODE_REGISTRY = [
 		colorClass: 'node-tool',
 		colorHex: '#e6a23c',
 		category: 'system',
-		descKey: '旧版工具节点'
+		descKey: '旧版工具节点',
+		deprecated: true
 	},
 	{
 		type: 'loop_body_group',

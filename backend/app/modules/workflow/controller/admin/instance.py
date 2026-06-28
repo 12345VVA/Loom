@@ -27,6 +27,8 @@ from app.modules.workflow.model.workflow import (
     WorkflowInstanceResumeRequest,
     WorkflowExecutionLog,
     WorkflowExecutionLogRead,
+    NodeTestRequest,
+    NodeTestResponse,
 )
 from app.modules.workflow.service.workflow_service import WorkflowService, WorkflowInstanceService
 
@@ -76,6 +78,17 @@ class WorkflowInstanceController(BaseController):
         service = WorkflowInstanceService(session)
         instance = await service.resume_instance(payload.instance_id, payload.user_input)
         return instance
+
+    @Post("/testNode", summary="单节点测试运行", permission="workflow:instance:testNode")
+    async def test_node(
+        self,
+        payload: NodeTestRequest,
+        _: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> NodeTestResponse:
+        service = WorkflowInstanceService(session)
+        result = await service.test_node(payload.definition_id, payload.node_id, payload.mock_variables)
+        return result
 
     @Get("/logs", summary="获取执行日志步骤列表", permission="workflow:instance:logs")
     async def get_logs(

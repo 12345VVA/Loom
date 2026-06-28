@@ -1,0 +1,24 @@
+---
+description: 项目 UI 规范和约定
+globs: *.vue, *.tsx, *.ts
+---
+# UI 规范与最佳实践
+
+## 提示信息 (Tooltips / Hints)
+- **小字提示图标化**：对于表单项、设置区域的解释性小字提示，**不应该**直接平铺显示在页面上占用空间。
+- **最佳实践**：应该使用 `el-tooltip` 结合警告图标（如 `<el-icon><Warning /></el-icon>` 或 `<el-icon><InfoFilled /></el-icon>`），当鼠标移上去时再显示详细提示。
+- **示例**：
+  ```vue
+  <el-tooltip placement="top" effect="dark">
+    <template #content>
+      <div style="max-width: 200px; line-height: 1.4;">
+        Schema 约束模式：根据下方字段定义自动生成 JSON Schema，模型在 API 层强制遵守结构输出。
+      </div>
+    </template>
+    <el-icon class="hint-icon"><Warning /></el-icon>
+  </el-tooltip>
+  ```
+
+## 布局与空间利用
+- **全宽输入框**：在使用网格或 Flex 布局时，确保 `el-input` 等表单组件设置 `style="width: 100%"`，以充分利用可用空间，避免右侧出现不必要的留白。
+- **紧凑布局**：像设置项的格式选择等，可以使用内联的下拉菜单（Dropdown）嵌入到标题行中，而不是单独占用一个表单行（参考 Coze 的紧凑设计）。

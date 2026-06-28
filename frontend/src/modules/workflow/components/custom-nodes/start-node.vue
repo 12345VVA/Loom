@@ -2,8 +2,6 @@
 	<base-node
 		:label="label"
 		:selected="selected"
-		:icon="VideoPlay"
-		node-class="node-start"
 		:has-source="true"
 		:is-child="isChild"
 		:group-label="groupLabel"
@@ -13,8 +11,6 @@
 
 <script setup lang="ts">
 import BaseNode from './base-node.vue';
-import { VideoPlay } from '@element-plus/icons-vue';
-
 defineProps<{
 	label: string;
 	selected?: boolean;

@@ -42,7 +42,8 @@
           { "code": "workflow_instance_page", "name": "分页", "type": "button", "permission": "workflow:instance:page", "role_codes": ["admin"] },
           { "code": "workflow_instance_info", "name": "详情", "type": "button", "permission": "workflow:instance:info", "role_codes": ["admin"] },
           { "code": "workflow_instance_start", "name": "启动", "type": "button", "permission": "workflow:instance:start", "role_codes": ["admin"] },
-          { "code": "workflow_instance_resume", "name": "人工确认", "type": "button", "permission": "workflow:instance:resume", "role_codes": ["admin"] }
+          { "code": "workflow_instance_resume", "name": "人工确认", "type": "button", "permission": "workflow:instance:resume", "role_codes": ["admin"] },
+          { "code": "workflow_instance_testNode", "name": "单节点测试", "type": "button", "permission": "workflow:instance:testNode", "role_codes": ["admin"] }
         ]
       }
     ]

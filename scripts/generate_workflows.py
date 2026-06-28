@@ -130,6 +130,7 @@ def generate_02():
     elements = [
         create_node("node_start", "start", "开始", 100, 200, {"inputVariables": ["user_input"]}),
         create_node("node_intent", "intent_classifier", "意图识别", 350, 200, {
+            "inputs": [{"name": "user_input", "type": "string", "source": ["node_start", "user_input"]}],
             "modelProfileCode": "deepseek-default",
             "intents": [
                 {"name": "闲聊", "description": "日常打招呼、闲聊", "value": "chat", "targetRoute": "node_chat"},
@@ -139,6 +140,7 @@ def generate_02():
             "outputVariable": "intent_result"
         }),
         create_node("node_chat", "llm", "闲聊回复", 650, 100, {
+            "inputs": [{"name": "user_input", "type": "string", "source": ["node_start", "user_input"]}],
             "modelProfileCode": "deepseek-default",
             "promptTemplate": "用户：{user_input}\\n你是一个幽默的朋友，请回复。",
             "outputFormat": "text",
@@ -150,6 +152,10 @@ def generate_02():
             "outputVariable": "weather_info"
         }),
         create_node("node_end", "end", "结束", 950, 200, {
+            "inputs": [
+                {"name": "chat_reply", "type": "string", "source": ["node_chat", "chat_reply"]},
+                {"name": "weather_info", "type": "string", "source": ["node_weather", "weather_info"]}
+            ],
             "outputFormat": "json",
             "outputFields": [
                 {"name": "reply", "type": "string", "value": "{chat_reply}{weather_info}", "children": []}
@@ -167,17 +173,23 @@ def generate_03():
     elements = [
         create_node("node_start", "start", "开始", 100, 150, {"inputVariables": ["search_query"]}),
         create_node("node_search", "tool_executor", "联网搜索", 350, 150, {
+            "inputs": [{"name": "search_query", "type": "string", "source": ["node_start", "search_query"]}],
             "toolCode": "serp_api_search",
             "argumentsJson": '{"query": "{search_query}"}',
             "outputVariable": "search_results"
         }),
         create_node("node_llm", "llm", "整理答案", 650, 150, {
+            "inputs": [
+                {"name": "search_query", "type": "string", "source": ["node_start", "search_query"]},
+                {"name": "search_results", "type": "string", "source": ["node_search", "search_results"]}
+            ],
             "modelProfileCode": "deepseek-default",
             "promptTemplate": "问题：{search_query}\\n\\n搜索结果：{search_results}\\n\\n请根据搜索结果总结最终答案。",
             "outputFormat": "text",
             "outputVariable": "final_answer"
         }),
         create_node("node_end", "end", "结束", 950, 150, {
+            "inputs": [{"name": "final_answer", "type": "string", "source": ["node_llm", "final_answer"]}],
             "outputFormat": "json",
             "outputFields": [{"name": "answer", "type": "string", "value": "{final_answer}", "children": []}]
         }),
@@ -191,12 +203,14 @@ def generate_04():
     elements = [
         create_node("node_start", "start", "开始", 100, 300, {"inputVariables": ["json_list"]}),
         create_node("node_loop_ctrl", "loop_controller", "循环控制器", 350, 300, {
+            "inputs": [{"name": "json_list", "type": "string", "source": ["node_start", "json_list"]}],
             "arrayVariable": "{json_list}",
             "itemVariable": "item",
             "concurrency": 2
         }),
         create_node("loop_body_group", "loop_body_group", "循环体容器", 350, 400, {}, style={"width": "300px", "height": "200px"}),
         create_node("node_loop_llm", "llm", "处理每一项", 50, 50, {
+            "inputs": [{"name": "item", "type": "string", "source": ["node_loop_ctrl", "item"]}],
             "modelProfileCode": "deepseek-default",
             "promptTemplate": "处理数据项：{item}\\n请翻译为英文。",
             "outputFormat": "text",
@@ -219,6 +233,7 @@ def generate_05():
         create_node("node_start", "start", "开始", -200, 300, {"inputVariables": ["theme"]}),
         
         create_node("node_human", "human_input", "人工确认主题", 100, 300, {
+            "inputs": [{"name": "theme", "type": "string", "source": ["node_start", "theme"]}],
             "approvalMessage": "是否允许开始创作关于：{theme} 的内容？"
         }),
         
@@ -231,6 +246,7 @@ def generate_05():
         }),
         
         create_node("node_llm_easy", "llm", "生成简单文本", 700, 150, {
+            "inputs": [{"name": "theme", "type": "string", "source": ["node_start", "theme"]}],
             "modelProfileCode": "deepseek-default",
             "promptTemplate": "主题：{theme}\\n写个简单的故事。",
             "outputFormat": "text",
@@ -238,6 +254,7 @@ def generate_05():
         }),
         
         create_node("node_llm_hard", "llm", "生成复杂结构", 1000, 450, {
+            "inputs": [{"name": "theme", "type": "string", "source": ["node_start", "theme"]}],
             "modelProfileCode": "deepseek-default",
             "promptTemplate": "主题：{theme}\\n生成一个详细的结构 JSON，包含 scenes 数组。",
             "outputFormat": "text",
@@ -245,6 +262,7 @@ def generate_05():
         }),
         
         create_node("node_image", "image_generator", "生图节点", 1000, 150, {
+            "inputs": [{"name": "story_text", "type": "string", "source": ["node_llm_easy", "story_text"]}],
             "modelProfileCode": "dall-e-3",
             "promptTemplate": "为这个故事配图：{story_text}",
             "outputVariable": "image_url"
@@ -269,6 +287,7 @@ def generate_06():
     elements = [
         create_node("node_start", "start", "开始", 100, 200, {"inputVariables": ["score"]}),
         create_node("node_condition", "condition", "分数判断", 350, 200, {
+            "inputs": [{"name": "score", "type": "number", "source": ["node_start", "score"]}],
             "expression": "score >= 60",
             "trueRoute": "node_tool_pass",
             "falseRoute": "node_tool_fail"
@@ -282,6 +301,7 @@ def generate_06():
             "mockData": "已记录为不及格，需要补考"
         }),
         create_node("node_end", "end", "结束", 950, 200, {
+            "inputs": [{"name": "record_result", "type": "string", "source": ["node_tool_pass", "record_result"]}],
             "outputFormat": "json",
             "outputFields": [{"name": "result", "type": "string", "value": "{record_result}", "children": []}]
         }),
@@ -297,14 +317,16 @@ def generate_07():
     elements = [
         create_node("node_start", "start", "开始", 100, 300, {"inputVariables": ["url_list"]}),
         create_node("node_batch", "batch_processor", "并发批处理器", 350, 300, {
+            "inputs": [{"name": "url_list", "type": "string", "source": ["node_start", "url_list"]}],
             "arrayVariable": "{url_list}",
             "itemVariable": "url",
             "concurrency": 5
         }),
         create_node("loop_body_group", "loop_body_group", "批处理内部容器", 350, 400, {}, style={"width": "300px", "height": "200px"}),
         create_node("node_scrape", "tool_executor", "抓取网页", 50, 50, {
+            "inputs": [{"name": "url", "type": "string", "source": ["node_batch", "url"]}],
             "toolCode": "serp_api_search",
-            "argumentsJson": '{"query": "{{ variables.url }}"}',
+            "argumentsJson": '{"query": "{url}"}',
             "outputVariable": "page_content"
         }, parent_node="loop_body_group", extent="parent"),
         create_node("node_end", "end", "结束", 800, 300, {
@@ -327,12 +349,18 @@ def generate_08():
             ]
         }),
         create_node("node_transform", "variable_transform", "变量转换", 650, 200, {
+            "inputs": [{"name": "user_json", "type": "string", "source": ["node_start", "user_json"]}],
             "input_variable": "{user_json}",
             "transform_type": "extract_json_path",
             "transform_args": {"path": "data.items.0"},
             "output_variable": "extracted_item"
         }),
         create_node("node_end", "end", "结束", 950, 200, {
+            "inputs": [
+                {"name": "temp_value", "type": "string", "source": ["node_assign", "temp_value"]},
+                {"name": "computed_value", "type": "string", "source": ["node_assign", "computed_value"]},
+                {"name": "extracted_item", "type": "string", "source": ["node_transform", "extracted_item"]}
+            ],
             "outputFormat": "json",
             "outputFields": [
                 {"name": "temp", "type": "string", "value": "{temp_value}", "children": []},
@@ -353,6 +381,7 @@ def generate_09():
             "assignments": [{"variable_name": "status", "value_type": "string", "value": "pending"}]
         }),
         create_node("node_intent", "intent_classifier", "意图识别", 600, 400, {
+            "inputs": [{"name": "user_input", "type": "string", "source": ["node_start", "user_input"]}],
             "modelProfileCode": "deepseek-default",
             "intents": [
                 {"name": "询问天气", "value": "weather", "targetRoute": "node_tool_weather"},
@@ -382,8 +411,9 @@ def generate_09():
         }),
         create_node("loop_body_group", "loop_body_group", "处理组", 1500, 600, {}, style={"width": "300px", "height": "200px"}),
         create_node("node_loop_tool", "tool_executor", "执行任务", 50, 50, {
+            "inputs": [{"name": "task", "type": "string", "source": ["node_batch", "task"]}],
             "toolCode": "mock_tool",
-            "argumentsJson": '{"task": "{{ variables.task }}"}',
+            "argumentsJson": '{"task": "{task}"}',
             "outputVariable": "task_res"
         }, parent_node="loop_body_group", extent="parent"),
         create_node("node_end", "end", "结束", 1900, 400, {
@@ -478,6 +508,7 @@ def generate_10():
     elements = [
         create_node("node_start", "start", "开始", 50, 250, {"inputVariables": ["input_query"]}),
         create_node("node_llm", "llm", "生成绘本大纲", 300, 250, {
+            "inputs": [{"name": "input_query", "type": "string", "source": ["node_start", "input_query"]}],
             "modelProfileCode": "deepseek-default",
             "promptTemplate": prompt_template,
             "outputFormat": "json",
@@ -485,18 +516,21 @@ def generate_10():
             "outputVariable": "LLM_output"
         }),
         create_node("node_transform", "variable_transform", "提取段落数组", 600, 250, {
+            "inputs": [{"name": "LLM_output", "type": "string", "source": ["node_llm", "LLM_output"]}],
             "input_variable": "{LLM_output}",
             "transform_type": "extract_json_path",
             "transform_args": {"path": "output.stories.0.paragraphs"},
             "output_variable": "paragraphs_array"
         }),
         create_node("node_loop", "loop_controller", "循环生成插图", 900, 250, {
+            "inputs": [{"name": "paragraphs_array", "type": "string", "source": ["node_transform", "paragraphs_array"]}],
             "arrayVariable": "{paragraphs_array}",
             "itemVariable": "paragraph",
             "concurrency": 2
         }),
         create_node("loop_body_group", "loop_body_group", "插图生成容器", 900, 400, {}, style={"width": "350px", "height": "200px"}),
         create_node("node_image", "image_generator", "生图节点", 50, 50, {
+            "inputs": [{"name": "paragraph", "type": "string", "source": ["node_loop", "paragraph"]}],
             "modelProfileCode": "dall-e-3",
             "promptTemplate": "{paragraph.image_prompt}",
             "outputVariable": "image_url"

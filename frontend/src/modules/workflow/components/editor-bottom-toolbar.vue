@@ -1,10 +1,9 @@
 <template>
-	<div class="editor-bottom-toolbar">
+	<div class="editor-bottom-toolbar" @contextmenu.prevent :style="toolbarStyle">
 		<div class="toolbar-left">
-			<!-- 预留左侧控制区 -->
-		</div>
-
-		<div class="toolbar-center">
+			<span class="workflow-title">{{ workflowName || $t('未命名工作流') }}</span>
+			<el-tag size="small" type="info" class="workflow-code">{{ workflowCode }}</el-tag>
+			<el-divider direction="vertical" class="mx-2" style="margin: 0 8px;" />
 			<el-popover
 				placement="top"
 				:width="360"
@@ -29,7 +28,7 @@
 						class="node-search"
 						ref="searchInputRef"
 					/>
-					
+
 					<div class="node-categories">
 						<template v-for="category in filteredCategories" :key="category.name">
 							<div class="category-title" v-if="category.items.length > 0">{{ category.name }}</div>
@@ -55,15 +54,39 @@
 					</div>
 				</div>
 			</el-popover>
+			<el-button style="margin-left: 8px;" @click="$emit('export-workflow')" :icon="Download">
+				{{ $t('导出') }}
+			</el-button>
 		</div>
 
 		<div class="toolbar-right">
+			<template v-if="testLogDrawerInstanceId">
+				<el-button plain type="info" @click="$emit('clear-test-status')">
+					<el-icon><brush /></el-icon>{{ $t('清除') }}
+				</el-button>
+				<el-button plain type="primary" @click="$emit('reopen-test-log-drawer')">
+					<el-icon><document /></el-icon>{{ $t('日志') }}
+				</el-button>
+				<el-divider direction="vertical" style="margin: 0 8px;" />
+			</template>
+
+			<el-tooltip :content="$t('撤销 (Ctrl+Z)')" placement="top">
+				<el-button link :icon="RefreshLeft" :disabled="!canUndo" @click="$emit('undo')" />
+			</el-tooltip>
+			<el-tooltip :content="$t('重做 (Ctrl+Shift+Z)')" placement="top">
+				<el-button link :icon="RefreshRight" :disabled="!canRedo" @click="$emit('redo')" />
+			</el-tooltip>
+
+			<el-button type="primary" :icon="FolderChecked" :loading="saving" @click="$emit('save-workflow')">
+				{{ $t('保存') }}
+			</el-button>
+
 			<el-tooltip :content="runButtonTooltip" placement="top" :disabled="!isTestRunDisabled">
-				<div style="display: inline-block;">
-					<el-button 
-						type="success" 
-						:icon="CaretRight" 
-						class="test-run-btn" 
+				<div style="display: inline-block; margin-left: 12px;">
+					<el-button
+						type="success"
+						:icon="CaretRight"
+						class="test-run-btn"
 						:disabled="isTestRunDisabled"
 						@click="$emit('open-test-dialog')"
 					>
@@ -87,22 +110,43 @@ import {
 	CircleCheck,
 	MagicStick,
 	Refresh,
+	RefreshLeft,
+	RefreshRight,
 	Files,
 	Picture,
 	Collection,
 	Filter,
 	Search,
 	Plus,
-	CaretRight
+	CaretRight,
+	Brush,
+	Document,
+	Download,
+	FolderChecked
 } from '@element-plus/icons-vue';
 import { NODE_REGISTRY } from '../utils/node-type-registry';
 
 const props = defineProps<{
 	isDirty?: boolean;
 	hasIncompleteNodes?: boolean;
+	workflowName: string;
+	workflowCode: string;
+	testLogDrawerInstanceId: number | null;
+	saving: boolean;
+	panelOpen?: boolean;
+	panelWidth?: number;
+	canUndo?: boolean;
+	canRedo?: boolean;
 }>();
 
 const { t } = useI18n();
+
+const toolbarStyle = computed(() => {
+	if (props.panelOpen && props.panelWidth) {
+		return { transform: `translateX(calc(-50% - ${props.panelWidth / 2}px))` };
+	}
+	return {};
+});
 
 const nodeSearch = ref('');
 const searchInputRef = ref<any>();
@@ -118,6 +162,7 @@ const categories = computed(() => {
 
 	return cats.map(cat => {
 		let items = NODE_REGISTRY.filter(n => {
+			if ((n as any).deprecated) return false;
 			if (cat.key === 'basic') return n.type === 'start' || n.type === 'end';
 			return n.category === cat.key && n.type !== 'start' && n.type !== 'end';
 		}).map(n => ({
@@ -154,7 +199,11 @@ const runButtonTooltip = computed(() => {
 	return '';
 });
 
-const emit = defineEmits(['drag-start', 'add-node', 'open-test-dialog']);
+const emit = defineEmits([
+	'drag-start', 'add-node', 'open-test-dialog',
+	'clear-test-status', 'reopen-test-log-drawer', 'export-workflow', 'save-workflow',
+	'undo', 'redo'
+]);
 
 function onDragStart(event: DragEvent, type: string) {
 	emit('drag-start', event, type);
@@ -198,6 +247,12 @@ function onPopoverShow() {
 	gap: 12px;
 }
 
+.workflow-title {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--el-text-color-primary);
+}
+
 .add-node-btn {
 	border-radius: 8px;
 	font-weight: 500;
@@ -219,7 +274,7 @@ function onPopoverShow() {
 .node-categories {
 	overflow-y: auto;
 	padding-right: 4px;
-	
+
 	&::-webkit-scrollbar {
 		width: 6px;
 	}
@@ -235,7 +290,7 @@ function onPopoverShow() {
 	margin-bottom: 8px;
 	margin-top: 12px;
 	font-weight: 500;
-	
+
 	&:first-child {
 		margin-top: 0;
 	}
@@ -263,7 +318,7 @@ function onPopoverShow() {
 		background-color: var(--el-color-primary-light-9);
 		border-color: var(--el-color-primary-light-5);
 		color: var(--el-color-primary);
-		
+
 		.template-icon {
 			color: var(--el-color-primary);
 		}

@@ -25,6 +25,7 @@
 				<el-input
 					v-model="node.name"
 					size="small"
+					style="width: 100%"
 					:placeholder="placeholderText"
 					:disabled="isNameDisabled"
 				/>
@@ -68,6 +69,7 @@
 					<el-input
 						v-model="node.description"
 						size="small"
+						style="width: 100%"
 						:placeholder="$t('字段描述 (可选)')"
 					/>
 				</template>
@@ -78,6 +80,7 @@
 						v-if="!isContainer"
 						v-model="node.value"
 						size="small"
+						style="width: 100%"
 						:placeholder="$t('值或 {变量}')"
 					/>
 					<span v-else class="container-placeholder">
@@ -311,12 +314,12 @@ function deleteSelf() {
 	}
 
 	.col-name {
-		width: 90px;
+		width: 110px;
 		flex-shrink: 0;
 	}
 	
 	.col-type {
-		width: 70px;
+		width: 85px;
 		flex-shrink: 0;
 
 		/* 微调 Element Plus 字体及内边距 */

@@ -97,6 +97,17 @@ def safe_eval(expr_str: str, context: dict) -> Any:
     except Exception as e:
         raise ValueError(f"表达式解析评估失败: {e}")
 
+def _deep_get(val: Any, path: str) -> Any:
+    """支持点号分割的深层字典结构值获取"""
+    if not path:
+        return None
+    keys = path.split(".")
+    for k in keys:
+        if isinstance(val, dict):
+            val = val.get(k)
+        else:
+            return None
+    return val
 
 def render_template(template: str, variables: dict) -> str:
     """
@@ -154,6 +165,9 @@ CONDITIONAL_NODE_TYPES = {"condition", "intent_classifier", "switch"}
 
 # 子图执行节点类型：循环体在编译时提取为独立子图，运行时按序/并发调用
 SUBGRAPH_NODE_TYPES = {"loop_controller", "batch_processor"}
+
+# 不支持单节点测试的节点类型集合（无执行逻辑、依赖子图、或需人工交互）
+UNTESTABLE_NODE_TYPES = {"start", "end", "loop_controller", "batch_processor", "human_input", "loop_body_group"}
 
 
 def validate_graph(graph_json: Dict[str, Any]) -> None:
@@ -693,6 +707,34 @@ def _compile_subgraphs_recursive(graph_json: dict, nodes_map: dict) -> tuple[dic
     return subgraph_configs, all_body_node_ids
 
 
+def resolve_node_inputs(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """根据节点配置中的 inputs schema 或 input_mappings 解析最终输入。"""
+    input_mappings = config.get("input_mappings", {})
+    inputs_schema = config.get("inputs", [])
+
+    if inputs_schema and isinstance(inputs_schema, list):
+        node_inputs = {}
+        for inp in inputs_schema:
+            name = inp.get("name")
+            source = inp.get("source")
+            if name and isinstance(source, list) and len(source) == 2:
+                # source[0] 是 nodeId, source[1] 是级联选择器中绑定的值（前端已改为 variableName）
+                # 注意：如果 source[1] 包含点号（如 LLM节点_output.topic），需进行深层查找
+                var_key = source[1]
+                val = None
+                if var_key:
+                    val = _deep_get(variables, var_key)
+                # 兼容单节点测试：单节点测试时，前端直接把形如 {"input_1": "xxx"} 的 mock 数据当作 variables 传入。
+                # 只有当按上游路径无法获取值，并且 name 在 variables 中确实存在时，才应用此 fallback，避免污染。
+                if val is None and name in variables:
+                    val = variables.get(name)
+                node_inputs[name] = val
+    else:
+        node_inputs = apply_input_mappings(variables, input_mappings)
+    
+    return node_inputs
+
+
 def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
     """LangGraph reducer：合并多个节点对 variables 的并发更新"""
     return {**(left or {}), **(right or {})}
@@ -740,10 +782,11 @@ def apply_input_mappings(global_vars: dict, mappings: dict) -> dict:
     node_inputs = {}
     if not mappings:
         return global_vars
+
     for param_name, source_path in mappings.items():
         if isinstance(source_path, str) and source_path.startswith("variables."):
             var_key = source_path.removeprefix("variables.")
-            node_inputs[param_name] = global_vars.get(var_key)
+            node_inputs[param_name] = _deep_get(global_vars, var_key)
         else:
             node_inputs[param_name] = source_path
     return node_inputs
@@ -937,8 +980,7 @@ class WorkflowCompiler:
                 raise ValueError(f"工作流中使用了未注册的节点类型: '{node_type}'")
 
             # 1. 应用输入变量映射，提炼入参
-            input_mappings = config.get("input_mappings", {})
-            node_inputs = apply_input_mappings(state["variables"], input_mappings)
+            node_inputs = resolve_node_inputs(state["variables"], config)
 
             # 2. 运行执行器（注入 node_id 供需要路由回写的执行器使用）
             executor_config = {**config, "id": node_id}
