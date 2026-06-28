@@ -34,6 +34,27 @@ def percentile(values: list[int], p: float) -> int:
     return int(s[k])
 
 
+def _load_cases(session: Session, run: WorkflowEvalRun) -> list:
+    """加载用例：优先 run 发起时的快照（保历史可复现）；无快照或快照损坏回退查当前用例。
+
+    快照解析为 SimpleNamespace，保留 case.input_data/case_key 等属性访问（与 WorkflowTestCase 一致）。
+    """
+    if run.test_set_snapshot:
+        from types import SimpleNamespace
+
+        try:
+            return [SimpleNamespace(**c) for c in json.loads(run.test_set_snapshot)]
+        except (json.JSONDecodeError, TypeError):
+            pass  # 快照损坏，回退查当前用例
+    return list(
+        session.exec(
+            select(WorkflowTestCase)
+            .where(WorkflowTestCase.test_set_id == run.test_set_id)
+            .order_by(WorkflowTestCase.sort_order, WorkflowTestCase.id)
+        ).all()
+    )
+
+
 def load_eval_context(eval_run_id: int) -> dict | None:
     """加载评估运行上下文：run + cases + definition_id + graph 快照 + user_id。"""
     with Session(engine) as session:
@@ -41,13 +62,8 @@ def load_eval_context(eval_run_id: int) -> dict | None:
         if not run:
             return None
         test_set = session.get(WorkflowTestSet, run.test_set_id)
-        cases = list(
-            session.exec(
-                select(WorkflowTestCase)
-                .where(WorkflowTestCase.test_set_id == run.test_set_id)
-                .order_by(WorkflowTestCase.sort_order, WorkflowTestCase.id)
-            ).all()
-        )
+        # 优先用 run 发起时的用例集快照（保历史可复现）；无快照（旧 run）回退查当前用例
+        cases = _load_cases(session, run)
         definition_id = run.definition_id or (test_set.definition_id if test_set else None)
         version_id = run.definition_version_id
         # 优先按 version_id 查版本表 graph；fallback 存量 run 的 graph_json_snapshot（旧 run）
@@ -174,6 +190,7 @@ def write_case_result(
     evaluator_type: str,
     latency_ms: int,
     case_status: str | None = None,
+    node_results: list[dict] | None = None,
 ) -> None:
     """写入单条用例结果。执行失败/超时覆盖 status，评分置 0。"""
     inst_status = instance_result.get("status")
@@ -189,7 +206,13 @@ def write_case_result(
 
     score = eval_result.score if (eval_result is not None and case_status in (CaseResultStatus.SUCCESS, CaseResultStatus.FAIL)) else 0.0
     passed = bool(eval_result and eval_result.passed and case_status == CaseResultStatus.SUCCESS)
-    detail = json.dumps(eval_result.detail, ensure_ascii=False, default=str) if eval_result is not None else None
+    # detail 含终态评估详情 + 节点级评估结果（P1-1 trace）
+    detail_obj: dict = {}
+    if eval_result is not None:
+        detail_obj = dict(eval_result.detail) if isinstance(eval_result.detail, dict) else {"_raw": eval_result.detail}
+    if node_results:
+        detail_obj["node_results"] = node_results
+    detail = json.dumps(detail_obj, ensure_ascii=False, default=str) if detail_obj else None
     output = instance_result.get("output")
     actual_json = json.dumps(output, ensure_ascii=False, default=str) if output is not None else None
     # T8：大输出分离到对象存储，主表存引用
@@ -228,6 +251,7 @@ def write_case_result(
                 evaluator_detail=detail,
                 error_message=(instance_result.get("error") or "")[:1000] or None,
                 workflow_instance_id=instance_id,
+                tags=getattr(case, "tags", None),
             )
         )
         session.commit()
@@ -251,6 +275,7 @@ def write_case_error(
                 evaluator_type="rule_match",
                 error_message=(error_msg or "")[:1000] or None,
                 workflow_instance_id=instance_id,
+                tags=getattr(case, "tags", None),
             )
         )
         session.commit()
@@ -278,6 +303,35 @@ def backfill_missing_results(eval_run_id: int, cases: list[WorkflowTestCase]) ->
         logger.warning("评估运行 %d 用例 %s 未产生结果，补写 error", eval_run_id, c.case_key)
         write_case_error(eval_run_id, c, None, "用例执行未产生结果（可能因异常中断）", 0)
     return len(missing)
+
+
+def _aggregate_by_tag(results: list[WorkflowEvalCaseResult]) -> dict:
+    """按 case_result.tags 分桶聚合 pass_rate/avg_score（P1-2 切片）。tags 为 JSON 数组字符串。"""
+    buckets: dict[str, dict] = {}
+    for r in results:
+        try:
+            case_tags = json.loads(r.tags) if r.tags else []
+        except (json.JSONDecodeError, TypeError):
+            case_tags = []
+        if not isinstance(case_tags, list):
+            case_tags = [str(case_tags)]
+        for tag in case_tags:
+            b = buckets.setdefault(str(tag), {"total": 0, "passed": 0, "score_sum": 0.0, "scored": 0})
+            b["total"] += 1
+            if r.status == CaseResultStatus.SUCCESS:
+                b["passed"] += 1
+            if r.status in (CaseResultStatus.SUCCESS, CaseResultStatus.FAIL):
+                b["score_sum"] += r.score
+                b["scored"] += 1
+    return {
+        tag: {
+            "total": b["total"],
+            "passed": b["passed"],
+            "passRate": round(b["passed"] / b["total"], 4) if b["total"] else 0.0,
+            "avgScore": round(b["score_sum"] / b["scored"], 4) if b["scored"] else 0.0,
+        }
+        for tag, b in buckets.items()
+    }
 
 
 def finalize_eval_run(eval_run_id: int) -> None:
@@ -317,6 +371,9 @@ def finalize_eval_run(eval_run_id: int) -> None:
             token_total = int(agg[0] or 0)
             cost_total = int(agg[1] or 0)
 
+        # 按 tag 切片聚合（P1-2）：从 case_result.tags 分桶，写 summary_payload.by_tag
+        by_tag = _aggregate_by_tag(results)
+
         if total == 0:
             final_status = EvalRunStatus.FAILED
         elif errored == total:
@@ -348,10 +405,102 @@ def finalize_eval_run(eval_run_id: int) -> None:
                 max_latency_ms=max(latencies) if latencies else 0,
                 total_tokens=token_total,
                 total_cost_micro_usd=cost_total,
+                summary_payload=json.dumps({"by_tag": by_tag}, ensure_ascii=False),
                 finished_at=now,
             )
         )
         session.commit()
+
+
+def _load_node_io(session: Session, instance_id: int) -> dict:
+    """读 instance 的节点执行日志，还原载荷（storage_ref + ref_prev），返回 {node_id: {input, output, node_type}}。
+
+    复刻 instance.py _restore_logs_payload 的还原逻辑；同 node_id 多条日志取最后一条（循环场景的最新状态）。
+    """
+    from app.framework.storage import resolve_payload
+    from app.modules.workflow.model.workflow import WorkflowExecutionLog
+
+    logs = list(
+        session.exec(
+            select(WorkflowExecutionLog)
+            .where(WorkflowExecutionLog.instance_id == instance_id)
+            .order_by(WorkflowExecutionLog.id)
+        ).all()
+    )
+    prev_output: str | None = None
+    node_io: dict[str, dict] = {}
+    for log in logs:
+        inp = resolve_payload(log.input_data, log.input_storage_ref)
+        out = resolve_payload(log.output_data, log.output_storage_ref)
+        if getattr(log, "payload_type", "full") == "ref_prev":
+            inp = prev_output if prev_output is not None else "{}"
+        prev_output = out
+        try:
+            inp_parsed = json.loads(inp) if inp else None
+        except Exception:
+            inp_parsed = inp
+        try:
+            out_parsed = json.loads(out) if out else None
+        except Exception:
+            out_parsed = out
+        node_io[log.node_id] = {"input": inp_parsed, "output": out_parsed, "node_type": log.node_type}
+    return node_io
+
+
+def evaluate_node_evaluators(instance_id: int, node_evaluators: dict, case_cfg: dict) -> list[dict]:
+    """P1-1 trace：对配置的节点评估器跑评估，返回 node_results 列表。
+
+    node_evaluators: {node_id: {type, config?, expected?, expected_text?, threshold?}}
+    支持 rule_match/json_schema/llm_judge 等；llm_judge 自动注入 build_default_judge_fn。
+    内部自建 Session 读节点日志（被 eval_tasks 经 to_thread 调用，不共享会话）。
+    """
+    from app.core.config import settings
+    from app.modules.workflow_eval.service.evaluator import EvalContext, EvaluatorRegistry
+    from app.modules.workflow_eval.service.evaluator.llm_judge import build_default_judge_fn
+
+    with Session(engine) as session:
+        node_io = _load_node_io(session, instance_id)
+    results: list[dict] = []
+    for node_id, node_cfg in (node_evaluators or {}).items():
+        ntype = (node_cfg or {}).get("type", "rule_match")
+        n_conf = dict((node_cfg or {}).get("config") or {})
+        if (node_cfg or {}).get("expected_text"):
+            n_conf.setdefault("expected_text", node_cfg["expected_text"])
+        if node_id not in node_io:
+            results.append({"node_id": node_id, "score": 0.0, "passed": False, "reason": "节点日志未找到"})
+            continue
+        io = node_io[node_id]
+        # llm_judge 节点评估：注入 judge_fn（节点级 profile 优先，全局兜底）
+        if ntype == "llm_judge" and "judge_fn" not in n_conf:
+            profile = n_conf.get("judge_profile_code") or case_cfg.get("judge_profile_code") or settings.WORKFLOW_EVAL_JUDGE_PROFILE
+            if profile:
+                n_conf["judge_fn"] = build_default_judge_fn(
+                    profile,
+                    prompt_template=n_conf.get("judge_prompt"),
+                    rubric=n_conf.get("rubric"),
+                    samples=n_conf.get("samples"),
+                )
+        try:
+            evaluator = EvaluatorRegistry.get(ntype)
+            r = evaluator.evaluate(
+                EvalContext(
+                    input_data=io["input"],
+                    expected=(node_cfg or {}).get("expected"),
+                    actual=io["output"],
+                    case_config=n_conf,
+                )
+            )
+            results.append({
+                "node_id": node_id,
+                "node_type": io["node_type"],
+                "score": round(r.score, 4),
+                "passed": bool(r.passed),
+                "reason": r.detail.get("reason") if isinstance(r.detail, dict) else None,
+            })
+        except Exception as exc:
+            logger.warning("节点 %s 评估异常: %s", node_id, exc)
+            results.append({"node_id": node_id, "score": 0.0, "passed": False, "reason": f"评估异常: {exc}"})
+    return results
 
 
 def sweep_timed_out_runs(timeout_seconds: int) -> int:

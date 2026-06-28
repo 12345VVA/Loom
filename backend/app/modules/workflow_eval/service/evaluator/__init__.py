@@ -11,8 +11,10 @@ from app.modules.workflow_eval.service.evaluator.base import (
     EvaluatorRegistry,
 )
 from app.modules.workflow_eval.service.evaluator.composite import CompositeEvaluator
+from app.modules.workflow_eval.service.evaluator.json_schema import JsonSchemaEvaluator
 from app.modules.workflow_eval.service.evaluator.llm_judge import LLMJudgeEvaluator
 from app.modules.workflow_eval.service.evaluator.rule_match import RuleMatchEvaluator
+from app.modules.workflow_eval.service.evaluator.safety import SafetyEvaluator
 
 __all__ = [
     "BaseEvaluator",
@@ -21,5 +23,7 @@ __all__ = [
     "EvaluatorRegistry",
     "RuleMatchEvaluator",
     "CompositeEvaluator",
+    "JsonSchemaEvaluator",
+    "SafetyEvaluator",
     "LLMJudgeEvaluator",
 ]

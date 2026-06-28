@@ -75,6 +75,7 @@ const Table = useTable({
 		{ label: t('评估器配置'), prop: 'evaluatorConfig', minWidth: 200, showOverflowTooltip: true },
 		{ label: t('权重'), prop: 'weight', width: 80 },
 		{ label: t('排序'), prop: 'sortOrder', width: 80 },
+		{ label: t('标签'), prop: 'tags', minWidth: 140, showOverflowTooltip: true },
 		{ type: 'op', buttons: ['edit', 'delete'], width: 140 }
 	]
 });
@@ -159,6 +160,32 @@ const Upsert = useUpsert({
 			label: t('排序'),
 			prop: 'sortOrder',
 			component: { name: 'el-input-number', props: { min: 0 } }
+		},
+		{
+			label: t('标签(切片)'),
+			prop: 'tags',
+			hook: {
+				bind: (v: any) => {
+					try {
+						return v ? JSON.parse(v) : [];
+					} catch {
+						return [];
+					}
+				},
+				submit: (v: any, { form, prop }: any) => {
+					form[prop] = v && v.length ? JSON.stringify(v) : undefined;
+				}
+			},
+			component: {
+				name: 'el-select',
+				props: {
+					multiple: true,
+					filterable: true,
+					allowCreate: true,
+					defaultFirstOption: true,
+					placeholder: t('回车添加能力标签')
+				}
+			}
 		}
 	]
 });

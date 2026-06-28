@@ -1,0 +1,32 @@
+[
+  {
+    "code": "nav_workflow_annotation",
+    "name": "评估标注",
+    "type": "group",
+    "icon": "icon-edit",
+    "sort_order": 40,
+    "role_codes": ["admin"],
+    "children": [
+      {
+        "code": "nav_workflow_annotation_queue",
+        "name": "标注管理",
+        "type": "menu",
+        "module": "workflow_annotation",
+        "resource": "annotation",
+        "path": "/workflow/annotation/annotation",
+        "component": "modules/workflow_annotation/views/annotation.vue",
+        "icon": "icon-edit",
+        "sort_order": 1,
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "workflow_annotation_annotation_add", "name": "新增标注", "type": "button", "permission": "workflow_annotation:annotation:add", "role_codes": ["admin"] },
+          { "code": "workflow_annotation_annotation_update", "name": "修改标注", "type": "button", "permission": "workflow_annotation:annotation:update", "role_codes": ["admin"] },
+          { "code": "workflow_annotation_annotation_delete", "name": "删除标注", "type": "button", "permission": "workflow_annotation:annotation:delete", "role_codes": ["admin"] },
+          { "code": "workflow_annotation_annotation_page", "name": "分页", "type": "button", "permission": "workflow_annotation:annotation:page", "role_codes": ["admin"] },
+          { "code": "workflow_annotation_annotation_info", "name": "详情", "type": "button", "permission": "workflow_annotation:annotation:info", "role_codes": ["admin"] },
+          { "code": "workflow_annotation_annotation_kappa", "name": "κ校准", "type": "button", "permission": "workflow_annotation:annotation:kappa", "role_codes": ["admin"] }
+        ]
+      }
+    ]
+  }
+]

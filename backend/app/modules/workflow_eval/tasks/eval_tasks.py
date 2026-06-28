@@ -27,6 +27,7 @@ from app.modules.workflow_eval.service.eval_orchestrator import (
     backfill_missing_results,
     cancel_eval_instance,
     create_eval_instance,
+    evaluate_node_evaluators,
     finalize_eval_run,
     load_eval_context,
     mark_failed,
@@ -156,7 +157,10 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
                     profile_code = case_cfg.get("judge_profile_code") or settings.WORKFLOW_EVAL_JUDGE_PROFILE
                     if profile_code:
                         case_cfg["judge_fn"] = build_default_judge_fn(
-                            profile_code, prompt_template=case_cfg.get("judge_prompt")
+                            profile_code,
+                            prompt_template=case_cfg.get("judge_prompt"),
+                            rubric=case_cfg.get("rubric"),
+                            samples=case_cfg.get("samples"),
                         )
                     else:
                         logger.warning(
@@ -181,9 +185,26 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
                         eval_result = evaluator.evaluate(eval_ctx)
                 finally:
                     workflow_instance_id_ctx.reset(_judge_ctx_token)
+                # P1-1 trace：节点级评估（读 WorkflowExecutionLog，不侵入执行链路）
+                node_results = None
+                node_evaluators = case_cfg.get("node_evaluators")
+                if node_evaluators and isinstance(node_evaluators, dict) and instance_id:
+                    try:
+                        node_results = await asyncio.to_thread(
+                            evaluate_node_evaluators, instance_id, node_evaluators, case_cfg
+                        )
+                    except Exception as exc:
+                        logger.warning("评估运行 %d 用例 %s 节点评估异常: %s", eval_run_id, case.case_key, exc)
+                    # 综合通过：node_fail_overall 时，任一 node fail → 整体 fail
+                    if (
+                        node_results
+                        and case_cfg.get("node_fail_overall")
+                        and any(not nr.get("passed") for nr in node_results)
+                    ):
+                        eval_result.passed = False
                 await asyncio.to_thread(
                     write_case_result, eval_run_id, case, instance_id, instance_result,
-                    eval_result, evaluator_type, latency_ms,
+                    eval_result, evaluator_type, latency_ms, node_results,
                 )
             except Exception as e:
                 logger.error("评估用例 %s 异常: %s", getattr(case, "case_key", "?"), e, exc_info=True)

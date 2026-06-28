@@ -39,6 +39,7 @@ class WorkflowTestCase(BaseEntity, table=True):
     evaluator_config: str | None = Field(default=None)  # JSON：该用例专属评估器配置
     weight: float = Field(default=1.0)
     sort_order: int = Field(default=0)
+    tags: str | None = Field(default=None)  # JSON 数组字符串：能力维度标签，用于切片聚合（P1-2）
 
 
 # --- DTO ---
@@ -89,6 +90,7 @@ class WorkflowTestCaseRead(BaseModel):
     evaluator_config: str | None = None
     weight: float = 1.0
     sort_order: int = 0
+    tags: str | None = None
 
 
 class WorkflowTestCaseImportItem(BaseModel):
@@ -101,6 +103,7 @@ class WorkflowTestCaseImportItem(BaseModel):
     expected_output: dict[str, Any] | str | None = None
     expected_text: str | None = None
     evaluator_config: dict[str, Any] | None = None
+    tags: list[str] | None = None
     weight: float = 1.0
 
 
@@ -124,6 +127,7 @@ class WorkflowTestCaseCreateRequest(BaseModel):
     evaluator_config: str | None = None
     weight: float = 1.0
     sort_order: int = 0
+    tags: str | None = None
 
 
 class WorkflowTestCaseUpdateRequest(BaseModel):
@@ -139,3 +143,4 @@ class WorkflowTestCaseUpdateRequest(BaseModel):
     evaluator_config: str | None = None
     weight: float | None = None
     sort_order: int | None = None
+    tags: str | None = None

@@ -29,6 +29,15 @@ class WorkflowEvalRunCancelRequest(BaseModel):
     eval_run_id: int
 
 
+class SampleProductionRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    definition_id: int
+    test_set_id: int
+    limit: int = 50
+    days: int = 7
+
+
 @CoolController(
     CoolControllerMeta(
         module="workflow_eval",
@@ -91,6 +100,34 @@ class WorkflowEvalRunController(BaseController):
         from app.modules.workflow_eval.service.regression import compare_runs
 
         return compare_runs(session, run_a, run_b, current_user)
+
+    @Get("/poll", summary="轮询评估运行结果（CI 门禁用）", permission="workflow_eval:eval_run:page")
+    def poll(
+        self,
+        eval_run_id: int = Query(..., alias="evalRunId"),
+        timeout: int = Query(3600, ge=1, le=7200, description="最长等待秒数"),
+        interval: int = Query(5, ge=1, le=30, description="轮询间隔秒数"),
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        """轮询直到终态或超时，返回终态 + 指标。CI 门禁：start → poll → 判 pass_rate/verdict。"""
+        return WorkflowEvalRunService(session).poll(eval_run_id, timeout, interval)
+
+    @Post(
+        "/sampleProduction",
+        summary="采样生产实例入黄金集（在线评测）",
+        permission="workflow_eval:eval_run:start",
+    )
+    def sample_production(
+        self,
+        payload: SampleProductionRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        """采样 success 实例的 input/output（脱敏）入黄金测试集，回放监控生产质量漂移。"""
+        return WorkflowEvalRunService(session).sample_production(
+            payload.definition_id, payload.test_set_id, payload.limit, payload.days
+        )
 
 
 router = WorkflowEvalRunController.router

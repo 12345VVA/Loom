@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     WORKFLOW_NODE_TIMEOUT: int = 600  # 正式执行单节点超时秒数（比 30 分钟硬上限短，留足图像节点空间）
     # 评测系统 llm_judge 兜底模型 Profile（用例未单独配置 judge_profile_code 时使用；空表示未配置）
     WORKFLOW_EVAL_JUDGE_PROFILE: str = ""
+    # 评测回归对比：单 case score 变化阈值（B 相对 A 超此值视为退化/改善）
+    WORKFLOW_EVAL_REGRESSION_THRESHOLD: float = 0.1
+    # 评测回归对比：整体 score diff 的 bootstrap 重采样次数（CI 跨 0 即不显著）
+    WORKFLOW_EVAL_BOOTSTRAP_SAMPLES: int = 1000
     # 节点载荷冷热分离阈值（T8）：单字段字节超此值则落对象存储、主表存引用
     PAYLOAD_STORAGE_THRESHOLD: int = 32 * 1024
 

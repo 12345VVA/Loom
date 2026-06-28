@@ -5,6 +5,15 @@
 			<h3 style="margin: 0">{{ $t('回归对比') }}</h3>
 		</div>
 
+		<el-alert
+			v-if="data.verdict"
+			:type="verdictType(data.verdict)"
+			:title="verdictLabel(data.verdict)"
+			:closable="false"
+			show-icon
+			style="margin-bottom: 12px"
+		/>
+
 		<el-card v-if="data" class="compare-card">
 			<div class="compare-row">
 				<div class="run-box">
@@ -17,6 +26,14 @@
 					<div>{{ $t('通过率差') }} <b>{{ ((data.metricsDiff?.passRate ?? 0) * 100).toFixed(1) }}%</b></div>
 					<div>{{ $t('平均分差') }} <b>{{ (data.metricsDiff?.avgScore ?? 0).toFixed(3) }}</b></div>
 					<div>P95 {{ $t('差') }} <b>{{ data.metricsDiff?.p95LatencyMs ?? 0 }}ms</b></div>
+					<div v-if="data.scoreDiff" style="margin-top: 6px">
+						{{ $t('score 差') }} <b>{{ (data.scoreDiff.delta ?? 0).toFixed(3) }}</b>
+						<span
+							v-if="data.scoreDiff.ciLow !== null && data.scoreDiff.ciLow !== undefined"
+							style="color: #999; font-size: 12px"
+						>[{{ data.scoreDiff.ciLow.toFixed(3) }}, {{ data.scoreDiff.ciHigh.toFixed(3) }}]</span>
+						<el-tag v-if="data.scoreDiff.significant" type="danger" size="small" style="margin-left: 4px">{{ $t('显著') }}</el-tag>
+					</div>
 				</div>
 				<div class="run-box">
 					<h4>{{ data.runB.versionLabel || `#${data.runB.id}` }} (B)</h4>
@@ -76,6 +93,19 @@ const evalService = (service as any).workflow_eval;
 
 const data = ref<any>(null);
 const loading = ref(false);
+
+// verdict 整体判定文案与样式（B 相对 A：显著退化/显著改善/无显著变化/样本不足）
+function verdictLabel(v: string) {
+	return {
+		regression: t('显著退化（B 比 A 明显变差）'),
+		improvement: t('显著改善（B 比 A 明显变好）'),
+		insignificant: t('无显著变化（差异在统计噪声范围内）'),
+		insufficient_sample: t('样本量不足，无法判定显著性')
+	}[v] || v;
+}
+function verdictType(v: string): any {
+	return { regression: 'error', improvement: 'success', insignificant: 'info', insufficient_sample: 'warning' }[v] || 'info';
+}
 
 onMounted(async () => {
 	const runA = Number(route.query.runA);

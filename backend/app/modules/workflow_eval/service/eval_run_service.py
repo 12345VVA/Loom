@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -74,26 +75,47 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         if evaluator_type not in EvaluatorRegistry.available():
             raise HTTPException(status_code=400, detail=f"未知评估器类型: {evaluator_type}")
 
-        # 空用例拦截；超量预警（完整分批/续跑为后续已知限制）
-        case_count = self.session.exec(
-            select(func.count()).select_from(
+        # 查用例列表（用于快照）；空用例拦截；超量预警
+        cases = list(
+            self.session.exec(
                 select(WorkflowTestCase)
                 .where(
                     WorkflowTestCase.test_set_id == test_set_id,
                     WorkflowTestCase.delete_time.is_(None),  # noqa: E711
                 )
-                .subquery()
-            )
-        ).one()
+                .order_by(WorkflowTestCase.sort_order, WorkflowTestCase.id)
+            ).all()
+        )
+        case_count = len(cases)
         if not case_count:
             raise HTTPException(status_code=400, detail="测试集没有用例，无法发起评估")
         if case_count > 100:
             logger.warning("测试集 %s 用例数较多（%d），批量评估可能耗时较长", test_set_id, case_count)
 
+        # 用例集快照：复制用例关键内容，保证历史 run 可复现（不受后续用例改动影响）
+        snapshot = json.dumps(
+            [
+                {
+                    "id": c.id,
+                    "case_key": c.case_key,
+                    "input_data": c.input_data,
+                    "expected_output": c.expected_output,
+                    "expected_text": c.expected_text,
+                    "evaluator_config": c.evaluator_config,
+                    "weight": c.weight,
+                    "sort_order": c.sort_order,
+                    "tags": c.tags,
+                }
+                for c in cases
+            ],
+            ensure_ascii=False,
+        )
+
         run = WorkflowEvalRun(
             test_set_id=test_set_id,
             definition_id=definition_id,
             definition_version_id=version_id,
+            test_set_snapshot=snapshot,
             version_label=payload.version_label or f"v{version.version_no}",
             status=EvalRunStatus.PENDING,
             user_id=current_user.id if current_user else None,
@@ -181,3 +203,97 @@ class WorkflowEvalRunService(BaseAdminCrudService):
                 celery_app.control.revoke(run.celery_task_id, terminate=True)
         self.session.refresh(run)
         return {"id": run.id, "status": run.status, "cancelled": cancelled}
+
+    def poll(self, eval_run_id: int, timeout: int = 3600, interval: int = 5) -> dict:
+        """轮询直到 TERMINAL 或超时，返回终态 + 指标（CI 门禁用）。
+
+        sync sleep 在 FastAPI threadpool 跑（不阻塞事件循环）；CI 脚本编排：start → poll → 判 pass_rate。
+        """
+        import time as _time
+        from datetime import datetime, timedelta
+
+        deadline = datetime.utcnow() + timedelta(seconds=max(1, timeout))
+        while True:
+            run = self.session.get(WorkflowEvalRun, eval_run_id)
+            if not run:
+                raise HTTPException(status_code=404, detail="评估运行不存在")
+            if run.status in EvalRunStatus.TERMINAL:
+                return WorkflowEvalRunRead.model_validate(run).model_dump(by_alias=True)
+            if datetime.utcnow() >= deadline:
+                return {"id": run.id, "status": run.status, "timeout": True}
+            _time.sleep(min(max(1, interval), 30))
+
+    def sample_production(
+        self, definition_id: int, test_set_id: int, limit: int = 50, days: int = 7
+    ) -> dict:
+        """采样生产 success 实例的 input/output 入黄金集（expected=output，脱敏）。
+
+        在线评测：定期把生产流量转为黄金测试集，回放监控质量漂移。
+        生产 input 可能含 PII，用 AiSecurityService.mask_sensitive_dict 脱敏。
+        """
+        from datetime import datetime, timedelta
+
+        from sqlalchemy import update as sa_update
+
+        from app.modules.ai.service.security_service import AiSecurityService
+
+        test_set = self.session.get(WorkflowTestSet, test_set_id)
+        if not test_set:
+            raise HTTPException(status_code=404, detail="测试集不存在")
+        cutoff = datetime.utcnow() - timedelta(days=max(1, days))
+        instances = list(
+            self.session.exec(
+                select(WorkflowInstance)
+                .where(
+                    WorkflowInstance.definition_id == definition_id,
+                    WorkflowInstance.status == "success",
+                    WorkflowInstance.created_at >= cutoff,
+                )
+                .order_by(WorkflowInstance.created_at.desc())
+                .limit(max(1, limit))
+            ).all()
+        )
+        sampled = 0
+        for inst in instances:
+            try:
+                final_vars = json.loads(inst.state_data) if inst.state_data else {}
+            except Exception:
+                continue
+            if not isinstance(final_vars, dict):
+                continue
+            output = final_vars.pop("workflow_output", None)
+            if output is None:
+                continue
+            case_key = f"prod_{inst.id}"
+            existing = self.session.exec(
+                select(WorkflowTestCase).where(
+                    WorkflowTestCase.test_set_id == test_set_id,
+                    WorkflowTestCase.case_key == case_key,
+                )
+            ).first()
+            if existing:
+                continue
+            self.session.add(
+                WorkflowTestCase(
+                    test_set_id=test_set_id,
+                    case_key=case_key,
+                    input_data=json.dumps(
+                        AiSecurityService.mask_sensitive_dict(final_vars), ensure_ascii=False, default=str
+                    ),
+                    expected_output=json.dumps(
+                        AiSecurityService.mask_sensitive_dict(output), ensure_ascii=False, default=str
+                    ),
+                    tags=json.dumps(["production", "golden"]),
+                    weight=1.0,
+                )
+            )
+            sampled += 1
+        self.session.commit()
+        if sampled:
+            self.session.execute(
+                sa_update(WorkflowTestSet)
+                .where(WorkflowTestSet.id == test_set_id)
+                .values(items_count=WorkflowTestSet.items_count + sampled)
+            )
+            self.session.commit()
+        return {"sampled": sampled, "limit": limit, "testSetId": test_set_id}

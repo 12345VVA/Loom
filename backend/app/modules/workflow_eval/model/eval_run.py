@@ -23,6 +23,8 @@ class WorkflowEvalRun(BaseEntity, table=True):
     # 存量兼容：旧 run 的图快照；新 run 改用 definition_version_id，此列保留作 fallback
     graph_json_snapshot: str = Field(default="{}")
     definition_version_id: int | None = Field(default=None, index=True)  # 评估执行的精确版本（替代 snapshot）
+    # 用例集快照（JSON）：发起 run 时复制用例，保证历史可复现（不受后续用例改动影响）
+    test_set_snapshot: str | None = Field(default=None)
     version_label: str | None = Field(default=None, max_length=100)  # 展示标签（仅前端显示，不再作关联键）
     status: str = Field(default=EvalRunStatus.PENDING, index=True, max_length=50)
 
@@ -81,6 +83,7 @@ class WorkflowEvalCaseResult(BaseEntity, table=True):
     evaluator_detail: str | None = Field(default=None)  # JSON：各子评分、LLM 评语、命中规则
     error_message: str | None = Field(default=None, max_length=1000)
     workflow_instance_id: int | None = Field(default=None, index=True)  # 关联跑出的实例，便于回溯
+    tags: str | None = Field(default=None)  # JSON 数组：从用例 tags 快照，用于按 tag 切片聚合（P1-2）
 
 
 # --- DTO ---

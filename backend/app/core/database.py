@@ -255,9 +255,14 @@ def _ensure_sqlite_compatible_schema() -> None:
         },
         "workflow_eval_case_result": {
             "actual_output_storage_ref": "ALTER TABLE workflow_eval_case_result ADD COLUMN actual_output_storage_ref VARCHAR",
+            "tags": "ALTER TABLE workflow_eval_case_result ADD COLUMN tags VARCHAR",
+        },
+        "workflow_eval_test_case": {
+            "tags": "ALTER TABLE workflow_eval_test_case ADD COLUMN tags VARCHAR",
         },
         "workflow_eval_run": {
             "definition_version_id": "ALTER TABLE workflow_eval_run ADD COLUMN definition_version_id INTEGER",
+            "test_set_snapshot": "ALTER TABLE workflow_eval_run ADD COLUMN test_set_snapshot TEXT",
         },
         "workflow_definition": {
             "user_id": "ALTER TABLE workflow_definition ADD COLUMN user_id INTEGER",
@@ -319,6 +324,7 @@ def _ensure_sqlite_compatible_schema() -> None:
         "workflow_instance",
         "workflow_execution_log",
         "workflow_eval_case_result",
+        "workflow_eval_test_case",
         "workflow_eval_run",
         "sys_user_role",
         "sys_role_menu",

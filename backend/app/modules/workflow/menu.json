@@ -50,6 +50,30 @@
           { "code": "workflow_instance_resume", "name": "人工确认", "type": "button", "permission": "workflow:instance:resume", "role_codes": ["admin"] },
           { "code": "workflow_instance_testNode", "name": "单节点测试", "type": "button", "permission": "workflow:instance:testNode", "role_codes": ["admin"] }
         ]
+      },
+      {
+        "code": "nav_workflow_editor",
+        "name": "工作流设计器",
+        "type": "menu",
+        "module": "workflow",
+        "resource": "editor",
+        "path": "/workflow/editor",
+        "component": "modules/workflow/views/editor.vue",
+        "is_show": false,
+        "sort_order": 98,
+        "role_codes": ["admin"]
+      },
+      {
+        "code": "nav_workflow_version",
+        "name": "版本管理",
+        "type": "menu",
+        "module": "workflow",
+        "resource": "version",
+        "path": "/workflow/version",
+        "component": "modules/workflow/views/version.vue",
+        "is_show": false,
+        "sort_order": 99,
+        "role_codes": ["admin"]
       }
     ]
   }

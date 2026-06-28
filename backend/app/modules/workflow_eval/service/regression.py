@@ -2,14 +2,58 @@
 
 from __future__ import annotations
 
+import random
+
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from app.core.config import settings
 from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
 from app.modules.workflow_eval.model.enum import EvalRunStatus
 
-# 单 case score 变化超过此阈值视为退化/改善
+# 单 case score 变化超过此阈值视为退化/改善（可由 settings.WORKFLOW_EVAL_REGRESSION_THRESHOLD 覆盖）
 REGRESSION_SCORE_THRESHOLD = 0.1
+
+
+def _regression_threshold() -> float:
+    return float(getattr(settings, "WORKFLOW_EVAL_REGRESSION_THRESHOLD", REGRESSION_SCORE_THRESHOLD))
+
+
+def _bootstrap_score_delta(scores_a: list[float], scores_b: list[float], n_boot: int = 1000) -> dict:
+    """对配对 score（同 case_key 对齐）做 bootstrap 重采样，返回整体 delta + 95% CI + 显著性。
+
+    delta = mean(B) - mean(A)（正=B 改善，负=B 退化）。CI 跨 0 即不显著。
+    样本 < 5 时 bootstrap 不稳，仅报点估（sufficient=False）。
+    """
+    n = len(scores_a)
+    if n == 0 or n != len(scores_b):
+        return {"delta": 0.0, "ciLow": None, "ciHigh": None, "significant": False, "n": n, "sufficient": False}
+    delta = (sum(scores_b) - sum(scores_a)) / n
+    if n < 5:
+        return {"delta": round(delta, 4), "ciLow": None, "ciHigh": None, "significant": False, "n": n, "sufficient": False}
+    deltas: list[float] = []
+    for _ in range(n_boot):
+        idx = [random.randrange(n) for _ in range(n)]
+        sa = sum(scores_a[i] for i in idx) / n
+        sb = sum(scores_b[i] for i in idx) / n
+        deltas.append(sb - sa)
+    deltas.sort()
+    lo = deltas[int(0.025 * n_boot)]
+    hi = deltas[int(0.975 * n_boot)]
+    significant = not (lo <= 0 <= hi)
+    return {"delta": round(delta, 4), "ciLow": round(lo, 4), "ciHigh": round(hi, 4), "significant": significant, "n": n, "sufficient": True}
+
+
+def _verdict(score_diff: dict, threshold: float) -> str:
+    """整体判定：显著退化 / 显著改善 / 无显著变化 / 样本不足。"""
+    if not score_diff.get("sufficient"):
+        return "insufficient_sample"
+    delta = score_diff["delta"]
+    if score_diff["significant"] and delta <= -threshold:
+        return "regression"
+    if score_diff["significant"] and delta >= threshold:
+        return "improvement"
+    return "insignificant"
 
 
 def _run_metrics(run: WorkflowEvalRun) -> dict:
@@ -54,15 +98,23 @@ def compare_runs(
     only_b = sorted(keys_b - keys_a)
     common = sorted(keys_a & keys_b)
 
+    threshold = _regression_threshold()
     regressed: list[dict] = []
     improved: list[dict] = []
     for k in common:
         ra, rb = results_a[k], results_b[k]
         delta = round(rb.score - ra.score, 4)  # b 相对 a
-        if delta <= -REGRESSION_SCORE_THRESHOLD:
+        if delta <= -threshold:
             regressed.append({"caseKey": k, "scoreA": ra.score, "scoreB": rb.score, "delta": delta})
-        elif delta >= REGRESSION_SCORE_THRESHOLD:
+        elif delta >= threshold:
             improved.append({"caseKey": k, "scoreA": ra.score, "scoreB": rb.score, "delta": delta})
+
+    # 整体 score diff：bootstrap 置信区间 + 显著性判定（消除"阈值附近是噪声"的科学性硬伤）
+    scores_a = [results_a[k].score for k in common]
+    scores_b = [results_b[k].score for k in common]
+    n_boot = int(getattr(settings, "WORKFLOW_EVAL_BOOTSTRAP_SAMPLES", 1000))
+    score_diff = _bootstrap_score_delta(scores_a, scores_b, n_boot=n_boot)
+    verdict = _verdict(score_diff, threshold)
 
     ma, mb = _run_metrics(run_a), _run_metrics(run_b)
     metrics_diff = {
@@ -76,6 +128,8 @@ def compare_runs(
         "runA": {"id": run_a.id, "versionId": run_a.definition_version_id, "versionLabel": run_a.version_label, "metrics": ma},
         "runB": {"id": run_b.id, "versionId": run_b.definition_version_id, "versionLabel": run_b.version_label, "metrics": mb},
         "metricsDiff": metrics_diff,
+        "scoreDiff": score_diff,
+        "verdict": verdict,
         "onlyA": only_a,
         "onlyB": only_b,
         "common": common,

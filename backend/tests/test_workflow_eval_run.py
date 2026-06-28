@@ -173,6 +173,69 @@ class EvalRunTestCase(unittest.TestCase):
                 _assert_run_owned(s, 999, None)
             self.assertEqual(cm.exception.status_code, 404)
 
+    def test_load_eval_context_uses_snapshot_cases(self):
+        """有快照时 load_eval_context 用快照 cases（不受当前用例改动影响）。"""
+        from app.modules.workflow_eval.service import eval_orchestrator
+
+        with Session(self.engine) as s:
+            run = s.get(WorkflowEvalRun, 1)
+            run.test_set_snapshot = json.dumps([
+                {"id": 99, "case_key": "snap_c", "input_data": '{"q":"snap"}',
+                 "expected_text": "snap_exp", "weight": 1.0, "sort_order": 0}
+            ])
+            s.add(run)
+            s.commit()
+        with patch.object(eval_orchestrator, "engine", self.engine):
+            ctx = eval_orchestrator.load_eval_context(1)
+        self.assertEqual([c.case_key for c in ctx["cases"]], ["snap_c"])
+
+    def test_poll_returns_terminal(self):
+        from app.modules.workflow_eval.service.eval_run_service import WorkflowEvalRunService
+
+        with Session(self.engine) as s:
+            run = s.get(WorkflowEvalRun, 1)
+            run.status = EvalRunStatus.SUCCEEDED
+            s.add(run)
+            s.commit()
+            res = WorkflowEvalRunService(s).poll(1, timeout=5, interval=1)
+        self.assertEqual(res["status"], "succeeded")
+
+    def test_poll_timeout_returns_current(self):
+        from app.modules.workflow_eval.service.eval_run_service import WorkflowEvalRunService
+
+        with Session(self.engine) as s:
+            res = WorkflowEvalRunService(s).poll(1, timeout=1, interval=1)
+        self.assertTrue(res.get("timeout"))
+        self.assertEqual(res["status"], "pending")
+
+    def test_sample_production_imports_golden_cases(self):
+        from app.modules.workflow.model.workflow import WorkflowInstance
+        from app.modules.workflow_eval.service.eval_run_service import WorkflowEvalRunService
+
+        with Session(self.engine) as s:
+            s.add(
+                WorkflowInstance(
+                    definition_id=1,
+                    thread_id="prod1",
+                    status="success",
+                    state_data=json.dumps({"q": "hello", "workflow_output": {"answer": "result"}}),
+                )
+            )
+            s.commit()
+            res = WorkflowEvalRunService(s).sample_production(
+                definition_id=1, test_set_id=1, limit=10, days=30
+            )
+            self.assertEqual(res["sampled"], 1)
+            case = s.exec(
+                select(WorkflowTestCase).where(
+                    WorkflowTestCase.test_set_id == 1,
+                    WorkflowTestCase.case_key == "prod_1",
+                )
+            ).first()
+        self.assertIsNotNone(case)
+        self.assertIn("result", case.expected_output)
+        self.assertIn("production", case.tags)
+
 
 if __name__ == "__main__":
     unittest.main()

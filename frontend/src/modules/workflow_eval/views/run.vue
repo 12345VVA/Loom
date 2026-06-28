@@ -9,6 +9,12 @@
 				@click="goCompare"
 			>{{ $t('回归对比(选2个)') }}</el-button
 			>
+			<el-button
+				type="primary"
+				:disabled="selectedRuns.length < 2"
+				@click="goTrend"
+			>{{ $t('趋势对比(选≥2个)') }}</el-button
+			>
 			<cl-flex1 />
 			<cl-search-key :placeholder="$t('搜索版本号')" />
 		</cl-row>
@@ -92,6 +98,8 @@
 					<el-option :label="$t('规则匹配')" value="rule_match" />
 					<el-option :label="$t('LLM 评分')" value="llm_judge" />
 					<el-option :label="$t('组合')" value="composite" />
+					<el-option :label="$t('JSON 结构')" value="json_schema" />
+					<el-option :label="$t('安全(PII)')" value="safety" />
 				</el-select>
 			</el-form-item>
 		</el-form>
@@ -123,7 +131,54 @@
 			</el-descriptions-item>
 		</el-descriptions>
 
+		<el-card class="kappa-card">
+			<template #header>{{ $t('Judge 校准（人工标注 Cohen\'s κ）') }}</template>
+			<el-button type="primary" :loading="kappaLoading" @click="computeKappa">{{ $t('计算 κ') }}</el-button>
+			<span v-if="kappaResult" class="kappa-result">
+				κ = <b>{{ kappaResult.kappa ?? '-' }}</b>
+				<el-tag :type="kappaLevelType(kappaResult.level)" size="small" style="margin: 0 8px">{{ kappaLevelLabel(kappaResult.level) }}</el-tag>
+				<span style="color: #999">n={{ kappaResult.n }}，{{ $t('一致率') }} {{ ((kappaResult.agreementRate ?? 0) * 100).toFixed(1) }}%</span>
+			</span>
+		</el-card>
+
 		<el-table :data="detail.cases" border style="margin-top: 16px">
+			<el-table-column type="expand">
+				<template #default="{ row }">
+					<div v-if="parseJudgeDetail(row.evaluatorDetail)" class="judge-detail">
+						<div v-if="parseJudgeDetail(row.evaluatorDetail).reason" class="judge-reason">
+							<b>{{ $t('评分理由') }}：</b>{{ parseJudgeDetail(row.evaluatorDetail).reason }}
+						</div>
+						<div
+							v-if="parseJudgeDetail(row.evaluatorDetail).dimensions"
+							class="judge-dims"
+						>
+							<b>{{ $t('维度评分') }}：</b>
+							<el-tag
+								v-for="(v, k) in parseJudgeDetail(row.evaluatorDetail).dimensions"
+								:key="k"
+								size="small"
+								style="margin-right: 8px"
+							>{{ k }}: {{ Number(v).toFixed(2) }}</el-tag>
+						</div>
+						<div
+							v-if="parseJudgeDetail(row.evaluatorDetail).node_results?.length"
+							class="judge-dims"
+						>
+							<b>{{ $t('节点评估(trace)') }}：</b>
+							<div
+								v-for="nr in parseJudgeDetail(row.evaluatorDetail).node_results"
+								:key="nr.node_id"
+								style="margin-left: 8px"
+							>
+								<el-tag :type="nr.passed ? 'success' : 'danger'" size="small">{{ nr.node_id }}</el-tag>
+								<span style="margin-left: 4px">{{ Number(nr.score ?? 0).toFixed(2) }}</span>
+								<span v-if="nr.reason" style="color: #999; margin-left: 4px">{{ nr.reason }}</span>
+							</div>
+						</div>
+					</div>
+					<span v-else style="color: #999">{{ $t('无评分详情') }}</span>
+				</template>
+			</el-table-column>
 			<el-table-column prop="caseKey" :label="$t('用例')" min-width="120" />
 			<el-table-column prop="status" :label="$t('状态')" width="90">
 				<template #default="{ row }">
@@ -228,6 +283,41 @@ function statusTagType(s: string): any {
 function caseStatusType(s: string): any {
 	return { success: 'success', fail: 'danger', error: 'danger', timeout: 'warning', blocked: 'info' }[s] || '';
 }
+// 解析 evaluator_detail JSON（多维 rubric：{reason, dimensions}），供展开行展示
+function parseJudgeDetail(s: any): any {
+	if (!s) return null;
+	try {
+		return typeof s === 'string' ? JSON.parse(s) : s;
+	} catch {
+		return null;
+	}
+}
+
+// judge 校准 κ：调标注模块计算 judge 与人工标注的 Cohen's κ
+const kappaLoading = ref(false);
+const kappaResult = ref<any>(null);
+async function computeKappa() {
+	if (!detail.runId) return;
+	kappaLoading.value = true;
+	try {
+		kappaResult.value = await (service as any).workflow_annotation.annotation.kappa({ evalRunId: detail.runId });
+	} catch (e: any) {
+		ElMessage.error(e?.message || e);
+	} finally {
+		kappaLoading.value = false;
+	}
+}
+function kappaLevelLabel(level: string) {
+	return {
+		reliable: t('可信(≥0.6)'),
+		moderate: t('中等(0.4-0.6)'),
+		unreliable: t('不可信(<0.4)'),
+		no_annotation: t('无标注')
+	}[level] || level;
+}
+function kappaLevelType(level: string): any {
+	return { reliable: 'success', moderate: 'warning', unreliable: 'danger', no_annotation: 'info' }[level] || 'info';
+}
 
 // 发起评估
 const startDialog = reactive<{ visible: boolean; loading: boolean; form: any }>({
@@ -286,6 +376,15 @@ function goCompare() {
 		path: '/workflow/eval/compare',
 		query: { runA: baseline.id, runB: newer.id }
 	});
+}
+
+// 趋势对比：选 ≥2 个 run（按创建时间排序），跳转趋势折线页看多版本演进
+function goTrend() {
+	if (selectedRuns.value.length < 2) return;
+	const ids = [...selectedRuns.value]
+		.sort((a: any, b: any) => new Date(a.createTime).getTime() - new Date(b.createTime).getTime())
+		.map((r: any) => r.id);
+	router.push({ path: '/workflow/eval/trend', query: { runIds: ids.join(',') } });
 }
 
 // 详情抽屉
