@@ -10,14 +10,14 @@
 		<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
 		<span v-if="incomplete" class="node-incomplete-dot" />
 		<div class="output-handles">
-			<div v-for="(intent, i) in intents" :key="'intent_' + i" class="handle-group">
+			<div v-for="(intent, i) in intents" :key="intent.id ?? i" class="handle-group">
 				<span
 					class="handle-label handle-label--intent"
 					:style="{ top: handleTop(Number(i)) }"
 					>{{ intent.name || 'I' + (Number(i) + 1) }}</span
 				>
 				<handle
-					:id="'intent_' + i"
+					:id="'intent_' + (intent.id ?? i)"
 					type="source"
 					:position="Position.Right"
 					:style="{ top: handleTop(Number(i)) }"
@@ -41,6 +41,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'workflow-node-intent-classifier' });
 import { computed } from 'vue';
 import { Handle, Position } from '@vue-flow/core';
 import { MagicStick } from '@element-plus/icons-vue';

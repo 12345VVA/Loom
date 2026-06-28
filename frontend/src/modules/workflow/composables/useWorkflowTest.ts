@@ -1,5 +1,6 @@
 import { reactive, ref, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
+import { findInvalidNodeInput } from '../utils';
 import dayjs from 'dayjs';
 
 interface FlowNode {
@@ -69,6 +70,12 @@ export function useWorkflowTest(
 		if (isDirty.value) {
 			const saved = await saveWorkflow();
 			if (!saved) return;
+		}
+		// 阻断：节点 inputs 变量名非法（空/格式错/重名）时不允许提交测试
+		const invalidInput = findInvalidNodeInput(elements.value);
+		if (invalidInput) {
+			ElMessage.warning(invalidInput.error);
+			return;
 		}
 		const startNode = elements.value.find(
 			(el: any) => !('source' in el) && el.type === 'start'

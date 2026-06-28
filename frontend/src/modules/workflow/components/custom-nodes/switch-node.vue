@@ -13,6 +13,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'workflow-node-switch' });
 import { computed } from 'vue';
 import BaseNode from './base-node.vue';
 import type { CustomOutputHandle } from './types';
@@ -36,7 +37,7 @@ const outputHandles = computed<CustomOutputHandle[]>(() => {
 	cases.value.forEach((c: any, i: number) => {
 		const top = ((i + 1) * 100) / (totalCount.value + 1);
 		handles.push({
-			id: 'case_' + i,
+			id: 'case_' + (c.id ?? i),
 			label: c.value || 'C' + (i + 1),
 			color: '#e6a23c',
 			topPercent: top,

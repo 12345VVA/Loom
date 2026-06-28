@@ -114,6 +114,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'workflow-node-base' });
 import { Handle, Position, useNode } from '@vue-flow/core';
 import { computed, ref, onMounted, inject } from 'vue';
 import {

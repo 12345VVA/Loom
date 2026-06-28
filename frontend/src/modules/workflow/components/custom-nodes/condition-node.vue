@@ -13,6 +13,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'workflow-node-condition' });
 import { computed } from 'vue';
 import BaseNode from './base-node.vue';
 import type { CustomOutputHandle } from './types';

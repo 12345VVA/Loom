@@ -52,6 +52,10 @@ celery_app.conf.update(
         "workflow.execute": {"queue": "workflow"},
         "ai.execute_generation_task": {"queue": "ai.chat"},
         "ai.clean_expired_governance_data": {"queue": "default"},
+        # 系统任务统一走 default 队列，避免落到匿名 celery 队列造成分流混乱
+        "task.dispatch_due_tasks": {"queue": "default"},
+        "task.execute_system_task": {"queue": "default"},
+        "task.clean_expired_logs": {"queue": "default"},
     },
 )
 

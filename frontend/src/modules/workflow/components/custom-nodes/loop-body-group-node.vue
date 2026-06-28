@@ -33,6 +33,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'workflow-node-loop-body-group' });
 import { computed, ref, inject } from 'vue';
 import { Handle, Position } from '@vue-flow/core';
 import { Refresh, Files, Plus, InfoFilled } from '@element-plus/icons-vue';

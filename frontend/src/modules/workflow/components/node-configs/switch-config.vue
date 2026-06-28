@@ -52,6 +52,7 @@ import NodeConfigHint from './node-config-hint.vue';
 import NodeConfigSection from './node-config-section.vue';
 import ClVariableInput from '../cl-variable-input.vue';
 import { useVueFlow } from '@vue-flow/core';
+import { genId } from '../../utils';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
@@ -65,26 +66,19 @@ function addCase() {
 	if (!config.cases) {
 		config.cases = [];
 	}
-	config.cases.push({ value: '' });
+	config.cases.push({ id: genId(), value: '' });
 }
 
 function removeCase(index: number) {
-	if (props.nodeId) {
-		const edges = getEdges.value;
-		const edgeToRemove = edges.find(
-			(e) => e.source === props.nodeId && e.sourceHandle === `case_${index}`
+	const caseId = config.cases[index]?.id;
+	if (props.nodeId && caseId != null) {
+		// 稳定 handle：精确删除该 case 对应的边，其余边无需重编号
+		const edgeToRemove = getEdges.value.find(
+			(e) => e.source === props.nodeId && e.sourceHandle === `case_${caseId}`
 		);
 		if (edgeToRemove) {
 			removeEdges([edgeToRemove.id]);
 		}
-		edges.forEach((e) => {
-			if (e.source === props.nodeId && e.sourceHandle && e.sourceHandle.startsWith('case_')) {
-				const idx = parseInt(e.sourceHandle.replace('case_', ''));
-				if (idx > index) {
-					e.sourceHandle = `case_${idx - 1}`;
-				}
-			}
-		});
 	}
 	config.cases.splice(index, 1);
 }

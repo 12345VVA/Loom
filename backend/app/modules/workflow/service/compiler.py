@@ -171,7 +171,11 @@ def render_template(template: str, variables: dict) -> str:
             return json.dumps(value, ensure_ascii=False)
         return str(value)
 
-    return re.sub(r"\{([a-zA-Z0-9_.]+)\}", _resolve, template)
+    # (?!\s*[:,}])：排除 JSON/Python 字面量强特征——
+    # `}` 后跟 冒号(dict)、逗号(集合/数组)、右花括号(嵌套结尾) 的不视为变量引用，
+    # 避免模板里的 `{a:1}`/`{a,b}`/`{"k":1}}` 等字面量片段被当变量吞成空串。
+    # （带引号 JSON `{"a":1}` 因 `"` 不在字符类本就不匹配，此处仅补防裸键字面量。）
+    return re.sub(r"\{([a-zA-Z0-9_.]+)\}(?!\s*[:,}])", _resolve, template)
 
 
 def strip_braces(val: str) -> str:
@@ -211,6 +215,14 @@ def validate_graph(graph_json: dict[str, Any]) -> None:
     """
     nodes = graph_json.get("nodes", [])
     edges = graph_json.get("edges", [])
+
+    # 显式校验每个节点 id/type 必填，给出友好错误而非静默跳过或裸 KeyError
+    for idx, n in enumerate(nodes):
+        if not n.get("id"):
+            raise ValueError(f"第 {idx + 1} 个节点缺少 id 字段。")
+        if not n.get("type"):
+            raise ValueError(f"节点 '{n['id']}' 缺少 type 字段。")
+
     nodes_map = {n["id"]: n for n in nodes if "id" in n}
 
     node_ids = {n["id"] for n in nodes if "id" in n}
@@ -574,9 +586,12 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                 if sh == "default" and not default_route:
                     default_route = e["target"]
                 elif sh and sh.startswith("intent_"):
-                    idx = int(sh.split("_")[1])
-                    if idx < len(intents):
-                        intents[idx]["target_route"] = e["target"]
+                    rest = sh[len("intent_"):]
+                    match = next((x for x in intents if str(x.get("id")) == rest), None)
+                    if match is not None:
+                        match["target_route"] = e["target"]
+                    elif rest.isdigit() and int(rest) < len(intents):
+                        intents[int(rest)]["target_route"] = e["target"]
         path_map = {}
         for intent in intents:
             target = intent.get("target_route")
@@ -603,9 +618,12 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                 if sh == "default" and not default_route:
                     default_route = e["target"]
                 elif sh and sh.startswith("case_"):
-                    idx = int(sh.split("_")[1])
-                    if idx < len(cases):
-                        cases[idx]["target_route"] = e["target"]
+                    rest = sh[len("case_"):]
+                    match = next((x for x in cases if str(x.get("id")) == rest), None)
+                    if match is not None:
+                        match["target_route"] = e["target"]
+                    elif rest.isdigit() and int(rest) < len(cases):
+                        cases[int(rest)]["target_route"] = e["target"]
         path_map = {}
         for case in cases:
             target = case.get("target_route")
@@ -852,6 +870,12 @@ class WorkflowCompiler:
         支持 for_each / batch 子图：循环体在 Pre-pass 阶段提取为独立子图，
         主图保持纯 DAG 结构。
         """
+        # 确保节点执行器已注册：注册逻辑位于 workflow_service 模块体（与 compiler 分离）。
+        # 此处延迟导入可打破循环依赖（compiler 顶层不 import workflow_service），
+        # 使任何调用 compile_graph 的入口（Celery / 测试脚本 / 未来新入口）都能自动完成注册，
+        # 无需各自记得 import workflow_service。
+        import app.modules.workflow.service.workflow_service  # noqa: F401
+
         # 0. 校验拓扑数据结构与完整性
         if not isinstance(graph_json, dict) or "nodes" not in graph_json or "edges" not in graph_json:
             raise ValueError("工作流拓扑结构不合法，必须包含 nodes 和 edges 字段。")

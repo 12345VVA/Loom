@@ -28,12 +28,11 @@ export function useUndoRedo(elements: Ref<any[]>) {
 		};
 		history.value.push(snapshot);
 
-		// 限制历史长度
+		// 限制历史长度；无论是否 shift，pointer 都统一指向新的栈顶
 		if (history.value.length > MAX_HISTORY) {
 			history.value.shift();
-		} else {
-			pointer.value = history.value.length - 1;
 		}
+		pointer.value = history.value.length - 1;
 	}
 
 	/**

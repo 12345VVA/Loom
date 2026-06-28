@@ -396,7 +396,7 @@ import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
 
-import { formatJson, copyToClipboard } from '../utils';
+import { formatJson, copyToClipboard, genId, findInvalidNodeInput } from '../utils';
 import { getNodeMeta } from '../utils/node-type-registry';
 import { UNTESTABLE_NODE_TYPES, OPEN_NODE_TEST_DIALOG_KEY } from '../components/constants';
 import dayjs from 'dayjs';
@@ -533,6 +533,23 @@ const aiProfiles = ref<Eps.profile[]>([]);
 const elements = ref<(FlowNode | FlowEdge)[]>([]);
 const _upstreamCache = new Map<string, { result: any[]; version: number }>();
 let _elementsVersion = 0;
+
+// 计算剥离运行态字段（class、data.runLog/runData）后的拓扑签名。
+// 用于区分"真实编辑"与"试运行/单节点测试写入的运行态"，避免后者污染 isDirty、误清上游缓存。
+function persistSignature(els: any[]): string {
+	return JSON.stringify(
+		els.map((el: any) => {
+			if (!el) return el;
+			const { class: _class, ...rest } = el;
+			if (rest && rest.data) {
+				const { runLog: _runLog, runData: _runData, ...dataRest } = rest.data;
+				rest.data = dataRest;
+			}
+			return rest;
+		})
+	);
+}
+let _persistSig = '';
 
 const { canUndo, canRedo, pushSnapshot, undo, redo, init: initUndoRedo } = useUndoRedo(elements);
 
@@ -767,6 +784,8 @@ onMounted(() => {
 	} else {
 		loaded.value = true;
 		initUndoRedo();
+		// 加载/新建完成：以当前拓扑签名（已剥离运行态字段）作为 isDirty 比较基线
+		_persistSig = persistSignature(elements.value);
 	}
 	fetchAiProfiles();
 
@@ -850,6 +869,11 @@ function deleteSelectedElements() {
 watch(
 	elements,
 	() => {
+		// 仅当"非运行态"字段变化时才视为脏：试运行/单节点测试写入的 class、runLog
+		// 不触发保存按钮，也不清空上游缓存（运行态不改变拓扑与上游输出）
+		const sig = persistSignature(elements.value);
+		if (sig === _persistSig) return;
+		_persistSig = sig;
 		_elementsVersion++;
 		_upstreamCache.clear();
 		if (loaded.value) {
@@ -900,12 +924,39 @@ async function fetchWorkflowData() {
 				if (el.type === 'llm' && el.data?.config && !el.data.config.jsonFields) {
 					el.data.config.jsonFields = [];
 				}
+				// 稳定 handle 迁移：为 switch/intent 分支补稳定 id（缺失时生成）
+				if (el.type === 'switch' && el.data?.config?.cases) {
+					el.data.config.cases.forEach((c: any) => {
+						if (!c.id) c.id = genId();
+					});
+				}
+				if (el.type === 'intent_classifier' && el.data?.config?.intents) {
+					el.data.config.intents.forEach((i: any) => {
+						if (!i.id) i.id = genId();
+					});
+				}
 			});
 
 			// 旧工作流兼容：从 condition/switch/intent_classifier 节点的 config 反向重建边的 sourceHandle
 			const nodesMap = new Map<string, any>();
 			for (const el of loadedElements) {
 				if (!('source' in el)) nodesMap.set(el.id, el);
+			}
+			// 稳定 handle 迁移：把旧下标格式（case_N / intent_N）升级为稳定 id 格式。
+			// 仅纯数字下标才迁移，已是 case_<id> 的不动，保证幂等。
+			for (const el of loadedElements) {
+				if (!('source' in el) || !el.sourceHandle) continue;
+				const srcNode = nodesMap.get(el.source);
+				if (!srcNode) continue;
+				if (/^case_\d+$/.test(el.sourceHandle) && srcNode.type === 'switch') {
+					const idx = parseInt(el.sourceHandle.split('_')[1]);
+					const c = srcNode.data?.config?.cases?.[idx];
+					if (c?.id) el.sourceHandle = 'case_' + c.id;
+				} else if (/^intent_\d+$/.test(el.sourceHandle) && srcNode.type === 'intent_classifier') {
+					const idx = parseInt(el.sourceHandle.split('_')[1]);
+					const it = srcNode.data?.config?.intents?.[idx];
+					if (it?.id) el.sourceHandle = 'intent_' + it.id;
+				}
 			}
 			for (const el of loadedElements) {
 				if (!('source' in el) || el.sourceHandle) continue;
@@ -922,7 +973,7 @@ async function fetchWorkflowData() {
 					else {
 						for (let i = 0; i < cases.length; i++) {
 							if (el.target === cases[i].targetRoute) {
-								el.sourceHandle = 'case_' + i;
+								el.sourceHandle = 'case_' + (cases[i].id ?? i);
 								break;
 							}
 						}
@@ -935,7 +986,7 @@ async function fetchWorkflowData() {
 					} else {
 						for (let i = 0; i < intents.length; i++) {
 							if (el.target === intents[i].targetRoute) {
-								el.sourceHandle = 'intent_' + i;
+								el.sourceHandle = 'intent_' + (intents[i].id ?? i);
 								break;
 							}
 						}
@@ -965,6 +1016,8 @@ async function fetchWorkflowData() {
 		}
 		loaded.value = true;
 		initUndoRedo();
+		// 加载/新建完成：以当前拓扑签名（已剥离运行态字段）作为 isDirty 比较基线
+		_persistSig = persistSignature(elements.value);
 	} catch (e) {
 		ElMessage.error(t('获取工作流详情失败'));
 	}
@@ -1318,15 +1371,27 @@ function getEdgeLabel(
 	if (srcNode.type === 'switch') {
 		if (sourceHandle === 'default') return '默认';
 		if (sourceHandle?.startsWith('case_')) {
-			const idx = parseInt(sourceHandle.split('_')[1]);
-			return srcNode.data?.config?.cases?.[idx]?.value || 'Case ' + (idx + 1);
+			const rest = sourceHandle.slice(5);
+			const byId = srcNode.data?.config?.cases?.find((c: any) => c.id === rest);
+			if (byId) return byId.value || 'Case';
+			if (/^\d+$/.test(rest)) {
+				const idx = parseInt(rest);
+				return srcNode.data?.config?.cases?.[idx]?.value || 'Case ' + (idx + 1);
+			}
+			return 'Case';
 		}
 	}
 	if (srcNode.type === 'intent_classifier') {
 		if (sourceHandle === 'default') return '默认';
 		if (sourceHandle?.startsWith('intent_')) {
-			const idx = parseInt(sourceHandle.split('_')[1]);
-			return srcNode.data?.config?.intents?.[idx]?.name || 'Intent ' + (idx + 1);
+			const rest = sourceHandle.slice(7);
+			const byId = srcNode.data?.config?.intents?.find((i: any) => i.id === rest);
+			if (byId) return byId.name || 'Intent';
+			if (/^\d+$/.test(rest)) {
+				const idx = parseInt(rest);
+				return srcNode.data?.config?.intents?.[idx]?.name || 'Intent ' + (idx + 1);
+			}
+			return 'Intent';
 		}
 	}
 	return undefined;
@@ -1519,10 +1584,32 @@ function duplicateNode() {
 	if (srcCopy.data) {
 		delete srcCopy.data.runLog;
 		delete srcCopy.data.runData;
+		// 复制节点的 case/intent 重新分配稳定 id，避免与源节点端口 id 重复
+		if (srcCopy.data.config?.cases) {
+			srcCopy.data.config.cases.forEach((c: any) => {
+				c.id = genId();
+			});
+		}
+		if (srcCopy.data.config?.intents) {
+			srcCopy.data.config.intents.forEach((i: any) => {
+				i.id = genId();
+			});
+		}
 	}
 	
-	let newX = srcNode.position.x + 40;
-	let newY = srcNode.position.y + 40;
+	// 基准坐标：源节点位于 group 内时其 position 是相对父节点的局部坐标，
+	// 复制后放主画布需累加 group 绝对偏移，否则副本会漂移到错误位置
+	let baseX = srcNode.position.x;
+	let baseY = srcNode.position.y;
+	if (srcNode.parentNode) {
+		const group = elements.value.find((el: any) => el.id === srcNode.parentNode) as any;
+		if (group?.position) {
+			baseX += group.position.x;
+			baseY += group.position.y;
+		}
+	}
+	let newX = baseX + 40;
+	let newY = baseY + 40;
 	while (elements.value.some((el: any) => el.position && el.position.x === newX && el.position.y === newY)) {
 		newX += 40;
 		newY += 40;
@@ -1653,6 +1740,12 @@ function buildGraphPayload() {
 // 将 Vue Flow 画布信息转换打包为后端标准工作流 JSON 格式并存储
 async function saveWorkflow() {
 	if (!workflowId.value) return;
+	// 阻断：节点 inputs 变量名非法（空/格式错/重名）时不允许保存
+	const invalidInput = findInvalidNodeInput(elements.value);
+	if (invalidInput) {
+		ElMessage.warning(invalidInput.error);
+		return;
+	}
 	saving.value = true;
 	try {
 		// 1. 拆分连线与节点 (TS-safe 属性检查)
@@ -1854,6 +1947,8 @@ async function saveWorkflow() {
 
 		ElMessage.success(t('工作流保存成功'));
 		isDirty.value = false;
+		// 保存成功：以当前拓扑签名重置 isDirty 比较基线
+		_persistSig = persistSignature(elements.value);
 		return true;
 	} catch (err: any) {
 		ElMessage.error(t('保存失败: ') + (err.message || err));

@@ -56,6 +56,7 @@
 				<!-- 统一的节点输入配置 (Strict Mode) -->
 				<node-inputs-editor
 					v-if="selectedNode.type !== 'start'"
+					:key="selectedNode.id"
 					v-model="selectedNode.data.config.inputs"
 					:upstream-vars="upstreamOutputVarsOriginal"
 				/>

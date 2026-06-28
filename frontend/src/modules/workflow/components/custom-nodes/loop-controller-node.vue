@@ -11,6 +11,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'workflow-node-loop-controller' });
 import BaseNode from './base-node.vue';
 defineProps<{
 	label: string;

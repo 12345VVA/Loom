@@ -84,3 +84,63 @@ def get_checkpointer():
         )
 
     return _checkpointer
+
+
+import contextlib
+from typing import Any, AsyncGenerator
+
+@contextlib.asynccontextmanager
+async def get_async_checkpointer() -> AsyncGenerator[Any, None]:
+    """
+    返回异步版本的 LangGraph Checkpointer 上下文管理器。
+    用于 Celery 或其他异步执行环境，以满足 astream 等异步流的要求。
+    """
+    backend = (settings.WORKFLOW_CHECKPOINT_BACKEND or "memory").strip().lower()
+
+    if backend == "memory":
+        from langgraph.checkpoint.memory import MemorySaver
+
+        # MemorySaver 是同步的，但 langgraph 对其提供了宽松的异步兼容或我们可以直接包装
+        # 如果新版强求 AsyncSaver，我们可以实现一个简单的包装，或看 MemorySaver 是否自带异步。
+        # 事实上 MemorySaver 是安全的进程内字典，通常支持 async
+        from langgraph.checkpoint.memory.aio import AsyncMemorySaver
+        saver = AsyncMemorySaver()
+        logger.info("工作流 Checkpoint 后端: AsyncMemorySaver")
+        yield saver
+
+    elif backend == "sqlite":
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        db_path = get_db_path()
+        if db_path is not None:
+            checkpoint_dir = db_path.parent
+        else:
+            checkpoint_dir = Path("data")
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = checkpoint_dir / "workflow_checkpoints.db"
+
+        conn_str = f"sqlite:///{checkpoint_path.resolve()}"
+        async with AsyncSqliteSaver.from_conn_string(conn_str) as saver:
+            await saver.setup()
+            logger.info("工作流 Checkpoint 后端: AsyncSqliteSaver (%s)", checkpoint_path)
+            yield saver
+
+    elif backend == "postgres":
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from app.core.database import DATABASE_URL
+
+        pg_conn_str = DATABASE_URL.replace("postgresql+psycopg://", "postgresql://", 1)
+        # 如果 URL 包含 asyncpg，我们需要适配 AsyncPostgresSaver。
+        # AsyncPostgresSaver 默认使用 psycopg_pool，所以我们要确保 connection string 兼容
+        pg_conn_str = pg_conn_str.replace("postgresql+asyncpg://", "postgresql://", 1)
+        
+        async with AsyncPostgresSaver.from_conn_string(pg_conn_str) as saver:
+            await saver.setup()
+            logger.info("工作流 Checkpoint 后端: AsyncPostgresSaver")
+            yield saver
+
+    else:
+        raise ValueError(
+            f"未知的 WORKFLOW_CHECKPOINT_BACKEND 值 '{settings.WORKFLOW_CHECKPOINT_BACKEND}'，"
+            "可选值：memory / sqlite / postgres"
+        )

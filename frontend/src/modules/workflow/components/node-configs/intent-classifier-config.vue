@@ -70,6 +70,7 @@ import { Delete, Plus } from '@element-plus/icons-vue';
 import NodeConfigHint from './node-config-hint.vue';
 import NodeConfigSection from './node-config-section.vue';
 import { useVueFlow } from '@vue-flow/core';
+import { genId } from '../../utils';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
@@ -84,26 +85,19 @@ function addIntent() {
 	if (!config.intents) {
 		config.intents = [];
 	}
-	config.intents.push({ name: '', description: '' });
+	config.intents.push({ id: genId(), name: '', description: '' });
 }
 
 function removeIntent(index: number) {
-	if (props.nodeId) {
-		const edges = getEdges.value;
-		const edgeToRemove = edges.find(
-			(e) => e.source === props.nodeId && e.sourceHandle === `intent_${index}`
+	const intentId = config.intents[index]?.id;
+	if (props.nodeId && intentId != null) {
+		// 稳定 handle：精确删除该 intent 对应的边，其余边无需重编号
+		const edgeToRemove = getEdges.value.find(
+			(e) => e.source === props.nodeId && e.sourceHandle === `intent_${intentId}`
 		);
 		if (edgeToRemove) {
 			removeEdges([edgeToRemove.id]);
 		}
-		edges.forEach((e) => {
-			if (e.source === props.nodeId && e.sourceHandle && e.sourceHandle.startsWith('intent_')) {
-				const idx = parseInt(e.sourceHandle.replace('intent_', ''));
-				if (idx > index) {
-					e.sourceHandle = `intent_${idx - 1}`;
-				}
-			}
-		});
 	}
 	config.intents.splice(index, 1);
 }

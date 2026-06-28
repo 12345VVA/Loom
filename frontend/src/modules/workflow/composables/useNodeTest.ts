@@ -1,5 +1,6 @@
 import { reactive, computed, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
+import { findInvalidNodeInput } from '../utils';
 import type { Eps } from '/@/cool';
 
 /** 单节点测试结果 */
@@ -60,6 +61,9 @@ export function useNodeTest(
 		result: null
 	});
 
+	// 并发测试隔离令牌：每次发起测试自增，过期请求（用户已切走/再次测试）的结果被丢弃
+	let testToken = 0;
+
 	/**
 	 * 打开单节点测试弹窗。
 	 * 会自动检查未保存修改并触发保存，确保后端读到最新配置。
@@ -73,6 +77,13 @@ export function useNodeTest(
 		if (isDirty.value) {
 			const saved = await saveWorkflow();
 			if (!saved) return;
+		}
+
+		// 阻断：节点 inputs 变量名非法（空/格式错/重名）时不允许提交测试
+		const invalidInput = findInvalidNodeInput(elements.value);
+		if (invalidInput) {
+			ElMessage.warning(invalidInput.error);
+			return;
 		}
 
 		const node = elements.value.find((el: any) => !('source' in el) && el.id === nodeId) as
@@ -105,6 +116,8 @@ export function useNodeTest(
 	async function startNodeTest() {
 		const testNodeId = nodeTestDialog.nodeId;
 		if (!testNodeId) return;
+		// 发起本次测试的令牌；异步返回时若已过期（用户切走或再次测试）则丢弃结果
+		const token = ++testToken;
 
 		let mockVariables = {};
 		try {
@@ -124,6 +137,9 @@ export function useNodeTest(
 				nodeId: testNodeId,
 				mockVariables
 			});
+
+			// 令牌过期：用户已切到其它节点或再次发起了测试，丢弃本次结果
+			if (token !== testToken) return;
 
 			const status = res.error ? 'error' : 'success';
 			const outputData = res.output || (res.error ? { error: res.error } : {});
@@ -161,7 +177,8 @@ export function useNodeTest(
 		} catch (err: any) {
 			ElMessage.error(t('测试节点失败: ') + (err.message || err));
 		} finally {
-			if (nodeTestDialog.nodeId === testNodeId) {
+			// 仅当本次令牌仍最新时才复位 loading，避免覆盖新测试的 loading 状态
+			if (token === testToken) {
 				nodeTestDialog.loading = false;
 			}
 		}

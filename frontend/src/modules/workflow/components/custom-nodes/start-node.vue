@@ -10,6 +10,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'workflow-node-start' });
 import BaseNode from './base-node.vue';
 defineProps<{
 	label: string;
