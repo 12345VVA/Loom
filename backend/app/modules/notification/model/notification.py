@@ -1,12 +1,13 @@
 """
 通知模块模型。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field as PydanticField
+from pydantic import BaseModel, ConfigDict
+from pydantic import Field as PydanticField
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -20,16 +21,16 @@ class NotificationMessage(BaseEntity, table=True):
     content: str
     message_type: str = Field(default="business", index=True)
     level: str = Field(default="info", index=True)
-    source_module: Optional[str] = Field(default=None, index=True)
-    business_key: Optional[str] = Field(default=None, index=True)
-    link_url: Optional[str] = None
+    source_module: str | None = Field(default=None, index=True)
+    business_key: str | None = Field(default=None, index=True)
+    link_url: str | None = None
     send_status: str = Field(default="sent", index=True)
-    scheduled_at: Optional[datetime] = None
-    expired_at: Optional[datetime] = None
-    sender_id: Optional[int] = Field(default=None, index=True)
+    scheduled_at: datetime | None = None
+    expired_at: datetime | None = None
+    sender_id: int | None = Field(default=None, index=True)
     is_recalled: bool = Field(default=False, index=True)
-    recalled_at: Optional[datetime] = None
-    recalled_by: Optional[int] = Field(default=None, index=True)
+    recalled_at: datetime | None = None
+    recalled_by: int | None = Field(default=None, index=True)
 
 
 class NotificationRecipient(BaseEntity, table=True):
@@ -37,11 +38,11 @@ class NotificationRecipient(BaseEntity, table=True):
 
     message_id: int = Field(index=True)
     user_id: int = Field(index=True)
-    role_id: Optional[int] = Field(default=None, index=True)
-    department_id: Optional[int] = Field(default=None, index=True)
-    tenant_id: Optional[int] = Field(default=None, index=True)
+    role_id: int | None = Field(default=None, index=True)
+    department_id: int | None = Field(default=None, index=True)
+    tenant_id: int | None = Field(default=None, index=True)
     is_read: bool = Field(default=False, index=True)
-    read_time: Optional[datetime] = None
+    read_time: datetime | None = None
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
 
@@ -54,7 +55,7 @@ class NotificationTemplate(BaseEntity, table=True):
     title_template: str
     content_template: str
     default_level: str = Field(default="info")
-    default_link_url: Optional[str] = None
+    default_link_url: str | None = None
     is_active: bool = Field(default=True, index=True)
 
 
@@ -63,13 +64,13 @@ class NotificationRule(BaseEntity, table=True):
 
     code: str = Field(index=True, unique=True, max_length=100)
     name: str = Field(index=True, max_length=100)
-    users: Optional[str] = None
-    roles: Optional[str] = None
-    departments: Optional[str] = None
-    tenants: Optional[str] = None
+    users: str | None = None
+    roles: str | None = None
+    departments: str | None = None
+    tenants: str | None = None
     include_child_departments: bool = True
     all_admins: bool = False
-    condition: Optional[str] = None
+    condition: str | None = None
     is_active: bool = True
 
 
@@ -82,7 +83,7 @@ class AudienceRule(BaseModel):
     tenants: list[int] = PydanticField(default_factory=list)
     include_child_departments: bool = True
     all_admins: bool = False
-    condition: Optional[str] = None
+    condition: str | None = None
 
 
 class NotificationMessageRead(BaseModel):
@@ -93,16 +94,16 @@ class NotificationMessageRead(BaseModel):
     content: str
     message_type: str
     level: str
-    source_module: Optional[str] = None
-    business_key: Optional[str] = None
-    link_url: Optional[str] = None
+    source_module: str | None = None
+    business_key: str | None = None
+    link_url: str | None = None
     send_status: str
-    scheduled_at: Optional[datetime] = None
-    expired_at: Optional[datetime] = None
-    sender_id: Optional[int] = None
+    scheduled_at: datetime | None = None
+    expired_at: datetime | None = None
+    sender_id: int | None = None
     is_recalled: bool = False
-    recalled_at: Optional[datetime] = None
-    recalled_by: Optional[int] = None
+    recalled_at: datetime | None = None
+    recalled_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -114,16 +115,16 @@ class NotificationMessageCreateRequest(BaseModel):
     content: str
     message_type: str = "business"
     level: str = "info"
-    source_module: Optional[str] = None
-    business_key: Optional[str] = None
-    link_url: Optional[str] = None
+    source_module: str | None = None
+    business_key: str | None = None
+    link_url: str | None = None
     send_status: str = "sent"
-    scheduled_at: Optional[datetime] = None
-    expired_at: Optional[datetime] = None
-    sender_id: Optional[int] = None
+    scheduled_at: datetime | None = None
+    expired_at: datetime | None = None
+    sender_id: int | None = None
     is_recalled: bool = False
-    recalled_at: Optional[datetime] = None
-    recalled_by: Optional[int] = None
+    recalled_at: datetime | None = None
+    recalled_by: int | None = None
     audience: AudienceRule = PydanticField(default_factory=AudienceRule)
 
 
@@ -138,9 +139,9 @@ class NotificationMessageSendRequest(BaseModel):
     content: str
     message_type: str = "business"
     level: str = "info"
-    source_module: Optional[str] = None
-    business_key: Optional[str] = None
-    link_url: Optional[str] = None
+    source_module: str | None = None
+    business_key: str | None = None
+    link_url: str | None = None
     audience: AudienceRule = PydanticField(default_factory=AudienceRule)
 
 
@@ -166,7 +167,7 @@ class NotificationTemplateRead(BaseModel):
     title_template: str
     content_template: str
     default_level: str
-    default_link_url: Optional[str] = None
+    default_link_url: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -180,7 +181,7 @@ class NotificationTemplateCreateRequest(BaseModel):
     title_template: str
     content_template: str
     default_level: str = "info"
-    default_link_url: Optional[str] = None
+    default_link_url: str | None = None
     is_active: bool = True
 
 
@@ -194,13 +195,13 @@ class NotificationRuleRead(BaseModel):
     id: int
     code: str
     name: str
-    users: Optional[str] = None
-    roles: Optional[str] = None
-    departments: Optional[str] = None
-    tenants: Optional[str] = None
+    users: str | None = None
+    roles: str | None = None
+    departments: str | None = None
+    tenants: str | None = None
     include_child_departments: bool
     all_admins: bool
-    condition: Optional[str] = None
+    condition: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -211,13 +212,13 @@ class NotificationRuleCreateRequest(BaseModel):
 
     code: str
     name: str
-    users: Optional[str] = None
-    roles: Optional[str] = None
-    departments: Optional[str] = None
-    tenants: Optional[str] = None
+    users: str | None = None
+    roles: str | None = None
+    departments: str | None = None
+    tenants: str | None = None
     include_child_departments: bool = True
     all_admins: bool = False
-    condition: Optional[str] = None
+    condition: str | None = None
     is_active: bool = True
 
 

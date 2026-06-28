@@ -7,7 +7,12 @@ from openai import OpenAI
 
 from app.modules.ai.model.ai import AiProvider
 from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCapabilityError, normalize_usage
-from app.modules.ai.service.utils import extract_request_id, sanitize_options_for_log, summarize_image_result_items, summarize_prompt
+from app.modules.ai.service.utils import (
+    extract_request_id,
+    sanitize_options_for_log,
+    summarize_image_result_items,
+    summarize_prompt,
+)
 
 logger = logging.getLogger(__name__)
 _OPENAI_IMAGE_ALLOWED_OPTION_KEYS = {"size", "n", "response_format", "quality", "style", "user"}
@@ -25,7 +30,11 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         choice = response.choices[0] if response.choices else None
         message = getattr(choice, "message", None) if choice else None
         data = response.model_dump(mode="json") if hasattr(response, "model_dump") else response
-        return {"content": getattr(message, "content", None), "raw": data, "usage": normalize_usage(data.get("usage") if isinstance(data, dict) else {})}
+        return {
+            "content": getattr(message, "content", None),
+            "raw": data,
+            "usage": normalize_usage(data.get("usage") if isinstance(data, dict) else {}),
+        }
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
         stream = self.client.chat.completions.create(model=model, messages=messages, stream=True, **options)
@@ -47,31 +56,35 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
         normalized_options = dict(options or {})
-        
+
         # 针对 gpt-image-2 模型的特定约束做自动转换/裁剪
         is_gpt_image_2 = model.lower().startswith("gpt-image-2")
         if is_gpt_image_2:
             if normalized_options.get("n", 1) > 1:
                 logger.warning(
                     f"Model {model} only supports n=1. Automatically truncating n to 1.",
-                    extra={"model": model, "original_n": normalized_options["n"]}
+                    extra={"model": model, "original_n": normalized_options["n"]},
                 )
                 normalized_options["n"] = 1
             if normalized_options.get("response_format") != "b64_json":
                 normalized_options["response_format"] = "b64_json"
 
-        allowed_options = {key: value for key, value in normalized_options.items() if key in _OPENAI_IMAGE_ALLOWED_OPTION_KEYS}
-        dropped_options = {key: value for key, value in normalized_options.items() if key not in _OPENAI_IMAGE_ALLOWED_OPTION_KEYS}
-        
+        allowed_options = {
+            key: value for key, value in normalized_options.items() if key in _OPENAI_IMAGE_ALLOWED_OPTION_KEYS
+        }
+        dropped_options = {
+            key: value for key, value in normalized_options.items() if key not in _OPENAI_IMAGE_ALLOWED_OPTION_KEYS
+        }
+
         extra_body = {}
         if is_gpt_image_2:
             for key in list(dropped_options.keys()):
                 if key not in {"async", "force_async", "prompt_extend"}:
                     extra_body[key] = dropped_options.pop(key)
-            
+
         if extra_body:
             allowed_options["extra_body"] = extra_body
-            
+
         logger.info(
             "OpenAI Compatible 生图上游请求开始",
             extra={

@@ -75,9 +75,9 @@ export function useNodeTest(
 			if (!saved) return;
 		}
 
-		const node = elements.value.find(
-			(el: any) => !('source' in el) && el.id === nodeId
-		) as FlowNode | undefined;
+		const node = elements.value.find((el: any) => !('source' in el) && el.id === nodeId) as
+			| FlowNode
+			| undefined;
 		if (!node) return;
 
 		nodeTestDialog.nodeId = node.id;
@@ -103,11 +103,14 @@ export function useNodeTest(
 	 * 执行单节点测试。完成后保持弹窗打开展示结果。
 	 */
 	async function startNodeTest() {
+		const testNodeId = nodeTestDialog.nodeId;
+		if (!testNodeId) return;
+
 		let mockVariables = {};
 		try {
 			mockVariables = JSON.parse(nodeTestDialog.form.inputsJson);
 			// 解析成功后缓存用户的输入，方便重复测试
-			mockVariablesCache[nodeTestDialog.nodeId] = nodeTestDialog.form.inputsJson;
+			mockVariablesCache[testNodeId] = nodeTestDialog.form.inputsJson;
 		} catch (e) {
 			ElMessage.warning(t('初始输入变量 JSON 格式错误！'));
 			return;
@@ -118,31 +121,33 @@ export function useNodeTest(
 		try {
 			const res = await service.workflow.instance.testNode({
 				definitionId: Number(workflowId.value),
-				nodeId: nodeTestDialog.nodeId,
+				nodeId: testNodeId,
 				mockVariables
 			});
 
 			const status = res.error ? 'error' : 'success';
 			const outputData = res.output || (res.error ? { error: res.error } : {});
 
-			// 弹窗内展示结果（不自动关闭，让用户查看）
-			nodeTestDialog.result = {
-				status,
-				outputData,
-				timeCost: res.latencyMs || 0,
-				error: res.error || undefined,
-				isTimeout: !!res.isTimeout
-			};
+			// 仅当用户还在看这个节点时，才展示结果到弹窗
+			if (nodeTestDialog.nodeId === testNodeId) {
+				nodeTestDialog.result = {
+					status,
+					outputData,
+					timeCost: res.latencyMs || 0,
+					error: res.error || undefined,
+					isTimeout: !!res.isTimeout
+				};
 
-			if (status === 'success') {
-				ElMessage.success(t('单节点测试完成'));
-			} else if (res.isTimeout) {
-				ElMessage.error(t('节点执行超时！'));
+				if (status === 'success') {
+					ElMessage.success(t('单节点测试完成'));
+				} else if (res.isTimeout) {
+					ElMessage.error(t('节点执行超时！'));
+				}
 			}
 
 			// 同步写入画布节点 runLog，画布上节点下方也显示执行日志
 			const node = elements.value.find(
-				(el: any) => !('source' in el) && el.id === nodeTestDialog.nodeId
+				(el: any) => !('source' in el) && el.id === testNodeId
 			) as FlowNode | undefined;
 			if (node) {
 				if (!node.data) node.data = { config: {} };
@@ -156,7 +161,9 @@ export function useNodeTest(
 		} catch (err: any) {
 			ElMessage.error(t('测试节点失败: ') + (err.message || err));
 		} finally {
-			nodeTestDialog.loading = false;
+			if (nodeTestDialog.nodeId === testNodeId) {
+				nodeTestDialog.loading = false;
+			}
 		}
 	}
 

@@ -1,6 +1,7 @@
 """
 AI 厂商适配器基础工具。
 """
+
 from __future__ import annotations
 
 import json
@@ -80,7 +81,9 @@ class BaseHttpAdapter:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key or ''}", "Content-Type": "application/json"}
 
-    def _post(self, path: str, payload: dict[str, Any], headers: dict[str, str] | None = None, base_url: str | None = None) -> tuple[dict, httpx.Response]:
+    def _post(
+        self, path: str, payload: dict[str, Any], headers: dict[str, str] | None = None, base_url: str | None = None
+    ) -> tuple[dict, httpx.Response]:
         response = httpx.post(
             f"{(base_url or self.base_url).rstrip('/')}{path}",
             json=payload,
@@ -90,7 +93,9 @@ class BaseHttpAdapter:
         self._raise_for_status(response)
         return response.json(), response
 
-    def _get(self, path: str, headers: dict[str, str] | None = None, base_url: str | None = None) -> tuple[dict, httpx.Response]:
+    def _get(
+        self, path: str, headers: dict[str, str] | None = None, base_url: str | None = None
+    ) -> tuple[dict, httpx.Response]:
         response = httpx.get(
             f"{(base_url or self.base_url).rstrip('/')}{path}",
             headers=headers or self._headers(),
@@ -127,9 +132,25 @@ def normalize_usage(data: dict[str, Any] | None) -> dict[str, int]:
     if not data:
         return {}
     return {
-        "promptTokens": int(data.get("prompt_tokens") or data.get("promptTokens") or data.get("promptTokenCount") or data.get("input_tokens") or data.get("inputTokens") or 0),
-        "completionTokens": int(data.get("completion_tokens") or data.get("completionTokens") or data.get("candidatesTokenCount") or data.get("output_tokens") or data.get("outputTokens") or 0),
-        "totalTokens": int(data.get("total_tokens") or data.get("totalTokens") or data.get("totalTokenCount") or data.get("total") or 0),
+        "promptTokens": int(
+            data.get("prompt_tokens")
+            or data.get("promptTokens")
+            or data.get("promptTokenCount")
+            or data.get("input_tokens")
+            or data.get("inputTokens")
+            or 0
+        ),
+        "completionTokens": int(
+            data.get("completion_tokens")
+            or data.get("completionTokens")
+            or data.get("candidatesTokenCount")
+            or data.get("output_tokens")
+            or data.get("outputTokens")
+            or 0
+        ),
+        "totalTokens": int(
+            data.get("total_tokens") or data.get("totalTokens") or data.get("totalTokenCount") or data.get("total") or 0
+        ),
     }
 
 

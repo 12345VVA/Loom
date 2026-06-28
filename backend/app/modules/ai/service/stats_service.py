@@ -1,4 +1,5 @@
 """AI 调用统计服务。"""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -16,7 +17,9 @@ class AiModelCallStatsService:
     def summary(self, days: int | None = None, group_by: str = "day") -> dict:
         statement = select(AiModelCallLog)
         if days:
-            statement = statement.where(AiModelCallLog.created_at >= datetime.utcnow() - timedelta(days=max(1, min(days, 365))))
+            statement = statement.where(
+                AiModelCallLog.created_at >= datetime.utcnow() - timedelta(days=max(1, min(days, 365)))
+            )
         logs = list(self.session.exec(statement).all())
         total = len(logs)
         success = len([item for item in logs if item.status == "success"])
@@ -34,21 +37,24 @@ class AiModelCallStatsService:
                 key = f"model:{item.model_id or '-'}"
             else:
                 key = (item.created_at or datetime.utcnow()).strftime("%Y-%m-%d")
-            group = groups.setdefault(key, {
-                "key": key,
-                "userId": item.user_id,
-                "providerId": item.provider_id,
-                "modelId": item.model_id,
-                "profileId": item.profile_id,
-                "total": 0,
-                "success": 0,
-                "error": 0,
-                "totalTokens": 0,
-                "costMicroUsd": 0,
-                "costUsd": 0,
-                "avgLatencyMs": 0,
-                "_latency": 0,
-            })
+            group = groups.setdefault(
+                key,
+                {
+                    "key": key,
+                    "userId": item.user_id,
+                    "providerId": item.provider_id,
+                    "modelId": item.model_id,
+                    "profileId": item.profile_id,
+                    "total": 0,
+                    "success": 0,
+                    "error": 0,
+                    "totalTokens": 0,
+                    "costMicroUsd": 0,
+                    "costUsd": 0,
+                    "avgLatencyMs": 0,
+                    "_latency": 0,
+                },
+            )
             group["total"] += 1
             group["success" if item.status == "success" else "error"] += 1
             group["totalTokens"] += item.total_tokens

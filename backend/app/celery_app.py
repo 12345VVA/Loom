@@ -1,12 +1,14 @@
 """
 Celery 应用配置
 """
+
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import setup_logging
+from kombu import Queue
+
 from app.core.config import settings
 from app.core.logging import configure_logging
-from celery.schedules import crontab
-from kombu import Queue
 
 AI_TASK_QUEUES = ("ai.chat", "ai.image", "ai.embedding", "ai.rerank", "ai.audio", "ai.video")
 
@@ -19,6 +21,7 @@ def setup_celery_logging(**kwargs):
         retention_days=settings.LOG_RETENTION_DAYS,
         file_prefix="celery",
     )
+
 
 celery_app = Celery(
     "loom",

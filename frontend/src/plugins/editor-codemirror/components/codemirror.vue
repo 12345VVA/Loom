@@ -5,7 +5,11 @@
 			<el-button text size="small" @click="compress">{{ t('压缩') }}</el-button>
 			<el-button text size="small" @click="copy">{{ t('复制') }}</el-button>
 		</div>
-		<div ref="editorEl" class="cl-editor-codemirror__editor" :style="{ height: parsePx(editorHeight) }" />
+		<div
+			ref="editorEl"
+			class="cl-editor-codemirror__editor"
+			:style="{ height: parsePx(editorHeight) }"
+		/>
 	</div>
 </template>
 
@@ -168,11 +172,14 @@ function copy() {
 		ElMessage.warning(t('内容为空，无需复制'));
 		return;
 	}
-	navigator.clipboard.writeText(val).then(() => {
-		ElMessage.success(t('已复制到剪贴板'));
-	}).catch(() => {
-		ElMessage.error(t('复制失败'));
-	});
+	navigator.clipboard
+		.writeText(val)
+		.then(() => {
+			ElMessage.success(t('已复制到剪贴板'));
+		})
+		.catch(() => {
+			ElMessage.error(t('复制失败'));
+		});
 }
 
 function getValue(): string {

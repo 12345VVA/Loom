@@ -27,13 +27,21 @@
 			<cl-table ref="Table">
 				<template #column-preview="{ scope }">
 					<div class="preview-cell" @click="openPreview(scope.row)">
-						<el-image v-if="previewSrc(scope.row)" :src="previewSrc(scope.row)" fit="cover" />
-						<el-icon v-else class="preview-icon"><component :is="iconFor(scope.row.assetType)" /></el-icon>
+						<el-image
+							v-if="previewSrc(scope.row)"
+							:src="previewSrc(scope.row)"
+							fit="cover"
+						/>
+						<el-icon v-else class="preview-icon"
+							><component :is="iconFor(scope.row.assetType)"
+						/></el-icon>
 					</div>
 				</template>
 
 				<template #column-status="{ scope }">
-					<el-tag :type="statusType(scope.row.status)" effect="plain">{{ scope.row.status }}</el-tag>
+					<el-tag :type="statusType(scope.row.status)" effect="plain">{{
+						scope.row.status
+					}}</el-tag>
 				</template>
 
 				<template #column-sizeBytes="{ scope }">
@@ -41,10 +49,26 @@
 				</template>
 
 				<template #slot-op="{ scope }">
-					<el-button text type="primary" @click="openPreview(scope.row)">{{ $t('预览') }}</el-button>
-					<el-button v-if="scope.row.storageUrl" text type="primary" @click="copyText(assetUrl(scope.row.storageUrl))">{{ $t('复制') }}</el-button>
-					<el-button v-if="scope.row.storageUrl" text type="primary" @click="openUrl(assetUrl(scope.row.storageUrl))">{{ $t('打开') }}</el-button>
-					<el-button text type="danger" @click="deleteAsset(scope.row)">{{ $t('删除') }}</el-button>
+					<el-button text type="primary" @click="openPreview(scope.row)">{{
+						$t('预览')
+					}}</el-button>
+					<el-button
+						v-if="scope.row.storageUrl"
+						text
+						type="primary"
+						@click="copyText(assetUrl(scope.row.storageUrl))"
+						>{{ $t('复制') }}</el-button
+					>
+					<el-button
+						v-if="scope.row.storageUrl"
+						text
+						type="primary"
+						@click="openUrl(assetUrl(scope.row.storageUrl))"
+						>{{ $t('打开') }}</el-button
+					>
+					<el-button text type="danger" @click="deleteAsset(scope.row)">{{
+						$t('删除')
+					}}</el-button>
 				</template>
 			</cl-table>
 		</cl-row>
@@ -65,24 +89,52 @@
 				:preview-src-list="[previewSrc(viewer.row)]"
 				preview-teleported
 			/>
-			<video v-else-if="viewer.row.assetType === 'video' && viewer.row.storageUrl" class="asset-preview__media" :src="assetUrl(viewer.row.storageUrl)" controls />
-			<audio v-else-if="viewer.row.assetType === 'audio' && viewer.row.storageUrl" class="asset-preview__audio" :src="assetUrl(viewer.row.storageUrl)" controls />
+			<video
+				v-else-if="viewer.row.assetType === 'video' && viewer.row.storageUrl"
+				class="asset-preview__media"
+				:src="assetUrl(viewer.row.storageUrl)"
+				controls
+			/>
+			<audio
+				v-else-if="viewer.row.assetType === 'audio' && viewer.row.storageUrl"
+				class="asset-preview__audio"
+				:src="assetUrl(viewer.row.storageUrl)"
+				controls
+			/>
 			<el-empty v-else :description="$t('暂无可预览内容')" />
 
 			<el-descriptions border :column="1">
-				<el-descriptions-item :label="$t('文件名')">{{ viewer.row.fileName || '-' }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('文件名')">{{
+					viewer.row.fileName || '-'
+				}}</el-descriptions-item>
 				<el-descriptions-item label="MD5">{{ viewer.row.md5 || '-' }}</el-descriptions-item>
-				<el-descriptions-item :label="$t('资源链接')">{{ viewer.row.storageUrl || '-' }}</el-descriptions-item>
-				<el-descriptions-item :label="$t('原始链接')">{{ viewer.row.originalUrlPreview || viewer.row.originalUrl || '-' }}</el-descriptions-item>
-				<el-descriptions-item :label="$t('来源')">{{ optionLabel(sourceTypeOptions, viewer.row.sourceType) }}</el-descriptions-item>
-				<el-descriptions-item label="Provider">{{ viewer.row.providerCode || '-' }}</el-descriptions-item>
-				<el-descriptions-item label="Model">{{ viewer.row.modelCode || '-' }}</el-descriptions-item>
-				<el-descriptions-item label="Profile">{{ viewer.row.profileCode || '-' }}</el-descriptions-item>
-				<el-descriptions-item :label="$t('提示词')">{{ viewer.row.prompt || '-' }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('资源链接')">{{
+					viewer.row.storageUrl || '-'
+				}}</el-descriptions-item>
+				<el-descriptions-item :label="$t('原始链接')">{{
+					viewer.row.originalUrlPreview || viewer.row.originalUrl || '-'
+				}}</el-descriptions-item>
+				<el-descriptions-item :label="$t('来源')">{{
+					optionLabel(sourceTypeOptions, viewer.row.sourceType)
+				}}</el-descriptions-item>
+				<el-descriptions-item label="Provider">{{
+					viewer.row.providerCode || '-'
+				}}</el-descriptions-item>
+				<el-descriptions-item label="Model">{{
+					viewer.row.modelCode || '-'
+				}}</el-descriptions-item>
+				<el-descriptions-item label="Profile">{{
+					viewer.row.profileCode || '-'
+				}}</el-descriptions-item>
+				<el-descriptions-item :label="$t('提示词')">{{
+					viewer.row.prompt || '-'
+				}}</el-descriptions-item>
 				<el-descriptions-item :label="$t('参数')">
 					<pre class="params-preview">{{ formatJson(viewer.row.paramsPayload) }}</pre>
 				</el-descriptions-item>
-				<el-descriptions-item :label="$t('错误')">{{ viewer.row.errorMessage || '-' }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('错误')">{{
+					viewer.row.errorMessage || '-'
+				}}</el-descriptions-item>
 			</el-descriptions>
 		</div>
 	</el-drawer>
@@ -146,9 +198,24 @@ const Table = useTable({
 	columns: [
 		{ label: t('预览'), prop: 'preview', width: 92 },
 		{ label: t('文件名'), prop: 'fileName', minWidth: 190, showOverflowTooltip: true },
-		{ label: t('类型'), prop: 'assetType', minWidth: 90, formatter: ({ assetType }: any) => optionLabel(assetTypeOptions, assetType) },
-		{ label: t('来源'), prop: 'sourceType', minWidth: 110, formatter: ({ sourceType }: any) => optionLabel(sourceTypeOptions, sourceType) },
-		{ label: t('状态'), prop: 'status', minWidth: 120, formatter: ({ status }: any) => optionLabel(statusOptions, status) },
+		{
+			label: t('类型'),
+			prop: 'assetType',
+			minWidth: 90,
+			formatter: ({ assetType }: any) => optionLabel(assetTypeOptions, assetType)
+		},
+		{
+			label: t('来源'),
+			prop: 'sourceType',
+			minWidth: 110,
+			formatter: ({ sourceType }: any) => optionLabel(sourceTypeOptions, sourceType)
+		},
+		{
+			label: t('状态'),
+			prop: 'status',
+			minWidth: 120,
+			formatter: ({ status }: any) => optionLabel(statusOptions, status)
+		},
 		{ label: t('大小'), prop: 'sizeBytes', minWidth: 100 },
 		{ label: 'MD5', prop: 'md5', minWidth: 220, showOverflowTooltip: true },
 		{ label: t('提示词'), prop: 'prompt', minWidth: 220, showOverflowTooltip: true },

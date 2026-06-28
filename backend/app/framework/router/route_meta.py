@@ -1,15 +1,16 @@
 """
 路由标签与元数据
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from starlette.routing import Match
-
 
 CLASS_TAGS_ATTR = "__cool_class_tags__"
 METHOD_TAGS_ATTR = "__cool_method_tags__"

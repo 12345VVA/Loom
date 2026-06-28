@@ -1,4 +1,5 @@
 """AI 治理数据清理服务。"""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -13,7 +14,9 @@ class AiGovernanceCleanupService:
     def __init__(self, session: Session):
         self.session = session
 
-    def clean(self, task_payload_keep_days: int = 90, call_log_keep_days: int = 180, event_keep_days: int = 180) -> dict:
+    def clean(
+        self, task_payload_keep_days: int = 90, call_log_keep_days: int = 180, event_keep_days: int = 180
+    ) -> dict:
         now = datetime.utcnow()
         task_cutoff = now - timedelta(days=task_payload_keep_days)
         log_cutoff = now - timedelta(days=call_log_keep_days)

@@ -2,10 +2,9 @@ import os
 import sys
 import unittest
 
+from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
-from fastapi import HTTPException
-
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -16,7 +15,10 @@ from app.modules.notification.model.notification import (  # noqa: E402
     NotificationRecipient,
     NotificationTemplate,
 )
-from app.modules.notification.service.notification_service import NotificationMessageService, NotificationService  # noqa: E402
+from app.modules.notification.service.notification_service import (  # noqa: E402
+    NotificationMessageService,
+    NotificationService,
+)
 from app.modules.task.model.task import TaskInfo, TaskLog  # noqa: E402
 from app.modules.task.tasks.system_tasks import _maybe_send_task_notification, _write_task_log  # noqa: E402
 
@@ -47,7 +49,9 @@ class NotificationModuleTests(unittest.TestCase):
         dept = Department(name="研发", parent_id=None)
         child = Department(name="后端", parent_id=1)
         role = Role(name="运营", code="operator", label="运营")
-        admin = User(username="admin", full_name="admin", password_hash="x", is_super_admin=True, is_active=True, department_id=1)
+        admin = User(
+            username="admin", full_name="admin", password_hash="x", is_super_admin=True, is_active=True, department_id=1
+        )
         user = User(username="user", full_name="user", password_hash="x", is_active=True, department_id=2)
         session.add_all([dept, child, role, admin, user])
         session.commit()
@@ -120,7 +124,9 @@ class NotificationModuleTests(unittest.TestCase):
                 audience=audience,
                 message_type="business",
             )
-            recipients = session.exec(select(NotificationRecipient).where(NotificationRecipient.message_id == message.id)).all()
+            recipients = session.exec(
+                select(NotificationRecipient).where(NotificationRecipient.message_id == message.id)
+            ).all()
             self.assertEqual(preview["count"], len(recipients))
             stats = NotificationMessageService(session).stats()
             self.assertEqual(stats["messageCount"], 1)
@@ -128,12 +134,14 @@ class NotificationModuleTests(unittest.TestCase):
 
     def test_template_missing_variable_raises_clear_error(self):
         with Session(self.engine) as session:
-            session.add(NotificationTemplate(
-                code="task",
-                name="任务模板",
-                title_template="任务 {taskName}",
-                content_template="缺少 {missing}",
-            ))
+            session.add(
+                NotificationTemplate(
+                    code="task",
+                    name="任务模板",
+                    title_template="任务 {taskName}",
+                    content_template="缺少 {missing}",
+                )
+            )
             session.commit()
             with self.assertRaises(HTTPException) as ctx:
                 NotificationService(session).render_template("task", {"taskName": "A"})
@@ -141,14 +149,16 @@ class NotificationModuleTests(unittest.TestCase):
 
     def test_template_preview_returns_rendered_payload(self):
         with Session(self.engine) as session:
-            session.add(NotificationTemplate(
-                code="task",
-                name="任务模板",
-                title_template="任务 {taskName}",
-                content_template="状态 {status}",
-                default_level="success",
-                default_link_url="/task/info",
-            ))
+            session.add(
+                NotificationTemplate(
+                    code="task",
+                    name="任务模板",
+                    title_template="任务 {taskName}",
+                    content_template="状态 {status}",
+                    default_level="success",
+                    default_link_url="/task/info",
+                )
+            )
             session.commit()
             result = NotificationService(session).preview_template("task", {"taskName": "A", "status": "成功"})
             self.assertEqual(result["title"], "任务 A")

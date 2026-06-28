@@ -1,35 +1,36 @@
 """
 Loom API - FastAPI 主入口
 """
+
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
 from sqlalchemy import text
 
 load_dotenv()
 
+from app.core.config import settings
+from app.core.database import Session, engine, init_db
+from app.core.logging import configure_logging
+from app.core.startup_checks import assert_startup_settings, validate_startup_settings
 from app.framework.api.exception_handlers import register_exception_handlers
+from app.framework.middleware.metrics import render_metrics
 from app.framework.middleware.module_runtime import PrefixScopedMiddleware
 from app.framework.router import create_api_router
-from app.core.config import settings
-from app.core.logging import configure_logging
-from app.core.database import init_db
-from app.core.database import Session, engine
 from app.framework.storage import DEFAULT_UPLOAD_DIR
-from app.framework.middleware.metrics import render_metrics
-from app.core.startup_checks import assert_startup_settings, validate_startup_settings
-from app.modules.base.service.cache_service import get_redis_client
 from app.modules import (
     bootstrap_modules,
-    load_scope_whitelists,
     load_global_middlewares,
     load_module_middlewares,
     load_module_runtime_infos,
+    load_scope_whitelists,
 )
+from app.modules.base.service.cache_service import get_redis_client
 
 configure_logging(
     log_level=settings.effective_log_level,
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
     with Session(engine) as session:
         bootstrap_modules(session)
         from app.modules.workflow.service.workflow_service import recover_orphaned_instances
+
         recover_orphaned_instances(session)
     print(f"{settings.APP_NAME} v{settings.APP_VERSION} 启动中...")
     yield

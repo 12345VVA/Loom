@@ -1,9 +1,11 @@
 """
 字典类型接口
 """
+
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
+from app.modules.dict.model.dict import DictTypeCreateRequest, DictTypeRead, DictTypeUpdateRequest
 from app.modules.dict.service.dict_service import DictTypeService
-from app.modules.dict.model.dict import DictTypeRead, DictTypeCreateRequest, DictTypeUpdateRequest
+
 
 @CoolController(
     CoolControllerMeta(
@@ -38,5 +40,6 @@ from app.modules.dict.model.dict import DictTypeRead, DictTypeCreateRequest, Dic
 )
 class DictTypeController(BaseController):
     pass
+
 
 router = DictTypeController.router

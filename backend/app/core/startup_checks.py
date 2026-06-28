@@ -1,6 +1,7 @@
 """
 启动配置校验。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,7 +22,9 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
     is_prod = not config.DEBUG
 
     if len(config.JWT_SECRET_KEY or "") < 32:
-        results.append(StartupCheckResult("error" if is_prod else "warning", "JWT_SECRET_KEY", "JWT 密钥长度建议至少 32 字符"))
+        results.append(
+            StartupCheckResult("error" if is_prod else "warning", "JWT_SECRET_KEY", "JWT 密钥长度建议至少 32 字符")
+        )
 
     if is_prod and config.DEFAULT_ADMIN_PASSWORD in {"admin", "123456", "12345678", "password", "Passw0rd!"}:
         results.append(StartupCheckResult("error", "DEFAULT_ADMIN_PASSWORD", "生产环境不能使用默认或弱管理员密码"))
@@ -31,7 +34,9 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
         results.append(StartupCheckResult("error", "CORS_ORIGINS", "生产环境必须显式配置可信 CORS 来源"))
 
     if is_prod and config.DATABASE_URL.startswith("sqlite"):
-        results.append(StartupCheckResult("warning", "DATABASE_URL", "生产环境建议使用 PostgreSQL 或 MySQL，不建议使用 SQLite"))
+        results.append(
+            StartupCheckResult("warning", "DATABASE_URL", "生产环境建议使用 PostgreSQL 或 MySQL，不建议使用 SQLite")
+        )
 
     if is_prod and not config.REDIS_URL:
         results.append(StartupCheckResult("error", "REDIS_URL", "生产环境必须配置 Redis"))
@@ -39,10 +44,34 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
     if is_prod and not config.CELERY_BROKER_URL:
         results.append(StartupCheckResult("error", "CELERY_BROKER_URL", "生产环境必须配置 Celery broker"))
 
+    # 工作流 checkpoint 后端：未知值任何环境都报错；生产禁用 memory（重启后 paused 实例无法恢复）
+    if config.WORKFLOW_CHECKPOINT_BACKEND not in {"memory", "sqlite", "postgres"}:
+        results.append(
+            StartupCheckResult(
+                "error", "WORKFLOW_CHECKPOINT_BACKEND", "未知的工作流 checkpoint 后端，可选 memory/sqlite/postgres"
+            )
+        )
+    elif is_prod and config.WORKFLOW_CHECKPOINT_BACKEND == "memory":
+        results.append(
+            StartupCheckResult(
+                "error", "WORKFLOW_CHECKPOINT_BACKEND", "生产环境不能使用 MemorySaver（重启后 paused 实例无法恢复）"
+            )
+        )
+
     if not config.SECRET_ENCRYPTION_KEY:
-        results.append(StartupCheckResult("error" if is_prod else "warning", "SECRET_ENCRYPTION_KEY", "模型供应商密钥加密需要配置 SECRET_ENCRYPTION_KEY"))
+        results.append(
+            StartupCheckResult(
+                "error" if is_prod else "warning",
+                "SECRET_ENCRYPTION_KEY",
+                "模型供应商密钥加密需要配置 SECRET_ENCRYPTION_KEY",
+            )
+        )
     elif len(config.SECRET_ENCRYPTION_KEY) < 32:
-        results.append(StartupCheckResult("error" if is_prod else "warning", "SECRET_ENCRYPTION_KEY", "SECRET_ENCRYPTION_KEY 长度建议至少 32 字符"))
+        results.append(
+            StartupCheckResult(
+                "error" if is_prod else "warning", "SECRET_ENCRYPTION_KEY", "SECRET_ENCRYPTION_KEY 长度建议至少 32 字符"
+            )
+        )
 
     return results
 

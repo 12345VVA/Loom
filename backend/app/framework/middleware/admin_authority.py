@@ -1,17 +1,18 @@
 """
 多 scope 全局鉴权中间件
 """
+
 from __future__ import annotations
 
 from fastapi import HTTPException
+from sqlmodel import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from sqlmodel import Session
 
 from app.core.database import engine
 from app.framework.router.grouping import get_group_config
-from app.framework.router.route_meta import TagTypes, get_scope_tag, get_route_tags, resolve_request_route
+from app.framework.router.route_meta import get_route_tags, get_scope_tag, resolve_request_route
 from app.modules.base.service.authority_service import authorize_request
 
 SUPPORTED_SCOPES = ("admin", "app", "aiapi")

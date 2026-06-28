@@ -12,7 +12,13 @@
 
 				<el-input v-model="form.scenario" :placeholder="$t('场景')" clearable />
 
-				<el-input-number v-model="form.maxTokens" :min="16" :max="4096" :step="64" controls-position="right" />
+				<el-input-number
+					v-model="form.maxTokens"
+					:min="16"
+					:max="4096"
+					:step="64"
+					controls-position="right"
+				/>
 			</header>
 
 			<div class="messages">
@@ -27,9 +33,15 @@
 
 				<div class="actions">
 					<el-button @click="clearAll">{{ $t('清空') }}</el-button>
-					<el-button :loading="loading.chat" type="primary" @click="sendChat">{{ $t('发送') }}</el-button>
-					<el-button :loading="loading.stream" type="success" @click="sendStream">{{ $t('流式发送') }}</el-button>
-					<el-button :disabled="!loading.stream" type="danger" @click="stopStream">{{ $t('停止') }}</el-button>
+					<el-button :loading="loading.chat" type="primary" @click="sendChat">{{
+						$t('发送')
+					}}</el-button>
+					<el-button :loading="loading.stream" type="success" @click="sendStream">{{
+						$t('流式发送')
+					}}</el-button>
+					<el-button :disabled="!loading.stream" type="danger" @click="stopStream">{{
+						$t('停止')
+					}}</el-button>
 				</div>
 			</footer>
 		</section>
@@ -37,7 +49,9 @@
 		<aside class="stream-panel">
 			<header>
 				<span>{{ $t('实时流') }}</span>
-				<el-tag v-if="streamStatus" size="small" :type="streamStatusType">{{ streamStatus }}</el-tag>
+				<el-tag v-if="streamStatus" size="small" :type="streamStatusType">{{
+					streamStatus
+				}}</el-tag>
 			</header>
 
 			<div class="stream-content">

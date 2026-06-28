@@ -1,6 +1,7 @@
 """
 Base 模块认证依赖服务
 """
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -18,8 +19,8 @@ from app.modules.base.service.authority_service import (
     get_user_from_access_token,
     get_user_permissions,
     get_user_roles,
-    has_url_permission,
     get_user_token_version,
+    has_url_permission,
 )
 
 bearer_scheme = HTTPBearer(auto_error=False)

@@ -386,7 +386,7 @@ const lastLoadedValue = ref<any>(null);
 // 编辑时根据 modelValue 自动加载已选项
 watch(
 	() => props.modelValue,
-	async (val) => {
+	async val => {
 		if (val == null || val === '') {
 			list.value = [];
 			lastLoadedValue.value = null;
@@ -402,9 +402,7 @@ watch(
 
 		try {
 			if (props.multiple && isArray(val)) {
-				const items = await Promise.all(
-					val.map((id: any) => props.service.info({ id }))
-				);
+				const items = await Promise.all(val.map((id: any) => props.service.info({ id })));
 				list.value = items.filter(Boolean);
 			} else {
 				const res = await props.service.info({ id: val });

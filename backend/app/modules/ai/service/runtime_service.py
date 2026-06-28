@@ -1,4 +1,5 @@
 """AI 模型统一运行时服务。"""
+
 from __future__ import annotations
 
 import logging
@@ -10,15 +11,39 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
-from app.modules.ai.model.ai import AiAudioRequest, AiChatRequest, AiEmbeddingRequest, AiImageRequest, AiModel, AiModelCallLog, AiModelProfile, AiProvider, AiRerankRequest, AiVideoRequest
+from app.core.config import settings
+from app.modules.ai.model.ai import (
+    AiAudioRequest,
+    AiChatRequest,
+    AiEmbeddingRequest,
+    AiImageRequest,
+    AiModel,
+    AiModelCallLog,
+    AiModelProfile,
+    AiProvider,
+    AiRerankRequest,
+    AiRuntimeInvocation,
+    AiVideoRequest,
+)
 from app.modules.ai.service.adapters import build_adapter
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.governance_service import AiGovernanceBlocked, AiGovernanceService
 from app.modules.ai.service.registry_service import AiModelRegistryService
 from app.modules.ai.service.security_service import AiSecurityService
-from app.modules.ai.service.utils import _adapter_timeout, _calculate_cost_micro_usd, _is_structured_response, _options_without_governance, _parse_content, _sse_event, _with_parsed_content, normalize_response_format, sanitize_options_for_log, summarize_image_result_items, summarize_prompt
+from app.modules.ai.service.utils import (
+    _adapter_timeout,
+    _calculate_cost_micro_usd,
+    _is_structured_response,
+    _options_without_governance,
+    _parse_content,
+    _sse_event,
+    _with_parsed_content,
+    normalize_response_format,
+    sanitize_options_for_log,
+    summarize_image_result_items,
+    summarize_prompt,
+)
 from app.modules.base.model.auth import User
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +99,23 @@ class AiModelRuntimeService:
         )
 
     def embedding(self, payload: AiEmbeddingRequest, current_user: User | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(model_type="embedding", scenario=payload.scenario, profile_code=payload.profile_code)
+        resolved = AiModelRegistryService(self.session).resolve(
+            model_type="embedding", scenario=payload.scenario, profile_code=payload.profile_code
+        )
         options = {**resolved["options"], **payload.options}
-        return self._invoke(resolved, "embedding", current_user=current_user, request_options=payload.options, input=payload.input, options=options)
+        return self._invoke(
+            resolved,
+            "embedding",
+            current_user=current_user,
+            request_options=payload.options,
+            input=payload.input,
+            options=options,
+        )
 
     def image(self, payload: AiImageRequest, current_user: User | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(model_type="image", scenario=payload.scenario, profile_code=payload.profile_code)
+        resolved = AiModelRegistryService(self.session).resolve(
+            model_type="image", scenario=payload.scenario, profile_code=payload.profile_code
+        )
         options = {**resolved["options"], **payload.options}
         if payload.image:
             image_val = payload.image
@@ -103,22 +139,57 @@ class AiModelRuntimeService:
                 "options": sanitize_options_for_log(options),
             },
         )
-        return self._invoke(resolved, "image", current_user=current_user, request_options=payload.options, prompt=payload.prompt, options=options)
+        return self._invoke(
+            resolved,
+            "image",
+            current_user=current_user,
+            request_options=payload.options,
+            prompt=payload.prompt,
+            options=options,
+        )
 
     def rerank(self, payload: AiRerankRequest, current_user: User | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(model_type="rerank", scenario=payload.scenario, profile_code=payload.profile_code)
+        resolved = AiModelRegistryService(self.session).resolve(
+            model_type="rerank", scenario=payload.scenario, profile_code=payload.profile_code
+        )
         options = {**resolved["options"], **payload.options}
-        return self._invoke(resolved, "rerank", current_user=current_user, request_options=payload.options, query=payload.query, documents=payload.documents, options=options)
+        return self._invoke(
+            resolved,
+            "rerank",
+            current_user=current_user,
+            request_options=payload.options,
+            query=payload.query,
+            documents=payload.documents,
+            options=options,
+        )
 
     def audio(self, payload: AiAudioRequest, current_user: User | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(model_type="audio", scenario=payload.scenario, profile_code=payload.profile_code)
+        resolved = AiModelRegistryService(self.session).resolve(
+            model_type="audio", scenario=payload.scenario, profile_code=payload.profile_code
+        )
         options = {**resolved["options"], **payload.options}
-        return self._invoke(resolved, "audio", current_user=current_user, request_options=payload.options, input=payload.input, options=options)
+        return self._invoke(
+            resolved,
+            "audio",
+            current_user=current_user,
+            request_options=payload.options,
+            input=payload.input,
+            options=options,
+        )
 
     def video(self, payload: AiVideoRequest, current_user: User | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(model_type="video", scenario=payload.scenario, profile_code=payload.profile_code)
+        resolved = AiModelRegistryService(self.session).resolve(
+            model_type="video", scenario=payload.scenario, profile_code=payload.profile_code
+        )
         options = {**resolved["options"], **payload.options}
-        return self._invoke(resolved, "video", current_user=current_user, request_options=payload.options, prompt=payload.prompt, options=options)
+        return self._invoke(
+            resolved,
+            "video",
+            current_user=current_user,
+            request_options=payload.options,
+            prompt=payload.prompt,
+            options=options,
+        )
 
     def _invoke(
         self,
@@ -162,8 +233,27 @@ class AiModelRuntimeService:
             result = self._invoke_with_retry(adapter, method, profile, model.code, kwargs)
             usage = result.get("usage") or {}
             cost_micro_usd = _calculate_cost_micro_usd(model, usage)
-            governance.finish(invocation, status_value="success", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=cost_micro_usd)
-            self._log_call(provider, model, profile, "success", start, usage, user=current_user, cost_micro_usd=cost_micro_usd, request_id=result.get("requestId"))
+            governance.finish(
+                invocation,
+                status_value="success",
+                user=current_user,
+                provider=provider,
+                model=model,
+                profile=profile,
+                usage=usage,
+                cost_micro_usd=cost_micro_usd,
+            )
+            self._log_call(
+                provider,
+                model,
+                profile,
+                "success",
+                start,
+                usage,
+                user=current_user,
+                cost_micro_usd=cost_micro_usd,
+                request_id=result.get("requestId"),
+            )
             if method == "image":
                 logger.info(
                     "AI 生图调用成功",
@@ -178,22 +268,46 @@ class AiModelRuntimeService:
                 )
             if method == "chat" and _is_structured_response(structured_response):
                 result = _with_parsed_content(result)
-                
+
             # 对聊天结果进行 PII 脱敏（跳过结构化数据，避免破坏 JSON，或配置跳过）
-            if method == "chat" and "content" in result and result["content"] and not skip_masking and not _is_structured_response(structured_response):
+            if (
+                method == "chat"
+                and "content" in result
+                and result["content"]
+                and not skip_masking
+                and not _is_structured_response(structured_response)
+            ):
                 result["content"] = AiSecurityService.mask_sensitive_output(result["content"])
-                
+
             return {"success": True, "provider": provider.code, "model": model.code, "profile": profile.code, **result}
         except AiGovernanceBlocked as exc:
             governance.block_invocation(invocation)
             self._log_call(provider, model, profile, "blocked", start, usage, str(exc), user=current_user)
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
         except UnsupportedCapabilityError as exc:
-            governance.finish(invocation, status_value="unsupported", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=0)
+            governance.finish(
+                invocation,
+                status_value="unsupported",
+                user=current_user,
+                provider=provider,
+                model=model,
+                profile=profile,
+                usage=usage,
+                cost_micro_usd=0,
+            )
             self._log_call(provider, model, profile, "unsupported", start, usage, str(exc), user=current_user)
             raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
         except Exception as exc:
-            governance.finish(invocation, status_value="error", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=0)
+            governance.finish(
+                invocation,
+                status_value="error",
+                user=current_user,
+                provider=provider,
+                model=model,
+                profile=profile,
+                usage=usage,
+                cost_micro_usd=0,
+            )
             self._log_call(provider, model, profile, "error", start, usage, str(exc), user=current_user)
             if method == "image":
                 logger.error(
@@ -209,12 +323,22 @@ class AiModelRuntimeService:
                     },
                     exc_info=exc,
                 )
-            fallback = self._fallback(profile, method, kwargs, request_options, structured_response, response_format_overridden, current_user=current_user)
+            fallback = self._fallback(
+                profile,
+                method,
+                kwargs,
+                request_options,
+                structured_response,
+                response_format_overridden,
+                current_user=current_user,
+            )
             if fallback is not None:
                 return fallback
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"模型调用失败: {exc}") from exc
 
-    def _invoke_with_retry(self, adapter, method: str, profile: AiModelProfile, model_code: str, kwargs: dict[str, Any]) -> dict:
+    def _invoke_with_retry(
+        self, adapter, method: str, profile: AiModelProfile, model_code: str, kwargs: dict[str, Any]
+    ) -> dict:
         attempts = max(0, int(profile.retry_count or 0)) + 1
         retry_delay = max(0, int(profile.retry_delay_seconds or 0))
         last_exc: Exception | None = None
@@ -236,10 +360,14 @@ class AiModelRuntimeService:
         raise last_exc or RuntimeError("模型调用失败")
 
     def _resolve_chat(self, payload: AiChatRequest) -> tuple[dict, dict[str, Any], bool]:
-        resolved = AiModelRegistryService(self.session).resolve(model_type="chat", scenario=payload.scenario, profile_code=payload.profile_code)
+        resolved = AiModelRegistryService(self.session).resolve(
+            model_type="chat", scenario=payload.scenario, profile_code=payload.profile_code
+        )
         options = {**resolved["options"], **payload.options}
         response_format_overridden = payload.response_format is not None
-        request_response_format = normalize_response_format(payload.response_format) if payload.response_format else None
+        request_response_format = (
+            normalize_response_format(payload.response_format) if payload.response_format else None
+        )
         if request_response_format:
             options["response_format"] = request_response_format
         elif response_format_overridden:
@@ -272,13 +400,16 @@ class AiModelRuntimeService:
         invocation: AiRuntimeInvocation | None = None
         invocation_closed = False
 
-
         try:
             invocation = governance.begin(user=current_user, provider=provider, model=model, profile=profile)
-            yield _sse_event({"event": "start", "provider": provider.code, "model": model.code, "profile": profile.code})
+            yield _sse_event(
+                {"event": "start", "provider": provider.code, "model": model.code, "profile": profile.code}
+            )
             adapter = build_adapter(provider)
             with _adapter_timeout(adapter, profile.timeout):
-                stream_events = adapter.stream_chat(model=model.code, messages=messages, options=_options_without_governance(options))
+                stream_events = adapter.stream_chat(
+                    model=model.code, messages=messages, options=_options_without_governance(options)
+                )
                 for event in stream_events:
                     request_id = event.get("requestId") or request_id
                     usage = event.get("usage") or usage
@@ -293,9 +424,28 @@ class AiModelRuntimeService:
                         continue
                     if event_name == "error":
                         message = event.get("content") or "模型流式调用失败"
-                        governance.finish(invocation, status_value="error", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=0)
+                        governance.finish(
+                            invocation,
+                            status_value="error",
+                            user=current_user,
+                            provider=provider,
+                            model=model,
+                            profile=profile,
+                            usage=usage,
+                            cost_micro_usd=0,
+                        )
                         invocation_closed = True
-                        self._log_call(provider, model, profile, "error", start, usage, str(message), user=current_user, request_id=request_id)
+                        self._log_call(
+                            provider,
+                            model,
+                            profile,
+                            "error",
+                            start,
+                            usage,
+                            str(message),
+                            user=current_user,
+                            request_id=request_id,
+                        )
                         yield _sse_event({"event": "error", "message": str(message), "status": 400})
                         return
                     if event_name == "done":
@@ -312,20 +462,60 @@ class AiModelRuntimeService:
                 parsed = _parse_content(content)
                 done_payload.update(parsed)
             cost_micro_usd = _calculate_cost_micro_usd(model, usage)
-            governance.finish(invocation, status_value="success", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=cost_micro_usd)
+            governance.finish(
+                invocation,
+                status_value="success",
+                user=current_user,
+                provider=provider,
+                model=model,
+                profile=profile,
+                usage=usage,
+                cost_micro_usd=cost_micro_usd,
+            )
             invocation_closed = True
-            self._log_call(provider, model, profile, "success", start, usage, user=current_user, cost_micro_usd=cost_micro_usd, request_id=request_id)
+            self._log_call(
+                provider,
+                model,
+                profile,
+                "success",
+                start,
+                usage,
+                user=current_user,
+                cost_micro_usd=cost_micro_usd,
+                request_id=request_id,
+            )
             done_sent = True
             yield _sse_event(done_payload)
         except AiGovernanceBlocked as exc:
             governance.block_invocation(invocation)
             invocation_closed = True
-            self._log_call(provider, model, profile, "blocked", start, usage, str(exc), user=current_user, request_id=request_id)
+            self._log_call(
+                provider, model, profile, "blocked", start, usage, str(exc), user=current_user, request_id=request_id
+            )
             yield _sse_event({"event": "error", "message": str(exc), "status": 429})
         except UnsupportedCapabilityError as exc:
-            governance.finish(invocation, status_value="unsupported", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=0)
+            governance.finish(
+                invocation,
+                status_value="unsupported",
+                user=current_user,
+                provider=provider,
+                model=model,
+                profile=profile,
+                usage=usage,
+                cost_micro_usd=0,
+            )
             invocation_closed = True
-            self._log_call(provider, model, profile, "unsupported", start, usage, str(exc), user=current_user, request_id=request_id)
+            self._log_call(
+                provider,
+                model,
+                profile,
+                "unsupported",
+                start,
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+            )
             yield _sse_event({"event": "error", "message": str(exc), "status": 501})
         except Exception as exc:
             if not emitted_delta:
@@ -338,19 +528,58 @@ class AiModelRuntimeService:
                     current_user=current_user,
                 )
                 if fallback is not None:
-                    governance.finish(invocation, status_value="error", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=0)
+                    governance.finish(
+                        invocation,
+                        status_value="error",
+                        user=current_user,
+                        provider=provider,
+                        model=model,
+                        profile=profile,
+                        usage=usage,
+                        cost_micro_usd=0,
+                    )
                     invocation_closed = True
-                    self._log_call(provider, model, profile, "error", start, usage, str(exc), user=current_user, request_id=request_id)
+                    self._log_call(
+                        provider,
+                        model,
+                        profile,
+                        "error",
+                        start,
+                        usage,
+                        str(exc),
+                        user=current_user,
+                        request_id=request_id,
+                    )
                     yield from fallback
                     return
             if not done_sent:
-                governance.finish(invocation, status_value="error", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=0)
+                governance.finish(
+                    invocation,
+                    status_value="error",
+                    user=current_user,
+                    provider=provider,
+                    model=model,
+                    profile=profile,
+                    usage=usage,
+                    cost_micro_usd=0,
+                )
                 invocation_closed = True
-                self._log_call(provider, model, profile, "error", start, usage, str(exc), user=current_user, request_id=request_id)
+                self._log_call(
+                    provider, model, profile, "error", start, usage, str(exc), user=current_user, request_id=request_id
+                )
                 yield _sse_event({"event": "error", "message": f"模型调用失败: {exc}", "status": 400})
         finally:
             if invocation is not None and not invocation_closed:
-                governance.finish(invocation, status_value="error", user=current_user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=0)
+                governance.finish(
+                    invocation,
+                    status_value="error",
+                    user=current_user,
+                    provider=provider,
+                    model=model,
+                    profile=profile,
+                    usage=usage,
+                    cost_micro_usd=0,
+                )
 
     def _stream_fallback(
         self,

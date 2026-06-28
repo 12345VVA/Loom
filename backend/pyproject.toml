@@ -1,0 +1,27 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = [
+    "scratch",
+    "scratch_inspect_fields.py",
+    "venv",
+    "alembic/versions",
+    "appDataDir",
+    "data",
+    "logs",
+]
+
+[tool.ruff.lint]
+# 温和起步：pycodestyle(E/W) + pyflakes(F) + isort(I) + pyupgrade(UP) + bugbear(B)
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = [
+    "E501",  # 行宽交给 formatter，lint 不报
+    "B008",  # FastAPI 常用 Depends()/Query() 作为默认参数，属正常用法
+    "E402",  # 入口/工厂文件常需先执行副作用（日志、sys.path）再 import
+    "B904",  # except 内 raise 链，后续渐进优化
+    "B905",  # zip 显式 strict，后续渐进优化
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

@@ -1,11 +1,19 @@
 """
 AI 模型调用配置接口。
 """
+
 from fastapi import Depends
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
+from app.framework.controller_meta import (
+    BaseController,
+    CoolController,
+    CoolControllerMeta,
+    OrderByConfig,
+    QueryConfig,
+    QueryFieldConfig,
+)
 from app.framework.router.route_meta import Post
 from app.modules.ai.model.ai import (
     AiModelProfileCreateRequest,

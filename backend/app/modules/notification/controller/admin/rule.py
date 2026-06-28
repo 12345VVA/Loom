@@ -1,6 +1,7 @@
 """
 通知规则接口。
 """
+
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
 from app.modules.notification.model.notification import (
     NotificationRuleCreateRequest,

@@ -1,12 +1,12 @@
+import asyncio
 import json
 import logging
-import time
-import asyncio
 from datetime import datetime
 from typing import Any
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+
+from fastapi import Request
 from sqlmodel import Session
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.database import engine
 from app.modules.base.model.sys import SysLog
@@ -15,12 +15,33 @@ logger = logging.getLogger(__name__)
 
 # 敏感字段列表，用于日志脱敏
 SENSITIVE_FIELDS = {
-    "password", "old_password", "new_password", "confirm_password",
-    "passwd", "pwd", "secret", "token", "access_token", "refresh_token",
-    "api_key", "apikey", "apiKey", "authorization", "private_key", "private_key",
-    "phone", "mobile", "telephone", "id_card", "idcard", "idCard",
-    "bank_card", "bankCard", "credit_card", "creditCard",
-    "ssn", "social_security_number"
+    "password",
+    "old_password",
+    "new_password",
+    "confirm_password",
+    "passwd",
+    "pwd",
+    "secret",
+    "token",
+    "access_token",
+    "refresh_token",
+    "api_key",
+    "apikey",
+    "apiKey",
+    "authorization",
+    "private_key",
+    "phone",
+    "mobile",
+    "telephone",
+    "id_card",
+    "idcard",
+    "idCard",
+    "bank_card",
+    "bankCard",
+    "credit_card",
+    "creditCard",
+    "ssn",
+    "social_security_number",
 }
 
 
@@ -100,6 +121,7 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
     操作日志中间件。
     记录管理端的所有修改类请求 (POST, PUT, DELETE)。
     """
+
     async def dispatch(self, request: Request, call_next):
         # 仅记录管理端且为修改类的请求
         if not request.url.path.startswith("/admin") or request.method not in ("POST", "PUT", "DELETE"):
@@ -108,8 +130,6 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
         # 排除特定的白名单路径 (如登录、文件上传等，避免记录二进制大对象或敏感密码)
         if any(path in request.url.path for path in ("/login", "/upload", "/eps")):
             return await call_next(request)
-
-        start_time = time.time()
 
         # 尝试获取 Body (注意：这会读取并消耗 stream，FastAPI 默认不推荐在中间件直接读取)
         # 生产环境建议使用自定义 APIRoute 或者是更优雅的拦截方式
@@ -121,8 +141,10 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
                 if body_bytes:
                     # 关键修复：重置请求体流，确保后续中间件和路由能再次读取 Body
                     request._body = body_bytes
+
                     async def _re_receive():
                         return {"type": "http.request", "body": body_bytes}
+
                     request._receive = _re_receive
 
                     if len(body_bytes) > MAX_BODY_SIZE:

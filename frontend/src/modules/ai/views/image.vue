@@ -6,14 +6,20 @@
 					<h2>{{ $t('AI 生图') }}</h2>
 					<span>{{ selectedProfileSummary }}</span>
 				</div>
-				<el-tag :type="providerKindTag.type" effect="plain">{{ providerKindTag.label }}</el-tag>
+				<el-tag :type="providerKindTag.type" effect="plain">{{
+					providerKindTag.label
+				}}</el-tag>
 			</header>
 
 			<div v-if="showTopNotice" class="top-notice">
 				<div class="top-notice__body">
 					<el-icon class="notice-icon"><bell /></el-icon>
 					<span class="notice-text">
-						{{ $t('提示：不同模型支持的图生图、尺寸规格和专属参数存在差异，可悬停标题旁的') }}
+						{{
+							$t(
+								'提示：不同模型支持的图生图、尺寸规格和专属参数存在差异，可悬停标题旁的'
+							)
+						}}
 						<el-icon class="inline-info-icon"><info-filled /></el-icon>
 						{{ $t('图标查看具体说明。') }}
 					</span>
@@ -35,9 +41,19 @@
 
 				<div v-if="selectedProfile" class="profile-meta">
 					<el-tag size="small">{{ selectedProfile.providerName || '-' }}</el-tag>
-					<el-tag size="small" type="success">{{ selectedProfile.modelName || selectedProfile.modelId }}</el-tag>
-					<el-tag size="small" type="info">{{ selectedProfile.modelType || 'image' }}</el-tag>
-					<el-tag v-for="item in capabilityTags" :key="item" size="small" effect="plain">{{ item }}</el-tag>
+					<el-tag size="small" type="success">{{
+						selectedProfile.modelName || selectedProfile.modelId
+					}}</el-tag>
+					<el-tag size="small" type="info">{{
+						selectedProfile.modelType || 'image'
+					}}</el-tag>
+					<el-tag
+						v-for="item in capabilityTags"
+						:key="item"
+						size="small"
+						effect="plain"
+						>{{ item }}</el-tag
+					>
 				</div>
 			</div>
 
@@ -46,11 +62,25 @@
 				<cl-editor-markdown v-model="form.prompt" :height="260" simple />
 				<div v-if="isErnieIrag && form.prompt.length > 220" class="field-tip warning mt-10">
 					<el-icon><info-filled /></el-icon>
-					<span>{{ $t('提示：当前为 ERNIE iRAG 检索增强生图，Prompt 长度超过限额（最大 220 字符），后端将自动截断。') }}</span>
+					<span>{{
+						$t(
+							'提示：当前为 ERNIE iRAG 检索增强生图，Prompt 长度超过限额（最大 220 字符），后端将自动截断。'
+						)
+					}}</span>
 				</div>
-				<div v-if="!isErnieIrag && activeLimits.max_prompt_length && form.prompt.length > activeLimits.max_prompt_length" class="field-tip warning mt-10">
+				<div
+					v-if="
+						!isErnieIrag &&
+						activeLimits.max_prompt_length &&
+						form.prompt.length > activeLimits.max_prompt_length
+					"
+					class="field-tip warning mt-10"
+				>
 					<el-icon><info-filled /></el-icon>
-					<span>{{ $t('提示：当前 Prompt 长度已超过模型推荐限制（最大') }} {{ activeLimits.max_prompt_length }} {{ $t('字符）。') }}</span>
+					<span
+						>{{ $t('提示：当前 Prompt 长度已超过模型推荐限制（最大') }}
+						{{ activeLimits.max_prompt_length }} {{ $t('字符）。') }}</span
+					>
 				</div>
 				<el-input
 					v-if="showBailianNegativePrompt"
@@ -65,7 +95,13 @@
 			<div class="section">
 				<div class="section__title">
 					<span>{{ $t('参考图片 (图生图)') }}</span>
-					<el-tooltip :content="$t('仅在火山方舟、阿里百炼和 OpenAI 兼容渠道等支持图生图的模型下生效。')" placement="top" effect="dark">
+					<el-tooltip
+						:content="
+							$t('仅在火山方舟、阿里百炼和 OpenAI 兼容渠道等支持图生图的模型下生效。')
+						"
+						placement="top"
+						effect="dark"
+					>
 						<el-icon class="title-tip-icon"><info-filled /></el-icon>
 					</el-tooltip>
 				</div>
@@ -78,12 +114,18 @@
 					<cl-upload v-model="form.image" :limit="1" />
 				</div>
 				<div v-else class="mt-10">
-					<el-input v-model="form.image" :placeholder="$t('请输入参考图片 URL')" clearable />
+					<el-input
+						v-model="form.image"
+						:placeholder="$t('请输入参考图片 URL')"
+						clearable
+					/>
 				</div>
 
 				<div class="field-tip">
 					<el-icon><info-filled /></el-icon>
-					<span>{{ $t('仅在火山方舟、阿里百炼和 OpenAI 兼容渠道等支持图生图的模型下生效。') }}</span>
+					<span>{{
+						$t('仅在火山方舟、阿里百炼和 OpenAI 兼容渠道等支持图生图的模型下生效。')
+					}}</span>
 				</div>
 			</div>
 
@@ -99,7 +141,12 @@
 						<cl-select v-model="form.size" :options="availableSizeOptions" />
 					</el-form-item>
 					<el-form-item :label="$t('数量')">
-						<el-input-number v-model="form.n" :min="1" :max="activeLimits.max_n || 8" controls-position="right" />
+						<el-input-number
+							v-model="form.n"
+							:min="1"
+							:max="activeLimits.max_n || 8"
+							controls-position="right"
+						/>
 					</el-form-item>
 					<el-form-item :label="$t('返回')">
 						<cl-select v-model="form.responseFormat" :options="responseFormatOptions" />
@@ -118,7 +165,9 @@
 					</el-tooltip>
 				</div>
 				<div v-if="providerKind === 'bailian'" class="provider-panel">
-					<el-checkbox v-model="form.promptExtend">{{ $t('智能改写 prompt_extend') }}</el-checkbox>
+					<el-checkbox v-model="form.promptExtend">{{
+						$t('智能改写 prompt_extend')
+					}}</el-checkbox>
 					<el-checkbox v-model="form.forceAsync">{{ $t('强制异步') }}</el-checkbox>
 				</div>
 
@@ -127,20 +176,44 @@
 						<el-form-item>
 							<template #label>
 								<span class="mr-4">guidance_scale</span>
-								<el-tooltip :content="$t('分类指导比例。值越大越贴近提示词，但过大可能导致画面发硬或色彩过饱和，推荐 5.0 - 10.0。')" placement="top">
+								<el-tooltip
+									:content="
+										$t(
+											'分类指导比例。值越大越贴近提示词，但过大可能导致画面发硬或色彩过饱和，推荐 5.0 - 10.0。'
+										)
+									"
+									placement="top"
+								>
 									<el-icon class="label-tip-icon"><info-filled /></el-icon>
 								</el-tooltip>
 							</template>
-							<el-input-number v-model="form.guidanceScale" :min="0" :max="20" :step="0.5" controls-position="right" />
+							<el-input-number
+								v-model="form.guidanceScale"
+								:min="0"
+								:max="20"
+								:step="0.5"
+								controls-position="right"
+							/>
 						</el-form-item>
 						<el-form-item>
 							<template #label>
 								<span class="mr-4">sequential_image_generation</span>
-								<el-tooltip :content="$t('多图生成调度模式。disabled 表示并行生成；auto 表示自动调度，在生成大图或资源紧张时可提高成功率。')" placement="top">
+								<el-tooltip
+									:content="
+										$t(
+											'多图生成调度模式。disabled 表示并行生成；auto 表示自动调度，在生成大图或资源紧张时可提高成功率。'
+										)
+									"
+									placement="top"
+								>
 									<el-icon class="label-tip-icon"><info-filled /></el-icon>
 								</el-tooltip>
 							</template>
-							<cl-select v-model="form.sequentialImageGeneration" :options="sequentialOptions" clearable />
+							<cl-select
+								v-model="form.sequentialImageGeneration"
+								:options="sequentialOptions"
+								clearable
+							/>
 						</el-form-item>
 					</div>
 				</div>
@@ -162,14 +235,26 @@
 				<div v-else-if="providerKind === 'qianfan'" class="provider-panel">
 					<div class="field-tip">
 						<el-icon><info-filled /></el-icon>
-						<span>{{ isErnieIrag ? $t('当前使用百度 ERNIE iRAG 检索增强模型。中文文本准确度高，支持参考图，Prompt 限制 220 字符；不支持负向提示词与随机种子。') : $t('当前使用百度千帆 V2 接口。支持负向提示词与随机种子（可在高级 JSON 设置）。') }}</span>
+						<span>{{
+							isErnieIrag
+								? $t(
+										'当前使用百度 ERNIE iRAG 检索增强模型。中文文本准确度高，支持参考图，Prompt 限制 220 字符；不支持负向提示词与随机种子。'
+									)
+								: $t(
+										'当前使用百度千帆 V2 接口。支持负向提示词与随机种子（可在高级 JSON 设置）。'
+									)
+						}}</span>
 					</div>
 				</div>
 
 				<div v-else-if="providerKind === 'gemini'" class="provider-panel">
 					<div class="field-tip">
 						<el-icon><info-filled /></el-icon>
-						<span>{{ $t('当前使用谷歌 Gemini 原生生图，已平滑支持 gemini-2.5-flash-image 替代 Imagen。支持参考图，可结合 text/image 多模态调用。') }}</span>
+						<span>{{
+							$t(
+								'当前使用谷歌 Gemini 原生生图，已平滑支持 gemini-2.5-flash-image 替代 Imagen。支持参考图，可结合 text/image 多模态调用。'
+							)
+						}}</span>
 					</div>
 				</div>
 
@@ -184,7 +269,9 @@
 					<el-collapse-item :title="$t('高级参数 JSON')" name="advanced">
 						<div class="advanced__head">
 							<span>{{ $t('高级参数会最后合并，可覆盖表单参数') }}</span>
-							<el-button text type="primary" @click="resetOptions">{{ $t('重置') }}</el-button>
+							<el-button text type="primary" @click="resetOptions">{{
+								$t('重置')
+							}}</el-button>
 						</div>
 						<el-input v-model="form.optionsText" type="textarea" :rows="8" />
 					</el-collapse-item>
@@ -193,8 +280,12 @@
 
 			<footer class="actions">
 				<el-button @click="clearResult">{{ $t('清空结果') }}</el-button>
-				<el-button :loading="loading.submit" type="warning" @click="submitTask">{{ $t('异步提交') }}</el-button>
-				<el-button :loading="loading.generate" type="primary" @click="generate">{{ $t('生成图片') }}</el-button>
+				<el-button :loading="loading.submit" type="warning" @click="submitTask">{{
+					$t('异步提交')
+				}}</el-button>
+				<el-button :loading="loading.generate" type="primary" @click="generate">{{
+					$t('生成图片')
+				}}</el-button>
 			</footer>
 		</section>
 
@@ -204,13 +295,21 @@
 					<strong>{{ $t('生成结果') }}</strong>
 					<span v-if="resultMeta.length">{{ resultMeta.join(' / ') }}</span>
 				</div>
-				<el-tag v-if="imageItems.length" size="small" type="success">{{ imageItems.length }}</el-tag>
+				<el-tag v-if="imageItems.length" size="small" type="success">{{
+					imageItems.length
+				}}</el-tag>
 			</header>
 
 			<div v-if="taskSubmitted" class="task-result">
-				<el-result icon="success" :title="$t('任务已提交')" :sub-title="`Task ID: ${taskSubmitted.taskId}`">
+				<el-result
+					icon="success"
+					:title="$t('任务已提交')"
+					:sub-title="`Task ID: ${taskSubmitted.taskId}`"
+				>
 					<template #extra>
-						<el-button type="primary" @click="copyText(String(taskSubmitted.taskId))">{{ $t('复制任务 ID') }}</el-button>
+						<el-button type="primary" @click="copyText(String(taskSubmitted.taskId))">{{
+							$t('复制任务 ID')
+						}}</el-button>
 					</template>
 				</el-result>
 			</div>
@@ -226,18 +325,28 @@
 						preview-teleported
 					/>
 					<div class="preview-actions">
-						<el-button text type="primary" @click="copyText(item.value)">{{ $t('复制') }}</el-button>
-						<el-button v-if="item.url" text type="primary" @click="openUrl(item.url)">{{ $t('打开') }}</el-button>
+						<el-button text type="primary" @click="copyText(item.value)">{{
+							$t('复制')
+						}}</el-button>
+						<el-button v-if="item.url" text type="primary" @click="openUrl(item.url)">{{
+							$t('打开')
+						}}</el-button>
 					</div>
 				</div>
 				<el-empty v-if="!imageItems.length" :description="$t('暂无图片')" />
 			</div>
 
 			<el-descriptions v-if="result" class="result-meta" border :column="2">
-				<el-descriptions-item label="Provider">{{ result.provider || '-' }}</el-descriptions-item>
+				<el-descriptions-item label="Provider">{{
+					result.provider || '-'
+				}}</el-descriptions-item>
 				<el-descriptions-item label="Model">{{ result.model || '-' }}</el-descriptions-item>
-				<el-descriptions-item label="Profile">{{ result.profile || '-' }}</el-descriptions-item>
-				<el-descriptions-item label="Request ID">{{ result.requestId || result.taskId || '-' }}</el-descriptions-item>
+				<el-descriptions-item label="Profile">{{
+					result.profile || '-'
+				}}</el-descriptions-item>
+				<el-descriptions-item label="Request ID">{{
+					result.requestId || result.taskId || '-'
+				}}</el-descriptions-item>
 			</el-descriptions>
 
 			<el-tabs class="raw-tabs">
@@ -377,13 +486,22 @@ const bailianModelCode = computed(() =>
 	String(selectedProfile.value?.modelCode || selectedProfile.value?.modelName || '').toLowerCase()
 );
 const selectedModelCode = computed(() =>
-	String(selectedProfile.value?.modelCode || selectedProfile.value?.modelName || '').toLowerCase().replace(/\./g, '-')
+	String(selectedProfile.value?.modelCode || selectedProfile.value?.modelName || '')
+		.toLowerCase()
+		.replace(/\./g, '-')
 );
-const isBailianWan26 = computed(() => bailianModelCode.value.replace(/_/g, '-').startsWith('wan2.6-'));
+const isBailianWan26 = computed(() =>
+	bailianModelCode.value.replace(/_/g, '-').startsWith('wan2.6-')
+);
 const isVolcengineSeedream4 = computed(
-	() => providerKind.value === 'volcengine-ark' && (selectedModelCode.value.includes('seedream-4-5') || selectedModelCode.value.includes('seedream-4-0'))
+	() =>
+		providerKind.value === 'volcengine-ark' &&
+		(selectedModelCode.value.includes('seedream-4-5') ||
+			selectedModelCode.value.includes('seedream-4-0'))
 );
-const showBailianNegativePrompt = computed(() => providerKind.value === 'bailian' && (!isBailianWan26.value || form.forceAsync));
+const showBailianNegativePrompt = computed(
+	() => providerKind.value === 'bailian' && (!isBailianWan26.value || form.forceAsync)
+);
 const showWatermarkOption = computed(() => providerKind.value !== 'openai');
 const availableSizeOptions = computed(() => {
 	const profile = selectedProfile.value;
@@ -429,7 +547,9 @@ const activeLimits = computed(() => {
 });
 const sizeHint = computed(() => {
 	if (providerKind.value === 'openai') {
-		return t('OpenAI 官方图片接口支持 size=auto；OpenAI 兼容渠道不保证所有底层模型都支持自动比例。');
+		return t(
+			'OpenAI 官方图片接口支持 size=auto；OpenAI 兼容渠道不保证所有底层模型都支持自动比例。'
+		);
 	}
 	if (providerKind.value === 'bailian') {
 		return t('阿里百炼当前按显式尺寸/固定比例使用，未开放自动比例。');
@@ -438,7 +558,9 @@ const sizeHint = computed(() => {
 		if (isVolcengineSeedream4.value) {
 			return t('火山 Seedream 4.x 至少需要 3686400 像素，仅可使用高分辨率尺寸。');
 		}
-		return t('火山方舟当前按固定尺寸/比例使用，sequential_image_generation 的 auto 不是图片比例自动。');
+		return t(
+			'火山方舟当前按固定尺寸/比例使用，sequential_image_generation 的 auto 不是图片比例自动。'
+		);
 	}
 	return t('当前渠道建议使用显式尺寸，若需特殊比例请结合模型文档确认。');
 });
@@ -456,7 +578,9 @@ const providerKindTag = computed(() => {
 
 const providerHint = computed(() => {
 	if (providerKind.value === 'bailian') {
-		return t('百炼 workspace、轮询间隔等在厂商扩展配置中设置；这里的异步开关会写入 options.async。');
+		return t(
+			'百炼 workspace、轮询间隔等在厂商扩展配置中设置；这里的异步开关会写入 options.async。'
+		);
 	}
 	if (providerKind.value === 'volcengine-ark') {
 		return t('Seedream 4.x 图片尺寸要求较高；后端会继续做最终校验。');
@@ -486,7 +610,9 @@ const taskSubmitted = computed(() => {
 	}
 	return null;
 });
-const resultMeta = computed(() => [result.value?.provider, result.value?.model, result.value?.profile].filter(Boolean));
+const resultMeta = computed(() =>
+	[result.value?.provider, result.value?.model, result.value?.profile].filter(Boolean)
+);
 
 onMounted(() => {
 	loadProfiles();
@@ -505,43 +631,43 @@ watch(
 	{ immediate: true }
 );
 
-watch(
-	selectedProfile,
-	(profile) => {
-		if (profile && profile.modelDefaultConfig) {
-			try {
-				const config = JSON.parse(profile.modelDefaultConfig);
-				if (config) {
-					if (config.size && availableSizeOptions.value.some(item => item.value === config.size)) {
-						form.size = config.size;
-					} else if (availableSizeOptions.value.length > 0) {
-						form.size = availableSizeOptions.value[0].value;
-					}
-					if (config.n !== undefined) {
-						form.n = Math.min(config.n, activeLimits.value.max_n || 8);
-					}
-					if (config.response_format) {
-						form.responseFormat = config.response_format;
-					}
-					if (config.watermark !== undefined) {
-						form.watermark = config.watermark;
-					}
-					if (config.quality) {
-						form.quality = config.quality;
-					}
-					if (config.style) {
-						form.style = config.style;
-					}
-					if (config.thinking !== undefined) {
-						form.thinking = config.thinking;
-					}
+watch(selectedProfile, profile => {
+	if (profile && profile.modelDefaultConfig) {
+		try {
+			const config = JSON.parse(profile.modelDefaultConfig);
+			if (config) {
+				if (
+					config.size &&
+					availableSizeOptions.value.some(item => item.value === config.size)
+				) {
+					form.size = config.size;
+				} else if (availableSizeOptions.value.length > 0) {
+					form.size = availableSizeOptions.value[0].value;
 				}
-			} catch (e) {
-				console.warn('自动加载模型默认参数失败:', e);
+				if (config.n !== undefined) {
+					form.n = Math.min(config.n, activeLimits.value.max_n || 8);
+				}
+				if (config.response_format) {
+					form.responseFormat = config.response_format;
+				}
+				if (config.watermark !== undefined) {
+					form.watermark = config.watermark;
+				}
+				if (config.quality) {
+					form.quality = config.quality;
+				}
+				if (config.style) {
+					form.style = config.style;
+				}
+				if (config.thinking !== undefined) {
+					form.thinking = config.thinking;
+				}
 			}
+		} catch (e) {
+			console.warn('自动加载模型默认参数失败:', e);
 		}
 	}
-);
+});
 
 async function loadProfiles() {
 	const res = await (service.ai.profile as any).list({
@@ -613,7 +739,9 @@ function providerOptions() {
 }
 
 function cleanOptions(value: Record<string, any>) {
-	return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== ''));
+	return Object.fromEntries(
+		Object.entries(value).filter(([, item]) => item !== undefined && item !== '')
+	);
 }
 
 async function generate() {
@@ -689,7 +817,9 @@ function formatJson(value: any) {
 }
 
 const isErnieIrag = computed(() => {
-	const code = String(selectedProfile.value?.modelCode || selectedProfile.value?.modelName || '').toLowerCase();
+	const code = String(
+		selectedProfile.value?.modelCode || selectedProfile.value?.modelName || ''
+	).toLowerCase();
 	return code.includes('irag-1.0') || code.includes('irag-1-0') || code.includes('ernie-irag');
 });
 
@@ -697,28 +827,62 @@ function detectProviderKind(profile: any) {
 	const adapter = normalizeProviderToken(profile?.providerAdapter || profile?.adapter);
 	const providerCode = normalizeProviderToken(profile?.providerCode);
 	const modelCode = normalizeProviderToken(profile?.modelCode);
-	const capabilities = normalizeProviderToken(profile?.modelCapabilities || profile?.capabilities);
-	const fallback = normalizeProviderToken(`${profile?.providerName || ''} ${profile?.modelName || ''}`);
+	const capabilities = normalizeProviderToken(
+		profile?.modelCapabilities || profile?.capabilities
+	);
+	const fallback = normalizeProviderToken(
+		`${profile?.providerName || ''} ${profile?.modelName || ''}`
+	);
 
-	if (adapter === 'bailian' || providerCode === 'bailian' || modelCode.includes('wan2.') || modelCode.includes('wanx')) {
+	if (
+		adapter === 'bailian' ||
+		providerCode === 'bailian' ||
+		modelCode.includes('wan2.') ||
+		modelCode.includes('wanx')
+	) {
 		return 'bailian';
 	}
-	if (adapter === 'volcengine-ark' || providerCode.includes('volcengine') || modelCode.includes('seedream') || modelCode.includes('doubao')) {
+	if (
+		adapter === 'volcengine-ark' ||
+		providerCode.includes('volcengine') ||
+		modelCode.includes('seedream') ||
+		modelCode.includes('doubao')
+	) {
 		return 'volcengine-ark';
 	}
-	if (adapter === 'openai-compatible' || providerCode.includes('openai') || capabilities.includes('openai')) {
+	if (
+		adapter === 'openai-compatible' ||
+		providerCode.includes('openai') ||
+		capabilities.includes('openai')
+	) {
 		return 'openai';
 	}
-	if (adapter === 'qianfan' || providerCode.includes('qianfan') || modelCode.includes('ernie') || modelCode.startsWith('irag') || modelCode.includes('-irag')) {
+	if (
+		adapter === 'qianfan' ||
+		providerCode.includes('qianfan') ||
+		modelCode.includes('ernie') ||
+		modelCode.startsWith('irag') ||
+		modelCode.includes('-irag')
+	) {
 		return 'qianfan';
 	}
 	if (adapter === 'gemini' || providerCode.includes('gemini') || modelCode.includes('gemini')) {
 		return 'gemini';
 	}
-	if (fallback.includes('bailian') || fallback.includes('百炼') || fallback.includes('wan2.') || fallback.includes('wanx')) {
+	if (
+		fallback.includes('bailian') ||
+		fallback.includes('百炼') ||
+		fallback.includes('wan2.') ||
+		fallback.includes('wanx')
+	) {
 		return 'bailian';
 	}
-	if (fallback.includes('volcengine') || fallback.includes('火山') || fallback.includes('seedream') || fallback.includes('doubao')) {
+	if (
+		fallback.includes('volcengine') ||
+		fallback.includes('火山') ||
+		fallback.includes('seedream') ||
+		fallback.includes('doubao')
+	) {
 		return 'volcengine-ark';
 	}
 	if (fallback.includes('qianfan') || fallback.includes('千帆')) {
@@ -734,7 +898,9 @@ function detectProviderKind(profile: any) {
 }
 
 function normalizeProviderToken(value: any) {
-	return String(value || '').trim().toLowerCase();
+	return String(value || '')
+		.trim()
+		.toLowerCase();
 }
 
 function extractImageItems(value: any): { src: string; value: string; url?: string }[] {
@@ -747,7 +913,9 @@ function extractImageItems(value: any): { src: string; value: string; url?: stri
 				return { src: url, value: url, url };
 			}
 			if (b64) {
-				const src = String(b64).startsWith('data:image') ? String(b64) : `data:image/png;base64,${b64}`;
+				const src = String(b64).startsWith('data:image')
+					? String(b64)
+					: `data:image/png;base64,${b64}`;
 				return { src, value: String(b64) };
 			}
 			return null;

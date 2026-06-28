@@ -1,13 +1,13 @@
 """
 EPS 服务扫描导出
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 from fastapi import FastAPI
 
-import re
 from app.framework.controller_meta import get_registered_exported_routes
 from app.framework.eps.scanner import scan_model_columns
 from app.modules.base.compat import get_resource_compat
@@ -49,12 +49,12 @@ class EpsService:
             compat = get_resource_compat(route.module, route.resource)
             mapped_module = compat.compat_module if compat else route.module
             mapped_name = compat.compat_name if compat else str(route.resource).split("/")[-1]
-            
+
             # 解决命名冲突：对于非 base 模块的通用名称（info, type, data, log），增加模块名前缀
             if mapped_name in ("info", "type", "data", "log") and mapped_module not in ("base",):
-                 # 转换为首字母大写拼接，例如 TaskInfo, DictInfo
-                 mapped_name = mapped_module.capitalize() + mapped_name.capitalize()
-                 
+                # 转换为首字母大写拼接，例如 TaskInfo, DictInfo
+                mapped_name = mapped_module.capitalize() + mapped_name.capitalize()
+
             mapped_prefix = compat.compat_prefix if compat else f"/{route.scope}/{route.module}/{route.resource}"
             namespace = mapped_prefix.lstrip("/")
             key = (mapped_module, mapped_prefix)
@@ -157,8 +157,10 @@ def _build_page_query_op(query_meta: dict[str, Any]) -> dict[str, list[str]]:
 
 
 def _mark_search_columns(columns: list[dict[str, Any]], page_query_op: dict[str, list[str]]) -> None:
-    search_sources = set(page_query_op.get("fieldEq", [])) | set(page_query_op.get("fieldLike", [])) | set(
-        page_query_op.get("keyWordLikeFields", [])
+    search_sources = (
+        set(page_query_op.get("fieldEq", []))
+        | set(page_query_op.get("fieldLike", []))
+        | set(page_query_op.get("keyWordLikeFields", []))
     )
     if not search_sources:
         return

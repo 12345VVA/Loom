@@ -37,7 +37,7 @@ const outputHandles = computed<CustomOutputHandle[]>(() => {
 		const top = ((i + 1) * 100) / (totalCount.value + 1);
 		handles.push({
 			id: 'case_' + i,
-			label: c.value || ('C' + (i + 1)),
+			label: c.value || 'C' + (i + 1),
 			color: '#e6a23c',
 			topPercent: top,
 			labelClass: 'handle-label--case',

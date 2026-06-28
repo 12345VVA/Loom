@@ -1,6 +1,7 @@
 """
 工作流定义管理 API 接口。
 """
+
 from app.framework.controller_meta import (
     BaseController,
     CoolController,
@@ -35,9 +36,7 @@ from app.modules.workflow.service.workflow_service import WorkflowService
         actions=("add", "delete", "update", "page", "info", "list"),
         page_query=QueryConfig(
             keyword_like_fields=("code", "name", "description"),
-            field_eq=(
-                QueryFieldConfig(column="is_active", request_param="status"),
-            ),
+            field_eq=(QueryFieldConfig(column="is_active", request_param="status"),),
             field_like=("code", "name"),
             order_fields=("created_at", "updated_at", "name"),
             add_order_by=(OrderByConfig("created_at", "desc"),),

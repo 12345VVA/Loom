@@ -122,7 +122,7 @@ export default (): ModuleConfig => {
 			{
 				name: '上传校验',
 				component: () => import('./demo/check.vue')
-			},
+			}
 		]
 	};
 };

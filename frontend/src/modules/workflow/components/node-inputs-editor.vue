@@ -1,62 +1,78 @@
 <template>
 	<node-config-section :title="$t('输入')">
 		<template #actions>
-			<el-button type="primary" link size="small" :icon="Plus" @click.stop="addInput">{{ $t('添加') }}</el-button>
+			<el-button type="primary" link size="small" :icon="Plus" @click.stop="addInput">{{
+				$t('添加')
+			}}</el-button>
 		</template>
 		<div class="node-inputs-editor">
 			<div class="inputs-list">
 				<div class="list-header" v-if="inputs.length">
-				<span class="col-name">{{ $t('变量名') }}</span>
-				<span class="col-value">{{ $t('变量值 (引用上游)') }}</span>
-			</div>
-			<div v-for="(item, index) in inputs" :key="index" class="input-item single-row">
-				<div class="name-input-wrapper">
-					<el-input
-						v-model="item.name"
-						:class="{ 'is-error': nameErrors[index] }"
-						:placeholder="$t('例如: query')"
-						size="small"
-						class="name-input"
-						@blur="validateName(index)"
-					/>
-					<div v-if="nameErrors[index]" class="name-error-tip">{{ nameErrors[index] }}</div>
+					<span class="col-name">{{ $t('变量名') }}</span>
+					<span class="col-value">{{ $t('变量值 (引用上游)') }}</span>
 				</div>
+				<div v-for="(item, index) in inputs" :key="index" class="input-item single-row">
+					<div class="name-input-wrapper">
+						<el-input
+							v-model="item.name"
+							:class="{ 'is-error': nameErrors[index] }"
+							:placeholder="$t('例如: query')"
+							size="small"
+							class="name-input"
+							@blur="validateName(index)"
+						/>
+						<div v-if="nameErrors[index]" class="name-error-tip">
+							{{ nameErrors[index] }}
+						</div>
+					</div>
 
-				<div class="value-group">
-					<el-select v-model="item.type" size="small" class="type-select" :title="$t('数据类型')">
-						<el-option label="str" value="string" />
-						<el-option label="num" value="number" />
-						<el-option label="bool" value="boolean" />
-						<el-option label="obj" value="object" />
-						<el-option label="arr" value="array" />
-					</el-select>
+					<div class="value-group">
+						<el-select
+							v-model="item.type"
+							size="small"
+							class="type-select"
+							:title="$t('数据类型')"
+						>
+							<el-option label="str" value="string" />
+							<el-option label="num" value="number" />
+							<el-option label="bool" value="boolean" />
+							<el-option label="obj" value="object" />
+							<el-option label="arr" value="array" />
+						</el-select>
 
-					<el-cascader
-						v-model="item.source"
-						:options="upstreamOptions"
-						:props="{ expandTrigger: 'hover' }"
-						:placeholder="$t('请选择')"
-						size="small"
-						class="source-cascader"
-						clearable
+						<el-cascader
+							v-model="item.source"
+							:options="upstreamOptions"
+							:props="{ expandTrigger: 'hover' }"
+							:placeholder="$t('请选择')"
+							size="small"
+							class="source-cascader"
+							clearable
+						/>
+					</div>
+
+					<el-button
+						link
+						type="danger"
+						:icon="Delete"
+						@click="removeInput(index)"
+						class="delete-btn"
 					/>
 				</div>
-
-				<el-button link type="danger" :icon="Delete" @click="removeInput(index)" class="delete-btn" />
+				<div v-if="!inputs.length" class="empty-hint" @click="addInput">
+					<el-icon class="empty-icon"><plus /></el-icon>
+					<span>{{ $t('暂无输入变量，点击添加') }}</span>
+				</div>
 			</div>
-			<div v-if="!inputs.length" class="empty-hint" @click="addInput">
-				<el-icon class="empty-icon"><Plus /></el-icon>
-				<span>{{ $t('暂无输入变量，点击添加') }}</span>
-			</div>
-		</div>
 		</div>
 	</node-config-section>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { Plus, Delete } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { cloneDeep, isEqual } from 'lodash-es';
 import NodeConfigSection from './node-configs/node-config-section.vue';
 
 const props = defineProps<{
@@ -68,7 +84,7 @@ const emit = defineEmits(['update:modelValue']);
 
 const inputs = computed({
 	get: () => props.modelValue || [],
-	set: (val) => emit('update:modelValue', val)
+	set: val => emit('update:modelValue', val)
 });
 
 // 变量名校验错误
@@ -88,16 +104,31 @@ function validateName(index: number) {
 	}
 
 	// 去重校验
-	const dupIndex = inputs.value.findIndex((item, i) => i !== index && (item.name || '').trim() === name);
+	const dupIndex = inputs.value.findIndex(
+		(item, i) => i !== index && (item.name || '').trim() === name
+	);
 	if (dupIndex !== -1) {
 		nameErrors[index] = `与第 ${dupIndex + 1} 行重复`;
 	}
 }
 
+// 缓存上游变量
+const cachedUpstreamVars = ref<any[]>([]);
+
+watch(
+	() => props.upstreamVars,
+	(newVal) => {
+		if (!isEqual(newVal, cachedUpstreamVars.value)) {
+			cachedUpstreamVars.value = cloneDeep(newVal || []);
+		}
+	},
+	{ immediate: true, deep: true }
+);
+
 // Convert flat upstreamVars into cascader options
 const upstreamOptions = computed(() => {
 	const map = new Map<string, any>();
-	(props.upstreamVars || []).forEach((v) => {
+	(cachedUpstreamVars.value || []).forEach(v => {
 		if (!map.has(v.nodeId)) {
 			map.set(v.nodeId, {
 				value: v.nodeId,
@@ -208,7 +239,8 @@ function removeInput(index: number) {
 				overflow: hidden;
 				transition: border-color 0.2s;
 
-				&:hover, &:focus-within {
+				&:hover,
+				&:focus-within {
 					border-color: var(--el-color-primary);
 				}
 

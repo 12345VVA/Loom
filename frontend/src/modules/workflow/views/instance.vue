@@ -28,7 +28,11 @@
 	>
 		<el-form :model="startDialog.form" label-width="120px">
 			<el-form-item :label="$t('工作流定义')" required>
-				<el-select v-model="startDialog.form.definitionId" style="width: 100%" @change="onDefinitionChange">
+				<el-select
+					v-model="startDialog.form.definitionId"
+					style="width: 100%"
+					@change="onDefinitionChange"
+				>
 					<el-option
 						v-for="item in definitions"
 						:key="item.id"
@@ -38,7 +42,11 @@
 				</el-select>
 			</el-form-item>
 			<el-form-item :label="$t('初始输入变量')">
-				<cl-editor-codemirror v-model="startDialog.form.inputsJson" :height="220" style="width: 100%" />
+				<cl-editor-codemirror
+					v-model="startDialog.form.inputsJson"
+					:height="220"
+					style="width: 100%"
+				/>
 			</el-form-item>
 		</el-form>
 		<template #footer>
@@ -85,7 +93,10 @@
 		destroy-on-close
 	>
 		<div v-loading="logDrawer.loading" style="padding: 10px">
-			<div style="margin-bottom: 15px; display: flex; justify-content: flex-end; gap: 10px;" v-if="logDrawer.items.length > 0">
+			<div
+				style="margin-bottom: 15px; display: flex; justify-content: flex-end; gap: 10px"
+				v-if="logDrawer.items.length > 0"
+			>
 				<el-button size="small" @click="expandAllLogs">{{ $t('展开全部') }}</el-button>
 				<el-button size="small" @click="collapseAllLogs">{{ $t('折叠全部') }}</el-button>
 			</div>
@@ -98,9 +109,19 @@
 				>
 					<el-card shadow="hover" style="margin-bottom: 10px">
 						<template #header>
-							<div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer" @click="item.isExpanded = !item.isExpanded">
+							<div
+								style="
+									display: flex;
+									justify-content: space-between;
+									align-items: center;
+									cursor: pointer;
+								"
+								@click="item.isExpanded = !item.isExpanded"
+							>
 								<div style="display: flex; align-items: center; gap: 8px">
-									<el-icon><arrow-down v-if="item.isExpanded" /><arrow-right v-else /></el-icon>
+									<el-icon
+										><arrow-down v-if="item.isExpanded" /><arrow-right v-else
+									/></el-icon>
 									<strong style="font-size: 15px">{{ item.nodeName }}</strong>
 								</div>
 								<el-tag size="small" type="info">{{ item.nodeType }}</el-tag>
@@ -110,7 +131,12 @@
 							<div class="log-payload__section">
 								<div class="section-header">
 									<strong>{{ $t('上游输入：') }}</strong>
-									<el-button link type="primary" :icon="CopyDocument" @click="copyToClipboard(formatJson(item.inputData))">
+									<el-button
+										link
+										type="primary"
+										:icon="CopyDocument"
+										@click="copyToClipboard(formatJson(item.inputData))"
+									>
 										{{ $t('复制') }}
 									</el-button>
 								</div>
@@ -119,7 +145,12 @@
 							<div class="log-payload__section" style="margin-top: 10px">
 								<div class="section-header">
 									<strong>{{ $t('执行输出：') }}</strong>
-									<el-button link type="primary" :icon="CopyDocument" @click="copyToClipboard(formatJson(item.outputData))">
+									<el-button
+										link
+										type="primary"
+										:icon="CopyDocument"
+										@click="copyToClipboard(formatJson(item.outputData))"
+									>
 										{{ $t('复制') }}
 									</el-button>
 								</div>
@@ -221,7 +252,12 @@ const Table = useTable({
 	columns: [
 		{ label: t('实例ID'), prop: 'id', width: 90 },
 		{ label: t('关联工作流ID'), prop: 'definitionId', width: 130 },
-		{ label: t('运行时 Thread ID'), prop: 'threadId', minWidth: 200, showOverflowTooltip: true },
+		{
+			label: t('运行时 Thread ID'),
+			prop: 'threadId',
+			minWidth: 200,
+			showOverflowTooltip: true
+		},
 		{
 			label: t('运行状态'),
 			prop: 'status',
@@ -304,7 +340,7 @@ function onDefinitionChange(val: number) {
 				const vars: string[] = startNode.data.config.inputVariables;
 				const inputs: Record<string, string> = {};
 				vars.forEach(v => {
-					if (v) inputs[v] = "";
+					if (v) inputs[v] = '';
 				});
 				startDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
 			} else {
@@ -418,7 +454,6 @@ function collapseAllLogs() {
 function formatTime(value: string) {
 	return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-';
 }
-
 </script>
 
 <style lang="scss" scoped>

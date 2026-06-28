@@ -1,11 +1,13 @@
 """
 工作流模型实体与 DTO。
 """
-from datetime import datetime
-from typing import Any, Optional
-import json
 
-from pydantic import BaseModel, ConfigDict, Field as PydanticField, field_validator, field_serializer
+import json
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
+from pydantic import Field as PydanticField
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -14,30 +16,35 @@ from app.framework.models.entity import BaseEntity
 
 class WorkflowDefinition(BaseEntity, table=True):
     """工作流定义表"""
+
     __tablename__ = "workflow_definition"
 
     code: str = Field(index=True, unique=True, max_length=100)
     name: str = Field(index=True, max_length=150)
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=500)
     graph_json: str = Field(default="{}", max_length=100000)  # 可视化连线与配置生成的拓扑数据
     is_active: bool = Field(default=True, index=True)
+    user_id: int | None = Field(default=None, index=True)  # 创建者，用于数据权限隔离
 
 
 class WorkflowInstance(BaseEntity, table=True):
     """工作流实例运行状态表"""
+
     __tablename__ = "workflow_instance"
 
     definition_id: int = Field(index=True)
     thread_id: str = Field(index=True, max_length=100)  # LangGraph checkpoint 隔离 thread
     status: str = Field(default="pending", index=True, max_length=50)  # pending, running, paused, success, failed
-    current_node: Optional[str] = Field(default=None, max_length=100)
+    current_node: str | None = Field(default=None, max_length=100)
     state_data: str = Field(default="{}", max_length=100000)  # 运行中的上下文变量快照
-    error_message: Optional[str] = Field(default=None, max_length=1000)
-    celery_task_id: Optional[str] = Field(default=None, max_length=200, index=True)
+    error_message: str | None = Field(default=None, max_length=1000)
+    celery_task_id: str | None = Field(default=None, max_length=200, index=True)
+    user_id: int | None = Field(default=None, index=True)  # 启动者，用于数据权限隔离
 
 
 class WorkflowExecutionLog(BaseEntity, table=True):
     """工作流节点执行日志"""
+
     __tablename__ = "workflow_execution_log"
 
     instance_id: int = Field(index=True)
@@ -52,15 +59,17 @@ class WorkflowExecutionLog(BaseEntity, table=True):
 
 # --- DTO 传输对象定义 ---
 
+
 class WorkflowDefinitionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
     code: str
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     graph_json: str
     is_active: bool
+    user_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -74,7 +83,7 @@ class WorkflowDefinitionCreateRequest(BaseModel):
 
     code: str
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     graph_json: str = "{}"
     is_active: bool = True
 
@@ -90,11 +99,11 @@ class WorkflowDefinitionUpdateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    code: Optional[str] = None
-    name: Optional[str] = None
-    description: Optional[str] = None
-    graph_json: Optional[str] = None
-    is_active: Optional[bool] = None
+    code: str | None = None
+    name: str | None = None
+    description: str | None = None
+    graph_json: str | None = None
+    is_active: bool | None = None
 
     @field_validator("is_active", mode="before")
     @classmethod
@@ -111,9 +120,10 @@ class WorkflowInstanceRead(BaseModel):
     definition_id: int
     thread_id: str
     status: str
-    current_node: Optional[str] = None
+    current_node: str | None = None
     state_data: str
-    error_message: Optional[str] = None
+    error_message: str | None = None
+    user_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -129,7 +139,21 @@ class WorkflowInstanceResumeRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     instance_id: int
-    user_input: Any
+    # 不接受 None：json.dumps(None)="null" → json.loads=None → 会走 initial_state 分支从头重跑
+    user_input: str | dict[str, Any] | list[Any]
+
+    @field_validator("user_input")
+    @classmethod
+    def _validate_user_input_size(cls, value: Any) -> Any:
+        if len(json.dumps(value, ensure_ascii=False)) > 65536:
+            raise ValueError("恢复值过大（超过 64KB）")
+        return value
+
+
+class WorkflowInstanceCancelRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    instance_id: int
 
 
 class WorkflowExecutionLogRead(BaseModel):
@@ -158,7 +182,7 @@ class NodeTestRequest(BaseModel):
     @classmethod
     def validate_mock_variables_size(cls, v: dict) -> dict:
         """限制 mock_variables 序列化后不超过 100KB，防止超大 payload 耗尽内存"""
-        size = len(json.dumps(v, ensure_ascii=False).encode('utf-8'))
+        size = len(json.dumps(v, ensure_ascii=False).encode("utf-8"))
         if size > 100 * 1024:
             raise ValueError(f"模拟变量数据过大（{size // 1024}KB），限制为 100KB 以内")
         return v
@@ -169,5 +193,5 @@ class NodeTestResponse(BaseModel):
 
     output: dict[str, Any]
     latency_ms: int
-    error: Optional[str] = None
+    error: str | None = None
     is_timeout: bool = False

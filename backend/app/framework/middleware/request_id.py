@@ -1,12 +1,14 @@
 """
 请求 ID 中间件。
 """
+
 from __future__ import annotations
 
 from uuid import uuid4
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+
 from app.core.logging import request_id_ctx, request_method_ctx, request_path_ctx
 
 

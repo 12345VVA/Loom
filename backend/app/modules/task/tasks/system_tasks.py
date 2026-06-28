@@ -1,17 +1,20 @@
 """
 系统任务分发逻辑 (Celery Tasks)
 """
+
 import logging
 import time
 from datetime import datetime, timedelta
+
 from sqlmodel import select
+
 from app.celery_app import celery_app
 from app.core.database import Session, engine, transaction
 from app.framework.middleware.metrics import record_metric_event
+from app.modules.notification.service.notification_service import NotificationService
 from app.modules.task.model.task import TaskInfo, TaskLog
 from app.modules.task.service.task_invoker import TaskInvoker
 from app.modules.task.service.task_service import compute_next_run_time, sync_task_schedule_state
-from app.modules.notification.service.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +56,11 @@ def execute_system_task(task_id: int):
                 sync_task_schedule_state(task)
                 session.add(task)
             consume_time = int((time.time() - start_time) * 1000)
-            log = _write_task_log(session, task_id, status, detail, consume_time)
+            _write_task_log(session, task_id, status, detail, consume_time)
             if task:
                 _maybe_send_task_notification(session, task, status, detail, consume_time)
-            return f"Task executed with status: {status}"
+
+        return f"Task executed with status: {status}"
 
 
 @celery_app.task(name="task.dispatch_due_tasks")
@@ -100,7 +104,9 @@ def _write_task_log(session: Session, task_id: int, status: int, detail: str, co
     return log
 
 
-def _maybe_send_task_notification(session: Session, task: TaskInfo, status_value: int, detail: str, consume_time: int) -> None:
+def _maybe_send_task_notification(
+    session: Session, task: TaskInfo, status_value: int, detail: str, consume_time: int
+) -> None:
     if not task.notify_enabled:
         return
     timed_out = task.notify_timeout_ms > 0 and consume_time >= task.notify_timeout_ms
@@ -130,14 +136,16 @@ def clean_expired_logs():
     定时清理过期日志
     根据系统参数 logKeep 配置的天数，删除过期的操作日志和登录日志
     """
-    from app.modules.base.model.sys import SysLog, SysLoginLog
-    from app.modules.base.service.sys_manage_service import LOG_KEEP_PARAM_KEY, DEFAULT_LOG_KEEP_DAYS
     from sqlalchemy import delete
+
+    from app.modules.base.model.sys import SysLog, SysLoginLog
+    from app.modules.base.service.sys_manage_service import DEFAULT_LOG_KEEP_DAYS, LOG_KEEP_PARAM_KEY
 
     try:
         with Session(engine) as session:
             # 获取日志保留天数配置
             from app.modules.base.service.sys_manage_service import SysParamService
+
             param_service = SysParamService(session)
             keep_days_str = param_service.get_value(LOG_KEEP_PARAM_KEY, DEFAULT_LOG_KEEP_DAYS)
             try:
@@ -177,11 +185,8 @@ def clean_expired_logs():
                 "sys_log_deleted": sys_log_count,
                 "login_log_deleted": login_log_count,
                 "task_log_deleted": task_log_count,
-                "cutoff_time": cutoff_time.isoformat()
+                "cutoff_time": cutoff_time.isoformat(),
             }
     except Exception as exc:
-        logger.error(f"日志清理任务执行失败", exc_info=exc)
-        return {
-            "success": False,
-            "error": str(exc)
-        }
+        logger.error("日志清理任务执行失败", exc_info=exc)
+        return {"success": False, "error": str(exc)}

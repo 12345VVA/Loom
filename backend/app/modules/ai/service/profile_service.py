@@ -1,4 +1,5 @@
 """AI 模型调用配置服务。"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -7,7 +8,14 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from app.framework.controller_meta import CrudQuery, RelationConfig
-from app.modules.ai.model.ai import AiChatRequest, AiEmbeddingRequest, AiImageRequest, AiModel, AiModelProfile, AiProvider
+from app.modules.ai.model.ai import (
+    AiChatRequest,
+    AiEmbeddingRequest,
+    AiImageRequest,
+    AiModel,
+    AiModelProfile,
+    AiProvider,
+)
 from app.modules.ai.service.runtime_service import AiModelRuntimeService
 from app.modules.ai.service.utils import _dump_response_format, _validate_json_config
 from app.modules.base.model.auth import PageResult, User
@@ -51,7 +59,9 @@ class AiModelProfileService(BaseAdminCrudService):
         query = self._profile_query(query)
         return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
 
-    def page(self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> PageResult[dict]:
+    def page(
+        self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
+    ) -> PageResult[dict]:
         query = self._profile_query(query)
         result = super().page(query, current_user, relations)
         result.items = [self._decorate(item) for item in result.items]
@@ -77,10 +87,14 @@ class AiModelProfileService(BaseAdminCrudService):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="调用配置不存在")
         model = self.session.get(AiModel, profile.model_id)
         if model and model.model_type == "embedding":
-            return AiModelRuntimeService(self.session).embedding(AiEmbeddingRequest(profile_code=profile.code, input=prompt))
+            return AiModelRuntimeService(self.session).embedding(
+                AiEmbeddingRequest(profile_code=profile.code, input=prompt)
+            )
         if model and model.model_type == "image":
             return AiModelRuntimeService(self.session).image(AiImageRequest(profile_code=profile.code, prompt=prompt))
-        return AiModelRuntimeService(self.session).chat(AiChatRequest(profile_code=profile.code, messages=[{"role": "user", "content": prompt}]))
+        return AiModelRuntimeService(self.session).chat(
+            AiChatRequest(profile_code=profile.code, messages=[{"role": "user", "content": prompt}])
+        )
 
     def _ensure_model(self, model_id: int | None) -> None:
         if model_id is None or not self.session.get(AiModel, model_id):

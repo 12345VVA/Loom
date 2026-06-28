@@ -1,4 +1,5 @@
 """AI 生成任务服务。"""
+
 from __future__ import annotations
 
 import json

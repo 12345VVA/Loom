@@ -1,9 +1,9 @@
 """
 工作流可视化管理与运行时模块配置。
 """
+
 from app.framework.middleware.module_access import ModuleAccessMiddleware
 from app.modules.module_config import ModuleConfig
-
 
 MODULE_CONFIG = ModuleConfig(
     name="workflow",

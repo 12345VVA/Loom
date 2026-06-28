@@ -1,12 +1,13 @@
 """
 通用导入导出辅助。
 """
+
 from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 
 @dataclass(frozen=True)

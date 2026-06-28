@@ -27,8 +27,22 @@ defineProps<{
 
 const outputHandles = computed(() => {
 	const handles: CustomOutputHandle[] = [
-		{ id: 'true', label: 'T', color: '#67c23a', topPercent: 30, labelClass: 'handle-label--true', handleClass: 'handle-true' },
-		{ id: 'false', label: 'F', color: '#f56c6c', topPercent: 70, labelClass: 'handle-label--false', handleClass: 'handle-false' }
+		{
+			id: 'true',
+			label: 'T',
+			color: '#67c23a',
+			topPercent: 30,
+			labelClass: 'handle-label--true',
+			handleClass: 'handle-true'
+		},
+		{
+			id: 'false',
+			label: 'F',
+			color: '#f56c6c',
+			topPercent: 70,
+			labelClass: 'handle-label--false',
+			handleClass: 'handle-false'
+		}
 	];
 	return handles;
 });

@@ -152,11 +152,13 @@ export const NODE_REGISTRY = [
 ];
 
 export function getNodeMeta(type: string) {
-	return NODE_REGISTRY.find(n => n.type === type) || {
-		type,
-		labelKey: '未知节点',
-		icon: InfoFilled,
-		colorClass: 'node-unknown',
-		colorHex: '#909399'
-	};
+	return (
+		NODE_REGISTRY.find(n => n.type === type) || {
+			type,
+			labelKey: '未知节点',
+			icon: InfoFilled,
+			colorClass: 'node-unknown',
+			colorHex: '#909399'
+		}
+	);
 }

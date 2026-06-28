@@ -1,6 +1,10 @@
 <template>
 	<div class="tool-node-wrapper">
-		<el-tooltip effect="dark" :content="$t('此节点类型已弃用，建议使用「工具执行器」节点')" placement="top">
+		<el-tooltip
+			effect="dark"
+			:content="$t('此节点类型已弃用，建议使用「工具执行器」节点')"
+			placement="top"
+		>
 			<el-tag class="deprecated-tag" type="warning" size="small">{{ $t('已弃用') }}</el-tag>
 		</el-tooltip>
 		<base-node

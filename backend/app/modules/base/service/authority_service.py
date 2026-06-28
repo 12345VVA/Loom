@@ -1,21 +1,26 @@
 """
 Base 模块管理端鉴权服务
 """
+
 from __future__ import annotations
 
-from fnmatch import fnmatch
 import hashlib
+from fnmatch import fnmatch
 from typing import Any
 
 from fastapi import HTTPException, Request, status
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.core.security import decode_token, is_token_blacklisted
-from app.framework.router.route_meta import TagTypes, get_permission_meta
-from app.framework.middleware.metrics import record_metric_event
 from app.core.logging import current_user_id_ctx
-from app.modules.base.compat import ADMIN_PATH_ALIASES, DEFAULT_AUTHENTICATED_PERMISSIONS, DEFAULT_PUBLIC_PERMISSION_PATHS
+from app.core.security import decode_token, is_token_blacklisted
+from app.framework.middleware.metrics import record_metric_event
+from app.framework.router.route_meta import TagTypes, get_permission_meta
+from app.modules.base.compat import (
+    ADMIN_PATH_ALIASES,
+    DEFAULT_AUTHENTICATED_PERMISSIONS,
+    DEFAULT_PUBLIC_PERMISSION_PATHS,
+)
 from app.modules.base.model.auth import Menu, Role, RoleMenuLink, User, UserRoleLink
 from app.modules.base.service.cache_service import cache_delete, cache_get, cache_get_json, cache_set, cache_set_json
 from app.modules.loader import load_permission_configs
@@ -57,6 +62,7 @@ def build_session_tokens_cache_key(user_id: int) -> str:
 def get_user_token_version(user_id: int) -> int:
     """获取用户当前Token版本号"""
     from app.modules.base.service.cache_service import cache_get
+
     version = cache_get(build_token_version_cache_key(user_id))
     return int(version) if version else 0
 
@@ -68,14 +74,15 @@ def increment_user_token_version(user_id: int) -> int:
     Returns:
         新的Token版本号
     """
+
     from app.modules.base.service.cache_service import cache_get, cache_set
-    import redis
 
     cache_key = build_token_version_cache_key(user_id)
     current = cache_get(cache_key)
 
     # 使用Redis原子递增操作
     from app.core.redis import redis_client
+
     try:
         new_version = redis_client.incr(cache_key)
         # 设置TTL为较长的时间（如30天），避免版本号过早过期
@@ -123,7 +130,10 @@ def get_user_permissions(session: Session, user_id: int) -> list[str]:
 
     if is_super_admin(session, user):
         statement = select(Menu.permission).where(Menu.permission.is_not(None), Menu.is_active == True)  # noqa: E712
-        return sorted({permission for permission in session.exec(statement).all() if permission} | set(DEFAULT_AUTHENTICATED_PERMISSIONS))
+        return sorted(
+            {permission for permission in session.exec(statement).all() if permission}
+            | set(DEFAULT_AUTHENTICATED_PERMISSIONS)
+        )
 
     role_ids = [role.id for role in get_user_roles(session, user_id) if role.id is not None]
     if not role_ids:
@@ -134,7 +144,10 @@ def get_user_permissions(session: Session, user_id: int) -> list[str]:
         .join(RoleMenuLink, RoleMenuLink.menu_id == Menu.id)
         .where(RoleMenuLink.role_id.in_(role_ids), Menu.permission.is_not(None), Menu.is_active == True)  # noqa: E712
     )
-    return sorted({permission for permission in session.exec(statement).all() if permission} | set(DEFAULT_AUTHENTICATED_PERMISSIONS))
+    return sorted(
+        {permission for permission in session.exec(statement).all() if permission}
+        | set(DEFAULT_AUTHENTICATED_PERMISSIONS)
+    )
 
 
 def get_permission_pattern_map() -> dict[str, tuple[str, ...]]:
@@ -183,7 +196,9 @@ def get_user_permission_paths(session: Session, user: User) -> list[str]:
         paths = ["*"]
     else:
         permissions = get_user_permissions(session, user.id)
-        paths = sorted({permission_to_path(permission) for permission in permissions} | set(DEFAULT_PUBLIC_PERMISSION_PATHS))
+        paths = sorted(
+            {permission_to_path(permission) for permission in permissions} | set(DEFAULT_PUBLIC_PERMISSION_PATHS)
+        )
 
     cache_set_json(cache_key, paths, get_access_token_ttl())
     return paths
@@ -206,7 +221,11 @@ def prime_login_caches(session: Session, user: User, access_token: str) -> list[
     cache_set_json(build_permission_patterns_cache_key(user.id), patterns, get_access_token_ttl())
     cache_set_json(
         build_permission_paths_cache_key(user.id),
-        ["*"] if is_super_admin(session, user) else sorted({permission_to_path(permission) for permission in permissions} | set(DEFAULT_PUBLIC_PERMISSION_PATHS)),
+        ["*"]
+        if is_super_admin(session, user)
+        else sorted(
+            {permission_to_path(permission) for permission in permissions} | set(DEFAULT_PUBLIC_PERMISSION_PATHS)
+        ),
         get_access_token_ttl(),
     )
     if user.department_id is not None:
@@ -242,8 +261,7 @@ def clear_login_caches_for_roles(session: Session, role_ids: list[int] | set[int
     if not normalized:
         return
     user_ids = [
-        item.user_id
-        for item in session.exec(select(UserRoleLink).where(UserRoleLink.role_id.in_(normalized))).all()
+        item.user_id for item in session.exec(select(UserRoleLink).where(UserRoleLink.role_id.in_(normalized))).all()
     ]
     clear_login_caches_for_users(user_ids)
 
@@ -253,8 +271,7 @@ def clear_login_caches_for_menus(session: Session, menu_ids: list[int] | set[int
     if not normalized:
         return
     role_ids = [
-        item.role_id
-        for item in session.exec(select(RoleMenuLink).where(RoleMenuLink.menu_id.in_(normalized))).all()
+        item.role_id for item in session.exec(select(RoleMenuLink).where(RoleMenuLink.menu_id.in_(normalized))).all()
     ]
     clear_login_caches_for_roles(session, role_ids)
 
@@ -362,7 +379,9 @@ def get_cached_user_permissions(session: Session, user: User) -> list[str]:
     return permissions
 
 
-def authorize_admin_request(session: Session, request: Request, anonymous_paths: set[str], required_permission: str | None = None) -> User:
+def authorize_admin_request(
+    session: Session, request: Request, anonymous_paths: set[str], required_permission: str | None = None
+) -> User:
     request_path = request.url.path.rstrip("/") or "/"
     if request_path in anonymous_paths:
         return _cache_anonymous_user(request)

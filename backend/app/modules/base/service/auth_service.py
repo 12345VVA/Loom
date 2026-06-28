@@ -1,34 +1,33 @@
 """
 Base 模块认证与权限服务
 """
+
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import json
 import secrets
 import time
+from datetime import datetime
+from uuid import uuid4
 
 from fastapi import HTTPException, Request, status
 from sqlmodel import Session, select
-from uuid import uuid4
 
 from app.core.config import settings
 from app.core.security import (
-    hash_password,
-    verify_password,
-    validate_password_strength,
-    decode_token,
     add_token_to_blacklist,
+    decode_token,
+    hash_password,
     password_needs_rehash,
+    validate_password_strength,
+    verify_password,
 )
-
-from app.modules.base.compat import SYSTEM_MANAGED_CODE_PREFIXES, get_menu_parent_code
+from app.modules.base.compat import SYSTEM_MANAGED_CODE_PREFIXES
 from app.modules.base.model.auth import (
     CaptchaResponse,
     CoolLoginResponse,
     CoolMenuItem,
-    CoolPersonResponse,
     CoolUserInfo,
     Department,
     LoginRequest,
@@ -37,12 +36,19 @@ from app.modules.base.model.auth import (
     Role,
     RoleDepartmentLink,
     RoleMenuLink,
-    UserPersonUpdateRequest,
     User,
     UserPersonRead,
+    UserPersonUpdateRequest,
     UserRoleLink,
 )
 from app.modules.base.service.admin_service import MenuAdminService
+from app.modules.base.service.authority_service import (
+    build_refresh_token_cache_key,
+    clear_login_caches,
+    clear_login_caches_for_users,
+    get_refresh_token_ttl,
+    prime_login_caches,
+)
 from app.modules.base.service.cache_service import cache_delete, cache_get, cache_set
 from app.modules.base.service.security_service import (
     create_access_token,
@@ -51,15 +57,8 @@ from app.modules.base.service.security_service import (
     get_user_permissions,
     get_user_roles,
 )
-from app.modules.base.service.authority_service import (
-    build_refresh_token_cache_key,
-    clear_login_caches,
-    clear_login_caches_for_users,
-    get_refresh_token_ttl,
-    prime_login_caches,
-)
-from app.modules.loader import load_menu_manifest_items
 from app.modules.base.service.sys_manage_service import SysLoginLogService
+from app.modules.loader import load_menu_manifest_items
 
 
 class AuthService:
@@ -141,7 +140,7 @@ class AuthService:
                 risk_hit=risk_hit,
             )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前用户未分配角色")
-        setattr(user, "_token_role_ids", [role.id for role in roles if role.id is not None])
+        user._token_role_ids = [role.id for role in roles if role.id is not None]
 
         user.last_login_at = datetime.utcnow()
         self.session.add(user)
@@ -174,7 +173,7 @@ class AuthService:
             refresh_token=refresh_token,
             force_password_change=force_password_change,
         )
-        
+
     def _finalize_login_response(
         self,
         *,
@@ -190,7 +189,9 @@ class AuthService:
             refresh_token=refresh_token,
             expire=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             refresh_expire=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-            user_info=self.build_user_info(user, roles=roles, permissions=permissions, force_password_change=force_password_change),
+            user_info=self.build_user_info(
+                user, roles=roles, permissions=permissions, force_password_change=force_password_change
+            ),
             permission=permissions,
         )
         return response
@@ -213,7 +214,7 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效")
 
         roles = get_user_roles(self.session, user.id)
-        setattr(user, "_token_role_ids", [role.id for role in roles if role.id is not None])
+        user._token_role_ids = [role.id for role in roles if role.id is not None]
         access_token = create_access_token(user)
         refresh_token = create_refresh_token(user)
         permissions = prime_login_caches(self.session, user, access_token)
@@ -231,6 +232,7 @@ class AuthService:
         if request:
             try:
                 from app.modules.base.service.authority_service import extract_token
+
                 token = extract_token(request)
                 payload = decode_token(token)
                 jti = payload.get("jti")
@@ -345,9 +347,13 @@ class AuthService:
         permissions = get_user_permissions(self.session, user.id)
         # 检查是否需要强制修改密码
         force_password_change = user.password_changed_at is None
-        return self.build_user_info(user, roles=roles, permissions=permissions, force_password_change=force_password_change)
+        return self.build_user_info(
+            user, roles=roles, permissions=permissions, force_password_change=force_password_change
+        )
 
-    def build_user_info(self, user: User, roles: list[Role], permissions: list[str], force_password_change: bool = False) -> CoolUserInfo:
+    def build_user_info(
+        self, user: User, roles: list[Role], permissions: list[str], force_password_change: bool = False
+    ) -> CoolUserInfo:
         return CoolUserInfo(
             user_id=user.id,
             username=user.username,
@@ -432,7 +438,6 @@ class AuthService:
             dict: 包含 perms (权限列表) 和 menus (扁平菜单数组) 的字典
         """
         permissions = get_user_permissions(self.session, user.id)
-        from app.modules.base.service.admin_service import MenuAdminService
 
         # 获取树形结构的菜单
         menu_tree = MenuAdminService(self.session).current_tree(user)
@@ -446,9 +451,11 @@ class AuthService:
             "menus": [item.model_dump(mode="json", by_alias=True) for item in flat_menus],
         }
 
-    def _build_cool_menu_item(self, menu, name_map: dict[int, str] | None = None, children_override: list = None) -> CoolMenuItem:
+    def _build_cool_menu_item(
+        self, menu, name_map: dict[int, str] | None = None, children_override: list = None
+    ) -> CoolMenuItem:
         type_mapping = {"group": 0, "menu": 1, "button": 2}
-        
+
         # 处理可能的模型对象或字典
         m_id = getattr(menu, "id", None)
         parent_id = getattr(menu, "parent_id", None)
@@ -474,7 +481,7 @@ class AuthService:
             parent_name = getattr(menu, "parent_name", None)
 
         final_type = type_mapping.get(menu_type, menu_type if isinstance(menu_type, int) else 1)
-        
+
         # 处理组件路径逻辑，防止前端 Vue Router 报 Invalid route component
         if final_type == 0:  # 目录类型
             component = None
@@ -482,7 +489,7 @@ class AuthService:
             if not component or (isinstance(component, str) and not component.strip()):
                 # 如果是带子菜单的父级菜单但没有定义组件，通常需要 layout 承载
                 component = "layout" if children else None
-        
+
         return CoolMenuItem(
             id=m_id,
             parent_id=parent_id,
@@ -564,11 +571,9 @@ class AuthService:
         except Exception as exc:
             # 日志写入失败应记录错误日志，便于排查问题
             import logging
+
             logger = logging.getLogger(__name__)
-            logger.error(
-                f"登录日志写入失败 - account: {account}, user_id: {user_id}, status: {status}",
-                exc_info=exc
-            )
+            logger.error(f"登录日志写入失败 - account: {account}, user_id: {user_id}, status: {status}", exc_info=exc)
 
     def bootstrap_defaults(self) -> None:
         root_department = self.session.exec(select(Department).where(Department.name == "平台")).first()
@@ -603,11 +608,6 @@ class AuthService:
         }
 
         navigation_definitions = load_menu_manifest_items()
-        resource_menu_codes = {
-            (item.module, item.resource): item.code
-            for item in navigation_definitions
-            if item.module and item.resource
-        }
 
         all_valid_codes: set[str] = {item.code for item in navigation_definitions}
         managed_permissions: set[str] = {item.permission for item in navigation_definitions if item.permission}
@@ -671,7 +671,9 @@ class AuthService:
         # 清理数据库中不再存在（既不在 JSON Manifest 中，也不在控制器扫描结果中）的权限记录
         all_db_menus = self.session.exec(select(Menu)).all()
         for db_menu in all_db_menus:
-            if db_menu.code not in all_valid_codes and self._is_system_managed_menu(db_menu, managed_permissions, managed_paths):
+            if db_menu.code not in all_valid_codes and self._is_system_managed_menu(
+                db_menu, managed_permissions, managed_paths
+            ):
                 # 删除与之关联的角色绑定，防止外键约束错误
                 links = self.session.exec(select(RoleMenuLink).where(RoleMenuLink.menu_id == db_menu.id)).all()
                 for link in links:
@@ -707,20 +709,26 @@ class AuthService:
         clear_login_caches_for_users(all_user_ids)
 
     def _ensure_user_role_link(self, user_id: int, role_id: int) -> None:
-        link = self.session.exec(select(UserRoleLink).where(UserRoleLink.user_id == user_id, UserRoleLink.role_id == role_id)).first()
+        link = self.session.exec(
+            select(UserRoleLink).where(UserRoleLink.user_id == user_id, UserRoleLink.role_id == role_id)
+        ).first()
         if not link:
             self.session.add(UserRoleLink(user_id=user_id, role_id=role_id))
             self.session.commit()
 
     def _ensure_role_menu_link(self, role_id: int, menu_id: int) -> None:
-        link = self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == role_id, RoleMenuLink.menu_id == menu_id)).first()
+        link = self.session.exec(
+            select(RoleMenuLink).where(RoleMenuLink.role_id == role_id, RoleMenuLink.menu_id == menu_id)
+        ).first()
         if not link:
             self.session.add(RoleMenuLink(role_id=role_id, menu_id=menu_id))
             self.session.commit()
 
     def _ensure_role_department_link(self, role_id: int, department_id: int) -> None:
         link = self.session.exec(
-            select(RoleDepartmentLink).where(RoleDepartmentLink.role_id == role_id, RoleDepartmentLink.department_id == department_id)
+            select(RoleDepartmentLink).where(
+                RoleDepartmentLink.role_id == role_id, RoleDepartmentLink.department_id == department_id
+            )
         ).first()
         if not link:
             self.session.add(RoleDepartmentLink(role_id=role_id, department_id=department_id))
@@ -734,7 +742,9 @@ class AuthService:
         return None
 
     def _mark_login_failure(self, account: str, ip: str) -> int:
-        account_failures = self._increase_counter(self._build_account_fail_key(account), settings.BASE_LOGIN_FAIL_WINDOW)
+        account_failures = self._increase_counter(
+            self._build_account_fail_key(account), settings.BASE_LOGIN_FAIL_WINDOW
+        )
         ip_failures = self._increase_counter(self._build_ip_fail_key(ip), settings.BASE_LOGIN_FAIL_WINDOW)
         risk_hit = 0
         if account_failures >= settings.BASE_LOGIN_ACCOUNT_FAIL_MAX:
@@ -816,9 +826,11 @@ def _get_device_id(request: Request | None) -> str | None:
     explicit = request.headers.get("x-device-id") or request.headers.get("device-id")
     if explicit:
         return explicit
-    source = "|".join([
-        _get_request_ip(request) or "",
-        _get_user_agent(request) or "",
-        request.headers.get("accept-language", ""),
-    ])
+    source = "|".join(
+        [
+            _get_request_ip(request) or "",
+            _get_user_agent(request) or "",
+            request.headers.get("accept-language", ""),
+        ]
+    )
     return hashlib.sha256(source.encode("utf-8")).hexdigest()[:24] if source.strip("|") else None

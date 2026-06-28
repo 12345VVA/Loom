@@ -1,4 +1,5 @@
 """AI 模型管理服务。"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -25,7 +26,9 @@ class AiModelService(BaseAdminCrudService):
 
     def _before_update(self, data: dict, entity: AiModel) -> dict:
         self._ensure_provider(data.get("provider_id"))
-        self._ensure_unique_model(data.get("provider_id"), data.get("code"), data.get("model_type"), exclude_id=entity.id)
+        self._ensure_unique_model(
+            data.get("provider_id"), data.get("code"), data.get("model_type"), exclude_id=entity.id
+        )
         _validate_json_config(data.get("default_config"), "defaultConfig", expected_type=dict)
         return data
 
@@ -39,7 +42,9 @@ class AiModelService(BaseAdminCrudService):
     ) -> list[dict]:
         return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
 
-    def page(self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> PageResult[dict]:
+    def page(
+        self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
+    ) -> PageResult[dict]:
         result = super().page(query, current_user, relations)
         result.items = [self._decorate(item) for item in result.items]
         return result
@@ -51,10 +56,14 @@ class AiModelService(BaseAdminCrudService):
         if provider_id is None or not self.session.get(AiProvider, provider_id):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="厂商不存在")
 
-    def _ensure_unique_model(self, provider_id: int | None, code: str | None, model_type: str | None, exclude_id: int | None = None) -> None:
+    def _ensure_unique_model(
+        self, provider_id: int | None, code: str | None, model_type: str | None, exclude_id: int | None = None
+    ) -> None:
         if provider_id is None or not code or not model_type:
             return
-        statement = select(AiModel).where(AiModel.provider_id == provider_id, AiModel.code == code, AiModel.model_type == model_type)
+        statement = select(AiModel).where(
+            AiModel.provider_id == provider_id, AiModel.code == code, AiModel.model_type == model_type
+        )
         if exclude_id is not None:
             statement = statement.where(AiModel.id != exclude_id)
         if self.session.exec(statement).first():

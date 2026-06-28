@@ -1,13 +1,14 @@
 """
 基础安全工具
 """
+
 from __future__ import annotations
 
 import base64
 import hashlib
 import hmac
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
@@ -15,16 +16,44 @@ from fastapi import HTTPException, status
 
 from app.core.config import settings
 
-
 # 常见弱密码黑名单
 COMMON_WEAK_PASSWORDS = {
-    "123456", "password", "12345678", "qwerty", "123456789",
-    "12345", "1234", "111111", "1234567", "dragon", "123123",
-    "baseball", "abc123", "football", "monkey", "letmein",
-    "shadow", "master", "666666", "qwertyuiop", "123321",
-    "mustang", "1234567890", "michael", "654321", "superman",
-    "1qaz2wsx", "7777777", "121212", "000000", "qazwsx",
-    "123qwe", "killer", "trustno1", "password1", "admin123"
+    "123456",
+    "password",
+    "12345678",
+    "qwerty",
+    "123456789",
+    "12345",
+    "1234",
+    "111111",
+    "1234567",
+    "dragon",
+    "123123",
+    "baseball",
+    "abc123",
+    "football",
+    "monkey",
+    "letmein",
+    "shadow",
+    "master",
+    "666666",
+    "qwertyuiop",
+    "123321",
+    "mustang",
+    "1234567890",
+    "michael",
+    "654321",
+    "superman",
+    "1qaz2wsx",
+    "7777777",
+    "121212",
+    "000000",
+    "qazwsx",
+    "123qwe",
+    "killer",
+    "trustno1",
+    "password1",
+    "admin123",
 }
 
 
@@ -53,7 +82,7 @@ def validate_password_strength(password: str) -> None:
     if complexity_count < 3:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="密码强度不足：需包含大写字母、小写字母、数字、特殊字符中的至少3种"
+            detail="密码强度不足：需包含大写字母、小写字母、数字、特殊字符中的至少3种",
         )
 
 
@@ -62,11 +91,7 @@ def hash_password(password: str) -> str:
     iterations = settings.PASSWORD_PBKDF2_ITERATIONS
     salt = os.urandom(16)
     derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return (
-        f"pbkdf2_sha256${iterations}$"
-        f"{base64.b64encode(salt).decode()}$"
-        f"{base64.b64encode(derived).decode()}"
-    )
+    return f"pbkdf2_sha256${iterations}${base64.b64encode(salt).decode()}${base64.b64encode(derived).decode()}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
@@ -94,8 +119,8 @@ def password_needs_rehash(password_hash: str) -> bool:
 
 def create_token(payload: dict[str, Any], expires_delta: timedelta) -> str:
     """生成 JWT"""
-    expire_at = datetime.now(timezone.utc) + expires_delta
-    token_payload = {**payload, "exp": expire_at, "iat": datetime.now(timezone.utc)}
+    expire_at = datetime.now(UTC) + expires_delta
+    token_payload = {**payload, "exp": expire_at, "iat": datetime.now(UTC)}
     return jwt.encode(token_payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -116,6 +141,7 @@ def decode_token(token: str) -> dict[str, Any]:
 
 # Token 黑名单相关函数
 
+
 def build_token_blacklist_key(jti: str) -> str:
     """构建Token黑名单缓存键"""
     return f"token:blacklist:{jti}"
@@ -132,7 +158,7 @@ def add_token_to_blacklist(jti: str, expires_at: int) -> None:
     from app.modules.base.service.cache_service import cache_set
 
     # 计算剩余有效时间作为TTL，最少保留60秒避免时序问题
-    ttl = max(expires_at - int(datetime.now(timezone.utc).timestamp()), 60)
+    ttl = max(expires_at - int(datetime.now(UTC).timestamp()), 60)
     cache_set(build_token_blacklist_key(jti), "1", ttl_seconds=ttl)
 
 

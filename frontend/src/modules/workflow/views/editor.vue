@@ -1,18 +1,20 @@
 <template>
 	<div class="workflow-editor-container">
-
-
 		<!-- 主画布区 -->
 		<div class="editor-body">
 			<!-- 画布中央 -->
-			<div class="canvas-wrapper"
+			<div
+				class="canvas-wrapper"
 				:class="{ 'has-config-panel': !!selectedNode }"
-				@drop="onDrop" @dragover.prevent="onCanvasDragOver" @dragleave="onCanvasDragLeave" @contextmenu.prevent
+				@drop="onDrop"
+				@dragover.prevent="onCanvasDragOver"
+				@dragleave="onCanvasDragLeave"
+				@contextmenu.prevent
 			>
 				<vue-flow
 					v-model="elements"
-					:node-types="(nodeTypes as any)"
-					:edge-types="(edgeTypes as any)"
+					:node-types="nodeTypes as any"
+					:edge-types="edgeTypes as any"
 					:default-edge-options="defaultEdgeOptions"
 					:pan-on-scroll="true"
 					:snap-to-grid="true"
@@ -32,13 +34,31 @@
 					<controls position="bottom-right" />
 					<mini-map />
 					<!-- 对齐辅助线 -->
-					<svg v-if="guides.length" class="alignment-guides" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4;">
-						<line v-for="(g, i) in guides" :key="i"
+					<svg
+						v-if="guides.length"
+						class="alignment-guides"
+						style="
+							position: absolute;
+							top: 0;
+							left: 0;
+							width: 100%;
+							height: 100%;
+							pointer-events: none;
+							z-index: 4;
+						"
+					>
+						<line
+							v-for="(g, i) in guides"
+							:key="i"
 							:x1="g.type === 'vertical' ? g.position : 0"
 							:y1="g.type === 'horizontal' ? g.position : 0"
 							:x2="g.type === 'vertical' ? g.position : 99999"
 							:y2="g.type === 'horizontal' ? g.position : 99999"
-							stroke="var(--el-color-primary)" stroke-width="1" stroke-dasharray="4 3" opacity="0.5" />
+							stroke="var(--el-color-primary)"
+							stroke-width="1"
+							stroke-dasharray="4 3"
+							opacity="0.5"
+						/>
 					</svg>
 					<editor-bottom-toolbar
 						:is-dirty="isDirty"
@@ -74,7 +94,11 @@
 						<el-icon><edit /></el-icon>
 						<span>{{ $t('配置节点') }}</span>
 					</div>
-					<div class="context-menu-item" @click="testContextNode" :class="{ 'is-disabled': !canTestContextNode }">
+					<div
+						class="context-menu-item"
+						@click="testContextNode"
+						:class="{ 'is-disabled': !canTestContextNode }"
+					>
 						<el-icon><caret-right /></el-icon>
 						<span>{{ $t('测试节点') }}</span>
 					</div>
@@ -82,16 +106,28 @@
 						<el-icon><copy-document /></el-icon>
 						<span>{{ $t('复制节点') }}</span>
 					</div>
-					<div class="context-menu-item" @click="distributeHorizontal" :class="{ 'is-disabled': !canDistribute }">
-						<el-icon><Grid /></el-icon>
+					<div
+						class="context-menu-item"
+						@click="distributeHorizontal"
+						:class="{ 'is-disabled': !canDistribute }"
+					>
+						<el-icon><grid /></el-icon>
 						<span>{{ $t('水平等距分布') }}</span>
 					</div>
-					<div class="context-menu-item" @click="distributeVertical" :class="{ 'is-disabled': !canDistribute }">
-						<el-icon><Operation /></el-icon>
+					<div
+						class="context-menu-item"
+						@click="distributeVertical"
+						:class="{ 'is-disabled': !canDistribute }"
+					>
+						<el-icon><operation /></el-icon>
 						<span>{{ $t('垂直等距分布') }}</span>
 					</div>
 					<div class="context-menu-divider" />
-					<div class="context-menu-item context-menu-item--danger" role="menuitem" @click="deleteContextNode">
+					<div
+						class="context-menu-item context-menu-item--danger"
+						role="menuitem"
+						@click="deleteContextNode"
+					>
 						<el-icon><delete /></el-icon>
 						<span>{{ $t('删除节点') }}</span>
 					</div>
@@ -99,7 +135,12 @@
 
 				<!-- 半透明遮罩 -->
 				<transition name="panel-backdrop">
-					<div v-if="selectedNode" class="config-panel-backdrop" @click="selectedNodeId = null" @contextmenu.prevent="selectedNodeId = null" />
+					<div
+						v-if="selectedNode"
+						class="config-panel-backdrop"
+						@click="selectedNodeId = null"
+						@contextmenu.prevent="selectedNodeId = null"
+					/>
 				</transition>
 
 				<!-- 浮层配置面板（滑入动画） -->
@@ -114,7 +155,7 @@
 						:ai-profiles="aiProfiles"
 						:workflow-id="workflowId || undefined"
 						@delete="deleteSelectedNode"
-						@update:width="(w: number) => configPanelWidth = w"
+						@update:width="(w: number) => (configPanelWidth = w)"
 						@close="selectedNodeId = null"
 					/>
 				</transition>
@@ -126,12 +167,11 @@
 						<span class="empty-hint-text">{{ emptyHintTitle }}</span>
 						<span class="empty-hint-sub">{{ emptyHintSub }}</span>
 						<div class="empty-hint-arrow">
-							<el-icon class="bounce-arrow"><ArrowDown /></el-icon>
+							<el-icon class="bounce-arrow"><arrow-down /></el-icon>
 						</div>
 					</div>
 				</transition>
 			</div>
-
 		</div>
 
 		<!-- 测试运行初始变量弹窗 -->
@@ -161,37 +201,44 @@
 			width="500px"
 			destroy-on-close
 		>
-				<el-form :model="nodeTestDialog.form" label-width="120px" label-position="top">
-					<el-form-item :label="$t('模拟上游输入变量')">
-						<cl-editor-codemirror v-model="nodeTestDialog.form.inputsJson" :height="260" />
-					</el-form-item>
-				</el-form>
+			<el-form :model="nodeTestDialog.form" label-width="120px" label-position="top">
+				<el-form-item :label="$t('模拟上游输入变量')">
+					<cl-editor-codemirror v-model="nodeTestDialog.form.inputsJson" :height="260" />
+				</el-form-item>
+			</el-form>
 
-				<!-- 测试结果展示区 -->
-				<div v-if="nodeTestDialog.result" class="node-test-result">
-					<div class="node-test-result__header">
-						<el-tag v-if="nodeTestDialog.result.status === 'success'" type="success" size="small">{{ $t('运行成功') }}</el-tag>
-						<el-tag v-else type="danger" size="small">{{ $t('运行失败') }}</el-tag>
-						<span v-if="nodeTestDialog.result.timeCost" class="node-test-result__time">
-							{{ nodeTestDialog.result.timeCost }}ms
-						</span>
-					</div>
-					<div v-if="nodeTestDialog.result.error" class="node-test-result__error">
-						{{ nodeTestDialog.result.error }}
-					</div>
-					<div class="node-test-result__section">
-						<div class="node-test-result__label">{{ $t('执行输出') }}</div>
-						<pre class="node-test-result__output">{{ formatJson(nodeTestDialog.result.outputData) }}</pre>
-					</div>
+			<!-- 测试结果展示区 -->
+			<div v-if="nodeTestDialog.result" class="node-test-result">
+				<div class="node-test-result__header">
+					<el-tag
+						v-if="nodeTestDialog.result.status === 'success'"
+						type="success"
+						size="small"
+						>{{ $t('运行成功') }}</el-tag
+					>
+					<el-tag v-else type="danger" size="small">{{ $t('运行失败') }}</el-tag>
+					<span v-if="nodeTestDialog.result.timeCost" class="node-test-result__time">
+						{{ nodeTestDialog.result.timeCost }}ms
+					</span>
 				</div>
+				<div v-if="nodeTestDialog.result.error" class="node-test-result__error">
+					{{ nodeTestDialog.result.error }}
+				</div>
+				<div class="node-test-result__section">
+					<div class="node-test-result__label">{{ $t('执行输出') }}</div>
+					<pre class="node-test-result__output">{{
+						formatJson(nodeTestDialog.result.outputData)
+					}}</pre>
+				</div>
+			</div>
 
-				<template #footer>
-					<el-button @click="closeNodeTestDialog">{{ $t('关闭') }}</el-button>
-					<el-button type="success" :loading="nodeTestDialog.loading" @click="startNodeTest">
-						{{ $t('运行测试') }}
-					</el-button>
-				</template>
-			</el-dialog>
+			<template #footer>
+				<el-button @click="closeNodeTestDialog">{{ $t('关闭') }}</el-button>
+				<el-button type="success" :loading="nodeTestDialog.loading" @click="startNodeTest">
+					{{ $t('运行测试') }}
+				</el-button>
+			</template>
+		</el-dialog>
 
 		<!-- 测试运行日志抽屉 -->
 		<el-drawer
@@ -202,13 +249,32 @@
 			destroy-on-close
 		>
 			<div v-loading="testLogDrawer.loading" style="padding: 10px; padding-top: 0">
-				<div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center">
-					<el-tag :type="testLogDrawer.status === 'success' ? 'success' : (testLogDrawer.status === 'failed' ? 'danger' : 'primary')">
+				<div
+					style="
+						margin-bottom: 15px;
+						display: flex;
+						justify-content: space-between;
+						align-items: center;
+					"
+				>
+					<el-tag
+						:type="
+							testLogDrawer.status === 'success'
+								? 'success'
+								: testLogDrawer.status === 'failed'
+									? 'danger'
+									: 'primary'
+						"
+					>
 						{{ $t('状态：') }}{{ testLogDrawer.status || $t('准备中') }}
 					</el-tag>
 					<div>
-						<el-button size="small" @click="expandAllTestLogs">{{ $t('展开') }}</el-button>
-						<el-button size="small" @click="collapseAllTestLogs">{{ $t('折叠') }}</el-button>
+						<el-button size="small" @click="expandAllTestLogs">{{
+							$t('展开')
+						}}</el-button>
+						<el-button size="small" @click="collapseAllTestLogs">{{
+							$t('折叠')
+						}}</el-button>
 					</div>
 				</div>
 				<el-timeline v-if="testLogDrawer.items.length > 0">
@@ -220,9 +286,20 @@
 					>
 						<el-card shadow="hover" style="margin-bottom: 10px">
 							<template #header>
-								<div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer" @click="item.isExpanded = !item.isExpanded">
+								<div
+									style="
+										display: flex;
+										justify-content: space-between;
+										align-items: center;
+										cursor: pointer;
+									"
+									@click="item.isExpanded = !item.isExpanded"
+								>
 									<div style="display: flex; align-items: center; gap: 8px">
-										<el-icon><arrow-down v-if="item.isExpanded" /><arrow-right v-else /></el-icon>
+										<el-icon
+											><arrow-down v-if="item.isExpanded" /><arrow-right
+												v-else
+										/></el-icon>
 										<strong style="font-size: 15px">{{ item.nodeName }}</strong>
 									</div>
 									<el-tag size="small" type="info">{{ item.nodeType }}</el-tag>
@@ -232,14 +309,26 @@
 								<div class="log-payload__section">
 									<div class="section-header">
 										<strong>{{ $t('上游输入：') }}</strong>
-										<el-button link type="primary" :icon="CopyDocument" @click="copyToClipboard(formatJson(item.inputData))">{{ $t('复制') }}</el-button>
+										<el-button
+											link
+											type="primary"
+											:icon="CopyDocument"
+											@click="copyToClipboard(formatJson(item.inputData))"
+											>{{ $t('复制') }}</el-button
+										>
 									</div>
 									<pre>{{ formatJson(item.inputData) }}</pre>
 								</div>
 								<div class="log-payload__section" style="margin-top: 10px">
 									<div class="section-header">
 										<strong>{{ $t('执行输出：') }}</strong>
-										<el-button link type="primary" :icon="CopyDocument" @click="copyToClipboard(formatJson(item.outputData))">{{ $t('复制') }}</el-button>
+										<el-button
+											link
+											type="primary"
+											:icon="CopyDocument"
+											@click="copyToClipboard(formatJson(item.outputData))"
+											>{{ $t('复制') }}</el-button
+										>
 									</div>
 									<pre>{{ formatJson(item.outputData) }}</pre>
 								</div>
@@ -346,7 +435,6 @@ const { toObject, project, viewport, getSelectedNodes } = useVueFlow();
 
 const { guides, computeGuides, clearGuides } = useAlignmentGuides();
 
-
 // 注册自定义节点组件
 const nodeTypes = {
 	start: StartNode,
@@ -382,7 +470,6 @@ const isDirty = ref(false);
 const configPanelWidth = ref(420);
 const loaded = ref(false);
 
-
 // 右键菜单状态
 const contextMenu = reactive({
 	visible: false,
@@ -391,12 +478,14 @@ const contextMenu = reactive({
 	nodeId: ''
 });
 
-watch(() => contextMenu.visible, (newVal) => {
-	if (!newVal) {
-		contextMenu.nodeId = '';
+watch(
+	() => contextMenu.visible,
+	newVal => {
+		if (!newVal) {
+			contextMenu.nodeId = '';
+		}
 	}
-});
-
+);
 
 onBeforeUnmount(() => {
 	stopLogPolling();
@@ -463,10 +552,19 @@ const {
 
 // getUpstreamVariablesForNode moved here to fix hoisting issue
 function getUpstreamVariablesForNode(nodeId: string) {
-	const result: { nodeId: string; nodeLabel: string; variableName: string; nodeType: string; jsonFields?: any[]; _isLoopContext?: boolean }[] = [];
+	const result: {
+		nodeId: string;
+		nodeLabel: string;
+		variableName: string;
+		nodeType: string;
+		jsonFields?: any[];
+		_isLoopContext?: boolean;
+	}[] = [];
 	const visited = new Set<string>();
-	
-	const targetNode = elements.value.find(el => !('source' in el) && el.id === nodeId) as FlowNode | undefined;
+
+	const targetNode = elements.value.find(el => !('source' in el) && el.id === nodeId) as
+		| FlowNode
+		| undefined;
 	if (!targetNode) return result;
 
 	function traceUpstream(currentId: string) {
@@ -486,14 +584,24 @@ function getUpstreamVariablesForNode(nodeId: string) {
 				const inputVars: string[] = (src.data?.config as any)?.inputVariables || [];
 				for (const varName of inputVars) {
 					if (varName && varName.trim()) {
-						result.push({ nodeId: src.id, nodeLabel: src.label, variableName: varName.trim(), nodeType: src.type });
+						result.push({
+							nodeId: src.id,
+							nodeLabel: src.label,
+							variableName: varName.trim(),
+							nodeType: src.type
+						});
 					}
 				}
 			} else {
 				const cfg = src.data?.config || {};
 				const outputVar = (cfg as any).outputVariable || '';
 				if (outputVar) {
-					const entry: any = { nodeId: src.id, nodeLabel: src.label, variableName: outputVar, nodeType: src.type };
+					const entry: any = {
+						nodeId: src.id,
+						nodeLabel: src.label,
+						variableName: outputVar,
+						nodeType: src.type
+					};
 					if (src.type === 'llm' && (cfg as any).outputFormat === 'json') {
 						entry.jsonFields = (cfg as any).jsonFields || [];
 					}
@@ -508,9 +616,9 @@ function getUpstreamVariablesForNode(nodeId: string) {
 	// 循环上下文变量注入
 	const parentId = (targetNode as any).parentNode;
 	if (parentId) {
-		const groupNode = elements.value.find(
-			el => !('source' in el) && el.id === parentId
-		) as FlowNode | undefined;
+		const groupNode = elements.value.find(el => !('source' in el) && el.id === parentId) as
+			| FlowNode
+			| undefined;
 		if (groupNode?.type === 'loop_body_group') {
 			const ctrlId = groupNode.data?.config?.controllerNodeId;
 			if (ctrlId) {
@@ -534,22 +642,26 @@ function getUpstreamVariablesForNode(nodeId: string) {
 	return result;
 }
 
-
 // 单节点测试 composable
-const {
-	nodeTestDialog,
-	openNodeTestDialog,
-	startNodeTest,
-	closeNodeTestDialog
-} = useNodeTest(service, t, workflowId, isDirty, elements, saveWorkflow, getUpstreamVariablesForNode);
+const { nodeTestDialog, openNodeTestDialog, startNodeTest, closeNodeTestDialog } = useNodeTest(
+	service,
+	t,
+	workflowId,
+	isDirty,
+	elements,
+	saveWorkflow,
+	getUpstreamVariablesForNode
+);
 
 // 监听测试抽屉打开，如果打开则关闭配置面板
-watch(() => testLogDrawer.visible, (val) => {
-	if (val) {
-		selectedNodeId.value = null;
+watch(
+	() => testLogDrawer.visible,
+	val => {
+		if (val) {
+			selectedNodeId.value = null;
+		}
 	}
-});
-
+);
 
 // 定义画布连线的默认样式
 const defaultEdgeOptions = {
@@ -560,30 +672,42 @@ const defaultEdgeOptions = {
 // 当前选中节点的计算属性
 const selectedNode = computed(() => {
 	if (!selectedNodeId.value) return null;
-	return elements.value.find(el => el.id === selectedNodeId.value && !('source' in el)) as FlowNode | undefined;
+	return elements.value.find(el => el.id === selectedNodeId.value && !('source' in el)) as
+		| FlowNode
+		| undefined;
 });
 
 // 除了自身之外的可用目标节点（用于分支设置的路由下拉菜单中）
 const availableTargetNodes = computed(() => {
-	return elements.value.filter(el => !('source' in el) && el.id !== selectedNodeId.value) as FlowNode[];
+	return elements.value.filter(
+		el => !('source' in el) && el.id !== selectedNodeId.value
+	) as FlowNode[];
 });
-
-
 
 // 判断节点配置是否不完整
 function isRequiredConfigMissing(node: FlowNode): boolean {
 	const cfg = node.data?.config || {};
 	switch (node.type) {
-		case 'llm': return !cfg.modelProfileCode || !cfg.promptTemplate;
-		case 'condition': return !cfg.expression;
-		case 'switch': return !cfg.variable || !(cfg.cases?.length);
-		case 'image_generator': return !cfg.modelProfileCode || !cfg.promptTemplate;
-		case 'tool_executor': return !cfg.toolCode;
-		case 'human_input': return !cfg.message;
-		case 'intent_classifier': return !cfg.modelProfileCode || !(cfg.intents?.length);
-		case 'variable_assignment': return !(cfg.assignments?.length);
-		case 'variable_transform': return !cfg.input_variable || !cfg.transform_type || !cfg.output_variable;
-		default: return false;
+		case 'llm':
+			return !cfg.modelProfileCode || !cfg.promptTemplate;
+		case 'condition':
+			return !cfg.expression;
+		case 'switch':
+			return !cfg.variable || !cfg.cases?.length;
+		case 'image_generator':
+			return !cfg.modelProfileCode || !cfg.promptTemplate;
+		case 'tool_executor':
+			return !cfg.toolCode;
+		case 'human_input':
+			return !cfg.message;
+		case 'intent_classifier':
+			return !cfg.modelProfileCode || !cfg.intents?.length;
+		case 'variable_assignment':
+			return !cfg.assignments?.length;
+		case 'variable_transform':
+			return !cfg.input_variable || !cfg.transform_type || !cfg.output_variable;
+		default:
+			return false;
 	}
 }
 
@@ -591,20 +715,18 @@ const hasIncompleteNodes = computed(() => {
 	return elements.value.some((el: any) => !('source' in el) && isRequiredConfigMissing(el));
 });
 
-
-
 // 收集当前节点的上游可达变量
-	const upstreamVariables = computed(() => {
-		if (!selectedNode.value) return [];
-		const nodeId = selectedNode.value.id;
-		const cached = _upstreamCache.get(nodeId);
-		if (cached && cached.version === _elementsVersion) {
-			return cached.result;
-		}
-		const result = getUpstreamVariablesForNode(nodeId);
-		_upstreamCache.set(nodeId, { result, version: _elementsVersion });
-		return result;
-	});
+const upstreamVariables = computed(() => {
+	if (!selectedNode.value) return [];
+	const nodeId = selectedNode.value.id;
+	const cached = _upstreamCache.get(nodeId);
+	if (cached && cached.version === _elementsVersion) {
+		return cached.result;
+	}
+	const result = getUpstreamVariablesForNode(nodeId);
+	_upstreamCache.set(nodeId, { result, version: _elementsVersion });
+	return result;
+});
 
 // 变量引用格式提示
 const variableSyntaxHints = computed(() => {
@@ -624,19 +746,19 @@ const variableSyntaxHints = computed(() => {
 	return hints;
 });
 
-	// 空状态引导文案（根据当前节点数量动态调整）
-	const emptyHintTitle = computed(() => {
-		if (elements.value.length === 0) {
-			return t('从下方工具栏拖入节点开始构建工作流');
-		}
-		return t('点击节点以编辑配置');
-	});
-	const emptyHintSub = computed(() => {
-		if (elements.value.length === 0) {
-			return t('将节点拖拽到画布，拖拽连线构建工作流');
-		}
-		return t('拖拽连线或添加 LLM 节点来处理用户请求');
-	});
+// 空状态引导文案（根据当前节点数量动态调整）
+const emptyHintTitle = computed(() => {
+	if (elements.value.length === 0) {
+		return t('从下方工具栏拖入节点开始构建工作流');
+	}
+	return t('点击节点以编辑配置');
+});
+const emptyHintSub = computed(() => {
+	if (elements.value.length === 0) {
+		return t('将节点拖拽到画布，拖拽连线构建工作流');
+	}
+	return t('拖拽连线或添加 LLM 节点来处理用户请求');
+});
 
 onMounted(() => {
 	workflowId.value = (route.query.id as string) || null;
@@ -644,7 +766,7 @@ onMounted(() => {
 		fetchWorkflowData();
 	} else {
 		loaded.value = true;
-			initUndoRedo();
+		initUndoRedo();
 	}
 	fetchAiProfiles();
 
@@ -674,14 +796,14 @@ function handleKeyDown(event: KeyboardEvent) {
 		saveWorkflow();
 	}
 
-		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-			event.preventDefault();
-			if (event.shiftKey) {
-				if (redo()) ElMessage.info(t('已重做'));
-			} else {
-				if (undo()) ElMessage.info(t('已撤销'));
-			}
+	if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+		event.preventDefault();
+		if (event.shiftKey) {
+			if (redo()) ElMessage.info(t('已重做'));
+		} else {
+			if (undo()) ElMessage.info(t('已撤销'));
 		}
+	}
 
 	if (event.key === 'Delete' || event.key === 'Backspace') {
 		deleteSelectedElements();
@@ -698,7 +820,11 @@ function deleteSelectedElements() {
 
 		elements.value = elements.value.filter(el => {
 			if ('source' in el) {
-				return !edgeIdsToRemove.has(el.id) && !nodeIdsToRemove.has(el.source) && !nodeIdsToRemove.has(el.target);
+				return (
+					!edgeIdsToRemove.has(el.id) &&
+					!nodeIdsToRemove.has(el.source) &&
+					!nodeIdsToRemove.has(el.target)
+				);
 			} else {
 				return !nodeIdsToRemove.has(el.id);
 			}
@@ -750,7 +876,11 @@ async function fetchWorkflowData() {
 			loadedElements.forEach((el: any) => {
 				if (el.type === 'tool_executor' && el.data?.config) {
 					if (el.data.config.arguments && !el.data.config.argumentsJson) {
-						el.data.config.argumentsJson = JSON.stringify(el.data.config.arguments, null, 2);
+						el.data.config.argumentsJson = JSON.stringify(
+							el.data.config.arguments,
+							null,
+							2
+						);
 					}
 				}
 				// 兼容旧数据
@@ -759,7 +889,9 @@ async function fetchWorkflowData() {
 				}
 				if (el.type === 'end' && el.data?.config) {
 					if (!el.data.config.outputFormat) {
-						el.data.config.outputFormat = el.data.config.outputTemplate ? 'text' : 'json';
+						el.data.config.outputFormat = el.data.config.outputTemplate
+							? 'text'
+							: 'json';
 					}
 					if (!el.data.config.outputFields) {
 						el.data.config.outputFields = [];
@@ -832,7 +964,7 @@ async function fetchWorkflowData() {
 			];
 		}
 		loaded.value = true;
-			initUndoRedo();
+		initUndoRedo();
 	} catch (e) {
 		ElMessage.error(t('获取工作流详情失败'));
 	}
@@ -861,7 +993,13 @@ function handleAddNode(type: string, x: number, y: number) {
 	if (type === 'start' || type === 'end') {
 		const exists = elements.value.some(el => !('source' in el) && el.type === type);
 		if (exists) {
-			ElMessage.warning(t(type === 'start' ? '开始节点已存在，画布中仅允许一个' : '结束节点已存在，画布中仅允许一个'));
+			ElMessage.warning(
+				t(
+					type === 'start'
+						? '开始节点已存在，画布中仅允许一个'
+						: '结束节点已存在，画布中仅允许一个'
+				)
+			);
 			return;
 		}
 	}
@@ -872,7 +1010,14 @@ function handleAddNode(type: string, x: number, y: number) {
 	// 初始化节点特定 config
 	let config: Record<string, any> = {};
 	if (type === 'llm') {
-		config = { modelProfileCode: '', systemPromptTemplate: '', promptTemplate: '', outputFormat: 'text', jsonFields: [], outputVariable: getUniqueOutputVar(label, 'output') };
+		config = {
+			modelProfileCode: '',
+			systemPromptTemplate: '',
+			promptTemplate: '',
+			outputFormat: 'text',
+			jsonFields: [],
+			outputVariable: getUniqueOutputVar(label, 'output')
+		};
 	} else if (type === 'condition') {
 		config = { expression: '', trueRoute: '', falseRoute: '' };
 	} else if (type === 'switch') {
@@ -882,17 +1027,47 @@ function handleAddNode(type: string, x: number, y: number) {
 	} else if (type === 'intent_classifier') {
 		config = { modelProfileCode: '', intents: [], defaultRoute: '' };
 	} else if (type === 'loop_controller') {
-		config = { listVariable: 'list_variable', itemVariable: 'loop_item', outputVariable: getUniqueOutputVar(label, 'loop_results'), loopBodyRoute: '', exitRoute: '' };
+		config = {
+			listVariable: 'list_variable',
+			itemVariable: 'loop_item',
+			outputVariable: getUniqueOutputVar(label, 'loop_results'),
+			loopBodyRoute: '',
+			exitRoute: ''
+		};
 	} else if (type === 'batch_processor') {
-		config = { batchListVariable: 'batch_list_variable', itemVariable: 'batch_item', concurrencyLimit: 5, outputVariable: getUniqueOutputVar(label, 'batch_results'), loopBodyRoute: '', exitRoute: '' };
+		config = {
+			batchListVariable: 'batch_list_variable',
+			itemVariable: 'batch_item',
+			concurrencyLimit: 5,
+			outputVariable: getUniqueOutputVar(label, 'batch_results'),
+			loopBodyRoute: '',
+			exitRoute: ''
+		};
 	} else if (type === 'image_generator') {
-		config = { modelProfileCode: '', promptTemplate: '', size: '', imageVariable: '', imageTemplate: '', optionsJson: '{}', outputVariable: getUniqueOutputVar(label, 'image_url') };
+		config = {
+			modelProfileCode: '',
+			promptTemplate: '',
+			size: '',
+			imageVariable: '',
+			imageTemplate: '',
+			optionsJson: '{}',
+			outputVariable: getUniqueOutputVar(label, 'image_url')
+		};
 	} else if (type === 'tool_executor') {
-		config = { toolCode: '', argumentsJson: '{}', outputVariable: getUniqueOutputVar(label, 'tool_result') };
+		config = {
+			toolCode: '',
+			argumentsJson: '{}',
+			outputVariable: getUniqueOutputVar(label, 'tool_result')
+		};
 	} else if (type === 'variable_assignment') {
 		config = { assignments: [] };
 	} else if (type === 'variable_transform') {
-		config = { input_variable: '', transform_type: 'join_array', transform_args: {}, output_variable: getUniqueOutputVar(label, 'transformed_value') };
+		config = {
+			input_variable: '',
+			transform_type: 'join_array',
+			transform_args: {},
+			output_variable: getUniqueOutputVar(label, 'transformed_value')
+		};
 	} else if (type === 'end') {
 		config = { outputFormat: 'json', outputFields: [] };
 	}
@@ -909,14 +1084,13 @@ function handleAddNode(type: string, x: number, y: number) {
 	const groups = elements.value.filter(
 		(el: any) => !('source' in el) && el.type === 'loop_body_group'
 	) as FlowNode[];
-	
+
 	let targetGroupId: string | undefined;
 	for (const g of groups) {
 		const gW = parseFloat((g as any).style?.width || '400');
 		const gH = parseFloat((g as any).style?.height || '250');
 		const pos = g.position;
-		if (x + 50 >= pos.x && x + 50 <= pos.x + gW &&
-			y + 20 >= pos.y && y + 20 <= pos.y + gH) {
+		if (x + 50 >= pos.x && x + 50 <= pos.x + gW && y + 20 >= pos.y && y + 20 <= pos.y + gH) {
 			targetGroupId = g.id;
 			// 坐标相对于 parent
 			const innerX = x - pos.x;
@@ -959,13 +1133,13 @@ function handleAddNode(type: string, x: number, y: number) {
 // 通过点击面板添加节点
 function onAddNodeClick(type: string) {
 	// 获取画布中心
-	let wrapper = document.querySelector('.vue-flow');
+	const wrapper = document.querySelector('.vue-flow');
 	if (!wrapper) return;
 	const rect = wrapper.getBoundingClientRect();
-	
+
 	const centerX = rect.width / 2;
 	const centerY = rect.height / 2;
-	
+
 	// 投影到 vue-flow 坐标系
 	const pos = project({ x: centerX, y: centerY });
 	handleAddNode(type, pos.x - 50, pos.y - 20);
@@ -979,13 +1153,13 @@ function onDrop(event: DragEvent) {
 	// 计算在画布内的放置坐标
 	const react = event.currentTarget as HTMLElement;
 	const bounds = react.getBoundingClientRect();
-	
+
 	// 首先投影鼠标所在的真实屏幕相对坐标
 	const projected = project({
 		x: event.clientX - bounds.left,
 		y: event.clientY - bounds.top
 	});
-	
+
 	// 在 VueFlow 坐标系中减去节点的半宽和半高，使其在鼠标居中
 	handleAddNode(type, projected.x - 50, projected.y - 20);
 }
@@ -1042,24 +1216,34 @@ function onConnect(params: Connection) {
 	const sourceHandle = params.sourceHandle;
 
 	// 查找源节点
-	const srcNode = elements.value.find(
-		(el: any) => !('source' in el) && el.id === source
-	) as FlowNode | undefined;
+	const srcNode = elements.value.find((el: any) => !('source' in el) && el.id === source) as
+		| FlowNode
+		| undefined;
 	if (!srcNode) return;
 
 	// 连线验证
-	if (source === target) { ElMessage.warning(t('不能连接自身')); return; }
-	if (srcNode.type === 'end') { ElMessage.warning(t('结束节点不能有出边')); return; }
+	if (source === target) {
+		ElMessage.warning(t('不能连接自身'));
+		return;
+	}
+	if (srcNode.type === 'end') {
+		ElMessage.warning(t('结束节点不能有出边'));
+		return;
+	}
 
-	const tgtNode = elements.value.find(
-		(el: any) => !('source' in el) && el.id === target
-	) as FlowNode | undefined;
-	if (tgtNode?.type === 'start') { ElMessage.warning(t('开始节点不能有入边')); return; }
+	const tgtNode = elements.value.find((el: any) => !('source' in el) && el.id === target) as
+		| FlowNode
+		| undefined;
+	if (tgtNode?.type === 'start') {
+		ElMessage.warning(t('开始节点不能有入边'));
+		return;
+	}
 
 	// condition 每个 Handle 只能连一个目标
 	if (srcNode.type === 'condition' && sourceHandle) {
-		const existing = elements.value.some((el: any) =>
-			'source' in el && el.source === source && (el as any).sourceHandle === sourceHandle
+		const existing = elements.value.some(
+			(el: any) =>
+				'source' in el && el.source === source && (el as any).sourceHandle === sourceHandle
 		);
 		if (existing) {
 			ElMessage.warning(t(sourceHandle === 'true' ? 'True 分支已连线' : 'False 分支已连线'));
@@ -1069,8 +1253,9 @@ function onConnect(params: Connection) {
 
 	// intent_classifier / switch 每个 Handle 只能连一个目标
 	if ((srcNode.type === 'intent_classifier' || srcNode.type === 'switch') && sourceHandle) {
-		const existing = elements.value.some((el: any) =>
-			'source' in el && el.source === source && (el as any).sourceHandle === sourceHandle
+		const existing = elements.value.some(
+			(el: any) =>
+				'source' in el && el.source === source && (el as any).sourceHandle === sourceHandle
 		);
 		if (existing) {
 			ElMessage.warning(t('该端口已连线'));
@@ -1101,7 +1286,10 @@ function onConnect(params: Connection) {
 
 	// 推导边标签
 	const label = getEdgeLabel(source, sourceHandle ?? undefined, srcNode);
-	const isConditional = srcNode.type === 'condition' || srcNode.type === 'switch' || srcNode.type === 'intent_classifier';
+	const isConditional =
+		srcNode.type === 'condition' ||
+		srcNode.type === 'switch' ||
+		srcNode.type === 'intent_classifier';
 
 	const newEdge: any = {
 		id: 'edge_' + source + '_' + target,
@@ -1117,7 +1305,11 @@ function onConnect(params: Connection) {
 	pushSnapshot();
 }
 
-function getEdgeLabel(source: string, sourceHandle?: string, srcNode?: FlowNode): string | undefined {
+function getEdgeLabel(
+	source: string,
+	sourceHandle?: string,
+	srcNode?: FlowNode
+): string | undefined {
 	if (!srcNode) return undefined;
 	if (srcNode.type === 'condition') {
 		if (sourceHandle === 'true') return 'True';
@@ -1127,14 +1319,14 @@ function getEdgeLabel(source: string, sourceHandle?: string, srcNode?: FlowNode)
 		if (sourceHandle === 'default') return '默认';
 		if (sourceHandle?.startsWith('case_')) {
 			const idx = parseInt(sourceHandle.split('_')[1]);
-			return srcNode.data?.config?.cases?.[idx]?.value || ('Case ' + (idx + 1));
+			return srcNode.data?.config?.cases?.[idx]?.value || 'Case ' + (idx + 1);
 		}
 	}
 	if (srcNode.type === 'intent_classifier') {
 		if (sourceHandle === 'default') return '默认';
 		if (sourceHandle?.startsWith('intent_')) {
 			const idx = parseInt(sourceHandle.split('_')[1]);
-			return srcNode.data?.config?.intents?.[idx]?.name || ('Intent ' + (idx + 1));
+			return srcNode.data?.config?.intents?.[idx]?.name || 'Intent ' + (idx + 1);
 		}
 	}
 	return undefined;
@@ -1156,7 +1348,8 @@ function onPaneClick() {
 
 // 画布 dragover：group 容器拖入高亮
 function onCanvasDragOver(event: DragEvent) {
-	document.querySelectorAll('.loop-body-group-node.is-drag-over')
+	document
+		.querySelectorAll('.loop-body-group-node.is-drag-over')
 		.forEach(el => el.classList.remove('is-drag-over'));
 	const type = event.dataTransfer?.getData('application/vueflow');
 	if (!type || type === 'loop_body_group') return;
@@ -1174,8 +1367,7 @@ function onCanvasDragOver(event: DragEvent) {
 		const gW = parseFloat((g as any).style?.width || '400');
 		const gH = parseFloat((g as any).style?.height || '250');
 		const pos = g.position;
-		if (flowX >= pos.x && flowX <= pos.x + gW &&
-			flowY >= pos.y && flowY <= pos.y + gH) {
+		if (flowX >= pos.x && flowX <= pos.x + gW && flowY >= pos.y && flowY <= pos.y + gH) {
 			const domNode = document.querySelector(`[data-id="${g.id}"] .loop-body-group-node`);
 			if (domNode) domNode.classList.add('is-drag-over');
 			break;
@@ -1184,22 +1376,23 @@ function onCanvasDragOver(event: DragEvent) {
 }
 
 function onCanvasDragLeave() {
-	document.querySelectorAll('.loop-body-group-node.is-drag-over')
+	document
+		.querySelectorAll('.loop-body-group-node.is-drag-over')
 		.forEach(el => el.classList.remove('is-drag-over'));
 }
 
-	// 节点拖动对齐辅助线
-	function onNodeDrag(event: any) {
-		const dragNode = event.node;
-		if (!dragNode) return;
-		const allNodes = elements.value.filter(el => !('source' in el)) as FlowNode[];
-		computeGuides(dragNode.id, dragNode.position, allNodes);
-	}
+// 节点拖动对齐辅助线
+function onNodeDrag(event: any) {
+	const dragNode = event.node;
+	if (!dragNode) return;
+	const allNodes = elements.value.filter(el => !('source' in el)) as FlowNode[];
+	computeGuides(dragNode.id, dragNode.position, allNodes);
+}
 
-	function onNodeDragStop() {
-		clearGuides();
-		pushSnapshot();
-	}
+function onNodeDragStop() {
+	clearGuides();
+	pushSnapshot();
+}
 
 // 右键上下文菜单边界检测
 function clampMenuPosition(x: number, y: number) {
@@ -1244,18 +1437,20 @@ function editContextNode() {
 
 const canTestContextNode = computed(() => {
 	if (!contextMenu.nodeId) return false;
-	const node = elements.value.find(el => !('source' in el) && el.id === contextMenu.nodeId) as FlowNode | undefined;
+	const node = elements.value.find(el => !('source' in el) && el.id === contextMenu.nodeId) as
+		| FlowNode
+		| undefined;
 	if (!node) return false;
 	return !UNTESTABLE_NODE_TYPES.includes(node.type);
 });
 
 const canDistribute = computed(() => {
-		const selectedNodes = getSelectedNodes.value;
+	const selectedNodes = getSelectedNodes.value;
 	return selectedNodes.length >= 3;
 });
 
 function distributeHorizontal() {
-		const selected = getSelectedNodes.value as FlowNode[];
+	const selected = getSelectedNodes.value as FlowNode[];
 	if (selected.length < 3) return;
 	selected.sort((a, b) => a.position.x - b.position.x);
 	const minX = selected[0].position.x;
@@ -1271,7 +1466,7 @@ function distributeHorizontal() {
 }
 
 function distributeVertical() {
-		const selected = getSelectedNodes.value as FlowNode[];
+	const selected = getSelectedNodes.value as FlowNode[];
 	if (selected.length < 3) return;
 	selected.sort((a, b) => a.position.y - b.position.y);
 	const minY = selected[0].position.y;
@@ -1299,7 +1494,6 @@ async function testContextNode() {
 	await openNodeTestDialog(contextMenu.nodeId);
 }
 
-
 function duplicateNode() {
 	const srcNode = elements.value.find(
 		(el: any) => !('source' in el) && el.id === contextMenu.nodeId
@@ -1307,23 +1501,40 @@ function duplicateNode() {
 	if (!srcNode) return;
 
 	if (srcNode.type === 'start' || srcNode.type === 'end') {
-		ElMessage.warning(t(srcNode.type === 'start' ? '开始节点已存在，画布中仅允许一个' : '结束节点已存在，画布中仅允许一个'));
+		ElMessage.warning(
+			t(
+				srcNode.type === 'start'
+					? '开始节点已存在，画布中仅允许一个'
+					: '结束节点已存在，画布中仅允许一个'
+			)
+		);
 		contextMenu.visible = false;
 		return;
 	}
 
 	const newId = `node_${srcNode.type}_${Date.now()}`;
 	const newLabel = getNextLabel(srcNode.type);
+	const srcCopy = JSON.parse(JSON.stringify(srcNode));
+	delete srcCopy.class;
+	if (srcCopy.data) {
+		delete srcCopy.data.runLog;
+		delete srcCopy.data.runData;
+	}
+	
+	let newX = srcNode.position.x + 40;
+	let newY = srcNode.position.y + 40;
+	while (elements.value.some((el: any) => el.position && el.position.x === newX && el.position.y === newY)) {
+		newX += 40;
+		newY += 40;
+	}
+
 	const newNode: any = {
-		...JSON.parse(JSON.stringify(srcNode)),
+		...srcCopy,
 		id: newId,
 		label: newLabel,
-		position: {
-			x: srcNode.position.x + 40,
-			y: srcNode.position.y + 40
-		}
+		position: { x: newX, y: newY }
 	};
-	
+
 	// 处理变量名去重
 	if (newNode.data?.config?.outputVariable) {
 		const baseVarName = newNode.data.config.outputVariable.replace(/_\d+$/, '');
@@ -1393,8 +1604,17 @@ function buildGraphPayload() {
 	const nodes = elements.value.filter(el => !('source' in el)) as FlowNode[];
 	const edges = elements.value.filter(el => 'source' in el) as FlowEdge[];
 
+	// 剥离运行态数据 (runLog 等) 防止被错误保存并造成体积膨胀
+	const cleanElements = elements.value.map(el => {
+		if ('source' in el) return el;
+		const { class: _, ...restNode } = el as any;
+		const data = { ...(restNode.data || {}) };
+		delete data.runLog;
+		return { ...restNode, data };
+	});
+
 	return {
-		elements: elements.value,
+		elements: cleanElements,
 		nodes: nodes.map(n => {
 			const conf = { ...(n.data?.config || {}) };
 			if (n.type === 'tool_executor') {
@@ -1453,14 +1673,26 @@ async function saveWorkflow() {
 		for (const g of groups) {
 			const bodyNodeIds = nodes.filter(n => (n as any).parentNode === g.id).map(n => n.id);
 			if (bodyNodeIds.length > 0) {
-				const entries = bodyNodeIds.filter(nid => 
-					!edges.some(e => e.target === nid && bodyNodeIds.includes(e.source))
+				const entries = bodyNodeIds.filter(
+					nid => !edges.some(e => e.target === nid && bodyNodeIds.includes(e.source))
 				);
 				if (entries.length > 1) {
-					const names = entries.map(eid => nodes.find(n => n.id === eid)?.label || eid).join(', ');
-					warnings.push(t('容器 "') + (g.label || g.id) + t('" 内存在多个没有输入的起点节点: ') + names + t('。请用内部连线明确它们的执行顺序！'));
+					const names = entries
+						.map(eid => nodes.find(n => n.id === eid)?.label || eid)
+						.join(', ');
+					warnings.push(
+						t('容器 "') +
+							(g.label || g.id) +
+							t('" 内存在多个没有输入的起点节点: ') +
+							names +
+							t('。请用内部连线明确它们的执行顺序！')
+					);
 				} else if (entries.length === 0) {
-					warnings.push(t('容器 "') + (g.label || g.id) + t('" 内部形成了死循环闭环，无法确定起始节点！'));
+					warnings.push(
+						t('容器 "') +
+							(g.label || g.id) +
+							t('" 内部形成了死循环闭环，无法确定起始节点！')
+					);
 				}
 			}
 		}
@@ -1480,7 +1712,12 @@ async function saveWorkflow() {
 				}
 				if (c.value) {
 					if (seenCaseVals.has(c.value.trim())) {
-						warnings.push(t('节点"') + (n.label || n.id) + t('"中存在重复的 Case 匹配值：') + c.value.trim());
+						warnings.push(
+							t('节点"') +
+								(n.label || n.id) +
+								t('"中存在重复的 Case 匹配值：') +
+								c.value.trim()
+						);
 					}
 					seenCaseVals.add(c.value.trim());
 				}
@@ -1519,20 +1756,32 @@ async function saveWorkflow() {
 			if (e.target) connectedNodeIds.add(e.target);
 		});
 		const isolatedNodes = nodes.filter(
-			n => n.type !== 'start' && n.type !== 'end' && !n.parentNode && !connectedNodeIds.has(n.id)
+			n =>
+				n.type !== 'start' &&
+				n.type !== 'end' &&
+				!n.parentNode &&
+				!connectedNodeIds.has(n.id)
 		);
 		if (isolatedNodes.length > 0) {
-			warnings.push(t('发现孤立的工作节点：') + isolatedNodes.map(n => n.label || n.id).join(', ') + t('，请建立输入和输出连线！'));
+			warnings.push(
+				t('发现孤立的工作节点：') +
+					isolatedNodes.map(n => n.label || n.id).join(', ') +
+					t('，请建立输入和输出连线！')
+			);
 		}
 
 		// 检查模型节点是否已选择 Profile
 		const modelRequiredTypes = ['llm', 'intent_classifier', 'image_generator'];
 		const missingProfileNodes = nodes.filter(
-			n => modelRequiredTypes.includes(n.type) && !(n.data?.config as any)?.modelProfileCode?.trim()
+			n =>
+				modelRequiredTypes.includes(n.type) &&
+				!(n.data?.config as any)?.modelProfileCode?.trim()
 		);
 		if (missingProfileNodes.length > 0) {
 			warnings.push(
-				t('以下节点未选择模型 Profile：') + missingProfileNodes.map(n => n.label || n.id).join(', ') + t('，请先在配置面板中选择模型！')
+				t('以下节点未选择模型 Profile：') +
+					missingProfileNodes.map(n => n.label || n.id).join(', ') +
+					t('，请先在配置面板中选择模型！')
 			);
 		}
 
@@ -1542,9 +1791,7 @@ async function saveWorkflow() {
 		const conditionalTypes = ['condition', 'intent_classifier', 'switch'];
 		for (const n of nodes) {
 			if (conditionalTypes.includes(n.type)) {
-				const downstreamIds = edges
-					.filter(e => e.source === n.id)
-					.map(e => e.target);
+				const downstreamIds = edges.filter(e => e.source === n.id).map(e => e.target);
 				if (downstreamIds.length > 1) {
 					const group = new Set(downstreamIds);
 					for (const id of downstreamIds) {
@@ -1573,7 +1820,9 @@ async function saveWorkflow() {
 		}
 		const duplicates = [...varNameToNodes.entries()].filter(([, ns]) => ns.length > 1);
 		if (duplicates.length > 0) {
-			const detail = duplicates.map(([varName, nodeNames]) => `${varName} (${nodeNames.join(', ')})`).join('; ');
+			const detail = duplicates
+				.map(([varName, nodeNames]) => `${varName} (${nodeNames.join(', ')})`)
+				.join('; ');
 			warnings.push(t('输出变量名重复，后执行节点会覆盖先前结果：') + detail);
 		}
 
@@ -1641,8 +1890,6 @@ function exportWorkflow() {
 
 	ElMessage.success(t('导出成功'));
 }
-
-
 </script>
 
 <style lang="scss" scoped>
@@ -1655,14 +1902,12 @@ function exportWorkflow() {
 	overflow: hidden;
 }
 
-
 .editor-body {
 	display: flex;
 	flex: 1;
 	width: 100%;
 	overflow: hidden;
 }
-
 
 .canvas-wrapper {
 	flex: 1;
@@ -1727,14 +1972,14 @@ function exportWorkflow() {
 		font-size: 12px;
 		color: var(--el-text-color-placeholder);
 	}
-		.empty-hint-arrow {
-			margin-top: 4px;
-			.bounce-arrow {
-				font-size: 20px;
-				color: var(--el-color-primary);
-				animation: wf-bounce-arrow 1.5s ease-in-out infinite;
-			}
+	.empty-hint-arrow {
+		margin-top: 4px;
+		.bounce-arrow {
+			font-size: 20px;
+			color: var(--el-color-primary);
+			animation: wf-bounce-arrow 1.5s ease-in-out infinite;
 		}
+	}
 }
 .empty-hint-fade-enter-active,
 .empty-hint-fade-leave-active {
@@ -1744,7 +1989,6 @@ function exportWorkflow() {
 .empty-hint-fade-leave-to {
 	opacity: 0;
 }
-
 
 // 单节点测试结果展示
 .node-test-result {
@@ -1803,8 +2047,13 @@ function exportWorkflow() {
 		border: 1px solid var(--el-border-color-lighter);
 		margin: 0;
 
-		&::-webkit-scrollbar { width: 4px; }
-		&::-webkit-scrollbar-thumb { background: #dcdfe6; border-radius: 2px; }
+		&::-webkit-scrollbar {
+			width: 4px;
+		}
+		&::-webkit-scrollbar-thumb {
+			background: #dcdfe6;
+			border-radius: 2px;
+		}
 	}
 }
 
@@ -1881,7 +2130,6 @@ function exportWorkflow() {
 	animation: wf-node-pulse 1.5s infinite;
 }
 
-
 /* 
  * ⚠️ 极其重要的防坑警告 ⚠️
  * 绝对不要对 `:deep(.vue-flow__node)` 等外层容器应用包含 `transform` 的动画（如 scale/translate 等）。
@@ -1916,7 +2164,6 @@ function exportWorkflow() {
 		}
 	}
 }
-
 
 /* 多选框颜色调整 */
 :deep(.vue-flow__selection) {

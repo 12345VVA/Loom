@@ -1,28 +1,19 @@
 """
 字典模块服务
 """
+
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.framework.controller_meta import CrudQuery
-from app.modules.base.model.auth import PageResult
+from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.dict.model.dict import (
     DictInfo,
-    DictInfoCreateRequest,
-    DictInfoRead,
-    DictInfoUpdateRequest,
     DictType,
-    DictTypeCreateRequest,
-    DictTypeRead,
-    DictTypeUpdateRequest,
 )
-from app.modules.base.service.admin_service import BaseAdminCrudService
 
 
 class DictTypeService(BaseAdminCrudService):
@@ -82,7 +73,7 @@ class DictInfoService(BaseAdminCrudService):
             type_rows = [item for item in type_rows if item.key in types]
         if not type_rows:
             return result
-        
+
         type_map = {row.id: row for row in type_rows if row.id is not None}
         rows = list(
             self.session.exec(
@@ -93,26 +84,24 @@ class DictInfoService(BaseAdminCrudService):
         )
         for type_row in type_rows:
             result[type_row.key] = []
-            
+
         for row in rows:
             type_row = type_map.get(row.type_id)
             if not type_row:
                 continue
-            
+
             # 使用 _row_to_dict 获取经过基本转换的数据，再手动处理 value
             item_data = self._row_to_dict(row)
             item_data["value"] = _coerce_value(row.value)
-            
+
             # 使用基类的 _finalize_data 统一处理驼峰转换
             result[type_row.key].append(self._finalize_data(item_data))
-            
+
         return result
 
     def types(self) -> list[dict[str, Any]]:
         rows = list(self.session.exec(select(DictType).order_by(DictType.name.asc())).all())
         return [{"id": row.id, "key": row.key, "name": row.name} for row in rows]
-
-
 
 
 def _coerce_value(value: str | None) -> Any:

@@ -1,6 +1,7 @@
 """
 工作流核心管理与运行时服务。
 """
+
 import asyncio
 import copy
 import json
@@ -8,35 +9,41 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.ai.model.ai import AiChatRequest, AiRuntimeMessage
 from app.modules.ai.service.runtime_service import AiModelRuntimeService
+from app.modules.base.model.auth import User
+from app.modules.base.service.admin_service import BaseAdminCrudService
+from app.modules.base.service.authority_service import is_super_admin
 from app.modules.workflow.model.workflow import (
     WorkflowDefinition,
-    WorkflowExecutionLog,
     WorkflowInstance,
 )
-from app.modules.workflow.service.compiler import WorkflowCompiler, WorkflowState, node_registry, render_template, safe_eval, strip_braces
+from app.modules.workflow.service.compiler import (
+    node_registry,
+    render_template,
+    safe_eval,
+    strip_braces,
+)
+
+if TYPE_CHECKING:
+    from app.modules.workflow.model.workflow import NodeTestResponse
 
 logger = logging.getLogger(__name__)
 
 
-# 全局工作流事件订阅器，用于实时流式推送（规避循环导入）
-workflow_event_listeners = []
-
 # Checkpoint 持久化存储由工厂函数按配置动态选择后端
-from app.modules.workflow.service.checkpointer import get_checkpointer
+
 # 跨进程事件总线（Redis pub/sub + 进程内 fallback）
-from app.modules.workflow.service.event_bus import publish_event
 
 
 # --- 统一的 AI 运行时操作封装 (避免局部 SessionLocal 导入重复与异常静默吞没) ---
+
 
 def run_ai_chat(
     profile_code: str,
@@ -49,9 +56,10 @@ def run_ai_chat(
     response_format 支持 json_schema / json_object / None(纯文本)。
     """
     from app.core.database import SessionLocal
+
     with SessionLocal() as session:
         runtime_service = AiModelRuntimeService(session)
-        
+
         messages = []
         if system_prompt and system_prompt.strip():
             messages.append(AiRuntimeMessage(role="system", content=system_prompt))
@@ -66,7 +74,8 @@ def run_ai_chat(
         result = runtime_service.chat(chat_request)
 
         if not result.get("success"):
-            raise ValueError(f"大模型调用失败: {result.get('errorMessage') or result.get('message') or '未返回详情'}")
+            logger.error("大模型调用失败: %s", result.get("errorMessage") or result.get("message") or "未返回详情")
+            raise ValueError("大模型服务调用异常，请稍后重试。")
 
         content = result.get("content")
         if not content:
@@ -86,6 +95,7 @@ def run_ai_image(
     返回 {"url": ..., "result": ..., "request_payload": ...} 以便调用方进一步持久化。
     """
     from app.core.database import SessionLocal
+
     with SessionLocal() as session:
         runtime_service = AiModelRuntimeService(session)
         from app.modules.ai.model.ai import AiImageRequest
@@ -95,12 +105,7 @@ def run_ai_image(
         if size:
             options["size"] = size
 
-        image_request = AiImageRequest(
-            profile_code=profile_code,
-            prompt=prompt,
-            image=image or None,
-            options=options
-        )
+        image_request = AiImageRequest(profile_code=profile_code, prompt=prompt, image=image or None, options=options)
         result = runtime_service.image(image_request)
 
         data = result.get("data", [])
@@ -114,19 +119,20 @@ def run_ai_image(
 
 # --- 1. 注册核心节点执行逻辑 ---
 
+
 def _field_to_schema(f: dict) -> dict[str, Any]:
     field_type = f.get("type", "string").strip()
     desc = f.get("description", "").strip()
-    
+
     schema = {}
     if desc:
         schema["description"] = desc
-        
+
     if field_type == "object":
         schema["type"] = "object"
         properties = {}
         required = []
-        for child in (f.get("children") or []):
+        for child in f.get("children") or []:
             child_name = child.get("name", "").strip()
             if not child_name or child_name == "[Item]":
                 continue
@@ -135,12 +141,12 @@ def _field_to_schema(f: dict) -> dict[str, Any]:
         schema["properties"] = properties
         schema["required"] = required
         schema["additionalProperties"] = False
-        
+
     elif field_type == "array_object":
         schema["type"] = "array"
         properties = {}
         required = []
-        for child in (f.get("children") or []):
+        for child in f.get("children") or []:
             child_name = child.get("name", "").strip()
             if not child_name:
                 continue
@@ -150,21 +156,21 @@ def _field_to_schema(f: dict) -> dict[str, Any]:
             "type": "object",
             "properties": properties,
             "required": required,
-            "additionalProperties": False
+            "additionalProperties": False,
         }
-        
+
     elif field_type == "array_string":
         schema["type"] = "array"
         schema["items"] = {"type": "string"}
-        
+
     elif field_type == "array_number":
         schema["type"] = "array"
         schema["items"] = {"type": "number"}
-        
+
     elif field_type == "array_boolean":
         schema["type"] = "array"
         schema["items"] = {"type": "boolean"}
-        
+
     elif field_type == "array":
         schema["type"] = "array"
         children = f.get("children") or []
@@ -172,11 +178,11 @@ def _field_to_schema(f: dict) -> dict[str, Any]:
             schema["items"] = _field_to_schema(children[0])
         else:
             schema["items"] = {"type": "string"}
-            
+
     else:
         # 兼容 OpenAI Schema 规范，确保 boolean, number/integer, string 类型正确
         schema["type"] = field_type
-        
+
     return schema
 
 
@@ -227,16 +233,18 @@ def _build_json_desc_recursive(fields: list[dict], indent: int = 1) -> str:
             continue
         desc = f.get("description", "")
         field_type = f.get("type", "string").strip()
-        
+
         desc_str = f" ({desc})" if desc else ""
-        
+
         if field_type == "object":
             children_str = _build_json_desc_recursive(f.get("children") or [], indent + 1)
             parts.append(f'{indent_space}"{name}": {{\n{children_str}\n{indent_space}}}')
         elif field_type == "array_object":
             children_str = _build_json_desc_recursive(f.get("children") or [], indent + 2)
             indent_next = "  " * (indent + 1)
-            parts.append(f'{indent_space}"{name}": [\n{indent_next}{{\n{children_str}\n{indent_next}}}\n{indent_space}]')
+            parts.append(
+                f'{indent_space}"{name}": [\n{indent_next}{{\n{children_str}\n{indent_next}}}\n{indent_space}]'
+            )
         elif field_type == "array_string":
             parts.append(f'{indent_space}"{name}": [string{desc_str}]')
         elif field_type == "array_number":
@@ -251,7 +259,9 @@ def _build_json_desc_recursive(fields: list[dict], indent: int = 1) -> str:
                 if item_type == "object":
                     item_str = _build_json_desc_recursive(item_field.get("children") or [], indent + 2)
                     indent_next = "  " * (indent + 1)
-                    parts.append(f'{indent_space}"{name}": [\n{indent_next}{{\n{item_str}\n{indent_next}}}\n{indent_space}]')
+                    parts.append(
+                        f'{indent_space}"{name}": [\n{indent_next}{{\n{item_str}\n{indent_next}}}\n{indent_space}]'
+                    )
                 else:
                     item_desc = item_field.get("description", "")
                     item_desc_str = f" ({item_desc})" if item_desc else ""
@@ -260,11 +270,11 @@ def _build_json_desc_recursive(fields: list[dict], indent: int = 1) -> str:
                 parts.append(f'{indent_space}"{name}": []')
         else:
             parts.append(f'{indent_space}"{name}": {field_type}{desc_str}')
-            
+
     return ",\n".join(parts)
 
 
-async def execute_llm_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_llm_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     LLM 节点执行逻辑，支持分层 JSON 输出：
     Tier 1: json_schema（有 jsonFields 时自动生成 Schema）
@@ -279,7 +289,7 @@ async def execute_llm_node(variables: Dict[str, Any], config: Dict[str, Any]) ->
     output_format = config.get("output_format", "text")
     json_fields = config.get("json_fields", [])
     response_format = None
-    
+
     # 确定格式化指令应该追加到哪里（优先追加到 System Prompt）
     format_instructions = ""
 
@@ -296,20 +306,16 @@ async def execute_llm_node(variables: Dict[str, Any], config: Dict[str, Any]) ->
         if json_fields:
             field_desc = _build_json_desc_recursive(json_fields, 1)
             format_instructions = (
-                f'\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。\n'
-                f'JSON 结构如下：\n{{\n{field_desc}\n}}'
+                f"\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。\n"
+                f"JSON 结构如下：\n{{\n{field_desc}\n}}"
             )
         else:
-            format_instructions = (
-                '\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。'
-            )
+            format_instructions = "\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。"
 
     elif output_format == "json_object":
         # Tier 2: json_object — 用户显式选择宽松模式
         response_format = {"type": "json_object"}
-        format_instructions = (
-            '\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。'
-        )
+        format_instructions = "\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。"
 
     if format_instructions:
         if system_prompt_template.strip():
@@ -330,8 +336,8 @@ async def execute_llm_node(variables: Dict[str, Any], config: Dict[str, Any]) ->
     if output_format in ("json", "json_object"):
         stripped = content.strip()
         if stripped.startswith("```"):
-            stripped = re.sub(r'^```\w*\n?', '', stripped)
-            stripped = re.sub(r'\n?```\s*$', '', stripped)
+            stripped = re.sub(r"^```\w*\n?", "", stripped)
+            stripped = re.sub(r"\n?```\s*$", "", stripped)
         try:
             return {output_variable: json.loads(stripped)}
         except json.JSONDecodeError:
@@ -340,7 +346,7 @@ async def execute_llm_node(variables: Dict[str, Any], config: Dict[str, Any]) ->
     return {output_variable: content}
 
 
-async def execute_tool_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_tool_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     [Mock] 工具节点执行逻辑 (Mock 工具动作)
     """
@@ -359,25 +365,22 @@ async def execute_tool_node(variables: Dict[str, Any], config: Dict[str, Any]) -
     return {output_variable: f"Mock Tool '{tool_name}' executed successfully with context."}
 
 
-async def execute_human_input_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_human_input_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     人工输入/审批节点。
     利用 LangGraph 的内置 interrupt 特性挂起运行。
     """
-    from langgraph.errors import GraphInterrupt
+
     message = config.get("message", "需要人工审批")
     output_variable = config.get("output_variable", "approval_result")
 
     # 抛出 GraphInterrupt，使工作流在当前步骤被挂起
     # 当恢复运行时，可通过 Command 传递人类回执值，这会在 resume 状态下接收到
     from langgraph.types import interrupt
-    
+
     # 在 LangGraph 中，当运行到此处且无 resume 信号时，会在此触发暂停
-    user_response = interrupt({
-        "message": message,
-        "output_variable": output_variable
-    })
-    
+    user_response = interrupt({"message": message, "output_variable": output_variable})
+
     return {output_variable: user_response}
 
 
@@ -389,7 +392,8 @@ node_registry.register("human_input", execute_human_input_node)
 
 # --- 2. 高级节点执行函数定义与注册 ---
 
-async def execute_intent_classifier_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+
+async def execute_intent_classifier_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     意图识别与语义分流节点执行逻辑
     """
@@ -409,7 +413,7 @@ async def execute_intent_classifier_node(variables: Dict[str, Any], config: Dict
 
     # 1. 组装意图引导 Prompt
     intents_desc = "\n".join([f"- {i.get('name')}: {i.get('description', '')}" for i in intents])
-    
+
     prompt = f"""请分析以下用户的输入，并将其准确归类到以下意图类别之一。
 
 可选意图类别列表：
@@ -437,14 +441,14 @@ async def execute_intent_classifier_node(variables: Dict[str, Any], config: Dict
         if intent.get("name") == matched_intent_name:
             selected_route = intent.get("target_route")
             break
-            
+
     if matched_intent_name == "其他" or not selected_route:
         selected_route = default_route
 
     return {f"{node_id}_selected_route": selected_route}
 
 
-async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_loop_controller_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     循环控制器节点执行逻辑（状态链式循环：上一次迭代的输出作为下一次的输入）。
     只在循环开始前做一次 deepcopy，后续迭代链式传递状态，支持跨迭代状态累积。
@@ -452,8 +456,7 @@ async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[s
     compiled_body = config.get("_compiled_body")
     if not compiled_body:
         raise ValueError(
-            "循环控制器节点缺少已编译的体子图。"
-            "请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。"
+            "循环控制器节点缺少已编译的体子图。请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。"
         )
     list_var = strip_braces(config.get("list_variable") or config.get("array_variable", "list_variable"))
     item_var = config.get("item_variable", "loop_item")
@@ -463,6 +466,8 @@ async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[s
     items = variables.get(list_var) or []
     if not isinstance(items, list) or not items:
         return {output_var: []}
+    if len(items) > 200:
+        raise ValueError(f"循环项数量({len(items)})超过系统硬上限(200)，请缩小批次或调整上游数据。")
 
     # 只做一次初始拷贝，后续迭代链式传递状态
     iter_vars = copy.deepcopy(variables)
@@ -477,8 +482,7 @@ async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[s
             body_result = await compiled_body.ainvoke(body_state)
             iter_vars = body_result.get("variables", {})
             # 收集本次迭代的关键输出（排除临时注入的循环变量）
-            iter_output = {k: v for k, v in iter_vars.items()
-                          if k != item_var and k != index_key}
+            iter_output = {k: v for k, v in iter_vars.items() if k != item_var and k != index_key}
             results.append(iter_output)
             logger.info("[Loop] Iteration %d/%d complete: item=%s", idx + 1, len(items), str(item)[:80])
         except Exception as e:
@@ -490,17 +494,14 @@ async def execute_loop_controller_node(variables: Dict[str, Any], config: Dict[s
     return {output_var: results}
 
 
-async def execute_batch_processor_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_batch_processor_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     批处理并发节点执行逻辑（子图模式：并发遍历列表，每项独立调用体子图）。
     使用 asyncio.gather + Semaphore 控制并发，return_exceptions=True 容错。
     """
     compiled_body = config.get("_compiled_body")
     if not compiled_body:
-        raise ValueError(
-            "批处理节点缺少已编译的体子图。"
-            "请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。"
-        )
+        raise ValueError("批处理节点缺少已编译的体子图。请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。")
     list_var = strip_braces(config.get("list_variable") or config.get("array_variable", "batch_list_variable"))
     item_var = config.get("item_variable", "batch_item")
     output_var = config.get("output_variable", "batch_results")
@@ -509,10 +510,12 @@ async def execute_batch_processor_node(variables: Dict[str, Any], config: Dict[s
     items = variables.get(list_var) or []
     if not isinstance(items, list) or not items:
         return {output_var: []}
+    if len(items) > 200:
+        raise ValueError(f"批处理项数量({len(items)})超过系统硬上限(200)，请缩小批次或调整上游数据。")
 
     semaphore = asyncio.Semaphore(concurrency_limit)
 
-    async def run_body(item: Any) -> Dict[str, Any]:
+    async def run_body(item: Any) -> dict[str, Any]:
         async with semaphore:
             iter_vars = copy.deepcopy(variables)
             iter_vars[item_var] = item
@@ -520,10 +523,7 @@ async def execute_batch_processor_node(variables: Dict[str, Any], config: Dict[s
             body_result = await compiled_body.ainvoke(body_state)
             return body_result.get("variables", {})
 
-    raw_results = await asyncio.gather(
-        *[run_body(item) for item in items],
-        return_exceptions=True
-    )
+    raw_results = await asyncio.gather(*[run_body(item) for item in items], return_exceptions=True)
 
     results = []
     for r in raw_results:
@@ -537,13 +537,11 @@ async def execute_batch_processor_node(variables: Dict[str, Any], config: Dict[s
     return {output_var: results}
 
 
-async def execute_image_generator_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_image_generator_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     生图节点执行逻辑，已增强支持自适应尺寸、参考图、以及自定义 options。
     生成的图片自动转存到媒体资源库，返回永久存储 URL。
     """
-    from app.core.database import SessionLocal
-    from app.modules.media.service.media_service import MediaAssetService
 
     profile_code = config.get("model_profile_code")
     prompt_template = config.get("prompt_template", "")
@@ -577,12 +575,10 @@ async def execute_image_generator_node(variables: Dict[str, Any], config: Dict[s
 
     # 4. 调用 AI 生图
     try:
-        ai_result = await asyncio.to_thread(
-            run_ai_image, profile_code, prompt, size, image_val, custom_options
-        )
+        ai_result = await asyncio.to_thread(run_ai_image, profile_code, prompt, size, image_val, custom_options)
     except Exception as e:
         logger.error(f"工作流生图 API 呼叫失败: {e}")
-        return {output_variable: ""}
+        raise ValueError("工作流生图失败，模型服务异常或内部错误。")
 
     temp_url = ai_result["url"]
     if not temp_url:
@@ -636,12 +632,15 @@ def _persist_image_to_media(
         original_url = data[0].get("url", "") if data else ""
         if original_url:
             from app.modules.media.model.media import MediaAsset as MA
+
             existing = session.exec(
-                select(MA).where(
+                select(MA)
+                .where(
                     MA.original_url == original_url,
                     MA.status == "success",
                     MA.delete_time == None,  # noqa: E711
-                ).order_by(MA.created_at.desc())
+                )
+                .order_by(MA.created_at.desc())
             ).first()
             if existing and existing.storage_url:
                 return existing.storage_url
@@ -672,16 +671,19 @@ async def tool_mock_weather_api(location: str) -> str:
     [Mock] 天气查询占位工具实现
     """
     await asyncio.sleep(0.3)
-    return json.dumps({
-        "location": location,
-        "temperature": "26°C",
-        "condition": "晴",
-        "humidity": "45%",
-        "wind": "微风",
-    }, ensure_ascii=False)
+    return json.dumps(
+        {
+            "location": location,
+            "temperature": "26°C",
+            "condition": "晴",
+            "humidity": "45%",
+            "wind": "微风",
+        },
+        ensure_ascii=False,
+    )
 
 
-async def execute_tool_executor_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_tool_executor_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     通用工具执行器节点逻辑
     """
@@ -724,24 +726,24 @@ async def execute_tool_executor_node(variables: Dict[str, Any], config: Dict[str
     return {output_variable: res}
 
 
-def _render_output_field_recursive(field: dict, variables: Dict[str, Any]) -> Any:
+def _render_output_field_recursive(field: dict, variables: dict[str, Any]) -> Any:
     field_type = field.get("type", "string").strip()
-    
+
     if field_type == "object":
         result = {}
-        for child in (field.get("children") or []):
+        for child in field.get("children") or []:
             child_name = child.get("name", "")
             if not child_name:
                 continue
             result[child_name] = _render_output_field_recursive(child, variables)
         return result
-        
+
     elif field_type == "array":
         result = []
-        for child in (field.get("children") or []):
+        for child in field.get("children") or []:
             result.append(_render_output_field_recursive(child, variables))
         return result
-        
+
     else:
         value_tpl = field.get("value", "")
         if isinstance(value_tpl, str):
@@ -753,7 +755,7 @@ def _render_output_field_recursive(field: dict, variables: Dict[str, Any]) -> An
         return value_tpl
 
 
-async def execute_variable_assignment_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_variable_assignment_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     变量赋值节点执行逻辑。支持按字面量或表达式计算赋值。
     """
@@ -763,10 +765,10 @@ async def execute_variable_assignment_node(variables: Dict[str, Any], config: Di
         var_name = assign.get("variable_name")
         val_type = assign.get("value_type", "string")
         val = assign.get("value", "")
-        
+
         if not var_name:
             continue
-            
+
         if val_type == "string":
             updates[var_name] = str(val)
         elif val_type == "number":
@@ -786,11 +788,11 @@ async def execute_variable_assignment_node(variables: Dict[str, Any], config: Di
                 updates[var_name] = None
         else:
             updates[var_name] = val
-            
+
     return updates
 
 
-async def execute_variable_transform_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_variable_transform_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     变量转换/聚合节点执行逻辑。
     """
@@ -854,17 +856,17 @@ async def execute_variable_transform_node(variables: Dict[str, Any], config: Dic
 
         else:
             result = input_val
-            
+
     except Exception as e:
         logger.warning(f"变量转换节点执行异常: {e}")
         result = None
-        
+
     if not output_var:
         return {}
     return {output_var: result}
 
 
-async def execute_end_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_end_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     结束节点：支持结构化字段输出和文本/JSON 两种模式（支持多层嵌套结构）
     """
@@ -892,14 +894,14 @@ async def execute_end_node(variables: Dict[str, Any], config: Dict[str, Any]) ->
         return {"workflow_output": workflow_output}
 
 
-async def execute_condition_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_condition_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     二元条件分支节点执行逻辑。路由通过条件边处理，此执行体仅作为节点执行标记。
     """
     return {}
 
 
-async def execute_switch_node(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_switch_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     分支选择器节点执行逻辑。由于路由通过条件边处理，此执行体无需状态修改，仅作为节点执行标记。
     """
@@ -921,10 +923,30 @@ node_registry.register("variable_transform", execute_variable_transform_node)
 
 # --- 2. 工作流服务逻辑 ---
 
+# 工作流实例终态：到达后不可再 start/resume/cancel
+TERMINAL_STATUSES = frozenset({"success", "failed", "cancelled"})
+
+
+def assert_workflow_owner(session: Session, entity: Any, current_user: User | None) -> None:
+    """工作流数据所有者校验：超管放行；无用户上下文（内部调用）放行；否则必须为本人。
+
+    用于修复审查报告 S1（IDOR）：防止用户越权读取/操作他人的工作流定义与实例。
+    owner_id 为 None 时放行，兼容迁移前的旧数据。
+    """
+    if current_user is None:
+        return
+    if is_super_admin(session, current_user):
+        return
+    owner_id = getattr(entity, "user_id", None)
+    if owner_id is not None and owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权操作他人的工作流")
+
+
 class WorkflowService(BaseAdminCrudService):
     """
     工作流定义管理与执行服务
     """
+
     def __init__(self, session: Session):
         super().__init__(session, WorkflowDefinition)
 
@@ -935,9 +957,7 @@ class WorkflowService(BaseAdminCrudService):
         # 1. 唯一性校验
         code = data.get("code")
         if code:
-            existing = self.session.exec(
-                select(WorkflowDefinition).where(WorkflowDefinition.code == code)
-            ).first()
+            existing = self.session.exec(select(WorkflowDefinition).where(WorkflowDefinition.code == code)).first()
             if existing:
                 raise HTTPException(status_code=400, detail=f"工作流编码 '{code}' 已存在。")
 
@@ -961,9 +981,7 @@ class WorkflowService(BaseAdminCrudService):
         # 1. 唯一性校验
         code = data.get("code")
         if code and code != entity.code:
-            existing = self.session.exec(
-                select(WorkflowDefinition).where(WorkflowDefinition.code == code)
-            ).first()
+            existing = self.session.exec(select(WorkflowDefinition).where(WorkflowDefinition.code == code)).first()
             if existing:
                 raise HTTPException(status_code=400, detail=f"工作流编码 '{code}' 已存在。")
 
@@ -984,30 +1002,84 @@ class WorkflowService(BaseAdminCrudService):
         # 场景下目前安全，在此保留此注释以提请后续维护注意该局部更新语义。
         return {k: v for k, v in data.items() if v is not None}
 
+    def add(self, payload: Any, current_user: User | None = None) -> Any:
+        """新增工作流定义，自动写入创建者 user_id 以支持数据权限隔离（修复 IDOR）。"""
+        if isinstance(payload, list):
+            return [self.add(item, current_user) for item in payload]
+        data = payload.model_dump() if hasattr(payload, "model_dump") else dict(payload)
+        if current_user is not None and "user_id" not in data:
+            data["user_id"] = current_user.id
+        return super().add(data)
+
+    def update(self, payload: Any, current_user: User | None = None) -> Any:
+        """更新前校验调用者是否为该工作流定义的所有者（修复 IDOR 越权改）。"""
+        id_val = getattr(payload, "id", None)
+        entity = self.session.get(self.model, id_val) if id_val is not None else None
+        if entity is not None:
+            assert_workflow_owner(self.session, entity, current_user)
+        return super().update(payload)
+
+    def delete(
+        self,
+        ids: list[int],
+        payload: Any = None,
+        soft_delete: bool | None = None,
+        current_user: User | None = None,
+    ) -> dict:
+        """删除前校验调用者是否为每个待删工作流定义的所有者（修复 IDOR 越权删）。"""
+        for entity_id in ids or []:
+            entity = self.session.get(self.model, entity_id)
+            if entity is not None:
+                assert_workflow_owner(self.session, entity, current_user)
+        return super().delete(ids, payload=payload, soft_delete=soft_delete)
+
 
 class WorkflowInstanceService(BaseAdminCrudService):
     """
     工作流实例管理服务
     """
+
     def __init__(self, session: Session):
         super().__init__(session, WorkflowInstance)
 
-    async def start_instance(self, definition_id: int, inputs: Dict[str, Any]) -> WorkflowInstance:
+    def delete(
+        self,
+        ids: list[int],
+        payload: Any = None,
+        soft_delete: bool | None = None,
+        current_user: User | None = None,
+    ) -> dict:
+        """删除前校验调用者是否为每个待删工作流实例的所有者（修复 IDOR 越权删实例）。
+
+        BaseAdminCrudService.delete 按 ids 直接软删除，不走 DataScope，故在此显式逐条校验 owner。
+        """
+        for entity_id in ids or []:
+            instance = self.session.get(self.model, entity_id)
+            if instance is not None:
+                assert_workflow_owner(self.session, instance, current_user)
+        return super().delete(ids, payload=payload, soft_delete=soft_delete)
+
+    async def start_instance(
+        self, definition_id: int, inputs: dict[str, Any], current_user: User | None = None
+    ) -> WorkflowInstance:
         """
         创建一个工作流实例并启动异步执行
         """
         definition = self.session.get(WorkflowDefinition, definition_id)
         if not definition or not definition.is_active:
             raise HTTPException(status_code=404, detail="工作流定义不存在或未启用")
+        # 注：start_instance 不校验 definition owner —— 设计上任何用户均可启动已启用的工作流
+        # 定义、实例归属启动者；definition 的可见性已由 DataScope 在 page/list/info 限制。
 
         # 2秒防重放：检查是否有相同参数且相同定义的实例在最近运行中
         from datetime import datetime, timedelta
+
         two_seconds_ago = datetime.utcnow() - timedelta(seconds=2)
-        
+
         stmt = select(WorkflowInstance).where(
             WorkflowInstance.definition_id == definition_id,
             WorkflowInstance.status == "running",
-            WorkflowInstance.created_at >= two_seconds_ago
+            WorkflowInstance.created_at >= two_seconds_ago,
         )
         recent_instances = self.session.exec(stmt).all()
         for inst in recent_instances:
@@ -1021,7 +1093,8 @@ class WorkflowInstanceService(BaseAdminCrudService):
             thread_id=thread_id,
             status="running",
             state_data=json.dumps(inputs),
-            current_node=None
+            current_node=None,
+            user_id=current_user.id if current_user else None,
         )
         self.session.add(instance)
         self.session.commit()
@@ -1037,13 +1110,20 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         return instance
 
-    async def resume_instance(self, instance_id: int, user_input: Any) -> WorkflowInstance:
+    async def resume_instance(
+        self, instance_id: int, user_input: Any, current_user: User | None = None
+    ) -> WorkflowInstance:
         """
         恢复暂停中的工作流实例并传入人类交互值
         """
         instance = self.session.get(WorkflowInstance, instance_id)
         if not instance:
             raise HTTPException(status_code=404, detail="工作流实例不存在")
+        assert_workflow_owner(self.session, instance, current_user)
+
+        # S6 防御：user_input=None 时 json.dumps → "null" → 走 initial_state 从头重跑
+        if user_input is None:
+            raise HTTPException(status_code=400, detail="恢复值不能为空")
         if instance.status != "paused":
             raise HTTPException(status_code=400, detail="只有处于挂起暂停状态的工作流实例才可以恢复")
 
@@ -1051,10 +1131,20 @@ class WorkflowInstanceService(BaseAdminCrudService):
         if not definition:
             raise HTTPException(status_code=404, detail="关联的工作流定义丢失")
 
-        # 更新状态为运行中
-        instance.status = "running"
-        self.session.add(instance)
+        # S5：原子 CAS 把 paused → running，消除读-校验-写的 TOCTOU 竞态（避免并发 resume 重复扣费）
+        from sqlalchemy import update
+
+        result = self.session.execute(
+            update(WorkflowInstance)
+            .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == "paused")
+            .values(status="running")
+        )
+        if result.rowcount == 0:
+            # 状态已被其他并发请求改走（恢复/取消/失败），拒绝本次
+            self.session.rollback()
+            raise HTTPException(status_code=409, detail="实例状态已变更，可能已被其他请求恢复，请刷新后重试")
         self.session.commit()
+        self.session.refresh(instance)
 
         # 通过 Celery 异步任务恢复执行，Command(resume=user_input) 继续
         from app.modules.workflow.tasks.workflow_tasks import execute_workflow
@@ -1066,21 +1156,77 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         return instance
 
+    async def cancel_instance(self, instance_id: int, current_user: User | None = None) -> WorkflowInstance:
+        """
+        主动取消运行中或暂停中的工作流实例（修复审查报告 S4）。
+        原子迁移到 cancelled + revoke Celery 任务（强制后背）+ 发布 cancelled 事件。
+        """
+        instance = self.session.get(WorkflowInstance, instance_id)
+        if not instance:
+            raise HTTPException(status_code=404, detail="工作流实例不存在")
+        assert_workflow_owner(self.session, instance, current_user)
+
+        if instance.status in TERMINAL_STATUSES:
+            raise HTTPException(status_code=400, detail="已结束的实例无法取消")
+
+        # 原子 CAS：仅 running/paused/pending 可取消，避免与 resume/执行循环的并发状态迁移冲突
+        from sqlalchemy import update
+
+        result = self.session.execute(
+            update(WorkflowInstance)
+            .where(
+                WorkflowInstance.id == instance_id,
+                WorkflowInstance.status.in_(["running", "paused", "pending"]),
+            )
+            .values(status="cancelled", error_message="用户主动取消")
+        )
+        if result.rowcount == 0:
+            self.session.rollback()
+            raise HTTPException(status_code=409, detail="实例状态已变更，无法取消")
+        self.session.commit()
+        self.session.refresh(instance)
+
+        # 强制后背：revoke 正在执行的任务（执行主循环同时协作式轮询 status 做优雅退出）
+        if instance.celery_task_id:
+            from app.celery_app import celery_app
+
+            try:
+                celery_app.control.revoke(instance.celery_task_id, terminate=True)
+            except Exception:
+                logger.warning("revoke 工作流任务失败 instance=%d", instance_id, exc_info=True)
+
+        from app.modules.workflow.service.event_bus import publish_event
+
+        publish_event(instance_id, "cancelled", {"status": "cancelled"})
+        return instance
+
     # ==========================================
     # 节点级运行（开发期调试 / 强一致性）
     # ==========================================
 
-    async def test_node(self, definition_id: int, node_id: str, mock_variables: Dict[str, Any]) -> "NodeTestResponse":
+    async def test_node(
+        self,
+        definition_id: int,
+        node_id: str,
+        mock_variables: dict[str, Any],
+        current_user: User | None = None,
+    ) -> "NodeTestResponse":
         """
         单节点测试：直接调用注册的节点执行器，不走完整的 LangGraph，不创建实例和日志。
         """
-        from app.modules.workflow.model.workflow import NodeTestResponse
-        from app.modules.workflow.service.compiler import UNTESTABLE_NODE_TYPES, convert_keys_to_snake, apply_input_mappings, apply_output_mappings, node_registry, resolve_node_inputs
         from app.core.redis import redis_client
+        from app.modules.workflow.model.workflow import NodeTestResponse
+        from app.modules.workflow.service.compiler import (
+            UNTESTABLE_NODE_TYPES,
+            convert_keys_to_snake,
+            node_registry,
+            resolve_node_inputs,
+        )
 
         definition = self.session.get(WorkflowDefinition, definition_id)
         if not definition:
             raise HTTPException(status_code=404, detail="工作流定义不存在")
+        assert_workflow_owner(self.session, definition, current_user)
 
         try:
             graph_json = json.loads(definition.graph_json)
@@ -1118,39 +1264,32 @@ class WorkflowInstanceService(BaseAdminCrudService):
             executor_config = {**config, "id": node_id}
             # 执行节点（可配置超时，默认 180 秒；LLM 节点常需 60-180 秒响应）
             from app.core.config import settings
+
             timeout_seconds = settings.WORKFLOW_NODE_TEST_TIMEOUT
-            updates = await asyncio.wait_for(
-                executor(node_inputs, executor_config),
-                timeout=timeout_seconds
-            )
+            updates = await asyncio.wait_for(executor(node_inputs, executor_config), timeout=timeout_seconds)
             if updates is None:
                 updates = {}
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("单节点测试超时 [%s] (%ds)", node_id, timeout_seconds)
             error_msg = f"节点执行超时（{timeout_seconds}秒），可能是模型响应过慢或配置有误"
             is_timeout = True
         except Exception as e:
             logger.error("单节点测试执行失败 [%s]: %s", node_id, e, exc_info=True)
-            error_msg = str(e)
+            error_msg = str(e) if isinstance(e, ValueError) else "节点执行过程中发生内部错误，请联系管理员或查看日志。"
             is_timeout = False
 
         latency_ms = int((time.perf_counter() - start_time) * 1000)
 
         # 单节点测试主要关心节点本身的输出 updates，不关心写回全局后的完整 variables 状态
-        return NodeTestResponse(
-            output=updates,
-            latency_ms=latency_ms,
-            error=error_msg,
-            is_timeout=is_timeout
-        )
+        return NodeTestResponse(output=updates, latency_ms=latency_ms, error=error_msg, is_timeout=is_timeout)
 
 
 def recover_orphaned_instances(session: Session):
     """
     启动时将长时间卡在 running/pending 状态的实例标记为 failed。
-    5 分钟宽限期避免误杀刚启动的正常实例。paused 状态不处理。
+    30 分钟宽限期避免误杀刚启动的正常实例。paused 状态不处理。
     """
-    cutoff = datetime.utcnow() - timedelta(minutes=5)
+    cutoff = datetime.utcnow() - timedelta(minutes=30)
     stmt = select(WorkflowInstance).where(
         WorkflowInstance.status.in_(["running", "pending"]),
         WorkflowInstance.updated_at < cutoff,

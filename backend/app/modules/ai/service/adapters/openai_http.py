@@ -4,7 +4,15 @@ from typing import Any
 
 import httpx
 
-from app.modules.ai.service.adapters.base import BaseHttpAdapter, iter_sse_events, loads_json, normalize_usage, openai_chat_result, openai_embedding_result, openai_image_result
+from app.modules.ai.service.adapters.base import (
+    BaseHttpAdapter,
+    iter_sse_events,
+    loads_json,
+    normalize_usage,
+    openai_chat_result,
+    openai_embedding_result,
+    openai_image_result,
+)
 
 
 class OpenAIHttpAdapter(BaseHttpAdapter):
@@ -43,7 +51,13 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
                 if delta:
                     yield {"event": "delta", "content": delta, "raw": data, "requestId": request_id}
                 if usage or finish_reason:
-                    yield {"event": "done", "raw": data, "usage": usage, "finishReason": finish_reason, "requestId": request_id}
+                    yield {
+                        "event": "done",
+                        "raw": data,
+                        "usage": usage,
+                        "finishReason": finish_reason,
+                        "requestId": request_id,
+                    }
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         data, response = self._post(self.embeddings_path, {"model": model, "input": input, **options})
@@ -56,7 +70,12 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
     def rerank(self, *, model: str, query: str, documents: list[str], options: dict[str, Any]) -> dict:
         path = self.extra_config.get("rerank_path", "/rerank")
         data, response = self._post(path, {"model": model, "query": query, "documents": documents, **options})
-        return {"data": data.get("results") or data.get("data") or [], "raw": data, "usage": {}, "requestId": response.headers.get("x-request-id")}
+        return {
+            "data": data.get("results") or data.get("data") or [],
+            "raw": data,
+            "usage": {},
+            "requestId": response.headers.get("x-request-id"),
+        }
 
     def test(self) -> dict:
         try:

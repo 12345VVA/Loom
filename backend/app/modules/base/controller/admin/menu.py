@@ -1,11 +1,19 @@
 """
 Base 模块菜单控制器
 """
+
 from fastapi import Depends, Request
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
+from app.framework.controller_meta import (
+    BaseController,
+    CoolController,
+    CoolControllerMeta,
+    OrderByConfig,
+    QueryConfig,
+    QueryFieldConfig,
+)
 from app.framework.router.route_meta import Get, Post
 from app.modules.base.model.auth import (
     MenuCreateAutoRequest,

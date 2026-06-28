@@ -1,6 +1,7 @@
 """
 媒体资源服务。
 """
+
 from __future__ import annotations
 
 import base64
@@ -87,10 +88,17 @@ class MediaAssetService(BaseAdminCrudService):
         self.session.add(asset)
         self.session.commit()
         self.session.refresh(asset)
-        return {"id": asset.id, "url": storage_url, "name": file.filename, "asset": self._finalize_data(asset.model_dump())}
+        return {
+            "id": asset.id,
+            "url": storage_url,
+            "name": file.filename,
+            "asset": self._finalize_data(asset.model_dump()),
+        }
 
     def delete(self, ids: list[int], payload: Any = None, soft_delete: bool | None = None) -> dict:
-        assets = list(self.session.exec(select(MediaAsset).where(MediaAsset.id.in_(ids), MediaAsset.delete_time == None)).all())  # noqa: E711
+        assets = list(
+            self.session.exec(select(MediaAsset).where(MediaAsset.id.in_(ids), MediaAsset.delete_time == None)).all()  # noqa: E711
+        )
         delete_results: dict[int, bool] = {}
         failed_ids: list[int] = []
         deletable_ids: list[int] = []
@@ -111,7 +119,11 @@ class MediaAssetService(BaseAdminCrudService):
                 asset.error_message = asset.error_message or "存储文件删除失败"
             self.session.add(asset)
         self.session.commit()
-        result = super().delete(deletable_ids, payload=payload, soft_delete=True) if deletable_ids else {"success": True, "deleted_ids": []}
+        result = (
+            super().delete(deletable_ids, payload=payload, soft_delete=True)
+            if deletable_ids
+            else {"success": True, "deleted_ids": []}
+        )
         result["storageDeleteResults"] = delete_results
         result["failedIds"] = failed_ids
         result["success"] = not failed_ids
@@ -197,13 +209,20 @@ class MediaAssetService(BaseAdminCrudService):
             try:
                 logger.info("媒体资产开始转存", extra={"asset_id": asset.id, "artifact": _artifact_summary(artifact)})
                 self._transfer_artifact(asset, artifact)
-                logger.info("媒体资产转存成功", extra={"asset_id": asset.id, "storage_url": asset.storage_url, "status": asset.status})
+                logger.info(
+                    "媒体资产转存成功",
+                    extra={"asset_id": asset.id, "storage_url": asset.storage_url, "status": asset.status},
+                )
             except Exception as exc:  # 转存失败不能影响 AI 任务状态
                 asset.status = "failed"
                 asset.error_message = str(exc)[:1000]
                 self.session.add(asset)
                 self.session.commit()
-                logger.error("媒体资产转存失败", extra={"asset_id": asset.id, "artifact": _artifact_summary(artifact)}, exc_info=exc)
+                logger.error(
+                    "媒体资产转存失败",
+                    extra={"asset_id": asset.id, "artifact": _artifact_summary(artifact)},
+                    exc_info=exc,
+                )
             assets.append(asset)
         return assets
 
@@ -226,7 +245,10 @@ class MediaAssetService(BaseAdminCrudService):
         _ensure_media_size(content)
         existing = self._find_existing_asset(asset)
         if existing:
-            logger.info("媒体资产命中去重", extra={"asset_id": asset.id, "existing_asset_id": existing.id, "source_type": asset.source_type})
+            logger.info(
+                "媒体资产命中去重",
+                extra={"asset_id": asset.id, "existing_asset_id": existing.id, "source_type": asset.source_type},
+            )
             self.session.delete(asset)
             self.session.commit()
             return
@@ -308,7 +330,13 @@ def _extract_artifacts(value: Any, task_type: str) -> list[MediaArtifact]:
     for item in _walk_json(value):
         if not isinstance(item, dict):
             continue
-        url = item.get("url") or item.get("image_url") or item.get("imageUrl") or item.get("video_url") or item.get("audio_url")
+        url = (
+            item.get("url")
+            or item.get("image_url")
+            or item.get("imageUrl")
+            or item.get("video_url")
+            or item.get("audio_url")
+        )
         b64 = item.get("b64_json") or item.get("b64Json") or item.get("base64")
         if isinstance(url, str) and url.startswith("data:"):
             b64 = url
@@ -325,7 +353,9 @@ def _extract_artifacts(value: Any, task_type: str) -> list[MediaArtifact]:
                 file_name=item.get("file_name") or item.get("fileName"),
                 width=_int_or_none(item.get("width")),
                 height=_int_or_none(item.get("height")),
-                duration_seconds=_float_or_none(item.get("duration") or item.get("duration_seconds") or item.get("durationSeconds")),
+                duration_seconds=_float_or_none(
+                    item.get("duration") or item.get("duration_seconds") or item.get("durationSeconds")
+                ),
             )
         )
     return result
@@ -348,7 +378,13 @@ def _preferred_artifact_items(value: Any) -> list[dict[str, Any]] | None:
 def _artifact_items_to_result(items: list[dict[str, Any]], task_type: str) -> list[MediaArtifact]:
     result: list[MediaArtifact] = []
     for item in items:
-        url = item.get("url") or item.get("image_url") or item.get("imageUrl") or item.get("video_url") or item.get("audio_url")
+        url = (
+            item.get("url")
+            or item.get("image_url")
+            or item.get("imageUrl")
+            or item.get("video_url")
+            or item.get("audio_url")
+        )
         b64 = item.get("b64_json") or item.get("b64Json") or item.get("base64")
         if isinstance(url, str) and url.startswith("data:"):
             b64 = url
@@ -365,7 +401,9 @@ def _artifact_items_to_result(items: list[dict[str, Any]], task_type: str) -> li
                 file_name=item.get("file_name") or item.get("fileName"),
                 width=_int_or_none(item.get("width")),
                 height=_int_or_none(item.get("height")),
-                duration_seconds=_float_or_none(item.get("duration") or item.get("duration_seconds") or item.get("durationSeconds")),
+                duration_seconds=_float_or_none(
+                    item.get("duration") or item.get("duration_seconds") or item.get("durationSeconds")
+                ),
             )
         )
     return result
@@ -490,7 +528,9 @@ def _filename_from_url(url: str, mime_type: str | None, asset_type: str) -> str:
 
 
 def _default_filename(mime_type: str | None, asset_type: str) -> str:
-    ext = mimetypes.guess_extension(mime_type or "") or {"image": ".png", "video": ".mp4", "audio": ".mp3"}.get(asset_type, ".bin")
+    ext = mimetypes.guess_extension(mime_type or "") or {"image": ".png", "video": ".mp4", "audio": ".mp3"}.get(
+        asset_type, ".bin"
+    )
     return f"{asset_type}{ext}"
 
 

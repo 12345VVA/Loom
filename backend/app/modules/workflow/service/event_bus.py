@@ -1,6 +1,7 @@
 """
 跨进程工作流事件总线（Redis pub/sub 桥接）。
 """
+
 import asyncio
 import json
 import logging
@@ -33,14 +34,9 @@ def publish_event(instance_id: int, event_type: str, data: Any):
         except Exception:
             logger.debug("Redis publish failed for instance %d", instance_id, exc_info=True)
 
-    # 2. 进程内 listener — 兼容无 Redis 的开发环境
-    from app.modules.workflow.service.workflow_service import workflow_event_listeners
-
-    for listener in workflow_event_listeners:
-        try:
-            listener(instance_id, event_type, data)
-        except Exception:
-            pass
+    # 2. 进程内 listener（workflow_event_listeners）已移除：该列表无注册点（死代码），
+    # 且发布者通常在 Celery Worker 进程、订阅者在 Web 进程，进程内回调对跨进程事件无效。
+    # 跨进程事件统一经 Redis pub/sub 由 subscribe_events 订阅。
 
 
 async def subscribe_events(instance_id: int):

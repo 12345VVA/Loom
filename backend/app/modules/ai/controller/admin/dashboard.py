@@ -1,6 +1,7 @@
 """
 AI 成本看板接口。
 """
+
 from fastapi import Depends
 from sqlmodel import Session
 

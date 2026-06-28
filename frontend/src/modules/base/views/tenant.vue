@@ -30,20 +30,20 @@
 
 <script lang="ts" setup>
 defineOptions({
-	name: "base-sys-tenant",
+	name: 'base-sys-tenant'
 });
 
-import { useCrud, useTable, useUpsert, useSearch } from "@cool-vue/crud";
-import { useCool } from "/@/cool";
-import { useI18n } from "vue-i18n";
+import { useCrud, useTable, useUpsert, useSearch } from '@cool-vue/crud';
+import { useCool } from '/@/cool';
+import { useI18n } from 'vue-i18n';
 
 const { service } = useCool();
 const { t } = useI18n();
 
 // 状态选项
 const statusOptions = [
-	{ label: "启用", value: 1, type: "success" },
-	{ label: "禁用", value: 0, type: "danger" },
+	{ label: '启用', value: 1, type: 'success' },
+	{ label: '禁用', value: 0, type: 'danger' }
 ];
 
 // 电话校验
@@ -54,7 +54,7 @@ const phoneValidator = (_rule: any, value: string, callback: any) => {
 	if (phoneReg.test(value) || telReg.test(value)) {
 		callback();
 	} else {
-		callback(new Error("请输入正确的电话号码"));
+		callback(new Error('请输入正确的电话号码'));
 	}
 };
 
@@ -65,7 +65,7 @@ const emailValidator = (_rule: any, value: string, callback: any) => {
 	if (emailReg.test(value)) {
 		callback();
 	} else {
-		callback(new Error("请输入正确的邮箱地址"));
+		callback(new Error('请输入正确的邮箱地址'));
 	}
 };
 
@@ -73,119 +73,119 @@ const emailValidator = (_rule: any, value: string, callback: any) => {
 const Upsert = useUpsert({
 	items: [
 		{
-			label: t("租户名称"),
-			prop: "name",
-			component: { name: "el-input", props: { clearable: true } },
+			label: t('租户名称'),
+			prop: 'name',
+			component: { name: 'el-input', props: { clearable: true } },
 			span: 12,
-			required: true,
+			required: true
 		},
 		// 编辑时显示且只读
 		() => ({
-			label: t("租户标识"),
-			prop: "tenantCode",
+			label: t('租户标识'),
+			prop: 'tenantCode',
 			component: {
-				name: "el-input",
-				props: { disabled: Upsert.value?.mode === "update" },
+				name: 'el-input',
+				props: { disabled: Upsert.value?.mode === 'update' }
 			},
 			span: 12,
 			required: true,
-			hidden: Upsert.value?.mode !== "update",
+			hidden: Upsert.value?.mode !== 'update'
 		}),
 		{
-			label: t("域名"),
-			prop: "domain",
-			component: { name: "el-input", props: { clearable: true } },
+			label: t('域名'),
+			prop: 'domain',
+			component: { name: 'el-input', props: { clearable: true } },
 			span: 12,
-			required: true,
+			required: true
 		},
 		// 编辑时显示且只读
 		() => ({
-			label: t("AppId"),
-			prop: "appId",
+			label: t('AppId'),
+			prop: 'appId',
 			component: {
-				name: "el-input",
-				props: { disabled: Upsert.value?.mode === "update" },
+				name: 'el-input',
+				props: { disabled: Upsert.value?.mode === 'update' }
 			},
 			span: 12,
-			hidden: Upsert.value?.mode !== "update",
+			hidden: Upsert.value?.mode !== 'update'
 		}),
 		// 编辑时显示且只读
 		() => ({
-			label: t("AppSecret"),
-			prop: "appSecret",
+			label: t('AppSecret'),
+			prop: 'appSecret',
 			component: {
-				name: "el-input",
-				props: { disabled: Upsert.value?.mode === "update" },
+				name: 'el-input',
+				props: { disabled: Upsert.value?.mode === 'update' }
 			},
 			span: 12,
-			hidden: Upsert.value?.mode !== "update",
+			hidden: Upsert.value?.mode !== 'update'
 		}),
 		{
-			label: t("联系人"),
-			prop: "contactName",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('联系人'),
+			prop: 'contactName',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("联系电话"),
-			prop: "contactPhone",
-			component: { name: "el-input", props: { clearable: true } },
+			label: t('联系电话'),
+			prop: 'contactPhone',
+			component: { name: 'el-input', props: { clearable: true } },
 			span: 12,
-			rules: [{ validator: phoneValidator, trigger: "blur" }],
+			rules: [{ validator: phoneValidator, trigger: 'blur' }]
 		},
 		{
-			label: t("联系邮箱"),
-			prop: "contactEmail",
-			component: { name: "el-input", props: { clearable: true } },
+			label: t('联系邮箱'),
+			prop: 'contactEmail',
+			component: { name: 'el-input', props: { clearable: true } },
 			span: 12,
-			rules: [{ validator: emailValidator, trigger: "blur" }],
+			rules: [{ validator: emailValidator, trigger: 'blur' }]
 		},
 		{
-			label: t("地址"),
-			prop: "address",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('地址'),
+			prop: 'address',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("备注"),
-			prop: "remark",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('备注'),
+			prop: 'remark',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("状态"),
-			prop: "status",
+			label: t('状态'),
+			prop: 'status',
 			value: 1,
 			component: {
-				name: "el-select",
+				name: 'el-select',
 				props: { clearable: true },
-				options: statusOptions,
+				options: statusOptions
 			},
 			span: 12,
-			required: true,
-		},
-	],
+			required: true
+		}
+	]
 });
 
 // cl-table
 const Table = useTable({
 	columns: [
-		{ type: "selection" },
-		{ label: t("租户名称"), prop: "name", minWidth: 120 },
-		{ label: t("租户标识"), prop: "tenantCode", minWidth: 120 },
-		{ label: t("域名"), prop: "domain", minWidth: 140 },
-		{ label: t("联系人"), prop: "contactName", minWidth: 100 },
-		{ label: t("联系电话"), prop: "contactPhone", minWidth: 120 },
-		{ label: t("状态"), prop: "status", minWidth: 80, dict: statusOptions, dictColor: true },
+		{ type: 'selection' },
+		{ label: t('租户名称'), prop: 'name', minWidth: 120 },
+		{ label: t('租户标识'), prop: 'tenantCode', minWidth: 120 },
+		{ label: t('域名'), prop: 'domain', minWidth: 140 },
+		{ label: t('联系人'), prop: 'contactName', minWidth: 100 },
+		{ label: t('联系电话'), prop: 'contactPhone', minWidth: 120 },
+		{ label: t('状态'), prop: 'status', minWidth: 80, dict: statusOptions, dictColor: true },
 		{
-			label: t("创建时间"),
-			prop: "createTime",
+			label: t('创建时间'),
+			prop: 'createTime',
 			minWidth: 170,
-			sortable: "desc",
-			component: { name: "cl-date-text" },
+			sortable: 'desc',
+			component: { name: 'cl-date-text' }
 		},
-		{ type: "op", buttons: ["edit", "delete"] },
-	],
+		{ type: 'op', buttons: ['edit', 'delete'] }
+	]
 });
 
 // cl-search
@@ -194,11 +194,11 @@ const Search = useSearch();
 // cl-crud
 const Crud = useCrud(
 	{
-		service: (service.base.sys as any).tenant,
+		service: (service.base.sys as any).tenant
 	},
-	(app) => {
+	app => {
 		app.refresh();
-	},
+	}
 );
 
 // 刷新

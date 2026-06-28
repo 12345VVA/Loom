@@ -1,13 +1,17 @@
 <template>
 	<node-config-section :title="$t('条件配置')">
-		<el-form-item :label="$t('条件表达式')" required style="margin-bottom: 0;">
-		<cl-variable-input v-model="config.expression" placeholder="例如: score > 80" @blur="validateExpression" />
-		<div v-if="exprError" class="var-error-tip">{{ exprError }}</div>
-		<div class="field-hint">
-			{{ $t('如果求值结果为 True，走 T 端口；反之走 F 端口。') }}
-		</div>
+		<el-form-item :label="$t('条件表达式')" required style="margin-bottom: 0">
+			<cl-variable-input
+				v-model="config.expression"
+				placeholder="例如: score > 80"
+				@blur="validateExpression"
+			/>
+			<div v-if="exprError" class="var-error-tip">{{ exprError }}</div>
+			<div class="field-hint">
+				{{ $t('如果求值结果为 True，走 T 端口；反之走 F 端口。') }}
+			</div>
 		</el-form-item>
-		<node-config-hint style="margin-top: 8px;">
+		<node-config-hint style="margin-top: 8px">
 			<span>从节点的 T (True) / F (False) 端口直接连线到目标节点。</span>
 		</node-config-hint>
 	</node-config-section>

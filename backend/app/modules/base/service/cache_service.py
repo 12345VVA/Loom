@@ -1,6 +1,7 @@
 """
 Base 模块缓存服务
 """
+
 from __future__ import annotations
 
 import json
@@ -39,7 +40,9 @@ class CacheNamespace:
         return cache_set(self.key(*parts), value, ttl_seconds if ttl_seconds is not None else self.default_ttl_seconds)
 
     def set_json(self, *parts: Any, value: Any, ttl_seconds: int | None = None) -> bool:
-        return cache_set_json(self.key(*parts), value, ttl_seconds if ttl_seconds is not None else self.default_ttl_seconds)
+        return cache_set_json(
+            self.key(*parts), value, ttl_seconds if ttl_seconds is not None else self.default_ttl_seconds
+        )
 
     def get(self, *parts: Any) -> str | None:
         return cache_get(self.key(*parts))

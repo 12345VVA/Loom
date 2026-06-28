@@ -1,8 +1,11 @@
 """
 Dict 模块初始化资源
 """
+
 from sqlmodel import Session, select
-from app.modules.dict.model.dict import DictType, DictInfo
+
+from app.modules.dict.model.dict import DictInfo, DictType
+
 
 def run(session: Session) -> None:
     status_dict = session.exec(select(DictType).where(DictType.key == "status")).first()

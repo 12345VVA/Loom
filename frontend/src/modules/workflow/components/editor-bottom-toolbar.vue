@@ -3,7 +3,7 @@
 		<div class="toolbar-left">
 			<span class="workflow-title">{{ workflowName || $t('未命名工作流') }}</span>
 			<el-tag size="small" type="info" class="workflow-code">{{ workflowCode }}</el-tag>
-			<el-divider direction="vertical" class="mx-2" style="margin: 0 8px;" />
+			<el-divider direction="vertical" class="mx-2" style="margin: 0 8px" />
 			<el-popover
 				placement="top"
 				:width="360"
@@ -31,7 +31,9 @@
 
 					<div class="node-categories">
 						<template v-for="category in filteredCategories" :key="category.name">
-							<div class="category-title" v-if="category.items.length > 0">{{ category.name }}</div>
+							<div class="category-title" v-if="category.items.length > 0">
+								{{ category.name }}
+							</div>
 							<div class="node-grid" v-if="category.items.length > 0">
 								<div
 									v-for="item in category.items"
@@ -50,11 +52,15 @@
 								</div>
 							</div>
 						</template>
-						<el-empty v-if="isSearchEmpty" :image-size="60" :description="$t('暂无匹配的节点')" />
+						<el-empty
+							v-if="isSearchEmpty"
+							:image-size="60"
+							:description="$t('暂无匹配的节点')"
+						/>
 					</div>
 				</div>
 			</el-popover>
-			<el-button style="margin-left: 8px;" @click="$emit('export-workflow')" :icon="Download">
+			<el-button style="margin-left: 8px" @click="$emit('export-workflow')" :icon="Download">
 				{{ $t('导出') }}
 			</el-button>
 		</div>
@@ -67,7 +73,7 @@
 				<el-button plain type="primary" @click="$emit('reopen-test-log-drawer')">
 					<el-icon><document /></el-icon>{{ $t('日志') }}
 				</el-button>
-				<el-divider direction="vertical" style="margin: 0 8px;" />
+				<el-divider direction="vertical" style="margin: 0 8px" />
 			</template>
 
 			<el-tooltip :content="$t('撤销 (Ctrl+Z)')" placement="top">
@@ -77,12 +83,17 @@
 				<el-button link :icon="RefreshRight" :disabled="!canRedo" @click="$emit('redo')" />
 			</el-tooltip>
 
-			<el-button type="primary" :icon="FolderChecked" :loading="saving" @click="$emit('save-workflow')">
+			<el-button
+				type="primary"
+				:icon="FolderChecked"
+				:loading="saving"
+				@click="$emit('save-workflow')"
+			>
 				{{ $t('保存') }}
 			</el-button>
 
 			<el-tooltip :content="runButtonTooltip" placement="top" :disabled="!isTestRunDisabled">
-				<div style="display: inline-block; margin-left: 12px;">
+				<div style="display: inline-block; margin-left: 12px">
 					<el-button
 						type="success"
 						:icon="CaretRight"
@@ -161,7 +172,7 @@ const categories = computed(() => {
 	];
 
 	return cats.map(cat => {
-		let items = NODE_REGISTRY.filter(n => {
+		const items = NODE_REGISTRY.filter(n => {
 			if ((n as any).deprecated) return false;
 			if (cat.key === 'basic') return n.type === 'start' || n.type === 'end';
 			return n.category === cat.key && n.type !== 'start' && n.type !== 'end';
@@ -182,7 +193,9 @@ const filteredCategories = computed(() => {
 	return categories.value.map(cat => {
 		return {
 			...cat,
-			items: cat.items.filter(t => t.name.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q))
+			items: cat.items.filter(
+				t => t.name.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q)
+			)
 		};
 	});
 });
@@ -200,9 +213,15 @@ const runButtonTooltip = computed(() => {
 });
 
 const emit = defineEmits([
-	'drag-start', 'add-node', 'open-test-dialog',
-	'clear-test-status', 'reopen-test-log-drawer', 'export-workflow', 'save-workflow',
-	'undo', 'redo'
+	'drag-start',
+	'add-node',
+	'open-test-dialog',
+	'clear-test-status',
+	'reopen-test-log-drawer',
+	'export-workflow',
+	'save-workflow',
+	'undo',
+	'redo'
 ]);
 
 function onDragStart(event: DragEvent, type: string) {
@@ -241,7 +260,8 @@ function onPopoverShow() {
 	justify-content: space-between;
 }
 
-.toolbar-left, .toolbar-right {
+.toolbar-left,
+.toolbar-right {
 	display: flex;
 	align-items: center;
 	gap: 12px;
@@ -341,18 +361,42 @@ function onPopoverShow() {
 	}
 
 	// 节点特有左侧边框指示器 (可选，由于采用统一 hover 背景，此处可简化)
-	&--start { border-left: 3px solid var(--el-color-success); }
-	&--llm { border-left: 3px solid var(--el-color-primary); }
-	&--tool { border-left: 3px solid #8a2be2; }
-	&--condition { border-left: 3px solid var(--el-color-warning); }
-	&--switch { border-left: 3px solid #e6a23c; }
-	&--human_input { border-left: 3px solid var(--el-color-info); }
-	&--intent_classifier { border-left: 3px solid #20b2aa; }
-	&--loop_controller { border-left: 3px solid #d2691e; }
-	&--batch_processor { border-left: 3px solid #00ced1; }
-	&--image_generator { border-left: 3px solid #ff69b4; }
-	&--tool_executor { border-left: 3px solid #8a2be2; }
-	&--end { border-left: 3px solid var(--el-color-danger); }
+	&--start {
+		border-left: 3px solid var(--el-color-success);
+	}
+	&--llm {
+		border-left: 3px solid var(--el-color-primary);
+	}
+	&--tool {
+		border-left: 3px solid #8a2be2;
+	}
+	&--condition {
+		border-left: 3px solid var(--el-color-warning);
+	}
+	&--switch {
+		border-left: 3px solid #e6a23c;
+	}
+	&--human_input {
+		border-left: 3px solid var(--el-color-info);
+	}
+	&--intent_classifier {
+		border-left: 3px solid #20b2aa;
+	}
+	&--loop_controller {
+		border-left: 3px solid #d2691e;
+	}
+	&--batch_processor {
+		border-left: 3px solid #00ced1;
+	}
+	&--image_generator {
+		border-left: 3px solid #ff69b4;
+	}
+	&--tool_executor {
+		border-left: 3px solid #8a2be2;
+	}
+	&--end {
+		border-left: 3px solid var(--el-color-danger);
+	}
 }
 </style>
 <style lang="scss">

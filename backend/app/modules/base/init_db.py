@@ -1,8 +1,8 @@
 """
 Base 模块初始化资源占位
 """
-from sqlmodel import Session
-from sqlmodel import select
+
+from sqlmodel import Session, select
 
 from app.modules.base.model.sys import SysParam
 

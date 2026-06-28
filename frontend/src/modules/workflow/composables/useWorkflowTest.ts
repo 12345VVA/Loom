@@ -70,12 +70,14 @@ export function useWorkflowTest(
 			const saved = await saveWorkflow();
 			if (!saved) return;
 		}
-		const startNode = elements.value.find((el: any) => !('source' in el) && el.type === 'start') as FlowNode | undefined;
+		const startNode = elements.value.find(
+			(el: any) => !('source' in el) && el.type === 'start'
+		) as FlowNode | undefined;
 		if (startNode && startNode.data?.config?.inputVariables) {
 			const vars: string[] = startNode.data.config.inputVariables;
 			const inputs: Record<string, string> = {};
 			vars.forEach(v => {
-				if (v) inputs[v] = "";
+				if (v) inputs[v] = '';
 			});
 			testDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
 		} else {
@@ -101,7 +103,7 @@ export function useWorkflowTest(
 			});
 			ElMessage.success(t('工作流测试实例已启动'));
 			testDialog.visible = false;
-			
+
 			const instId = res?.id;
 			if (!instId) {
 				ElMessage.error(t('启动测试失败，无法获取实例ID'));
@@ -112,7 +114,7 @@ export function useWorkflowTest(
 			testLogDrawer.visible = true;
 			testLogDrawer.items = [];
 			testLogDrawer.status = 'running';
-			
+
 			clearNodeStatus();
 			startLogPolling();
 		} catch (err: any) {
@@ -143,20 +145,29 @@ export function useWorkflowTest(
 			if (testLogDrawer.items.length === 0) {
 				testLogDrawer.loading = true;
 			}
-			
-			const infoPromise = (service as any).workflow.instance.info({ id: testLogDrawer.instanceId });
-			const logsPromise = (service as any).workflow.instance.logs({ instanceId: testLogDrawer.instanceId }).catch((err: any) => {
-				console.warn('Fetch logs failed', err);
-				return [];
+
+			const infoPromise = (service as any).workflow.instance.info({
+				id: testLogDrawer.instanceId
 			});
-			
+			const logsPromise = (service as any).workflow.instance
+				.logs({ instanceId: testLogDrawer.instanceId })
+				.catch((err: any) => {
+					console.warn('Fetch logs failed', err);
+					return [];
+				});
+
 			const [info, logs] = await Promise.all([infoPromise, logsPromise]);
 			testLogDrawer.status = info.status;
-			
-			const oldExpanded = new Set(testLogDrawer.items.filter(i => i.isExpanded).map(i => i.id));
+
+			const oldExpanded = new Set(
+				testLogDrawer.items.filter(i => i.isExpanded).map(i => i.id)
+			);
 			testLogDrawer.items = logs.map((item: any, index: number) => ({
 				...item,
-				isExpanded: oldExpanded.has(item.id) || item.status !== 'success' || index === logs.length - 1
+				isExpanded:
+					oldExpanded.has(item.id) ||
+					item.status !== 'success' ||
+					index === logs.length - 1
 			}));
 
 			updateNodeStatus(logs, info.status, info.currentNode);
@@ -210,7 +221,7 @@ export function useWorkflowTest(
 					if (!el.data) el.data = { config: {} };
 					el.data.runLog = nodeLog;
 				}
-				
+
 				if (instanceStatus === 'running' && currentNode && el.id === currentNode) {
 					customClass = 'node-status-running';
 					if (!el.data) el.data = { config: {} };
@@ -224,9 +235,15 @@ export function useWorkflowTest(
 		});
 	}
 
-	function expandAllTestLogs() { testLogDrawer.items.forEach(i => i.isExpanded = true); }
-	function collapseAllTestLogs() { testLogDrawer.items.forEach(i => i.isExpanded = false); }
-	function formatTime(value: string) { return value ? dayjs(value).format('HH:mm:ss') : '-'; }
+	function expandAllTestLogs() {
+		testLogDrawer.items.forEach(i => (i.isExpanded = true));
+	}
+	function collapseAllTestLogs() {
+		testLogDrawer.items.forEach(i => (i.isExpanded = false));
+	}
+	function formatTime(value: string) {
+		return value ? dayjs(value).format('HH:mm:ss') : '-';
+	}
 
 	return {
 		testDialog,

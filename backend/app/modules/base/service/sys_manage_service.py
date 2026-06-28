@@ -1,6 +1,7 @@
 """
 系统日志、登录日志、参数配置服务
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,25 +12,22 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.framework.controller_meta import CrudQuery
-from app.modules.base.model.auth import PageResult
-from app.modules.base.model.auth import User
+from app.modules.base.model.auth import PageResult, User
 from app.modules.base.model.sys import (
     SysLog,
-    SysLogRead,
     SysLoginLog,
     SysLoginLogCreateRequest,
     SysLoginLogRead,
     SysLoginLogUpdateRequest,
+    SysLogRead,
     SysParam,
     SysParamCreateRequest,
     SysParamRead,
     SysParamUpdateRequest,
     SysSecurityLog,
     SysSecurityLogRead,
-    SysSecurityLogCreateRequest,
 )
 from app.modules.base.service.admin_service import BaseAdminCrudService
-
 
 LOG_KEEP_PARAM_KEY = "logKeep"
 LOG_KEEP_PARAM_NAME = "日志保存天数"
@@ -44,7 +42,9 @@ class SysParamService(BaseAdminCrudService):
 
     def list(self, query: CrudQuery | None = None, current_user: User | None = None) -> list[SysParamRead]:
         statement = select(SysParam)
-        statement = self._apply_query(statement, SysParam, query, current_user=current_user, fallback_field="created_at")
+        statement = self._apply_query(
+            statement, SysParam, query, current_user=current_user, fallback_field="created_at"
+        )
         rows = list(self.session.exec(statement).all())
         return [self._build_read(row) for row in rows]
 
@@ -52,7 +52,9 @@ class SysParamService(BaseAdminCrudService):
         page = query.page or 1
         page_size = query.size or 10
         statement = select(SysParam)
-        statement = self._apply_query(statement, SysParam, query, current_user=current_user, fallback_field="created_at")
+        statement = self._apply_query(
+            statement, SysParam, query, current_user=current_user, fallback_field="created_at"
+        )
         count_statement = select(func.count()).select_from(statement.subquery())
         total = int(self.session.exec(count_statement).one())
         rows = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
@@ -180,7 +182,9 @@ class SysLogService(BaseAdminCrudService):
         return {"success": True, "value": value}
 
     def get_keep(self) -> str:
-        return SysParamService(self.session).get_value(LOG_KEEP_PARAM_KEY, DEFAULT_LOG_KEEP_DAYS) or DEFAULT_LOG_KEEP_DAYS
+        return (
+            SysParamService(self.session).get_value(LOG_KEEP_PARAM_KEY, DEFAULT_LOG_KEEP_DAYS) or DEFAULT_LOG_KEEP_DAYS
+        )
 
     def _build_reads(self, rows: list[SysLog]) -> list[SysLogRead]:
         user_ids = [row.user_id for row in rows if row.user_id]
@@ -216,7 +220,9 @@ class SysLoginLogService(BaseAdminCrudService):
 
     def list(self, query: CrudQuery | None = None, current_user: User | None = None) -> list[SysLoginLogRead]:
         statement = select(SysLoginLog)
-        statement = self._apply_query(statement, SysLoginLog, query, current_user=current_user, fallback_field="created_at")
+        statement = self._apply_query(
+            statement, SysLoginLog, query, current_user=current_user, fallback_field="created_at"
+        )
         rows = list(self.session.exec(statement).all())
         return [self._build_read(row) for row in rows]
 
@@ -224,7 +230,9 @@ class SysLoginLogService(BaseAdminCrudService):
         page = query.page or 1
         page_size = query.size or 10
         statement = select(SysLoginLog)
-        statement = self._apply_query(statement, SysLoginLog, query, current_user=current_user, fallback_field="created_at")
+        statement = self._apply_query(
+            statement, SysLoginLog, query, current_user=current_user, fallback_field="created_at"
+        )
         count_statement = select(func.count()).select_from(statement.subquery())
         total = int(self.session.exec(count_statement).one())
         rows = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
@@ -333,7 +341,9 @@ class SysSecurityLogService(BaseAdminCrudService):
 
     def list(self, query: CrudQuery | None = None, current_user: User | None = None) -> list[SysSecurityLogRead]:
         statement = select(SysSecurityLog)
-        statement = self._apply_query(statement, SysSecurityLog, query, current_user=current_user, fallback_field="created_at")
+        statement = self._apply_query(
+            statement, SysSecurityLog, query, current_user=current_user, fallback_field="created_at"
+        )
         # 按时间倒序排列（最新的在前）
         statement = statement.order_by(SysSecurityLog.created_at.desc())
         rows = list(self.session.exec(statement).all())
@@ -343,7 +353,9 @@ class SysSecurityLogService(BaseAdminCrudService):
         page = query.page or 1
         page_size = query.size or 10
         statement = select(SysSecurityLog)
-        statement = self._apply_query(statement, SysSecurityLog, query, current_user=current_user, fallback_field="created_at")
+        statement = self._apply_query(
+            statement, SysSecurityLog, query, current_user=current_user, fallback_field="created_at"
+        )
         # 按时间倒序排列（最新的在前）
         statement = statement.order_by(SysSecurityLog.created_at.desc())
 

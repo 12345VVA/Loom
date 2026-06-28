@@ -1,18 +1,26 @@
 """
 Base 模块部门控制器
 """
+
 from fastapi import Depends
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
+from app.framework.controller_meta import (
+    BaseController,
+    CoolController,
+    CoolControllerMeta,
+    OrderByConfig,
+    QueryConfig,
+    QueryFieldConfig,
+)
 from app.framework.router.route_meta import Post
 from app.modules.base.model.auth import (
+    DepartmentCreateRequest,
     DepartmentDeleteRequest,
     DepartmentOrderItem,
     DepartmentRead,
     DepartmentUpdateRequest,
-    DepartmentCreateRequest,
     User,
 )
 from app.modules.base.service.admin_service import DepartmentAdminService

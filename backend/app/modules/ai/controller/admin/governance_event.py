@@ -1,6 +1,7 @@
 """
 AI 治理事件接口。
 """
+
 from fastapi import Depends
 from sqlmodel import Session
 
@@ -27,14 +28,32 @@ from app.modules.base.service.security_service import get_current_user
         actions=("page", "info", "list"),
         page_query=QueryConfig(
             keyword_like_fields=("event_type", "metric", "message"),
-            field_eq=("rule_id", "user_id", "profile_id", "model_id", "provider_id", "event_type", "metric", "notified"),
+            field_eq=(
+                "rule_id",
+                "user_id",
+                "profile_id",
+                "model_id",
+                "provider_id",
+                "event_type",
+                "metric",
+                "notified",
+            ),
             field_like=("event_type", "metric", "message"),
             order_fields=("created_at", "updated_at", "current_value", "limit_value"),
             add_order_by=(OrderByConfig("created_at", "desc"),),
         ),
         list_query=QueryConfig(
             keyword_like_fields=("event_type", "metric", "message"),
-            field_eq=("rule_id", "user_id", "profile_id", "model_id", "provider_id", "event_type", "metric", "notified"),
+            field_eq=(
+                "rule_id",
+                "user_id",
+                "profile_id",
+                "model_id",
+                "provider_id",
+                "event_type",
+                "metric",
+                "notified",
+            ),
             field_like=("event_type", "metric", "message"),
             order_fields=("created_at", "updated_at", "current_value", "limit_value"),
             add_order_by=(OrderByConfig("created_at", "desc"),),

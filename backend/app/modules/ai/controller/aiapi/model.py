@@ -1,21 +1,30 @@
 """
 统一 AI API 调用入口。
 """
+
 import logging
 from functools import partial
-from starlette.concurrency import run_in_threadpool
 
 from fastapi import Depends
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
-from app.core.database import Session as DbSession, engine, get_session
+from app.core.database import Session as DbSession
+from app.core.database import engine, get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
 from app.framework.router.route_meta import Post
-from app.modules.ai.model.ai import AiAudioRequest, AiChatRequest, AiEmbeddingRequest, AiImageRequest, AiRerankRequest, AiVideoRequest
+from app.modules.ai.model.ai import (
+    AiAudioRequest,
+    AiChatRequest,
+    AiEmbeddingRequest,
+    AiImageRequest,
+    AiRerankRequest,
+    AiVideoRequest,
+)
 from app.modules.ai.service.runtime_service import AiModelRuntimeService
-from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.base.model.auth import User
+from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.base.service.security_service import get_current_user
 from app.modules.media.service.media_service import MediaAssetService
 

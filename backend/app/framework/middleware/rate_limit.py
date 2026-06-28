@@ -4,6 +4,7 @@
 基于 Redis 原子计数器的固定窗口限流，按客户端 IP + 路由前缀分级限速。
 限流检查在业务处理之前执行，超限请求直接返回 429，不进入后续中间件和路由。
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,16 +27,18 @@ _PREFIX_LIMITS: list[tuple[str, int]] = []
 def _build_prefix_limits() -> list[tuple[str, int]]:
     if _PREFIX_LIMITS:
         return _PREFIX_LIMITS
-    _PREFIX_LIMITS.extend(sorted(
-        [
-            ("/admin/base/open", settings.RATE_LIMIT_OPEN),
-            ("/admin", settings.RATE_LIMIT_ADMIN),
-            ("/app", settings.RATE_LIMIT_DEFAULT),
-            ("/aiapi", settings.RATE_LIMIT_DEFAULT),
-        ],
-        key=lambda pair: len(pair[0]),
-        reverse=True,
-    ))
+    _PREFIX_LIMITS.extend(
+        sorted(
+            [
+                ("/admin/base/open", settings.RATE_LIMIT_OPEN),
+                ("/admin", settings.RATE_LIMIT_ADMIN),
+                ("/app", settings.RATE_LIMIT_DEFAULT),
+                ("/aiapi", settings.RATE_LIMIT_DEFAULT),
+            ],
+            key=lambda pair: len(pair[0]),
+            reverse=True,
+        )
+    )
     return _PREFIX_LIMITS
 
 
@@ -62,6 +65,16 @@ def _get_client_ip(request: Request) -> str:
     return "unknown"
 
 
+def _get_client_id(request: Request) -> str:
+    import hashlib
+    token = request.headers.get("authorization")
+    if token and token.startswith("Bearer "):
+        token_hash = hashlib.md5(token.encode()).hexdigest()
+        return f"user:{token_hash}"
+    ip = _get_client_ip(request)
+    return f"ip:{ip}"
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """全局限流中间件：在业务处理前检查频率，超限直接返回 429。"""
 
@@ -75,14 +88,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         limit = _resolve_limit(path)
-        ip = _get_client_ip(request)
+        client_id = _get_client_id(request)
         window = int(time.time()) // 60
-        cache_key = f"ratelimit:{ip}:{window}:{path}"
+        cache_key = f"ratelimit:{client_id}:{window}:{path}"
 
         current = cache_incr(cache_key, ttl_seconds=90)
 
         if current > limit:
-            logger.warning("限流触发: ip=%s path=%s limit=%d", ip, path, limit)
+            logger.warning("限流触发: client_id=%s path=%s limit=%d", client_id, path, limit)
             record_metric_event("rate_limited", path=path)
             return JSONResponse(
                 status_code=429,

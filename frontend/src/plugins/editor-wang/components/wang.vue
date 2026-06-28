@@ -19,7 +19,12 @@
 
 		<!-- 直接上传 - 视频 -->
 		<div class="upload-inner">
-			<cl-upload :ref="setRefs('video')" type="file" accept="video/*" @success="onFileConfirm" />
+			<cl-upload
+				:ref="setRefs('video')"
+				type="file"
+				accept="video/*"
+				@success="onFileConfirm"
+			/>
 		</div>
 
 		<!-- 直接上传 - 图片 -->

@@ -4,7 +4,13 @@
 			<cl-refresh-btn />
 			<cl-add-btn />
 			<el-button @click="triggerImport" :icon="Upload">{{ $t('导入工作流') }}</el-button>
-			<input type="file" ref="fileInput" accept=".json" style="display: none;" @change="handleFileImport" />
+			<input
+				type="file"
+				ref="fileInput"
+				accept=".json"
+				style="display: none"
+				@change="handleFileImport"
+			/>
 			<cl-multi-delete-btn />
 			<cl-flex1 />
 			<cl-search-key :placeholder="$t('搜索编码、名称')" />
@@ -59,7 +65,12 @@ const Upsert = useUpsert({
 			prop: 'description',
 			component: { name: 'el-input', props: { type: 'textarea', rows: 4 } }
 		},
-		{ label: t('启用'), prop: 'status', value: 1, component: { name: 'el-switch', props: { activeValue: 1, inactiveValue: 0 } } }
+		{
+			label: t('启用'),
+			prop: 'status',
+			value: 1,
+			component: { name: 'el-switch', props: { activeValue: 1, inactiveValue: 0 } }
+		}
 	],
 	onSubmit(data, { next }) {
 		if (tempGraphJson.value) {
@@ -126,7 +137,7 @@ function handleFileImport(e: Event) {
 	if (!target.files || target.files.length === 0) return;
 	const file = target.files[0];
 	const reader = new FileReader();
-	reader.onload = (ev) => {
+	reader.onload = ev => {
 		try {
 			const text = ev.target?.result as string;
 			const data = JSON.parse(text);
@@ -154,5 +165,4 @@ function handleFileImport(e: Event) {
 }
 </script>
 
-<style lang="scss" scoped>
-</style>
+<style lang="scss" scoped></style>

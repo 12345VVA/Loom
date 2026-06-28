@@ -1,4 +1,5 @@
 """AI 厂商管理服务。"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -59,9 +60,14 @@ class AiProviderService(BaseAdminCrudService):
         is_tree: bool | None = None,
         parent_field: str | None = None,
     ) -> list[dict]:
-        return [self._with_secret_flags(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
+        return [
+            self._with_secret_flags(item)
+            for item in super().list(query, current_user, relations, is_tree, parent_field)
+        ]
 
-    def page(self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> PageResult[dict]:
+    def page(
+        self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
+    ) -> PageResult[dict]:
         result = super().page(query, current_user, relations)
         result.items = [self._with_secret_flags(item) for item in result.items]
         return result
@@ -91,7 +97,9 @@ class AiProviderService(BaseAdminCrudService):
             code = str(item.get("code") or "").strip()
             if not code:
                 continue
-            exists = self.session.exec(select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == code)).first()
+            exists = self.session.exec(
+                select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == code)
+            ).first()
             if exists:
                 existing_count += 1
                 exists.name = str(item.get("name") or code)
@@ -156,7 +164,12 @@ class AiProviderService(BaseAdminCrudService):
                 if exists and not payload.overwrite_models:
                     continue
                 if exists is None:
-                    exists = AiModel(provider_id=provider.id, code=model_item["code"], name=model_item["name"], model_type=model_item.get("model_type", "chat"))
+                    exists = AiModel(
+                        provider_id=provider.id,
+                        code=model_item["code"],
+                        name=model_item["name"],
+                        model_type=model_item.get("model_type", "chat"),
+                    )
                     imported_models += 1
                 exists.name = model_item["name"]
                 exists.capabilities = model_item.get("capabilities")

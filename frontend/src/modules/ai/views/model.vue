@@ -31,7 +31,9 @@
 				<div class="default-config-editor">
 					<div class="default-config-editor__tools">
 						<span>{{ $t('模型调用价格配置') }}</span>
-						<el-button text type="primary" @click="fillPricingConfig(scope)">{{ $t('填充示例') }}</el-button>
+						<el-button text type="primary" @click="fillPricingConfig(scope)">{{
+							$t('填充示例')
+						}}</el-button>
 					</div>
 					<cl-editor-codemirror v-model="scope.pricingConfig" :height="200" />
 				</div>
@@ -40,7 +42,9 @@
 				<div class="default-config-editor">
 					<div class="default-config-editor__tools">
 						<span>{{ defaultConfigHint(scope) }}</span>
-						<el-button text type="primary" @click="fillDefaultConfig(scope)">{{ $t('填充示例') }}</el-button>
+						<el-button text type="primary" @click="fillDefaultConfig(scope)">{{
+							$t('填充示例')
+						}}</el-button>
 					</div>
 					<cl-editor-codemirror v-model="scope.defaultConfig" :height="260" />
 				</div>
@@ -103,7 +107,11 @@ const Upsert = useUpsert({
 			required: true,
 			component: { name: 'cl-select', props: { options: modelTypeOptions } }
 		},
-		{ label: t('能力'), prop: 'capabilities', component: { name: 'el-input', props: { placeholder: 'vision,json,tool' } } },
+		{
+			label: t('能力'),
+			prop: 'capabilities',
+			component: { name: 'el-input', props: { placeholder: 'vision,json,tool' } }
+		},
 		{ label: t('上下文长度'), prop: 'contextWindow', component: { name: 'el-input-number' } },
 		{ label: t('最大输出'), prop: 'maxOutputTokens', component: { name: 'el-input-number' } },
 		{
@@ -127,7 +135,12 @@ const Table = useTable({
 		{ label: t('厂商'), prop: 'providerName', minWidth: 150 },
 		{ label: t('编码'), prop: 'code', minWidth: 180 },
 		{ label: t('名称'), prop: 'name', minWidth: 160 },
-		{ label: t('类型'), prop: 'modelType', minWidth: 120, formatter: ({ modelType }: any) => optionLabel(modelTypeOptions, modelType) },
+		{
+			label: t('类型'),
+			prop: 'modelType',
+			minWidth: 120,
+			formatter: ({ modelType }: any) => optionLabel(modelTypeOptions, modelType)
+		},
 		{
 			label: t('能力'),
 			prop: 'capabilities',
@@ -225,5 +238,4 @@ function defaultConfigTemplate(scope: any) {
 		font-size: 13px;
 	}
 }
-
 </style>

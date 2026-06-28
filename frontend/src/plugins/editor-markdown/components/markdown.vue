@@ -1,5 +1,9 @@
 <template>
-	<div ref="containerRef" class="cl-editor-markdown" :class="{ disabled, 'is-preview': onlyPreview, simple }">
+	<div
+		ref="containerRef"
+		class="cl-editor-markdown"
+		:class="{ disabled, 'is-preview': onlyPreview, simple }"
+	>
 		<!-- 纯渲染模式 -->
 		<md-preview
 			v-if="onlyPreview"
@@ -26,21 +30,43 @@
 		/>
 
 		<!-- 变量插入悬浮按钮 -->
-		<el-popover v-if="!disabled && !preview && !onlyPreview && (upstreamOutputVars?.length || loopContextVars?.length)" placement="bottom-end" :width="280" trigger="click">
+		<el-popover
+			v-if="
+				!disabled &&
+				!preview &&
+				!onlyPreview &&
+				(upstreamOutputVars?.length || loopContextVars?.length)
+			"
+			placement="bottom-end"
+			:width="280"
+			trigger="click"
+		>
 			<template #reference>
-				<el-button class="md-var-btn" size="small" :icon="Link" plain>{{ $t('变量') }}</el-button>
+				<el-button class="md-var-btn" size="small" :icon="Link" plain>{{
+					$t('变量')
+				}}</el-button>
 			</template>
 			<div class="variable-list">
 				<div v-if="loopContextVars?.length" class="var-group">
 					<div class="var-group-title">{{ $t('循环上下文') }}</div>
-					<div v-for="v in loopContextVars" :key="v.key" class="var-item" @click="insertVariable(v.refText)">
+					<div
+						v-for="v in loopContextVars"
+						:key="v.key"
+						class="var-item"
+						@click="insertVariable(v.refText)"
+					>
 						<span>{{ v.display }}</span>
 						<small>{{ v.nodeLabel }}</small>
 					</div>
 				</div>
 				<div v-if="upstreamOutputVars?.length" class="var-group">
 					<div class="var-group-title">{{ $t('上游输出') }}</div>
-					<div v-for="v in upstreamOutputVars" :key="v.key" class="var-item" @click="insertVariable(v.refText)">
+					<div
+						v-for="v in upstreamOutputVars"
+						:key="v.key"
+						class="var-item"
+						@click="insertVariable(v.refText)"
+					>
 						<span>{{ v.display }}</span>
 						<small>{{ v.nodeLabel }}</small>
 					</div>
@@ -113,9 +139,12 @@ const value = computed({
 // 局部状态管理 md-editor 的预览区是否展示
 const showPreview = ref(props.preview || false);
 
-watch(() => props.preview, (val) => {
-	showPreview.value = val || false;
-});
+watch(
+	() => props.preview,
+	val => {
+		showPreview.value = val || false;
+	}
+);
 
 // 不常用按钮，始终隐藏
 const alwaysExclude: ToolbarNames[] = [
@@ -212,7 +241,7 @@ function insertVariable(refText: string) {
 		const val = value.value;
 		const newVal = val.substring(0, start) + refText + val.substring(end);
 		setValue(newVal);
-		
+
 		// 稍微延迟以确保视图更新后恢复焦点
 		setTimeout(() => {
 			const newEditorEl = containerRef.value?.querySelector('textarea');
@@ -230,7 +259,7 @@ defineExpose({ getValue, setValue, formatCode: () => {} });
 </script>
 
 <style lang="scss" scoped>
-@use "/@/modules/workflow/components/variable-list.scss";
+@use '/@/modules/workflow/components/variable-list.scss';
 
 .cl-editor-markdown {
 	position: relative;

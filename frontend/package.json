@@ -14,7 +14,9 @@
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"lint": "eslint . --fix",
-		"format": "prettier --write src/"
+		"lint:check": "eslint .",
+		"format": "prettier --write src/",
+		"format:check": "prettier --check src/"
 	},
 	"dependencies": {
 		"@codemirror/autocomplete": "^6.20.2",
@@ -78,7 +80,6 @@
 		"@vue/tsconfig": "^0.5.1",
 		"autoprefixer": "^10.4.20",
 		"eslint": "^9.19.0",
-		"eslint-plugin-prettier": "^5.2.3",
 		"eslint-plugin-vue": "^9.32.0",
 		"jsdom": "^25.0.1",
 		"postcss": "^8.5.1",

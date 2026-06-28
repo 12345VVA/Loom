@@ -1,11 +1,12 @@
 """
 类似 Loom 的装饰器式控制器元数据
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import inspect
 import threading
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
@@ -13,8 +14,7 @@ from sqlmodel import Session
 
 from app.core.database import get_session
 from app.framework.router.route_meta import CoolRouteMeta, TagTypes, cool_tag, get_route_meta
-from app.modules.base.model.auth import DeleteRequest, PageResult
-from app.modules.base.model.auth import User
+from app.modules.base.model.auth import DeleteRequest, PageResult, User
 from app.modules.base.service.security_service import get_current_user
 from app.modules.module_config import PermissionConfig
 
@@ -123,10 +123,11 @@ class InsertParamConfig:
 @dataclass(frozen=True)
 class RelationConfig:
     """自动关联配置"""
-    model: Any          # 目标模型类，例如 Department
-    column: str         # 当前模型的关联字段，例如 department_id
+
+    model: Any  # 目标模型类，例如 Department
+    column: str  # 当前模型的关联字段，例如 department_id
     target_column: str  # 目标模型中要选取的字段，例如 name
-    alias: str          # 输出到 JSON 的别名，例如 departmentName
+    alias: str  # 输出到 JSON 的别名，例如 departmentName
 
 
 DEFAULT_CRUD_ACTIONS: tuple[CrudAction, ...] = (
@@ -243,9 +244,11 @@ def CoolController(meta: CoolControllerMeta):
 def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
     # 建立快捷查找映射
     default_actions_map = {action.name: action for action in DEFAULT_CRUD_ACTIONS}
-    
+
     actions = meta.api or meta.actions
-    controller_name = meta.controller_name or "".join(part.capitalize() for part in str(meta.resource).replace("/", ":").split(":"))
+    controller_name = meta.controller_name or "".join(
+        part.capitalize() for part in str(meta.resource).replace("/", ":").split(":")
+    )
 
     for action_item in actions:
         # 支持字符串形式或对象形式
@@ -261,10 +264,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
         # 确定该资源对应的核心模型，用于 EPS 扫描列
         core_model = meta.page_item_model or meta.list_response_model or meta.info_response_model
 
-        method_patterns = tuple(
-            f"{method} {full_path}"
-            for method in _crud_route_methods(action)
-        )
+        method_patterns = tuple(f"{method} {full_path}" for method in _crud_route_methods(action))
         _register_permission_config(
             PermissionConfig(
                 name=f"{meta.name_prefix}{action.summary}",
@@ -487,7 +487,9 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
 
             endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary)
+            router.add_api_route(
+                action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary
+            )
         elif action.name == "add":
             request_model = meta.add_request_model
             response_model = meta.add_response_model
@@ -519,7 +521,9 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
             endpoint.__annotations__["payload"] = request_model
             endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary)
+            router.add_api_route(
+                action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary
+            )
         elif action.name == "update":
             request_model = meta.update_request_model
             response_model = meta.update_response_model
@@ -551,7 +555,9 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
             endpoint.__annotations__["payload"] = request_model
             endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary)
+            router.add_api_route(
+                action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary
+            )
         elif action.name == "delete":
             request_model = meta.delete_request_model
 
@@ -583,11 +589,15 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
             endpoint.__annotations__["payload"] = request_model
             endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
             _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(action.path, endpoint, methods=[action.method], response_model=dict, summary=action.summary)
+            router.add_api_route(
+                action.path, endpoint, methods=[action.method], response_model=dict, summary=action.summary
+            )
 
 
 def _register_custom_routes(router: APIRouter, controller: BaseController, meta: CoolControllerMeta) -> None:
-    controller_name = meta.controller_name or "".join(part.capitalize() for part in str(meta.resource).replace("/", ":").split(":"))
+    controller_name = meta.controller_name or "".join(
+        part.capitalize() for part in str(meta.resource).replace("/", ":").split(":")
+    )
     for attribute_name in dir(controller.__class__):
         if attribute_name.startswith("_"):
             continue
@@ -627,14 +637,18 @@ def _register_custom_permission(controller_meta: CoolControllerMeta, route_meta:
             name=route_meta.summary or route_meta.permission,
             code=route_meta.permission.replace(":", "_").replace("/", "_"),
             permission=route_meta.permission.replace("/", ":"),
-            admin_patterns=(f"{route_meta.method} /{controller_meta.scope}/{controller_meta.module}/{controller_meta.resource}{route_meta.path}",),
+            admin_patterns=(
+                f"{route_meta.method} /{controller_meta.scope}/{controller_meta.module}/{controller_meta.resource}{route_meta.path}",
+            ),
             role_codes=route_meta.role_codes,
         )
     )
 
 
 def _register_service_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
-    controller_name = meta.controller_name or "".join(part.capitalize() for part in str(meta.resource).replace("/", ":").split(":"))
+    controller_name = meta.controller_name or "".join(
+        part.capitalize() for part in str(meta.resource).replace("/", ":").split(":")
+    )
     for item in meta.service_apis:
         config = item if isinstance(item, ServiceApiConfig) else ServiceApiConfig(method=item)
         permission = config.permission or f"{meta.module}:{meta.resource.replace('/', ':')}:{config.method}"
@@ -706,11 +720,7 @@ def _tag_generated_endpoint(endpoint, scope: str) -> None:
 
 def _invoke_service(method, **available_kwargs):
     signature = inspect.signature(method)
-    kwargs = {
-        name: value
-        for name, value in available_kwargs.items()
-        if name in signature.parameters
-    }
+    kwargs = {name: value for name, value in available_kwargs.items() if name in signature.parameters}
     return method(**kwargs)
 
 
@@ -724,13 +734,13 @@ def _build_service_kwargs(meta: CoolControllerMeta, action_name: str, **availabl
             continue
         _assign_path(kwargs, item.target, source_value)
     kwargs["action_name"] = action_name
-    
+
     # 自动注入框架配置
     kwargs["soft_delete"] = meta.soft_delete
     kwargs["relations"] = meta.relations
     kwargs["is_tree"] = meta.is_tree
     kwargs["parent_field"] = meta.parent_field
-    
+
     return kwargs
 
 
@@ -805,7 +815,9 @@ def _build_crud_query(
     )
 
 
-def _run_before_hooks(service, hooks: tuple[BeforeHookConfig, ...], action_name: str, available_kwargs: dict[str, Any]) -> None:
+def _run_before_hooks(
+    service, hooks: tuple[BeforeHookConfig, ...], action_name: str, available_kwargs: dict[str, Any]
+) -> None:
     for hook in hooks:
         if hook.action != action_name:
             continue
@@ -854,10 +866,7 @@ def _export_query_meta(config: QueryConfig | None) -> dict[str, Any]:
             else {"column": item, "requestParam": item}
             for item in (*config.field_like, *config.like_filters)
         ],
-        "addOrderBy": [
-            {"column": item.column, "direction": item.direction}
-            for item in config.add_order_by
-        ],
+        "addOrderBy": [{"column": item.column, "direction": item.direction} for item in config.add_order_by],
         "select": list(config.select),
         "hasWhere": config.where is not None,
     }

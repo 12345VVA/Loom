@@ -1,21 +1,12 @@
-import json
 from app.modules.workflow.service.compiler import render_template
-from app.modules.workflow.service.workflow_service import (
-    _build_json_schema_from_fields,
-    _render_output_field_recursive
-)
+from app.modules.workflow.service.workflow_service import _build_json_schema_from_fields, _render_output_field_recursive
 
 
 def test_build_json_schema_nested():
     # 1. Test flat schema
-    fields = [
-        {"name": "title", "type": "string", "description": "The title"}
-    ]
+    fields = [{"name": "title", "type": "string", "description": "The title"}]
     schema = _build_json_schema_from_fields(fields)
-    assert schema["json_schema"]["schema"]["properties"]["title"] == {
-        "type": "string",
-        "description": "The title"
-    }
+    assert schema["json_schema"]["schema"]["properties"]["title"] == {"type": "string", "description": "The title"}
 
     # 2. Test object schema
     fields = [
@@ -25,8 +16,8 @@ def test_build_json_schema_nested():
             "description": "User info",
             "children": [
                 {"name": "name", "type": "string", "description": "User name"},
-                {"name": "age", "type": "number"}
-            ]
+                {"name": "age", "type": "number"},
+            ],
         }
     ]
     schema = _build_json_schema_from_fields(fields)
@@ -42,9 +33,7 @@ def test_build_json_schema_nested():
             "name": "tags",
             "type": "array",
             "description": "List of tags",
-            "children": [
-                {"name": "[Item]", "type": "string", "description": "Tag item"}
-            ]
+            "children": [{"name": "[Item]", "type": "string", "description": "Tag item"}],
         }
     ]
     schema = _build_json_schema_from_fields(fields)
@@ -58,10 +47,7 @@ def test_build_json_schema_nested():
             "name": "stories",
             "type": "array_object",
             "description": "List of stories",
-            "children": [
-                {"name": "story_id", "type": "number"},
-                {"name": "title", "type": "string"}
-            ]
+            "children": [{"name": "story_id", "type": "number"}, {"name": "title", "type": "string"}],
         }
     ]
     schema = _build_json_schema_from_fields(fields)
@@ -73,13 +59,7 @@ def test_build_json_schema_nested():
     assert stories_schema["items"]["required"] == ["story_id", "title"]
 
     # 5. Test Array<String> (array_string)
-    fields = [
-        {
-            "name": "keywords",
-            "type": "array_string",
-            "description": "List of keywords"
-        }
-    ]
+    fields = [{"name": "keywords", "type": "array_string", "description": "List of keywords"}]
     schema = _build_json_schema_from_fields(fields)
     keywords_schema = schema["json_schema"]["schema"]["properties"]["keywords"]
     assert keywords_schema["type"] == "array"
@@ -87,34 +67,20 @@ def test_build_json_schema_nested():
 
 
 def test_render_template_list_index():
-    variables = {
-        "llm_node": {
-            "scores": [95, 80, 75],
-            "nested": [
-                {"name": "Alice"},
-                {"name": "Bob"}
-            ]
-        }
-    }
+    variables = {"llm_node": {"scores": [95, 80, 75], "nested": [{"name": "Alice"}, {"name": "Bob"}]}}
     # Test index access
     assert render_template("Score is {llm_node.scores.0}", variables) == "Score is 95"
     assert render_template("Score is {llm_node.scores.1}", variables) == "Score is 80"
     assert render_template("Name is {llm_node.nested.0.name}", variables) == "Name is Alice"
-    
+
     # Test fallback to empty string
     assert render_template("Score is {llm_node.scores.5}", variables) == "Score is "
     assert render_template("Score is {llm_node.scores.abc}", variables) == "Score is "
 
 
 def test_render_output_field_recursive():
-    variables = {
-        "start": {"input_name": "Alice"},
-        "llm_node": {
-            "score": 98,
-            "items": ["art", "science"]
-        }
-    }
-    
+    variables = {"start": {"input_name": "Alice"}, "llm_node": {"score": 98, "items": ["art", "science"]}}
+
     # End node style nested fields definition
     fields = [
         {
@@ -127,23 +93,15 @@ def test_render_output_field_recursive():
                     "type": "array",
                     "children": [
                         {"name": "[0]", "type": "number", "value": "{llm_node.score}"},
-                        {"name": "[1]", "type": "string", "value": "{llm_node.items}"}
-                    ]
-                }
-            ]
+                        {"name": "[1]", "type": "string", "value": "{llm_node.items}"},
+                    ],
+                },
+            ],
         }
     ]
-    
+
     result = {}
     for f in fields:
         result[f["name"]] = _render_output_field_recursive(f, variables)
-        
-    assert result == {
-        "result": {
-            "userName": "Alice",
-            "scores": [
-                98,
-                ["art", "science"]
-            ]
-        }
-    }
+
+    assert result == {"result": {"userName": "Alice", "scores": [98, ["art", "science"]]}}

@@ -1,25 +1,26 @@
 """
 数据库配置
 """
-from pathlib import Path
-from contextlib import contextmanager
-from collections.abc import Iterator
 
-from sqlalchemy import inspect, text
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+
+from sqlalchemy import event, inspect, text
 from sqlalchemy.orm import SessionTransactionOrigin
-from sqlmodel import SQLModel, create_engine, Session
+from sqlmodel import Session, SQLModel, create_engine
+
 from app.core.config import settings
+from app.framework.models.entity import BaseEntity
+from app.modules.ai.model import ai as _ai_models  # noqa: F401
 from app.modules.base.model import auth as _base_auth_models  # noqa: F401
-from app.modules.base.model.sys import SysLog, SysLoginLog, SysParam
 from app.modules.base.model import sys as _base_sys_models  # noqa: F401
 from app.modules.dict.model import dict as _dict_models  # noqa: F401
-from app.modules.task.model import task as _task_models  # noqa: F401
-from app.modules.notification.model import notification as _notification_models  # noqa: F401
-from app.modules.ai.model import ai as _ai_models  # noqa: F401
 from app.modules.media.model import media as _media_models  # noqa: F401
-from sqlalchemy import event
-from datetime import datetime
-from app.framework.models.entity import BaseEntity
+from app.modules.notification.model import notification as _notification_models  # noqa: F401
+from app.modules.task.model import task as _task_models  # noqa: F401
+from app.modules.workflow.model import workflow as _workflow_models  # noqa: F401
 
 
 @event.listens_for(BaseEntity, "before_update", propagate=True)
@@ -239,6 +240,10 @@ def _ensure_sqlite_compatible_schema() -> None:
         },
         "workflow_instance": {
             "celery_task_id": "ALTER TABLE workflow_instance ADD COLUMN celery_task_id VARCHAR",
+            "user_id": "ALTER TABLE workflow_instance ADD COLUMN user_id INTEGER",
+        },
+        "workflow_definition": {
+            "user_id": "ALTER TABLE workflow_definition ADD COLUMN user_id INTEGER",
         },
         "media_asset": {
             "asset_type": "ALTER TABLE media_asset ADD COLUMN asset_type VARCHAR DEFAULT 'file'",
@@ -266,26 +271,47 @@ def _ensure_sqlite_compatible_schema() -> None:
 
     # 所有需要检查标准字段的表列表
     tables_to_check = [
-        "sys_department", "sys_role", "sys_menu", "sys_user",
-        "sys_param", "sys_log", "sys_login_log", 
-        "dict_type", "dict_info", "task_info", "task_log",
-        "notification_message", "notification_recipient", "notification_template", "notification_rule",
-        "ai_provider", "ai_model", "ai_model_profile", "ai_model_call_log", "ai_generation_task",
-        "ai_governance_rule", "ai_governance_event", "ai_runtime_invocation",
-        "media_asset", "workflow_instance",
-        "sys_user_role", "sys_role_menu", "sys_role_department"
+        "sys_department",
+        "sys_role",
+        "sys_menu",
+        "sys_user",
+        "sys_param",
+        "sys_log",
+        "sys_login_log",
+        "dict_type",
+        "dict_info",
+        "task_info",
+        "task_log",
+        "notification_message",
+        "notification_recipient",
+        "notification_template",
+        "notification_rule",
+        "ai_provider",
+        "ai_model",
+        "ai_model_profile",
+        "ai_model_call_log",
+        "ai_generation_task",
+        "ai_governance_rule",
+        "ai_governance_event",
+        "ai_runtime_invocation",
+        "media_asset",
+        "workflow_definition",
+        "workflow_instance",
+        "sys_user_role",
+        "sys_role_menu",
+        "sys_role_department",
     ]
 
     inspector = inspect(engine)
     with engine.begin() as connection:
         existing_tables = set(inspector.get_table_names())
-        
+
         for table_name in tables_to_check:
             if table_name not in existing_tables:
                 continue
-                
+
             existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
-            
+
             # 1. 检查并补齐标准字段 (delete_time, updated_at)
             for col_name, ddl_template in standard_columns.items():
                 if col_name not in existing_columns:

@@ -1,6 +1,7 @@
 """
 最小 i18n 消息解析。
 """
+
 from __future__ import annotations
 
 import json

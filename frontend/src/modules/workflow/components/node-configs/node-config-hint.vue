@@ -29,7 +29,7 @@ import { InfoFilled } from '@element-plus/icons-vue';
 		color: var(--el-color-info);
 		flex-shrink: 0;
 	}
-	
+
 	.hint-content {
 		flex: 1;
 	}

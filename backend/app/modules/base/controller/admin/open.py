@@ -1,11 +1,11 @@
 """
 Base 模块开放接口
 """
+
 from fastapi import Depends, Request
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.core.config import settings
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
 from app.framework.router.route_meta import Get, Post
 from app.modules.base.model.auth import CaptchaResponse, CoolLoginResponse, LoginRequest, RefreshTokenRequest, User

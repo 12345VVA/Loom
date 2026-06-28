@@ -1,23 +1,23 @@
+import json
 import os
 import sys
 import unittest
-import json
+import warnings
 from datetime import datetime, timedelta
-from typing import Optional
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from main import app  # noqa: E402
-from app.framework.router.query_builder import QueryBuilder  # noqa: E402
-from app.framework.controller_meta import CrudQuery  # noqa: E402
+from app.core.config import settings  # noqa: E402
 from app.core.database import engine as app_engine  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
+from app.framework.controller_meta import CrudQuery  # noqa: E402
+from app.framework.router.query_builder import QueryBuilder  # noqa: E402
+from app.modules.base.model.auth import User  # noqa: E402
 from app.modules.base.model.sys import (  # noqa: E402
     SysLoginLogCreateRequest,
     SysLoginLogRead,
@@ -26,29 +26,37 @@ from app.modules.base.model.sys import (  # noqa: E402
     SysSecurityLogCreateRequest,
     SysSecurityLogRead,
 )
-from app.modules.base.model.auth import User  # noqa: E402
-from app.modules.base.service.data_scope_service import DataScopeContext  # noqa: E402
 from app.modules.base.service.cache_service import cache_delete_pattern  # noqa: E402
+from app.modules.base.service.data_scope_service import DataScopeContext  # noqa: E402
 from app.modules.base.service.security_service import create_access_token  # noqa: E402
-from app.core.config import settings  # noqa: E402
+from main import app  # noqa: E402
 
 
 class ScopedRow(SQLModel, table=True):
     __tablename__ = "test_framework_scoped_row"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: Optional[int] = Field(default=None, index=True)
-    department_id: Optional[int] = Field(default=None, index=True)
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int | None = Field(default=None, index=True)
+    department_id: int | None = Field(default=None, index=True)
     name: str
 
 
 class PlainRow(SQLModel, table=True):
     __tablename__ = "test_framework_plain_row"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     name: str
     status: int = 1
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# 夹具表仅供 query builder 单元测试在隔离 engine 上使用，从全局 metadata 摘除，
+# 避免被 app lifespan 的 init_db()（真实数据库如 PG 上的 create_all）带建到生产库。
+# 注：MetaData.remove 在 SQLAlchemy 2.0 已 deprecated，但用于测试夹具隔离仍是最简方式。
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    for _fixture_table in (ScopedRow.__table__, PlainRow.__table__):
+        SQLModel.metadata.remove(_fixture_table)
 
 
 class FrameworkAlignmentTests(unittest.TestCase):
@@ -67,10 +75,7 @@ class FrameworkAlignmentTests(unittest.TestCase):
             {
                 "x": target_x,
                 "duration": 720,
-                "track": [
-                    {"x": round(target_x * step / 6, 2), "t": step * 120}
-                    for step in range(1, 7)
-                ],
+                "track": [{"x": round(target_x * step / 6, 2), "t": step * 120} for step in range(1, 7)],
             }
         )
 

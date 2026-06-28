@@ -13,7 +13,9 @@
 				<span class="stat-chip">{{ $t('调用') }}: {{ stats.total }}</span>
 				<span class="stat-chip">{{ $t('成功') }}: {{ stats.success }}</span>
 				<span class="stat-chip">{{ $t('错误') }}: {{ stats.error }}</span>
-				<span class="stat-chip">{{ $t('成功率') }}: {{ (stats.successRate * 100).toFixed(2) }}%</span>
+				<span class="stat-chip"
+					>{{ $t('成功率') }}: {{ (stats.successRate * 100).toFixed(2) }}%</span
+				>
 				<span class="stat-chip">{{ $t('平均延迟') }}: {{ stats.avgLatencyMs }}ms</span>
 				<span class="stat-chip">Tokens: {{ stats.totalTokens }}</span>
 			</div>
@@ -76,8 +78,18 @@ const Table = useTable({
 		{ label: t('调用配置'), prop: 'profileName', minWidth: 150 },
 		{ label: t('用户'), prop: 'username', minWidth: 130 },
 		{ label: t('场景'), prop: 'scenario', minWidth: 120 },
-		{ label: t('类型'), prop: 'modelType', minWidth: 100, formatter: ({ modelType }: any) => optionLabel(modelTypeOptions, modelType) },
-		{ label: t('状态'), prop: 'status', minWidth: 110, formatter: ({ status }: any) => optionLabel(statusOptions, status) },
+		{
+			label: t('类型'),
+			prop: 'modelType',
+			minWidth: 100,
+			formatter: ({ modelType }: any) => optionLabel(modelTypeOptions, modelType)
+		},
+		{
+			label: t('状态'),
+			prop: 'status',
+			minWidth: 110,
+			formatter: ({ status }: any) => optionLabel(statusOptions, status)
+		},
 		{ label: t('延迟(ms)'), prop: 'latencyMs', minWidth: 110 },
 		{ label: 'Prompt Tokens', prop: 'promptTokens', minWidth: 130 },
 		{ label: 'Completion Tokens', prop: 'completionTokens', minWidth: 160 },

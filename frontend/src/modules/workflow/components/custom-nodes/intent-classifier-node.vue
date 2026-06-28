@@ -2,7 +2,8 @@
 	<div
 		class="custom-flow-node node-intent_classifier"
 		:class="{ 'is-selected': selected, 'is-child': isChild, 'is-incomplete': incomplete }"
-		:style="{ height: nodeHeight + 'px' }">
+		:style="{ height: nodeHeight + 'px' }"
+	>
 		<handle type="target" :position="Position.Left" />
 		<el-icon class="node-icon"><magic-stick /></el-icon>
 		<span class="node-label">{{ label }}</span>
@@ -10,15 +11,30 @@
 		<span v-if="incomplete" class="node-incomplete-dot" />
 		<div class="output-handles">
 			<div v-for="(intent, i) in intents" :key="'intent_' + i" class="handle-group">
-				<span class="handle-label handle-label--intent" :style="{ top: handleTop(Number(i)) }">{{ intent.name || ('I' + (Number(i) + 1)) }}</span>
-				<handle :id="'intent_' + i" type="source" :position="Position.Right"
-					:style="{ top: handleTop(Number(i)) }" />
+				<span
+					class="handle-label handle-label--intent"
+					:style="{ top: handleTop(Number(i)) }"
+					>{{ intent.name || 'I' + (Number(i) + 1) }}</span
+				>
+				<handle
+					:id="'intent_' + i"
+					type="source"
+					:position="Position.Right"
+					:style="{ top: handleTop(Number(i)) }"
+				/>
 			</div>
 			<div class="handle-group">
-				<span class="handle-label handle-label--default" :style="{ top: handleTop(intents.length) }">默认</span>
+				<span
+					class="handle-label handle-label--default"
+					:style="{ top: handleTop(intents.length) }"
+					>默认</span
+				>
 				<handle
-					id="default" type="source" :position="Position.Right"
-					:style="{ top: handleTop(intents.length) }" />
+					id="default"
+					type="source"
+					:position="Position.Right"
+					:style="{ top: handleTop(intents.length) }"
+				/>
 			</div>
 		</div>
 	</div>
@@ -42,7 +58,7 @@ const intents = computed(() => props.data?.config?.intents || []);
 const totalCount = computed(() => intents.value.length + 1);
 
 function handleTop(index: number): string {
-	return `${(index + 1) * 100 / (totalCount.value + 1)}%`;
+	return `${((index + 1) * 100) / (totalCount.value + 1)}%`;
 }
 
 const nodeHeight = computed(() => Math.max(56, totalCount.value * 28 + 28));
@@ -72,7 +88,9 @@ const nodeHeight = computed(() => Math.max(56, totalCount.value * 28 + 28));
 
 	&.is-selected {
 		border-color: var(--el-color-primary);
-		box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2), 0 4px 12px rgba(64, 158, 255, 0.1);
+		box-shadow:
+			0 0 0 2px rgba(64, 158, 255, 0.2),
+			0 4px 12px rgba(64, 158, 255, 0.1);
 	}
 
 	&.is-child {
@@ -111,7 +129,9 @@ const nodeHeight = computed(() => Math.max(56, totalCount.value * 28 + 28));
 
 .node-intent_classifier {
 	border-left: 4px solid #20b2aa;
-	.node-icon { color: #20b2aa; }
+	.node-icon {
+		color: #20b2aa;
+	}
 }
 
 .output-handles {

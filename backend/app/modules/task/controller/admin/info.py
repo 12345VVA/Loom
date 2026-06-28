@@ -1,13 +1,24 @@
 """
 系统定时任务接口
 """
+
 from fastapi import Depends, Request
 from sqlmodel import Session
+
 from app.core.database import get_session
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, CrudQuery, OrderByConfig, QueryConfig, QueryFieldConfig
+from app.framework.controller_meta import (
+    BaseController,
+    CoolController,
+    CoolControllerMeta,
+    CrudQuery,
+    OrderByConfig,
+    QueryConfig,
+    QueryFieldConfig,
+)
 from app.framework.router.route_meta import Get, Post
 from app.modules.task.model.task import TaskInfoCreateRequest, TaskInfoRead, TaskInfoUpdateRequest
 from app.modules.task.service.task_service import TaskInfoService
+
 
 @CoolController(
     CoolControllerMeta(
@@ -71,5 +82,6 @@ class TaskInfoController(BaseController):
     ):
         task_id = payload.get("id")
         return await TaskInfoService(session).once(task_id)
+
 
 router = TaskInfoController.router

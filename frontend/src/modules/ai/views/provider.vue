@@ -12,10 +12,14 @@
 		<cl-row>
 			<cl-table ref="Table">
 				<template #slot-test="{ scope }">
-					<el-button text type="primary" @click="testProvider(scope.row)">{{ $t('测试') }}</el-button>
+					<el-button text type="primary" @click="testProvider(scope.row)">{{
+						$t('测试')
+					}}</el-button>
 				</template>
 				<template #slot-sync="{ scope }">
-					<el-button text type="primary" @click="syncModels(scope.row)">{{ $t('同步模型') }}</el-button>
+					<el-button text type="primary" @click="syncModels(scope.row)">{{
+						$t('同步模型')
+					}}</el-button>
 				</template>
 			</cl-table>
 		</cl-row>
@@ -30,9 +34,11 @@
 				<div class="extra-config-editor">
 					<div class="extra-config-editor__tools">
 						<span>{{ $t('按适配器填充常用配置') }}</span>
-						<el-button text type="primary" @click="fillExtraConfig(scope)">{{ $t('填充模板') }}</el-button>
+						<el-button text type="primary" @click="fillExtraConfig(scope)">{{
+							$t('填充模板')
+						}}</el-button>
 					</div>
-						<cl-editor-codemirror v-model="scope.extraConfig" :height="280" />
+					<cl-editor-codemirror v-model="scope.extraConfig" :height="280" />
 				</div>
 			</template>
 		</cl-upsert>
@@ -45,7 +51,12 @@
 			<el-table-column :label="$t('模型')" min-width="150">
 				<template #default="{ row }">
 					<div class="catalog-types">
-						<el-tag v-for="item in modelTypeStats(row)" :key="item.label" size="small" effect="plain">
+						<el-tag
+							v-for="item in modelTypeStats(row)"
+							:key="item.label"
+							size="small"
+							effect="plain"
+						>
 							{{ item.label }} {{ item.value }}
 						</el-tag>
 					</div>
@@ -53,7 +64,9 @@
 			</el-table-column>
 			<el-table-column :label="$t('操作')" width="100">
 				<template #default="{ row }">
-					<el-button text type="primary" @click="importCatalog(row)">{{ $t('导入') }}</el-button>
+					<el-button text type="primary" @click="importCatalog(row)">{{
+						$t('导入')
+					}}</el-button>
 				</template>
 			</el-table-column>
 		</el-table>

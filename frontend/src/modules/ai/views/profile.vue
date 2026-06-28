@@ -11,45 +11,74 @@
 		<cl-row>
 			<cl-table ref="Table">
 				<template #slot-default="{ scope }">
-					<el-button text type="primary" @click="setDefault(scope.row)">{{ $t('设默认') }}</el-button>
+					<el-button text type="primary" @click="setDefault(scope.row)">{{
+						$t('设默认')
+					}}</el-button>
 				</template>
 
 				<template #slot-test="{ scope }">
-					<el-button text type="primary" @click="openTest(scope.row)">{{ $t('测试') }}</el-button>
+					<el-button text type="primary" @click="openTest(scope.row)">{{
+						$t('测试')
+					}}</el-button>
 				</template>
 			</cl-table>
 		</cl-row>
 
 		<cl-row>
 			<cl-flex1 />
-		<cl-pagination />
-	</cl-row>
+			<cl-pagination />
+		</cl-row>
 
-	<cl-upsert ref="Upsert">
-		<template #slot-response-format="{ scope }">
-			<div class="response-format">
-				<el-segmented v-model="scope.responseFormatMode" :options="responseFormatModes" />
-				<el-alert
-					class="mt-2"
-					title="OpenAI Compatible、DeepSeek、百炼、火山方舟、混元、千帆、智谱、MiniMax 等兼容适配器会透传 response_format；Claude、Gemini、Ollama 暂不做协议转换，可能由上游拒绝或忽略。"
-					type="info"
-					show-icon
-					:closable="false"
-				/>
-				<template v-if="scope.responseFormatMode === 'json_schema'">
-					<el-input v-model="scope.responseSchemaName" class="mt-2" placeholder="schema_name" />
-					<el-input v-model="scope.responseSchemaDescription" class="mt-2" placeholder="description" />
-					<el-switch v-model="scope.responseSchemaStrict" class="mt-2" active-text="strict" />
-					<cl-editor-codemirror v-model="scope.responseSchemaBody" class="mt-2" :height="300" />
-				</template>
-			</div>
-		</template>
-	</cl-upsert>
-</cl-crud>
+		<cl-upsert ref="Upsert">
+			<template #slot-response-format="{ scope }">
+				<div class="response-format">
+					<el-segmented
+						v-model="scope.responseFormatMode"
+						:options="responseFormatModes"
+					/>
+					<el-alert
+						class="mt-2"
+						title="OpenAI Compatible、DeepSeek、百炼、火山方舟、混元、千帆、智谱、MiniMax 等兼容适配器会透传 response_format；Claude、Gemini、Ollama 暂不做协议转换，可能由上游拒绝或忽略。"
+						type="info"
+						show-icon
+						:closable="false"
+					/>
+					<template v-if="scope.responseFormatMode === 'json_schema'">
+						<el-input
+							v-model="scope.responseSchemaName"
+							class="mt-2"
+							placeholder="schema_name"
+						/>
+						<el-input
+							v-model="scope.responseSchemaDescription"
+							class="mt-2"
+							placeholder="description"
+						/>
+						<el-switch
+							v-model="scope.responseSchemaStrict"
+							class="mt-2"
+							active-text="strict"
+						/>
+						<cl-editor-codemirror
+							v-model="scope.responseSchemaBody"
+							class="mt-2"
+							:height="300"
+						/>
+					</template>
+				</div>
+			</template>
+		</cl-upsert>
+	</cl-crud>
 
 	<el-drawer v-model="tester.visible" :title="$t('测试调用')" size="440px">
 		<el-form label-position="top">
-			<el-alert v-if="tester.modelType === 'image'" class="mb-12" type="info" :closable="false" show-icon>
+			<el-alert
+				v-if="tester.modelType === 'image'"
+				class="mb-12"
+				type="info"
+				:closable="false"
+				show-icon
+			>
 				{{ $t('图片配置会调用统一生图接口，结果可直接预览。') }}
 			</el-alert>
 			<el-form-item :label="$t('提示词')">
@@ -59,11 +88,25 @@
 		</el-form>
 		<div v-if="tester.imageItems.length" class="test-images">
 			<div v-for="(item, index) in tester.imageItems" :key="index" class="test-image">
-				<el-image :src="item.src" fit="contain" :preview-src-list="tester.imageItems.map(i => i.src)" :initial-index="index" preview-teleported />
-				<el-button text type="primary" @click="copyText(item.value)">{{ $t('复制') }}</el-button>
+				<el-image
+					:src="item.src"
+					fit="contain"
+					:preview-src-list="tester.imageItems.map(i => i.src)"
+					:initial-index="index"
+					preview-teleported
+				/>
+				<el-button text type="primary" @click="copyText(item.value)">{{
+					$t('复制')
+				}}</el-button>
 			</div>
 		</div>
-		<el-input v-if="tester.result" v-model="tester.result" type="textarea" :rows="12" class="result" />
+		<el-input
+			v-if="tester.result"
+			v-model="tester.result"
+			type="textarea"
+			:rows="12"
+			class="result"
+		/>
 	</el-drawer>
 </template>
 
@@ -120,9 +163,23 @@ const Upsert = useUpsert({
 				}
 			}
 		},
-		{ label: t('场景'), prop: 'scenario', value: 'default', required: true, component: { name: 'el-input' } },
-		{ label: 'temperature', prop: 'temperature', component: { name: 'el-input-number', props: { min: 0, max: 2, step: 0.1 } } },
-		{ label: 'top_p', prop: 'topP', component: { name: 'el-input-number', props: { min: 0, max: 1, step: 0.05 } } },
+		{
+			label: t('场景'),
+			prop: 'scenario',
+			value: 'default',
+			required: true,
+			component: { name: 'el-input' }
+		},
+		{
+			label: 'temperature',
+			prop: 'temperature',
+			component: { name: 'el-input-number', props: { min: 0, max: 2, step: 0.1 } }
+		},
+		{
+			label: 'top_p',
+			prop: 'topP',
+			component: { name: 'el-input-number', props: { min: 0, max: 1, step: 0.05 } }
+		},
 		{ label: 'max_tokens', prop: 'maxTokens', component: { name: 'el-input-number' } },
 		{
 			label: 'response_format',
@@ -144,13 +201,19 @@ const Upsert = useUpsert({
 			label: 'retry_count',
 			prop: 'retryCount',
 			value: 0,
-			component: { name: 'el-input-number', props: { min: 0, max: 5, 'controls-position': 'right' } }
+			component: {
+				name: 'el-input-number',
+				props: { min: 0, max: 5, 'controls-position': 'right' }
+			}
 		},
 		{
 			label: 'retry_delay(s)',
 			prop: 'retryDelaySeconds',
 			value: 0,
-			component: { name: 'el-input-number', props: { min: 0, max: 60, 'controls-position': 'right' } }
+			component: {
+				name: 'el-input-number',
+				props: { min: 0, max: 60, 'controls-position': 'right' }
+			}
 		},
 		{
 			label: t('兜底配置ID'),
@@ -168,7 +231,11 @@ const Upsert = useUpsert({
 	},
 	onSubmit(data, { next, done }) {
 		try {
-			const payload = { ...data, modelId: normalizeSingleId(data.modelId), responseFormat: stringifyResponseFormat(data) };
+			const payload = {
+				...data,
+				modelId: normalizeSingleId(data.modelId),
+				responseFormat: stringifyResponseFormat(data)
+			};
 			delete payload.responseFormatMode;
 			delete payload.responseSchemaName;
 			delete payload.responseSchemaDescription;
@@ -220,7 +287,10 @@ async function setDefault(row: any) {
 function openTest(row: any) {
 	tester.id = row.id;
 	tester.modelType = row.modelType || '';
-	tester.prompt = row.modelType === 'image' ? '一张干净的 AI 内容平台海报，科技感，高质量细节' : '你好，请用一句话介绍你自己。';
+	tester.prompt =
+		row.modelType === 'image'
+			? '一张干净的 AI 内容平台海报，科技感，高质量细节'
+			: '你好，请用一句话介绍你自己。';
 	tester.result = '';
 	tester.imageItems = [];
 	tester.visible = true;
@@ -242,7 +312,8 @@ function parseResponseFormat(value?: string) {
 		responseSchemaName: '',
 		responseSchemaDescription: '',
 		responseSchemaStrict: true,
-		responseSchemaBody: '{\n  "type": "object",\n  "properties": {},\n  "required": [],\n  "additionalProperties": false\n}'
+		responseSchemaBody:
+			'{\n  "type": "object",\n  "properties": {},\n  "required": [],\n  "additionalProperties": false\n}'
 	};
 	if (!value) {
 		return defaults;
@@ -316,7 +387,9 @@ function extractImageItems(value: any): { src: string; value: string; url?: stri
 				return { src: url, value: url, url };
 			}
 			if (b64) {
-				const src = String(b64).startsWith('data:image') ? String(b64) : `data:image/png;base64,${b64}`;
+				const src = String(b64).startsWith('data:image')
+					? String(b64)
+					: `data:image/png;base64,${b64}`;
 				return { src, value: String(b64) };
 			}
 			return null;

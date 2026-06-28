@@ -1,17 +1,17 @@
 """
 媒体资源模型。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field as PydanticField
+from pydantic import BaseModel, ConfigDict
+from pydantic import Field as PydanticField
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
 from app.framework.models.entity import BaseEntity
-
 
 MEDIA_ASSET_TYPES = {"image", "video", "audio", "file"}
 MEDIA_SOURCE_TYPES = {"ai_task", "ai_sync", "upload"}
@@ -23,24 +23,24 @@ class MediaAsset(BaseEntity, table=True):
 
     asset_type: str = Field(default="file", index=True, max_length=50)
     source_type: str = Field(default="upload", index=True, max_length=50)
-    source_task_id: Optional[int] = Field(default=None, index=True)
-    provider_code: Optional[str] = Field(default=None, index=True, max_length=100)
-    model_code: Optional[str] = Field(default=None, index=True, max_length=150)
-    profile_code: Optional[str] = Field(default=None, index=True, max_length=100)
-    original_url: Optional[str] = Field(default=None, max_length=1000)
-    storage_url: Optional[str] = Field(default=None, index=True, max_length=1000)
-    file_name: Optional[str] = Field(default=None, index=True, max_length=255)
-    mime_type: Optional[str] = Field(default=None, index=True, max_length=100)
-    md5: Optional[str] = Field(default=None, index=True, max_length=32)
+    source_task_id: int | None = Field(default=None, index=True)
+    provider_code: str | None = Field(default=None, index=True, max_length=100)
+    model_code: str | None = Field(default=None, index=True, max_length=150)
+    profile_code: str | None = Field(default=None, index=True, max_length=100)
+    original_url: str | None = Field(default=None, max_length=1000)
+    storage_url: str | None = Field(default=None, index=True, max_length=1000)
+    file_name: str | None = Field(default=None, index=True, max_length=255)
+    mime_type: str | None = Field(default=None, index=True, max_length=100)
+    md5: str | None = Field(default=None, index=True, max_length=32)
     size_bytes: int = Field(default=0)
-    width: Optional[int] = None
-    height: Optional[int] = None
-    duration_seconds: Optional[float] = None
-    prompt: Optional[str] = None
-    params_payload: Optional[str] = None
+    width: int | None = None
+    height: int | None = None
+    duration_seconds: float | None = None
+    prompt: str | None = None
+    params_payload: str | None = None
     status: str = Field(default="pending", index=True, max_length=50)
-    error_message: Optional[str] = Field(default=None, max_length=1000)
-    created_by: Optional[int] = Field(default=None, index=True)
+    error_message: str | None = Field(default=None, max_length=1000)
+    created_by: int | None = Field(default=None, index=True)
 
 
 class MediaAssetRead(BaseModel):
@@ -49,24 +49,24 @@ class MediaAssetRead(BaseModel):
     id: int
     asset_type: str
     source_type: str
-    source_task_id: Optional[int] = None
-    provider_code: Optional[str] = None
-    model_code: Optional[str] = None
-    profile_code: Optional[str] = None
-    original_url: Optional[str] = None
-    storage_url: Optional[str] = None
-    file_name: Optional[str] = None
-    mime_type: Optional[str] = None
-    md5: Optional[str] = None
+    source_task_id: int | None = None
+    provider_code: str | None = None
+    model_code: str | None = None
+    profile_code: str | None = None
+    original_url: str | None = None
+    storage_url: str | None = None
+    file_name: str | None = None
+    mime_type: str | None = None
+    md5: str | None = None
     size_bytes: int = 0
-    width: Optional[int] = None
-    height: Optional[int] = None
-    duration_seconds: Optional[float] = None
-    prompt: Optional[str] = None
-    params_payload: Optional[str] = None
+    width: int | None = None
+    height: int | None = None
+    duration_seconds: float | None = None
+    prompt: str | None = None
+    params_payload: str | None = None
     status: str
-    error_message: Optional[str] = None
-    created_by: Optional[int] = None
+    error_message: str | None = None
+    created_by: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -76,24 +76,24 @@ class MediaAssetCreateRequest(BaseModel):
 
     asset_type: str = "file"
     source_type: str = "upload"
-    source_task_id: Optional[int] = None
-    provider_code: Optional[str] = None
-    model_code: Optional[str] = None
-    profile_code: Optional[str] = None
-    original_url: Optional[str] = None
-    storage_url: Optional[str] = None
-    file_name: Optional[str] = None
-    mime_type: Optional[str] = None
-    md5: Optional[str] = None
+    source_task_id: int | None = None
+    provider_code: str | None = None
+    model_code: str | None = None
+    profile_code: str | None = None
+    original_url: str | None = None
+    storage_url: str | None = None
+    file_name: str | None = None
+    mime_type: str | None = None
+    md5: str | None = None
     size_bytes: int = 0
-    width: Optional[int] = None
-    height: Optional[int] = None
-    duration_seconds: Optional[float] = None
-    prompt: Optional[str] = None
-    params_payload: Optional[str] = None
+    width: int | None = None
+    height: int | None = None
+    duration_seconds: float | None = None
+    prompt: str | None = None
+    params_payload: str | None = None
     status: str = "pending"
-    error_message: Optional[str] = None
-    created_by: Optional[int] = None
+    error_message: str | None = None
+    created_by: int | None = None
 
 
 class MediaAssetUpdateRequest(MediaAssetCreateRequest):

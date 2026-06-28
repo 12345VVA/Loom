@@ -1,21 +1,41 @@
 <template>
-	<div class="config-panel" role="complementary" aria-label="节点配置" :style="{ width: panelWidth + 'px' }">
+	<div
+		class="config-panel"
+		role="complementary"
+		aria-label="节点配置"
+		:style="{ width: panelWidth + 'px' }"
+	>
 		<div class="panel-resizer" @mousedown="startResize"></div>
 		<div class="panel-header">
-			<div class="panel-header__title" @dblclick="startEditTitle" style="flex: 1; min-width: 0;">
-				<el-icon v-if="nodeIcon" class="panel-header__icon"><component :is="nodeIcon" /></el-icon>
+			<div
+				class="panel-header__title"
+				@dblclick="startEditTitle"
+				style="flex: 1; min-width: 0"
+			>
+				<el-icon v-if="nodeIcon" class="panel-header__icon"
+					><component :is="nodeIcon"
+				/></el-icon>
 				<template v-if="isEditingTitle">
 					<el-input
 						ref="titleInputRef"
 						v-model="selectedNode.label"
 						size="small"
-						style="flex: 1;"
+						style="flex: 1"
 						@blur="isEditingTitle = false"
 						@keyup.enter="isEditingTitle = false"
 					/>
 				</template>
 				<template v-else>
-					<span style="cursor: pointer; user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="`ID: ${selectedNode.id} (双击重命名)`">
+					<span
+						style="
+							cursor: pointer;
+							user-select: none;
+							overflow: hidden;
+							text-overflow: ellipsis;
+							white-space: nowrap;
+						"
+						:title="`ID: ${selectedNode.id} (双击重命名)`"
+					>
 						{{ selectedNode.label || $t('未命名节点') }}
 					</span>
 				</template>
@@ -32,7 +52,6 @@
 		</div>
 
 		<el-scrollbar class="panel-content" ref="scrollbarRef">
-
 			<el-form :model="selectedNode.data" label-position="top">
 				<!-- 统一的节点输入配置 (Strict Mode) -->
 				<node-inputs-editor
@@ -47,10 +66,14 @@
 						:is="CONFIG_COMPONENTS[selectedNode.type]"
 						v-if="CONFIG_COMPONENTS[selectedNode.type]"
 						v-model="selectedNode.data.config"
+						:node-id="selectedNode.id"
 						:profiles="filteredProfiles"
-						:available-target-nodes="selectedNode.type === 'loop_controller' || selectedNode.type === 'batch_processor'
-							? filteredBodyTargetNodes
-							: availableTargetNodes"
+						:available-target-nodes="
+							selectedNode.type === 'loop_controller' ||
+							selectedNode.type === 'batch_processor'
+								? filteredBodyTargetNodes
+								: availableTargetNodes
+						"
 					/>
 				</div>
 			</el-form>
@@ -61,8 +84,27 @@
 <script setup lang="ts">
 import { computed, provide, inject, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Check, Edit, Close, MagicStick, SwitchButton, CaretRight, Delete, VideoPlay } from '@element-plus/icons-vue';
-import { UNTESTABLE_NODE_TYPES, OPEN_NODE_TEST_DIALOG_KEY, UPSTREAM_VARIABLES_KEY, LOOP_CONTEXT_VARS_KEY, UPSTREAM_OUTPUT_VARS_KEY, VARIABLE_SYNTAX_HINTS_KEY, SECTION_COLLAPSE_STATE_KEY, CONFIG_PANEL_NODE_ID_KEY } from './constants';
+import { cloneDeep, isEqual } from 'lodash-es';
+import {
+	Check,
+	Edit,
+	Close,
+	MagicStick,
+	SwitchButton,
+	CaretRight,
+	Delete,
+	VideoPlay
+} from '@element-plus/icons-vue';
+import {
+	UNTESTABLE_NODE_TYPES,
+	OPEN_NODE_TEST_DIALOG_KEY,
+	UPSTREAM_VARIABLES_KEY,
+	LOOP_CONTEXT_VARS_KEY,
+	UPSTREAM_OUTPUT_VARS_KEY,
+	VARIABLE_SYNTAX_HINTS_KEY,
+	SECTION_COLLAPSE_STATE_KEY,
+	CONFIG_PANEL_NODE_ID_KEY
+} from './constants';
 import type { ElScrollbar } from 'element-plus';
 import { getNodeMeta } from '../utils/node-type-registry';
 
@@ -120,7 +162,7 @@ const CONFIG_COMPONENTS: Record<string, any> = {
 const NODE_MODEL_TYPE_MAP: Record<string, string> = {
 	llm: 'chat',
 	intent_classifier: 'chat',
-	image_generator: 'image',
+	image_generator: 'image'
 };
 
 const nodeIcon = computed(() => getNodeMeta(props.selectedNode?.type).icon);
@@ -141,10 +183,13 @@ function handleTestNode() {
 const scrollbarRef = ref<InstanceType<typeof ElScrollbar>>();
 
 // 监听选中节点变化，重置滚动位置和编辑状态
-watch(() => props.selectedNode?.id, () => {
-	scrollbarRef.value?.setScrollTop(0);
-	isEditingTitle.value = false;
-});
+watch(
+	() => props.selectedNode?.id,
+	() => {
+		scrollbarRef.value?.setScrollTop(0);
+		isEditingTitle.value = false;
+	}
+);
 
 // 标题编辑逻辑
 const isEditingTitle = ref(false);
@@ -160,7 +205,9 @@ function startEditTitle() {
 // 面板宽度调整
 const defaultWidth = 420;
 const storageKey = computed(() => `loom_editor_panel_width_${props.workflowId || 'default'}`);
-const panelWidth = ref(Math.max(parseInt(localStorage.getItem(storageKey.value) || String(defaultWidth)), defaultWidth));
+const panelWidth = ref(
+	Math.max(parseInt(localStorage.getItem(storageKey.value) || String(defaultWidth)), defaultWidth)
+);
 let isResizing = false;
 let startX = 0;
 let startWidth = 0;
@@ -192,7 +239,7 @@ function onMouseUp() {
 		document.body.style.cursor = '';
 		document.body.style.userSelect = '';
 		localStorage.setItem(storageKey.value, String(panelWidth.value));
-			emit('update:width', panelWidth.value);
+		emit('update:width', panelWidth.value);
 	}
 }
 
@@ -223,7 +270,7 @@ function flattenTreeFields(
 
 	for (const field of fields) {
 		if (!field.name || !field.name.trim()) continue;
-		
+
 		const name = field.name.trim();
 		const currentRefPath = `${prefix}.${name}`;
 		const currentDisplayPath = `${displayPrefix}.${name}`;
@@ -240,19 +287,48 @@ function flattenTreeFields(
 
 		if (field.children && Array.isArray(field.children) && field.children.length > 0) {
 			if (field.type === 'array_object') {
-				result.push(...flattenTreeFields(field.children, `${currentRefPath}.0`, `${currentDisplayPath}.[Item]`, nodeLabel, nodeId));
+				result.push(
+					...flattenTreeFields(
+						field.children,
+						`${currentRefPath}.0`,
+						`${currentDisplayPath}.[Item]`,
+						nodeLabel,
+						nodeId
+					)
+				);
 			} else {
-				result.push(...flattenTreeFields(field.children, currentRefPath, currentDisplayPath, nodeLabel, nodeId));
+				result.push(
+					...flattenTreeFields(
+						field.children,
+						currentRefPath,
+						currentDisplayPath,
+						nodeLabel,
+						nodeId
+					)
+				);
 			}
 		}
 	}
 	return result;
 }
 
+// 缓存上游变量避免高频引发组件更新
+const cachedUpstreamVariables = ref<any[]>([]);
+
+watch(
+	() => props.upstreamVariables,
+	(newVal) => {
+		if (!isEqual(newVal, cachedUpstreamVariables.value)) {
+			cachedUpstreamVariables.value = cloneDeep(newVal || []);
+		}
+	},
+	{ immediate: true, deep: true }
+);
+
 // 展平上游变量：对 LLM JSON 输出模式的节点，额外展示子字段
 const flattenedVariables = computed(() => {
 	const result: { key: string; display: string; refText: string; nodeLabel: string }[] = [];
-	for (const v of props.upstreamVariables) {
+	for (const v of cachedUpstreamVariables.value) {
 		const baseRef = getVariableRefText(v.variableName);
 		result.push({
 			key: `${v.nodeId}_${v.variableName}`,
@@ -265,17 +341,27 @@ const flattenedVariables = computed(() => {
 
 		// 如果上游节点是 LLM 且 JSON 输出模式，递归展开其 jsonFields
 		if (v.nodeType === 'llm' && v.jsonFields && Array.isArray(v.jsonFields)) {
-			result.push(...flattenTreeFields(v.jsonFields, v.variableName, v.variableName, v.nodeLabel, v.nodeId));
+			result.push(
+				...flattenTreeFields(
+					v.jsonFields,
+					v.variableName,
+					v.variableName,
+					v.nodeLabel,
+					v.nodeId
+				)
+			);
 		}
 	}
 	return result;
 });
 
 // 循环上下文变量（由 editor.vue 在 group 内节点注入 _isLoopContext 标记）
-const loopContextVars = computed(() => flattenedVariables.value.filter(v => {
-	const src = props.upstreamVariables.find(u => `${u.nodeId}_${u.variableName}` === v.key);
-	return src?._isLoopContext === true;
-}));
+const loopContextVars = computed(() =>
+	flattenedVariables.value.filter(v => {
+		const src = cachedUpstreamVariables.value.find(u => `${u.nodeId}_${u.variableName}` === v.key);
+		return src?._isLoopContext === true;
+	})
+);
 
 // 真实的全局上游输出变量，传递给 node-inputs-editor 供用户选择映射
 const upstreamOutputVarsOriginal = computed(() => {
@@ -301,14 +387,20 @@ const localInputsVars = computed(() => {
 provide(UPSTREAM_VARIABLES_KEY, flattenedVariables);
 provide(LOOP_CONTEXT_VARS_KEY, loopContextVars);
 provide(UPSTREAM_OUTPUT_VARS_KEY, localInputsVars);
-provide(VARIABLE_SYNTAX_HINTS_KEY, computed(() => props.variableSyntaxHints));
+provide(
+	VARIABLE_SYNTAX_HINTS_KEY,
+	computed(() => props.variableSyntaxHints)
+);
 
 // 节点配置区域折叠状态持久化（跨节点切换保持）
 const sectionCollapseState = ref<Map<string, boolean>>(new Map());
 provide(SECTION_COLLAPSE_STATE_KEY, sectionCollapseState);
 
 // 当前选中节点 ID，供 node-config-section 生成唯一存储键
-provide(CONFIG_PANEL_NODE_ID_KEY, computed(() => props.selectedNode?.id || ''));
+provide(
+	CONFIG_PANEL_NODE_ID_KEY,
+	computed(() => props.selectedNode?.id || '')
+);
 
 function getVariableRefText(varName: string): string {
 	const nodeType = props.selectedNode?.type;
@@ -341,7 +433,7 @@ function getVariableRefText(varName: string): string {
 		width: 8px;
 		cursor: ew-resize;
 		z-index: 11;
-		
+
 		&:hover {
 			background-color: rgba(64, 158, 255, 0.2);
 		}

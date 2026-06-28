@@ -1,6 +1,7 @@
 """
 按模块目录约定自动加载路由
 """
+
 from __future__ import annotations
 
 from importlib import import_module
@@ -34,12 +35,16 @@ def _mount_convention_module_routes(api_router: APIRouter) -> None:
         "public": "public",
     }
 
-    for module_dir in sorted(path for path in modules_root.iterdir() if path.is_dir() and not path.name.startswith("__")):
+    for module_dir in sorted(
+        path for path in modules_root.iterdir() if path.is_dir() and not path.name.startswith("__")
+    ):
         controller_root = module_dir / "controller"
         if not controller_root.exists():
             continue
 
-        for scope_dir in sorted(path for path in controller_root.iterdir() if path.is_dir() and path.name in scope_alias):
+        for scope_dir in sorted(
+            path for path in controller_root.iterdir() if path.is_dir() and path.name in scope_alias
+        ):
             group_name = scope_alias[scope_dir.name]
             group_config = get_group_config(group_name)
 
@@ -49,7 +54,9 @@ def _mount_convention_module_routes(api_router: APIRouter) -> None:
 
                 relative_parts = route_file.relative_to(scope_dir).with_suffix("").parts
                 resource_prefix = "/" + "/".join((module_dir.name, *relative_parts))
-                module_path = ".".join(("app", "modules", module_dir.name, "controller", scope_dir.name, *relative_parts))
+                module_path = ".".join(
+                    ("app", "modules", module_dir.name, "controller", scope_dir.name, *relative_parts)
+                )
                 route_module = import_module(module_path)
                 module_router = getattr(route_module, "router", None)
                 if module_router is None:

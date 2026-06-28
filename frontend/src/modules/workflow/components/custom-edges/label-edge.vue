@@ -1,15 +1,33 @@
 <template>
-	<path :d="path" fill="none" :stroke="edgeColor" :stroke-width="style?.strokeWidth || 2" :stroke-dasharray="isConditional ? '6 3' : undefined" class="edge-visible-path" />
-	<g v-if="label" :transform="`translate(${labelX}, ${labelY})`">
+	<path
+		:d="path"
+		fill="none"
+		:stroke="edgeColor"
+		:stroke-width="style?.strokeWidth || 2"
+		:stroke-dasharray="isConditional ? '6 3' : undefined"
+		class="edge-visible-path"
+	/>
+	<g v-if="label" :transform="`translate(${labelX}, ${labelY})`" class="label-group">
 		<rect
-			:x="-labelHalfWidth - 6" y="-10" :width="labelWidth + 12" height="20"
-			rx="4" :fill="labelBgColor" fill-opacity="0.95" :stroke="labelBorderColor" stroke-width="0.5"
+			:x="-labelHalfWidth - 6"
+			y="-10"
+			:width="labelWidth + 12"
+			height="20"
+			rx="4"
+			:fill="labelBgColor"
+			fill-opacity="0.95"
+			:stroke="labelBorderColor"
+			stroke-width="0.5"
 			class="label-bg"
 		/>
 		<text
-			text-anchor="middle" dominant-baseline="middle"
-			font-size="11" :fill="textColor" font-weight="500"
-		>{{ label }}</text>
+			text-anchor="middle"
+			dominant-baseline="middle"
+			font-size="11"
+			:fill="textColor"
+			font-weight="500"
+			>{{ label }}</text
+		>
 	</g>
 	<path :d="path" fill="none" stroke="transparent" stroke-width="12" class="edge-interaction" />
 </template>
@@ -69,7 +87,7 @@ const path = computed(() => {
 		targetX: props.targetX,
 		targetY: props.targetY,
 		sourcePosition: props.sourcePosition,
-		targetPosition: props.targetPosition,
+		targetPosition: props.targetPosition
 	});
 	return edgePath;
 });
@@ -83,7 +101,9 @@ const textColor = computed(() => props.labelColor || props.data?.labelColor || '
 const isTrueBranch = computed(() => props.label === 'True' || props.data?.label === 'True');
 const isFalseBranch = computed(() => props.label === 'False' || props.data?.label === 'False');
 
-const isConditional = computed(() => isTrueBranch.value || isFalseBranch.value || !!props.data?.label);
+const isConditional = computed(
+	() => isTrueBranch.value || isFalseBranch.value || !!props.data?.label
+);
 
 const edgeColor = computed(() => {
 	if (isTrueBranch.value) return '#67c23a';
@@ -121,7 +141,13 @@ const labelHalfWidth = computed(() => labelWidth.value / 2);
 
 <style scoped>
 .edge-visible-path {
-	transition: stroke 0.2s, stroke-width 0.2s;
+	transition:
+		stroke 0.2s,
+		stroke-width 0.2s;
+}
+
+.label-group {
+	pointer-events: none;
 }
 
 .label-bg {

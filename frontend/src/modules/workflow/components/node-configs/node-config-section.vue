@@ -2,10 +2,12 @@
 	<div class="node-config-section" :class="{ 'is-collapsed': !isExpanded }">
 		<div class="section-header" role="button" :aria-expanded="isExpanded" @click="toggle">
 			<div class="section-title">
-				<el-icon class="arrow-icon" :class="{ 'is-rotated': !isExpanded }"><ArrowDown /></el-icon>
+				<el-icon class="arrow-icon" :class="{ 'is-rotated': !isExpanded }"
+					><arrow-down
+				/></el-icon>
 				{{ title }}
 				<el-tooltip v-if="tooltip" placement="top" effect="dark" :content="tooltip">
-					<el-icon class="hint-icon" @click.stop><InfoFilled /></el-icon>
+					<el-icon class="hint-icon" @click.stop><info-filled /></el-icon>
 				</el-tooltip>
 			</div>
 
@@ -29,15 +31,18 @@ import { ref, watch, inject, computed, type Ref } from 'vue';
 import { ArrowDown, InfoFilled } from '@element-plus/icons-vue';
 import { SECTION_COLLAPSE_STATE_KEY, CONFIG_PANEL_NODE_ID_KEY } from '../constants';
 
-const props = withDefaults(defineProps<{
-	title: string;
-	tooltip?: string;
-	defaultExpanded?: boolean;
-	/** v-model 绑定展开状态（可选，不传则使用内部状态） */
-	modelValue?: boolean;
-}>(), {
-	defaultExpanded: true,
-});
+const props = withDefaults(
+	defineProps<{
+		title: string;
+		tooltip?: string;
+		defaultExpanded?: boolean;
+		/** v-model 绑定展开状态（可选，不传则使用内部状态） */
+		modelValue?: boolean;
+	}>(),
+	{
+		defaultExpanded: true
+	}
+);
 
 const emit = defineEmits<{
 	(e: 'update:modelValue', value: boolean): void;
@@ -59,14 +64,18 @@ if (sectionCollapseState?.value?.has(storageKey.value)) {
 }
 
 // 如果外部传了 v-model，同步到内部状态
-watch(() => props.modelValue, (val) => {
-	if (val !== undefined && val !== isExpanded.value) {
-		isExpanded.value = val;
-	}
-}, { immediate: true });
+watch(
+	() => props.modelValue,
+	val => {
+		if (val !== undefined && val !== isExpanded.value) {
+			isExpanded.value = val;
+		}
+	},
+	{ immediate: true }
+);
 
 // 当 storageKey 变化（切换节点）时，恢复对应折叠状态
-watch(storageKey, (newKey) => {
+watch(storageKey, newKey => {
 	if (sectionCollapseState?.value?.has(newKey)) {
 		isExpanded.value = sectionCollapseState.value.get(newKey)!;
 	} else {
@@ -154,7 +163,9 @@ function toggle() {
 				border-radius: 4px;
 				color: var(--el-text-color-secondary);
 				cursor: pointer;
-				transition: background-color 0.2s, color 0.2s;
+				transition:
+					background-color 0.2s,
+					color 0.2s;
 				margin-left: 2px;
 
 				&:hover {

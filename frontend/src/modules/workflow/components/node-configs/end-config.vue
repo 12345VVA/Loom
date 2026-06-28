@@ -1,47 +1,60 @@
 <template>
 	<node-config-section :title="$t('输出')" :tooltip="$t('定义工作流的最终输出内容及格式')">
 		<template #actions>
-			<el-dropdown trigger="click" popper-class="wf-output-format-dropdown" @command="config.outputFormat = $event">
+			<el-dropdown
+				trigger="click"
+				popper-class="wf-output-format-dropdown"
+				@command="config.outputFormat = $event"
+			>
 				<span class="output-format-btn">
 					<el-tooltip placement="top" effect="dark" :show-after="200">
 						<template #content>
-							<div style="max-width: 200px; line-height: 1.4;">
+							<div style="max-width: 200px; line-height: 1.4">
 								<template v-if="config.outputFormat === 'json'">
 									JSON 对象输出模式，可定义结构化字段。
 								</template>
-								<template v-else>
-									普通文本输出模式，支持 Markdown。
-								</template>
+								<template v-else> 普通文本输出模式，支持 Markdown。 </template>
 							</div>
 						</template>
-						<el-icon><InfoFilled /></el-icon>
+						<el-icon><info-filled /></el-icon>
 					</el-tooltip>
-					<span style="margin: 0 4px;">{{ $t('输出格式') }} {{ config.outputFormat === 'json' ? 'JSON' : '文本' }}</span>
-					<el-icon><ArrowDown /></el-icon>
+					<span style="margin: 0 4px"
+						>{{ $t('输出格式') }}
+						{{ config.outputFormat === 'json' ? 'JSON' : '文本' }}</span
+					>
+					<el-icon><arrow-down /></el-icon>
 				</span>
 				<template #dropdown>
 					<el-dropdown-menu>
-						<el-dropdown-item command="text" :class="{ 'is-active': config.outputFormat === 'text' }">{{ $t('纯文本') }}</el-dropdown-item>
-						<el-dropdown-item command="json" :class="{ 'is-active': config.outputFormat === 'json' }">{{ $t('JSON 对象') }}</el-dropdown-item>
+						<el-dropdown-item
+							command="text"
+							:class="{ 'is-active': config.outputFormat === 'text' }"
+							>{{ $t('纯文本') }}</el-dropdown-item
+						>
+						<el-dropdown-item
+							command="json"
+							:class="{ 'is-active': config.outputFormat === 'json' }"
+							>{{ $t('JSON 对象') }}</el-dropdown-item
+						>
 					</el-dropdown-menu>
 				</template>
 			</el-dropdown>
-			
+
 			<template v-if="config.outputFormat === 'json'">
 				<div class="json-actions-divider"></div>
 				<el-tooltip placement="top" :content="$t('导入 JSON')">
 					<span class="action-icon-btn" @click="jsonEditorRef?.openImportDialog()">
-						<el-icon><Upload /></el-icon>
+						<el-icon><upload /></el-icon>
 					</span>
 				</el-tooltip>
 				<el-tooltip placement="top" :content="$t('复制 JSON')">
 					<span class="action-icon-btn" @click="jsonEditorRef?.copyJson()">
-						<el-icon><DocumentCopy /></el-icon>
+						<el-icon><document-copy /></el-icon>
 					</span>
 				</el-tooltip>
 				<el-tooltip placement="top" :content="$t('添加根字段')">
 					<span class="action-icon-btn primary" @click="jsonEditorRef?.addRootNode()">
-						<el-icon><Plus /></el-icon>
+						<el-icon><plus /></el-icon>
 					</span>
 				</el-tooltip>
 			</template>
@@ -49,18 +62,35 @@
 
 		<!-- JSON 模式：结构化字段编辑器 -->
 		<template v-if="config.outputFormat === 'json'">
-			<div class="field-hint" style="margin-bottom: 8px;">定义工作流输出的 JSON 字段，值支持变量引用如 {变量名}。</div>
-			<cl-json-tree-editor ref="jsonEditorRef" v-model="config.outputFields" mode="value" :hide-footer="true" />
-			
-			<el-form-item v-if="endNodeJsonPreview" :label="$t('JSON 预览')" style="margin-top: 16px; margin-bottom: 0;">
+			<div class="field-hint" style="margin-bottom: 8px">
+				定义工作流输出的 JSON 字段，值支持变量引用如 {变量名}。
+			</div>
+			<cl-json-tree-editor
+				ref="jsonEditorRef"
+				v-model="config.outputFields"
+				mode="value"
+				:hide-footer="true"
+			/>
+
+			<el-form-item
+				v-if="endNodeJsonPreview"
+				:label="$t('JSON 预览')"
+				style="margin-top: 16px; margin-bottom: 0"
+			>
 				<pre class="json-preview-block">{{ endNodeJsonPreview }}</pre>
 			</el-form-item>
 		</template>
 
 		<!-- 文本模式 -->
 		<template v-if="config.outputFormat === 'text'">
-			<div class="field-hint" style="margin-bottom: 8px;">使用 {变量名} 引用上游变量，渲染结果作为纯文本输出。</div>
-			<cl-editor-markdown v-model="config.outputTemplate" :height="260" placeholder="支持使用变量插值。例如：最终结果为 {LLM节点_output}" />
+			<div class="field-hint" style="margin-bottom: 8px">
+				使用 {变量名} 引用上游变量，渲染结果作为纯文本输出。
+			</div>
+			<cl-editor-markdown
+				v-model="config.outputTemplate"
+				:height="260"
+				placeholder="支持使用变量插值。例如：最终结果为 {LLM节点_output}"
+			/>
 		</template>
 	</node-config-section>
 </template>

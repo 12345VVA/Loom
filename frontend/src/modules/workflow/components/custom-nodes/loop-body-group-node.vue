@@ -1,5 +1,8 @@
 <template>
-	<div class="loop-body-group-node" :class="{ 'is-selected': selected, 'is-drag-over': dragOver }">
+	<div
+		class="loop-body-group-node"
+		:class="{ 'is-selected': selected, 'is-drag-over': dragOver }"
+	>
 		<!-- 标题栏 -->
 		<div class="group-header">
 			<el-icon class="group-icon"><refresh v-if="isLoop" /><files v-else /></el-icon>
@@ -51,9 +54,7 @@ const getElements: any = inject('getElements', () => []);
 const childCount = computed(() => {
 	const elements = getElements();
 	if (!elements || !props.id) return 0;
-	return elements.filter(
-		(el: any) => !('source' in el) && el.parentNode === props.id
-	).length;
+	return elements.filter((el: any) => !('source' in el) && el.parentNode === props.id).length;
 });
 
 // 拖入高亮状态（由 editor.vue 通过 DOM class 控制）
@@ -109,7 +110,10 @@ function startResize(e: MouseEvent) {
 	border-radius: 12px;
 	background: rgba(230, 162, 60, 0.04);
 	position: relative;
-	transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+	transition:
+		border-color 0.2s,
+		box-shadow 0.2s,
+		background 0.2s;
 
 	&.is-selected {
 		border-color: var(--el-color-warning-dark-2);

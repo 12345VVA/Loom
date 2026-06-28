@@ -1,8 +1,16 @@
 """
 安全审计日志接口
 """
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
-from app.modules.base.model.sys import SysSecurityLogRead, SysSecurityLogCreateRequest
+
+from app.framework.controller_meta import (
+    BaseController,
+    CoolController,
+    CoolControllerMeta,
+    OrderByConfig,
+    QueryConfig,
+    QueryFieldConfig,
+)
+from app.modules.base.model.sys import SysSecurityLogRead
 from app.modules.base.service.sys_manage_service import SysSecurityLogService
 
 

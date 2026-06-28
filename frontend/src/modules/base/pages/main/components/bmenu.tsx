@@ -118,7 +118,7 @@ export default defineComponent({
 					if (e.type == 0) {
 						try {
 							refs.menu?.open(String(e.id));
-						} catch (err) { }
+						} catch (err) {}
 
 						if (e.children) {
 							deep(e.children);

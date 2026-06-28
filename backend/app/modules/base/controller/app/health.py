@@ -1,12 +1,14 @@
 """
 Base 模块 App Scope 健康检查
 """
+
+from fastapi import Depends
+
 from app.core.config import settings
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
 from app.framework.router.route_meta import Get
 from app.modules.base.model.auth import User
 from app.modules.base.service.security_service import get_current_user
-from fastapi import Depends
 
 
 @CoolController(

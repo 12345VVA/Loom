@@ -43,8 +43,18 @@ const Upsert = useUpsert({
 		{ label: t('角色'), prop: 'roles', component: { name: 'el-input' } },
 		{ label: t('部门ID'), prop: 'departments', component: { name: 'el-input' } },
 		{ label: t('租户ID'), prop: 'tenants', component: { name: 'el-input' } },
-		{ label: t('包含子部门'), prop: 'includeChildDepartments', value: true, component: { name: 'el-switch' } },
-		{ label: t('全体管理员'), prop: 'allAdmins', value: false, component: { name: 'el-switch' } },
+		{
+			label: t('包含子部门'),
+			prop: 'includeChildDepartments',
+			value: true,
+			component: { name: 'el-switch' }
+		},
+		{
+			label: t('全体管理员'),
+			prop: 'allAdmins',
+			value: false,
+			component: { name: 'el-switch' }
+		},
 		{ label: t('安全条件'), prop: 'condition', component: { name: 'el-input' } },
 		{ label: t('启用'), prop: 'isActive', value: true, component: { name: 'el-switch' } }
 	]

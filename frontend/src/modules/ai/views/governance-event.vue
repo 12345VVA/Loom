@@ -10,7 +10,9 @@
 			</cl-filter>
 			<cl-flex1 />
 			<div class="stats">
-				<span v-for="item in statItems" :key="item.label" class="stat-chip">{{ item.label }}: {{ item.value }}</span>
+				<span v-for="item in statItems" :key="item.label" class="stat-chip"
+					>{{ item.label }}: {{ item.value }}</span
+				>
 			</div>
 			<cl-search-key :placeholder="$t('搜索事件、指标、消息')" />
 		</cl-row>
@@ -71,8 +73,18 @@ const Table = useTable({
 		{ label: t('用户'), prop: 'username', minWidth: 130 },
 		{ label: 'Profile', prop: 'profileName', minWidth: 150 },
 		{ label: t('模型'), prop: 'modelName', minWidth: 150 },
-		{ label: t('事件'), prop: 'eventType', minWidth: 100, formatter: ({ eventType }: any) => optionLabel(eventOptions, eventType) },
-		{ label: t('指标'), prop: 'metric', minWidth: 100, formatter: ({ metric }: any) => optionLabel(metricOptions, metric) },
+		{
+			label: t('事件'),
+			prop: 'eventType',
+			minWidth: 100,
+			formatter: ({ eventType }: any) => optionLabel(eventOptions, eventType)
+		},
+		{
+			label: t('指标'),
+			prop: 'metric',
+			minWidth: 100,
+			formatter: ({ metric }: any) => optionLabel(metricOptions, metric)
+		},
 		{ label: t('当前值'), prop: 'currentValue', minWidth: 100 },
 		{ label: t('限制值'), prop: 'limitValue', minWidth: 100 },
 		{ label: t('已通知'), prop: 'notified', minWidth: 90 },

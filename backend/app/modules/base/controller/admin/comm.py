@@ -1,6 +1,7 @@
 """
 Base 模块通用后台接口
 """
+
 from fastapi import Depends, File, UploadFile
 from sqlmodel import Session
 
@@ -23,7 +24,9 @@ from app.modules.base.service.security_service import get_current_user
     )
 )
 class BaseCommController(BaseController):
-    @Get("/person", summary="获取当前用户个人信息", permission="base:comm:person", role_codes=("admin", "task_operator"))
+    @Get(
+        "/person", summary="获取当前用户个人信息", permission="base:comm:person", role_codes=("admin", "task_operator")
+    )
     async def person(
         self,
         current_user: User = Depends(get_current_user),
@@ -39,7 +42,12 @@ class BaseCommController(BaseController):
     ) -> dict:
         return AuthService(session).permmenu(current_user)
 
-    @Post("/personUpdate", summary="修改当前用户信息", permission="base:comm:person_update", role_codes=("admin", "task_operator"))
+    @Post(
+        "/personUpdate",
+        summary="修改当前用户信息",
+        permission="base:comm:person_update",
+        role_codes=("admin", "task_operator"),
+    )
     async def person_update(
         self,
         payload: UserPersonUpdateRequest,
@@ -57,7 +65,9 @@ class BaseCommController(BaseController):
         AuthService(session).logout(current_user)
         return {"success": True}
 
-    @Get("/uploadMode", summary="文件上传模式", permission="base:comm:upload_mode", role_codes=("admin", "task_operator"))
+    @Get(
+        "/uploadMode", summary="文件上传模式", permission="base:comm:upload_mode", role_codes=("admin", "task_operator")
+    )
     async def upload_mode(self) -> dict:
         return {"mode": "local", "type": "local"}
 
@@ -71,6 +81,7 @@ class BaseCommController(BaseController):
         file: UploadFile = File(...),
     ) -> dict:
         from fastapi import HTTPException
+
         from app.framework.storage import StorageService, UploadRejectedError
 
         file_content = await file.read()

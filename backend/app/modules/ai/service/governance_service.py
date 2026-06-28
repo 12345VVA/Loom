@@ -1,4 +1,5 @@
 """AI 治理规则、事件与运行时治理服务。"""
+
 from __future__ import annotations
 
 import uuid
@@ -9,13 +10,22 @@ from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.modules.ai.model.ai import AiGovernanceEvent, AiGovernanceRule, AiGovernanceRuleCreateRequest, AiGovernanceRuleMatchRequest, AiModel, AiModelCallLog, AiModelProfile, AiProvider, AiRuntimeInvocation
+from app.framework.controller_meta import CrudQuery, RelationConfig
+from app.modules.ai.model.ai import (
+    AiGovernanceEvent,
+    AiGovernanceRule,
+    AiGovernanceRuleMatchRequest,
+    AiModel,
+    AiModelCallLog,
+    AiModelProfile,
+    AiProvider,
+    AiRuntimeInvocation,
+)
 from app.modules.ai.service.utils import _window_bounds
 from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.notification.model.notification import AudienceRule
 from app.modules.notification.service.notification_service import NotificationService
-from app.framework.controller_meta import CrudQuery, RelationConfig
 
 
 class AiGovernanceRuleService(BaseAdminCrudService):
@@ -42,7 +52,9 @@ class AiGovernanceRuleService(BaseAdminCrudService):
     ) -> list[dict]:
         return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
 
-    def page(self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> PageResult[dict]:
+    def page(
+        self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
+    ) -> PageResult[dict]:
         result = super().page(query, current_user, relations)
         result.items = [self._decorate(item) for item in result.items]
         return result
@@ -63,7 +75,10 @@ class AiGovernanceRuleService(BaseAdminCrudService):
         if isinstance(payload, dict):
             payload = AiGovernanceRuleMatchRequest(**payload)
         rules = AiGovernanceService(self.session).match_rules(user_id=payload.user_id, profile_id=payload.profile_id)
-        return {"count": len(rules), "items": [self._decorate(self._finalize_data(rule.model_dump())) for rule in rules]}
+        return {
+            "count": len(rules),
+            "items": [self._decorate(self._finalize_data(rule.model_dump())) for rule in rules],
+        }
 
     def _ensure_unique_code(self, code: str | None, exclude_id: int | None = None) -> None:
         if not code:
@@ -82,8 +97,16 @@ class AiGovernanceRuleService(BaseAdminCrudService):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Profile 规则必须选择调用配置")
 
     def _decorate(self, data: dict) -> dict:
-        user = self.session.get(User, data.get("userId") or data.get("user_id")) if data.get("userId") or data.get("user_id") else None
-        profile = self.session.get(AiModelProfile, data.get("profileId") or data.get("profile_id")) if data.get("profileId") or data.get("profile_id") else None
+        user = (
+            self.session.get(User, data.get("userId") or data.get("user_id"))
+            if data.get("userId") or data.get("user_id")
+            else None
+        )
+        profile = (
+            self.session.get(AiModelProfile, data.get("profileId") or data.get("profile_id"))
+            if data.get("profileId") or data.get("profile_id")
+            else None
+        )
         data["username"] = user.username if user else None
         data["profileName"] = profile.name if profile else None
         return data
@@ -103,7 +126,9 @@ class AiGovernanceEventService(BaseAdminCrudService):
     ) -> list[dict]:
         return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
 
-    def page(self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> PageResult[dict]:
+    def page(
+        self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
+    ) -> PageResult[dict]:
         result = super().page(query, current_user, relations)
         result.items = [self._decorate(item) for item in result.items]
         return result
@@ -122,11 +147,31 @@ class AiGovernanceEventService(BaseAdminCrudService):
         return {"total": len(rows), "byType": by_type, "byMetric": by_metric}
 
     def _decorate(self, data: dict) -> dict:
-        rule = self.session.get(AiGovernanceRule, data.get("ruleId") or data.get("rule_id")) if data.get("ruleId") or data.get("rule_id") else None
-        user = self.session.get(User, data.get("userId") or data.get("user_id")) if data.get("userId") or data.get("user_id") else None
-        provider = self.session.get(AiProvider, data.get("providerId") or data.get("provider_id")) if data.get("providerId") or data.get("provider_id") else None
-        model = self.session.get(AiModel, data.get("modelId") or data.get("model_id")) if data.get("modelId") or data.get("model_id") else None
-        profile = self.session.get(AiModelProfile, data.get("profileId") or data.get("profile_id")) if data.get("profileId") or data.get("profile_id") else None
+        rule = (
+            self.session.get(AiGovernanceRule, data.get("ruleId") or data.get("rule_id"))
+            if data.get("ruleId") or data.get("rule_id")
+            else None
+        )
+        user = (
+            self.session.get(User, data.get("userId") or data.get("user_id"))
+            if data.get("userId") or data.get("user_id")
+            else None
+        )
+        provider = (
+            self.session.get(AiProvider, data.get("providerId") or data.get("provider_id"))
+            if data.get("providerId") or data.get("provider_id")
+            else None
+        )
+        model = (
+            self.session.get(AiModel, data.get("modelId") or data.get("model_id"))
+            if data.get("modelId") or data.get("model_id")
+            else None
+        )
+        profile = (
+            self.session.get(AiModelProfile, data.get("profileId") or data.get("profile_id"))
+            if data.get("profileId") or data.get("profile_id")
+            else None
+        )
         data["ruleName"] = rule.name if rule else None
         data["username"] = user.username if user else None
         data["providerName"] = provider.name if provider else None
@@ -165,7 +210,9 @@ class AiGovernanceService:
                 matched.append(rule)
         return matched
 
-    def begin(self, *, user: User | None, provider: AiProvider, model: AiModel, profile: AiModelProfile) -> AiRuntimeInvocation | None:
+    def begin(
+        self, *, user: User | None, provider: AiProvider, model: AiModel, profile: AiModelProfile
+    ) -> AiRuntimeInvocation | None:
         user_id = user.id if user else None
         rules = self.match_rules(user_id=user_id, profile_id=profile.id)
         for rule in rules:
@@ -200,7 +247,9 @@ class AiGovernanceService:
             invocation.finished_at = datetime.utcnow()
             self.session.add(invocation)
         if status_value == "success":
-            self._record_post_events(user=user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=cost_micro_usd)
+            self._record_post_events(
+                user=user, provider=provider, model=model, profile=profile, usage=usage, cost_micro_usd=cost_micro_usd
+            )
         self.session.commit()
 
     def block_invocation(self, invocation: AiRuntimeInvocation | None) -> None:
@@ -211,33 +260,94 @@ class AiGovernanceService:
         self.session.add(invocation)
         self.session.commit()
 
-    def _check_pre_rule(self, rule: AiGovernanceRule, *, user_id: int | None, provider: AiProvider, model: AiModel, profile: AiModelProfile) -> None:
+    def _check_pre_rule(
+        self,
+        rule: AiGovernanceRule,
+        *,
+        user_id: int | None,
+        provider: AiProvider,
+        model: AiModel,
+        profile: AiModelProfile,
+    ) -> None:
         window_start, window_end = _window_bounds(rule.period)
         checks = [
-            ("request", rule.max_requests, self._request_count(rule, user_id, profile.id, window_start, window_end) + 1, False),
+            (
+                "request",
+                rule.max_requests,
+                self._request_count(rule, user_id, profile.id, window_start, window_end) + 1,
+                False,
+            ),
             ("concurrent", rule.max_concurrent, self._concurrent_count(rule, user_id, profile.id) + 1, False),
             ("token", rule.max_tokens, self._token_sum(rule, user_id, profile.id, window_start, window_end), True),
-            ("cost", rule.max_cost_micro_usd, self._cost_sum(rule, user_id, profile.id, window_start, window_end), True),
+            (
+                "cost",
+                rule.max_cost_micro_usd,
+                self._cost_sum(rule, user_id, profile.id, window_start, window_end),
+                True,
+            ),
         ]
         for metric, limit, current, block_at_limit in checks:
             if limit is None or limit <= 0:
                 continue
             if current > limit or (block_at_limit and current >= limit):
                 message = f"AI 治理规则 {rule.name} 已超出 {metric} 限制: {current}/{limit}"
-                notified = self._notify_once(rule, metric, "blocked", window_start, window_end, message) if rule.notify_enabled else False
-                self._event(rule, user_id, profile, model, provider, "blocked", metric, current, limit, window_start, window_end, message, notified)
+                notified = (
+                    self._notify_once(rule, metric, "blocked", window_start, window_end, message)
+                    if rule.notify_enabled
+                    else False
+                )
+                self._event(
+                    rule,
+                    user_id,
+                    profile,
+                    model,
+                    provider,
+                    "blocked",
+                    metric,
+                    current,
+                    limit,
+                    window_start,
+                    window_end,
+                    message,
+                    notified,
+                )
                 if rule.mode == "enforce":
                     raise AiGovernanceBlocked(message, metric=metric)
             elif current == limit:
                 message = f"AI 治理规则 {rule.name} 即将达到 {metric} 限制: {current}/{limit}"
-                self._event(rule, user_id, profile, model, provider, "warn", metric, current, limit, window_start, window_end, message, False)
+                self._event(
+                    rule,
+                    user_id,
+                    profile,
+                    model,
+                    provider,
+                    "warn",
+                    metric,
+                    current,
+                    limit,
+                    window_start,
+                    window_end,
+                    message,
+                    False,
+                )
 
-    def _record_post_events(self, *, user: User | None, provider: AiProvider, model: AiModel, profile: AiModelProfile, usage: dict[str, Any], cost_micro_usd: int) -> None:
+    def _record_post_events(
+        self,
+        *,
+        user: User | None,
+        provider: AiProvider,
+        model: AiModel,
+        profile: AiModelProfile,
+        usage: dict[str, Any],
+        cost_micro_usd: int,
+    ) -> None:
         user_id = user.id if user else None
         rules = self.match_rules(user_id=user_id, profile_id=profile.id)
         for rule in rules:
             window_start, window_end = _window_bounds(rule.period)
-            token_current = self._token_sum(rule, user_id, profile.id, window_start, window_end) + int(usage.get("totalTokens") or 0)
+            token_current = self._token_sum(rule, user_id, profile.id, window_start, window_end) + int(
+                usage.get("totalTokens") or 0
+            )
             cost_current = self._cost_sum(rule, user_id, profile.id, window_start, window_end) + cost_micro_usd
             for metric, limit, current in (
                 ("token", rule.max_tokens, token_current),
@@ -247,21 +357,51 @@ class AiGovernanceService:
                     continue
                 event_type = "blocked" if current > limit else "warn"
                 message = f"AI 治理规则 {rule.name} 已达到 {metric} 限制: {current}/{limit}"
-                notified = self._notify_once(rule, metric, event_type, window_start, window_end, message) if rule.notify_enabled else False
-                self._event(rule, user_id, profile, model, provider, event_type, metric, current, limit, window_start, window_end, message, notified)
+                notified = (
+                    self._notify_once(rule, metric, event_type, window_start, window_end, message)
+                    if rule.notify_enabled
+                    else False
+                )
+                self._event(
+                    rule,
+                    user_id,
+                    profile,
+                    model,
+                    provider,
+                    event_type,
+                    metric,
+                    current,
+                    limit,
+                    window_start,
+                    window_end,
+                    message,
+                    notified,
+                )
 
-    def _request_count(self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime) -> int:
-        statement = select(func.count(AiModelCallLog.id)).where(AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end)
+    def _request_count(
+        self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime
+    ) -> int:
+        statement = select(func.count(AiModelCallLog.id)).where(
+            AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end
+        )
         statement = self._apply_rule_filter(statement, rule, user_id, profile_id, AiModelCallLog)
         return int(self.session.exec(statement).one() or 0)
 
-    def _token_sum(self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime) -> int:
-        statement = select(func.coalesce(func.sum(AiModelCallLog.total_tokens), 0)).where(AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end)
+    def _token_sum(
+        self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime
+    ) -> int:
+        statement = select(func.coalesce(func.sum(AiModelCallLog.total_tokens), 0)).where(
+            AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end
+        )
         statement = self._apply_rule_filter(statement, rule, user_id, profile_id, AiModelCallLog)
         return int(self.session.exec(statement).one() or 0)
 
-    def _cost_sum(self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime) -> int:
-        statement = select(func.coalesce(func.sum(AiModelCallLog.cost_micro_usd), 0)).where(AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end)
+    def _cost_sum(
+        self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime
+    ) -> int:
+        statement = select(func.coalesce(func.sum(AiModelCallLog.cost_micro_usd), 0)).where(
+            AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end
+        )
         statement = self._apply_rule_filter(statement, rule, user_id, profile_id, AiModelCallLog)
         return int(self.session.exec(statement).one() or 0)
 
@@ -316,7 +456,15 @@ class AiGovernanceService:
         )
         self.session.commit()
 
-    def _notify_once(self, rule: AiGovernanceRule, metric: str, event_type: str, window_start: datetime, window_end: datetime, message: str) -> bool:
+    def _notify_once(
+        self,
+        rule: AiGovernanceRule,
+        metric: str,
+        event_type: str,
+        window_start: datetime,
+        window_end: datetime,
+        message: str,
+    ) -> bool:
         exists = self.session.exec(
             select(AiGovernanceEvent).where(
                 AiGovernanceEvent.rule_id == rule.id,

@@ -4,7 +4,14 @@
 		<cl-editor-markdown v-model="mdValue" :height="400" />
 
 		<h3 style="margin-top: 20px">纯预览/渲染模式 (onlyPreview)</h3>
-		<div style="border: 1px solid var(--el-border-color); padding: 15px; border-radius: 4px; background: var(--el-bg-color-blank)">
+		<div
+			style="
+				border: 1px solid var(--el-border-color);
+				padding: 15px;
+				border-radius: 4px;
+				background: var(--el-bg-color-blank);
+			"
+		>
 			<cl-editor-markdown v-model="mdValue" onlyPreview />
 		</div>
 

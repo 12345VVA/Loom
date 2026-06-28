@@ -1,13 +1,13 @@
 """
 应用配置
 """
-from typing import Any
 
-from pydantic_settings import BaseSettings
-from pydantic import field_validator
-from typing import List
 import json
-import secrets
+from typing import Any
+from urllib.parse import quote_plus
+
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -27,7 +27,14 @@ class Settings(BaseSettings):
     PORT: int  # 启动时自动从 .env 中读取
 
     # 数据库配置
-    DATABASE_URL: str  # 启动时自动从 .env 中读取
+    # DATABASE_URL 直接填写完整连接串；留空时由下方 SQL_* 字段拼装 PostgreSQL 连接串
+    DATABASE_URL: str = ""
+    # 分离式 PostgreSQL 连接配置（DATABASE_URL 为空且 SQL_HOST 非空时启用）
+    SQL_HOST: str = ""
+    SQL_PORT: int = 5432
+    SQL_DATABASE: str = ""
+    SQL_USER: str = ""
+    SQL_PASSWORD: str = ""
 
     # Redis 配置
     REDIS_URL: str  # 启动时自动从 .env 中读取
@@ -37,8 +44,10 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str  # 启动时自动从 .env 中读取
 
     # 工作流引擎
-    WORKFLOW_CHECKPOINT_BACKEND: str = "memory"  # "memory" | "sqlite" | "postgres"
+    # checkpoint 默认 sqlite：保证 Celery 多 Worker / 重启后 paused 实例可恢复（memory 仅用于单进程演示）
+    WORKFLOW_CHECKPOINT_BACKEND: str = "sqlite"  # "memory" | "sqlite" | "postgres"
     WORKFLOW_NODE_TEST_TIMEOUT: int = 180  # 单节点测试超时秒数（LLM 节点常需 60-180 秒）
+    WORKFLOW_NODE_TIMEOUT: int = 600  # 正式执行单节点超时秒数（比 30 分钟硬上限短，留足图像节点空间）
 
     # OpenAI / Ollama 配置
     OPENAI_API_KEY: str  # 启动时自动从 .env 中读取
@@ -51,12 +60,12 @@ class Settings(BaseSettings):
     EXTERNAL_URL: str = ""
 
     # 认证配置
-    JWT_SECRET_KEY: str # 启动时自动从 .env 中读取
+    JWT_SECRET_KEY: str  # 启动时自动从 .env 中读取
     JWT_ALGORITHM: str  # 启动时自动从 .env 中读取
     ACCESS_TOKEN_EXPIRE_MINUTES: int  # 启动时自动从 .env 中读取
     REFRESH_TOKEN_EXPIRE_DAYS: int  # 启动时自动从 .env 中读取
     ADMIN_SSO_ENABLED: bool = False
-    ADMIN_CAPTCHA_ENABLED: bool = True
+    ADMIN_CAPTCHA_ENABLED: bool = False
     CAPTCHA_EXPIRE_SECONDS: int = 120
     CAPTCHA_SLIDER_TOLERANCE: int = 6
     CAPTCHA_SLIDER_MIN_DURATION_MS: int = 450
@@ -71,8 +80,10 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_NAME: str  # 启动时自动从 .env 中读取
 
     # 文件上传安全配置
-    UPLOAD_MAX_SIZE_MB: int = 10                       # 单文件最大 MB
-    UPLOAD_ALLOWED_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.csv,.json,.mp4,.mp3"
+    UPLOAD_MAX_SIZE_MB: int = 10  # 单文件最大 MB
+    UPLOAD_ALLOWED_EXTENSIONS: str = (
+        ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.csv,.json,.mp4,.mp3"
+    )
     STORAGE_PROVIDER: str = "local"
     MEDIA_REMOTE_DOWNLOAD_MAX_SIZE_MB: int = 100
     MEDIA_REMOTE_DOWNLOAD_TIMEOUT_SECONDS: int = 30
@@ -85,10 +96,10 @@ class Settings(BaseSettings):
     S3_PUBLIC_BASE_URL: str = ""
 
     # API 限流配置
-    RATE_LIMIT_ENABLED: bool = True                    # 是否启用全局限流
-    RATE_LIMIT_DEFAULT: int = 120                      # 默认每分钟请求数上限
-    RATE_LIMIT_ADMIN: int = 60                         # /admin 前缀每分钟上限
-    RATE_LIMIT_OPEN: int = 30                          # 公开接口（登录等）每分钟上限
+    RATE_LIMIT_ENABLED: bool = True  # 是否启用全局限流
+    RATE_LIMIT_DEFAULT: int = 120  # 默认每分钟请求数上限
+    RATE_LIMIT_ADMIN: int = 60  # /admin 前缀每分钟上限
+    RATE_LIMIT_OPEN: int = 30  # 公开接口（登录等）每分钟上限
     RATE_LIMIT_WHITELIST_PATHS: str = "/docs,/redoc,/openapi.json,/health"  # 豁免限流的路径
 
     # CORS 配置
@@ -128,6 +139,28 @@ class Settings(BaseSettings):
                 return False
         return bool(value)
 
+    @model_validator(mode="after")
+    def _assemble_database_url(self) -> "Settings":
+        """DATABASE_URL 留空且配置了 SQL_HOST 时，拼装 PostgreSQL(psycopg3) 连接串。
+
+        用户名/密码中的特殊字符会做 URL 编码（如 `@` -> `%40`），
+        避免破坏连接串解析。两者均未配置时抛出明确错误。
+        """
+        if not self.DATABASE_URL and self.SQL_HOST:
+            auth = ""
+            if self.SQL_USER:
+                password = quote_plus(self.SQL_PASSWORD) if self.SQL_PASSWORD else ""
+                auth = f"{quote_plus(self.SQL_USER)}:{password}@"
+            self.DATABASE_URL = (
+                f"postgresql+psycopg://{auth}{self.SQL_HOST}:{self.SQL_PORT}/{self.SQL_DATABASE}"
+            )
+        if not self.DATABASE_URL:
+            raise ValueError(
+                "数据库未配置：请设置 DATABASE_URL，或通过 "
+                "SQL_HOST/SQL_PORT/SQL_DATABASE/SQL_USER/SQL_PASSWORD 拼装 PostgreSQL 连接"
+            )
+        return self
+
     @property
     def effective_log_level(self) -> str:
         """应用日志级别；未显式设置 LOG_LEVEL 时兼容旧 DEBUG 行为。"""
@@ -142,19 +175,19 @@ class Settings(BaseSettings):
         return self.effective_log_level == "DEBUG"
 
     @property
-    def cors_origins_list(self) -> List[str]:
+    def cors_origins_list(self) -> list[str]:
         """解析 CORS origins"""
         try:
             return json.loads(self.CORS_ORIGINS)
-        except:
+        except Exception:
             return ["http://localhost:5173"]
 
     @property
-    def cors_methods_list(self) -> List[str]:
+    def cors_methods_list(self) -> list[str]:
         return self._parse_csv_or_json(self.CORS_ALLOW_METHODS, ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
     @property
-    def cors_headers_list(self) -> List[str]:
+    def cors_headers_list(self) -> list[str]:
         return self._parse_csv_or_json(
             self.CORS_ALLOW_HEADERS,
             ["Authorization", "Content-Type", "X-Requested-With", "X-Device-Id", "X-Request-Id", "token", "x-token"],

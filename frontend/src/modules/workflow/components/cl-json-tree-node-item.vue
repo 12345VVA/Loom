@@ -101,29 +101,28 @@
 					@click="addChildNode"
 				/>
 				<!-- 删除节点 -->
-				<el-button
-					type="danger"
-					link
-					:icon="Delete"
-					size="small"
-					@click="deleteSelf"
-				/>
+				<el-button type="danger" link :icon="Delete" size="small" @click="deleteSelf" />
 			</div>
 		</div>
 
 		<!-- 子节点列表 -->
-		<div v-show="expanded && isContainer && node.children && node.children.length > 0" class="tree-node-children">
-			<cl-json-tree-node-item
-				v-for="(child, idx) in node.children"
-				:key="idx"
-				:node="child"
-				:depth="depth + 1"
-				:index="Number(idx)"
-				:parent-array="node.children"
-				:parent-node="node"
-				:mode="mode"
-				@update="emit('update')"
-			/>
+		<div
+			v-show="expanded && isContainer"
+			class="tree-node-children"
+		>
+			<div class="children-list" v-if="node.children && node.children.length > 0">
+				<cl-json-tree-node-item
+					v-for="(child, idx) in node.children"
+					:key="getStableKey(child)"
+					:node="child"
+					:depth="depth + 1"
+					:index="Number(idx)"
+					:parent-array="node.children"
+					:parent-node="node"
+					:mode="mode"
+					@update="emit('update')"
+				/>
+			</div>
 		</div>
 	</div>
 </template>
@@ -141,7 +140,19 @@ const props = defineProps<{
 	mode: 'schema' | 'value';
 }>();
 
-const emit = defineEmits(['update']);
+const emit = defineEmits(['update', 'update:node', 'trigger-update']);
+
+function getStableKey(node: any): string {
+	if (!node._keyId) {
+		Object.defineProperty(node, '_keyId', {
+			value: 'node_' + Math.random().toString(36).substring(2, 9),
+			enumerable: false,
+			configurable: false,
+			writable: false
+		});
+	}
+	return node._keyId;
+}
 
 const expanded = ref(true);
 
@@ -180,13 +191,20 @@ function updateArrayItemNames() {
 }
 
 // 监听 index 变化以重新生成 Value 模式下 Array 子项的索引名称
-watch(() => props.index, () => {
-	updateArrayItemNames();
-}, { immediate: true });
+watch(
+	() => props.index,
+	() => {
+		updateArrayItemNames();
+	},
+	{ immediate: true }
+);
 
-watch(() => props.parentNode?.type, () => {
-	updateArrayItemNames();
-});
+watch(
+	() => props.parentNode?.type,
+	() => {
+		updateArrayItemNames();
+	}
+);
 
 function handleTypeChange(val: string) {
 	if (val === 'object' || val === 'array_object') {
@@ -235,14 +253,14 @@ function addChildNode() {
 
 function deleteSelf() {
 	props.parentArray.splice(props.index, 1);
-	
+
 	// 如果是 value 模式下的 array 子项，重算索引名
 	if (props.mode === 'value' && props.parentNode?.type === 'array') {
 		props.parentNode.children.forEach((child: any, idx: number) => {
 			child.name = `[${idx}]`;
 		});
 	}
-	
+
 	emit('update');
 }
 </script>
@@ -279,7 +297,7 @@ function deleteSelf() {
 			top: 0;
 			bottom: 0;
 			border-left: 1px solid var(--el-border-color-lighter);
-			
+
 			&.is-last {
 				bottom: 50%; /* 终结于本行正中 */
 			}
@@ -317,7 +335,7 @@ function deleteSelf() {
 		width: 110px;
 		flex-shrink: 0;
 	}
-	
+
 	.col-type {
 		width: 85px;
 		flex-shrink: 0;

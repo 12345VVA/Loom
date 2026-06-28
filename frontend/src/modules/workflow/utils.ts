@@ -16,7 +16,11 @@ export function formatJson(val?: string): string {
 /**
  * 复制文本到剪贴板，支持 HTTP 环境降级
  */
-export async function copyToClipboard(text: string, successMsg = '复制成功', errorMsg = '复制失败') {
+export async function copyToClipboard(
+	text: string,
+	successMsg = '复制成功',
+	errorMsg = '复制失败'
+) {
 	try {
 		if (navigator.clipboard && window.isSecureContext) {
 			await navigator.clipboard.writeText(text);

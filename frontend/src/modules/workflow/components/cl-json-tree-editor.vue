@@ -3,7 +3,9 @@
 		<div class="tree-header">
 			<div class="col-name">{{ $t('字段/键名') }}</div>
 			<div class="col-type">{{ $t('类型') }}</div>
-			<div class="col-value-desc">{{ mode === 'schema' ? $t('字段说明 (可选)') : $t('值 (可引用变量)') }}</div>
+			<div class="col-value-desc">
+				{{ mode === 'schema' ? $t('字段说明 (可选)') : $t('值 (可引用变量)') }}
+			</div>
 			<div class="col-actions"></div>
 		</div>
 
@@ -11,7 +13,7 @@
 			<template v-if="modelValue && modelValue.length > 0">
 				<tree-node-item
 					v-for="(node, idx) in modelValue"
-					:key="idx"
+					:key="getStableKey(node)"
 					:node="node"
 					:depth="0"
 					:index="idx"
@@ -46,10 +48,15 @@
 			append-to-body
 			destroy-on-close
 		>
-			<div style="font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 12px;">
-				{{ mode === 'schema' 
-					? $t('请输入一个标准的 JSON 对象，系统将自动分析其键名和类型并生成相应的 Schema。') 
-					: $t('请输入要导入的 JSON，系统将自动还原为键值对数据结构。')
+			<div
+				style="font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 12px"
+			>
+				{{
+					mode === 'schema'
+						? $t(
+								'请输入一个标准的 JSON 对象，系统将自动分析其键名和类型并生成相应的 Schema。'
+							)
+						: $t('请输入要导入的 JSON，系统将自动还原为键值对数据结构。')
 				}}
 			</div>
 			<el-input
@@ -60,7 +67,9 @@
 			/>
 			<template #footer>
 				<el-button size="small" @click="importVisible = false">{{ $t('取消') }}</el-button>
-				<el-button size="small" type="primary" @click="confirmImport">{{ $t('确定') }}</el-button>
+				<el-button size="small" type="primary" @click="confirmImport">{{
+					$t('确定')
+				}}</el-button>
 			</template>
 		</el-dialog>
 	</div>
@@ -87,6 +96,18 @@ const props = withDefaults(
 
 const emit = defineEmits(['update:modelValue', 'change']);
 const { t } = useI18n();
+
+function getStableKey(node: any): string {
+	if (!node._keyId) {
+		Object.defineProperty(node, '_keyId', {
+			value: 'node_' + Math.random().toString(36).substring(2, 9),
+			enumerable: false,
+			configurable: false,
+			writable: false
+		});
+	}
+	return node._keyId;
+}
 
 function triggerUpdate() {
 	emit('update:modelValue', [...props.modelValue]);
@@ -184,11 +205,14 @@ function copyJson() {
 		const obj = buildJson(fields);
 		serialized = JSON.stringify(obj, null, 2);
 	}
-	navigator.clipboard.writeText(serialized).then(() => {
-		ElMessage.success(t('JSON 已复制到剪贴板'));
-	}).catch(() => {
-		ElMessage.error(t('复制失败'));
-	});
+	navigator.clipboard
+		.writeText(serialized)
+		.then(() => {
+			ElMessage.success(t('JSON 已复制到剪贴板'));
+		})
+		.catch(() => {
+			ElMessage.error(t('复制失败'));
+		});
 }
 
 function openImportDialog() {
@@ -200,7 +224,7 @@ function jsonToSchemaNodes(val: any, name: string = ''): any {
 	if (val === null || val === undefined) {
 		return { name, type: 'string', description: '', children: [] };
 	}
-	
+
 	const t = typeof val;
 	if (t === 'string') {
 		return { name, type: 'string', description: '', children: [] };
@@ -252,7 +276,7 @@ function jsonToValueNodes(val: any, name: string = ''): any {
 	if (val === null || val === undefined) {
 		return { name, type: 'string', value: '', children: [] };
 	}
-	
+
 	const t = typeof val;
 	if (t === 'string' || t === 'number' || t === 'boolean') {
 		return { name, type: t, value: String(val), children: [] };

@@ -1,29 +1,24 @@
 """
 系统定时任务服务
 """
+
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.framework.controller_meta import CrudQuery
 from app.modules.base.model.auth import PageResult
-from app.modules.task.model.task import (
-    TaskInfo,
-    TaskInfoCreateRequest,
-    TaskInfoRead,
-    TaskInfoUpdateRequest,
-    TaskLog,
-    TaskLogRead,
-)
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.base.service.cache_service import CacheNamespace
-
+from app.modules.task.model.task import (
+    TaskInfo,
+    TaskLog,
+)
 
 TASK_SCHEDULE_CACHE = CacheNamespace("task:schedule", default_ttl_seconds=24 * 60 * 60)
 
@@ -54,21 +49,19 @@ class TaskInfoService(BaseAdminCrudService):
         status_val = query.params.get("status")
 
         # 联表查询：获取日志和任务名称
-        statement = select(TaskLog, TaskInfo.name.label("task_name")).join(
-            TaskInfo, TaskLog.task_id == TaskInfo.id
-        )
+        statement = select(TaskLog, TaskInfo.name.label("task_name")).join(TaskInfo, TaskLog.task_id == TaskInfo.id)
         if id_val:
             statement = statement.where(TaskLog.task_id == id_val)
         if status_val is not None:
             statement = statement.where(TaskLog.status == status_val)
-        
+
         statement = statement.order_by(TaskLog.created_at.desc())
-        
+
         count_statement = select(func.count()).select_from(statement.subquery())
         total = int(self.session.exec(count_statement).one())
-        
+
         results = self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all()
-        
+
         data_list = []
         for log_row, task_name in results:
             # 使用基类转换逻辑
@@ -107,11 +100,12 @@ class TaskInfoService(BaseAdminCrudService):
         row = self.session.get(TaskInfo, id)
         if not row:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
+
         # 异步触发 Celery 任务
         from app.modules.task.tasks.system_tasks import execute_system_task
+
         execute_system_task.delay(id)
-        
+
         return {"success": True}
 
 
@@ -160,12 +154,7 @@ def compute_next_cron_run_time(cron_expression: str | None, now: datetime | None
             calendar_matches = day_matches or weekday_matches
         else:
             calendar_matches = day_matches and weekday_matches
-        if (
-            candidate.minute in minutes
-            and candidate.hour in hours
-            and candidate.month in months
-            and calendar_matches
-        ):
+        if candidate.minute in minutes and candidate.hour in hours and candidate.month in months and calendar_matches:
             return candidate
         candidate += timedelta(minutes=1)
     return None
@@ -206,11 +195,14 @@ def sync_task_schedule_state(task: TaskInfo) -> None:
     next_run_time = compute_next_run_time(task)
     if next_run_time is not None:
         task.next_run_time = next_run_time
-    TASK_SCHEDULE_CACHE.set_json(str(task.id), value={
-        "id": task.id,
-        "status": task.status,
-        "nextRunTime": task.next_run_time.isoformat() if task.next_run_time else None,
-    })
+    TASK_SCHEDULE_CACHE.set_json(
+        str(task.id),
+        value={
+            "id": task.id,
+            "status": task.status,
+            "nextRunTime": task.next_run_time.isoformat() if task.next_run_time else None,
+        },
+    )
 
 
 def clear_task_schedule_state(task_id: int) -> None:

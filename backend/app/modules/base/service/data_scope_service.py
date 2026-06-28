@@ -1,6 +1,7 @@
 """
 Base 模块数据权限服务
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,7 +39,9 @@ def resolve_data_scope(session: Session, user: User) -> DataScopeContext:
         linked_department_ids = [
             link.department_id
             for link in session.exec(
-                select(RoleDepartmentLink).where(RoleDepartmentLink.role_id.in_([role.id for role in roles if role.id is not None]))
+                select(RoleDepartmentLink).where(
+                    RoleDepartmentLink.role_id.in_([role.id for role in roles if role.id is not None])
+                )
             ).all()
         ]
         if linked_department_ids:

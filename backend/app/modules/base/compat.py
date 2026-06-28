@@ -1,10 +1,10 @@
 """
 Loom 兼容配置
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-
 
 DEFAULT_AUTHENTICATED_PERMISSIONS: tuple[str, ...] = (
     "base:sys:user:me",
@@ -77,11 +77,7 @@ RESOURCE_COMPATS: tuple[ResourceCompat, ...] = (
 
 def get_resource_compat(module: str, resource: str) -> ResourceCompat | None:
     return next(
-        (
-            item
-            for item in RESOURCE_COMPATS
-            if item.source_module == module and item.source_resource == resource
-        ),
+        (item for item in RESOURCE_COMPATS if item.source_module == module and item.source_resource == resource),
         None,
     )
 

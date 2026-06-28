@@ -1,15 +1,15 @@
 """
 应用日志配置。
 """
+
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
-import contextvars
 import sys
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-
 
 request_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
 request_path_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_path", default=None)
@@ -77,13 +77,14 @@ _THIRD_PARTY_LOG_LEVELS: dict[str, int] = {
 
 # 文件 → 最低级别（None 表示跟随根级别）
 _LOG_FILES: dict[str, int | None] = {
-    "app.log": None,            # 全量日志
+    "app.log": None,  # 全量日志
     "error.log": logging.ERROR,  # 仅 ERROR/CRITICAL
 }
 
 
 class _MinLevelFilter(logging.Filter):
     """只允许 >= 指定级别的日志记录通过"""
+
     def __init__(self, level: int):
         super().__init__()
         self.level = level
@@ -98,6 +99,7 @@ class SafeTimedRotatingFileHandler(TimedRotatingFileHandler):
     在重命名锁定时捕获 PermissionError/OSError 并打印警告，防止异常导致日志处理输出大面积 traceback，
     随后安全重新打开原文件流以继续写入。
     """
+
     def doRollover(self) -> None:
         try:
             super().doRollover()

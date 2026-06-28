@@ -83,7 +83,8 @@ function normalize(value?: Partial<AudienceRule> | string | null): AudienceRule 
 		roles: data.roles || [],
 		departments: data.departments || [],
 		tenants: data.tenants || [],
-		includeChildDepartments: data.includeChildDepartments ?? data.include_child_departments ?? true,
+		includeChildDepartments:
+			data.includeChildDepartments ?? data.include_child_departments ?? true,
 		allAdmins: data.allAdmins ?? data.all_admins ?? false,
 		condition: data.condition || undefined
 	};

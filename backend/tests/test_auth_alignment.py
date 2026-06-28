@@ -1,17 +1,16 @@
+import json
 import os
 import sys
 import unittest
-import json
 from copy import deepcopy
 
 from fastapi.testclient import TestClient
 
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from main import app  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.modules.base.service.cache_service import cache_delete_pattern  # noqa: E402
+from main import app  # noqa: E402
 
 
 class AuthAlignmentTests(unittest.TestCase):
@@ -37,10 +36,7 @@ class AuthAlignmentTests(unittest.TestCase):
         target_x = int(challenge["targetX"]) + x_offset
 
         if track is None and not empty_track:
-            track = [
-                {"x": round(target_x * step / 6, 2), "t": step * 120}
-                for step in range(1, 7)
-            ]
+            track = [{"x": round(target_x * step / 6, 2), "t": step * 120} for step in range(1, 7)]
         elif track is None:
             track = []
 
@@ -241,7 +237,9 @@ class AuthAlignmentTests(unittest.TestCase):
 
         permmenu_res = self.client.get("/admin/base/comm/permmenu", headers=headers)
         system_group = next(item for item in permmenu_res.json()["data"]["menus"] if item["name"] == "系统管理")
-        export_res = self.client.post("/admin/base/sys/menu/export", headers=headers, json={"ids": [system_group["id"]]})
+        export_res = self.client.post(
+            "/admin/base/sys/menu/export", headers=headers, json={"ids": [system_group["id"]]}
+        )
         self.assertEqual(export_res.status_code, 200)
         menus = export_res.json()["data"]
         self.assertTrue(any(item["name"] == "系统管理" for item in menus))

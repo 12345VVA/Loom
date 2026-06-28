@@ -87,11 +87,7 @@
 
 			<template #footer>
 				<el-button @click="detail.visible = false">{{ $t('关闭') }}</el-button>
-				<el-button
-					v-if="detail.item?.linkUrl"
-					type="primary"
-					@click="goLink(detail.item)"
-				>
+				<el-button v-if="detail.item?.linkUrl" type="primary" @click="goLink(detail.item)">
 					{{ $t('前往处理') }}
 				</el-button>
 			</template>

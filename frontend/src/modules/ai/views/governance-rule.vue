@@ -68,7 +68,13 @@ const Upsert = useUpsert({
 	items: [
 		{ label: t('编码'), prop: 'code', required: true, component: { name: 'el-input' } },
 		{ label: t('名称'), prop: 'name', required: true, component: { name: 'el-input' } },
-		{ label: t('范围'), prop: 'scopeType', value: 'global', required: true, component: { name: 'cl-select', props: { options: scopeOptions } } },
+		{
+			label: t('范围'),
+			prop: 'scopeType',
+			value: 'global',
+			required: true,
+			component: { name: 'cl-select', props: { options: scopeOptions } }
+		},
 		{
 			label: t('用户'),
 			prop: 'userId',
@@ -102,12 +108,38 @@ const Upsert = useUpsert({
 				}
 			}
 		},
-		{ label: t('周期'), prop: 'period', value: 'day', component: { name: 'cl-select', props: { options: periodOptions } } },
-		{ label: t('请求上限'), prop: 'maxRequests', component: { name: 'el-input-number', props: { min: 0, 'controls-position': 'right' } } },
-		{ label: 'Token 上限', prop: 'maxTokens', component: { name: 'el-input-number', props: { min: 0, 'controls-position': 'right' } } },
-		{ label: '成本上限(微美元)', prop: 'maxCostMicroUsd', component: { name: 'el-input-number', props: { min: 0, 'controls-position': 'right' } } },
-		{ label: t('并发上限'), prop: 'maxConcurrent', component: { name: 'el-input-number', props: { min: 0, 'controls-position': 'right' } } },
-		{ label: t('模式'), prop: 'mode', value: 'enforce', component: { name: 'cl-select', props: { options: modeOptions } } },
+		{
+			label: t('周期'),
+			prop: 'period',
+			value: 'day',
+			component: { name: 'cl-select', props: { options: periodOptions } }
+		},
+		{
+			label: t('请求上限'),
+			prop: 'maxRequests',
+			component: { name: 'el-input-number', props: { min: 0, 'controls-position': 'right' } }
+		},
+		{
+			label: 'Token 上限',
+			prop: 'maxTokens',
+			component: { name: 'el-input-number', props: { min: 0, 'controls-position': 'right' } }
+		},
+		{
+			label: '成本上限(微美元)',
+			prop: 'maxCostMicroUsd',
+			component: { name: 'el-input-number', props: { min: 0, 'controls-position': 'right' } }
+		},
+		{
+			label: t('并发上限'),
+			prop: 'maxConcurrent',
+			component: { name: 'el-input-number', props: { min: 0, 'controls-position': 'right' } }
+		},
+		{
+			label: t('模式'),
+			prop: 'mode',
+			value: 'enforce',
+			component: { name: 'cl-select', props: { options: modeOptions } }
+		},
 		{ label: t('通知'), prop: 'notifyEnabled', value: true, component: { name: 'el-switch' } },
 		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } },
 		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } }
@@ -119,15 +151,30 @@ const Table = useTable({
 		{ type: 'selection' },
 		{ label: t('编码'), prop: 'code', minWidth: 150 },
 		{ label: t('名称'), prop: 'name', minWidth: 150 },
-		{ label: t('范围'), prop: 'scopeType', minWidth: 100, formatter: ({ scopeType }: any) => optionLabel(scopeOptions, scopeType) },
+		{
+			label: t('范围'),
+			prop: 'scopeType',
+			minWidth: 100,
+			formatter: ({ scopeType }: any) => optionLabel(scopeOptions, scopeType)
+		},
 		{ label: t('用户'), prop: 'username', minWidth: 130 },
 		{ label: 'Profile', prop: 'profileName', minWidth: 150 },
-		{ label: t('周期'), prop: 'period', minWidth: 90, formatter: ({ period }: any) => optionLabel(periodOptions, period) },
+		{
+			label: t('周期'),
+			prop: 'period',
+			minWidth: 90,
+			formatter: ({ period }: any) => optionLabel(periodOptions, period)
+		},
 		{ label: t('请求'), prop: 'maxRequests', minWidth: 90 },
 		{ label: 'Tokens', prop: 'maxTokens', minWidth: 100 },
 		{ label: 'Cost(μUSD)', prop: 'maxCostMicroUsd', minWidth: 120 },
 		{ label: t('并发'), prop: 'maxConcurrent', minWidth: 90 },
-		{ label: t('模式'), prop: 'mode', minWidth: 100, formatter: ({ mode }: any) => optionLabel(modeOptions, mode) },
+		{
+			label: t('模式'),
+			prop: 'mode',
+			minWidth: 100,
+			formatter: ({ mode }: any) => optionLabel(modeOptions, mode)
+		},
 		{ label: t('启用'), prop: 'status', width: 90 },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
 		{ type: 'op', width: 260, buttons: ['edit', 'delete', 'slot-toggle'] }

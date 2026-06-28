@@ -1,6 +1,7 @@
 """
 统一错误码定义。
 """
+
 from __future__ import annotations
 
 from enum import IntEnum

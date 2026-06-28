@@ -1,39 +1,37 @@
 <template>
 	<node-config-section :title="$t('全局输入')">
-		<el-form-item :label="$t('工作流输入变量')" style="margin-bottom: 0;">
-		<div class="field-hint" style="margin-bottom: 8px;">定义工作流启动时接收的变量名，下游节点可引用。</div>
-		<div
-			v-for="(varName, index) in (config.inputVariables || [])"
-			:key="index"
-			style="display: flex; gap: 6px; margin-bottom: 6px; align-items: flex-start;"
-		>
-			<div style="flex: 1;">
-				<el-input
-					v-model="config.inputVariables[index]"
-					:class="{ 'is-error': getVarError(index) }"
-					placeholder="变量名 (如 query)"
-					size="small"
-					@blur="validateVar(index)"
-				/>
-				<div v-if="getVarError(index)" class="var-error-tip">{{ getVarError(index) }}</div>
+		<el-form-item :label="$t('工作流输入变量')" style="margin-bottom: 0">
+			<div class="field-hint" style="margin-bottom: 8px">
+				定义工作流启动时接收的变量名，下游节点可引用。
 			</div>
-			<el-button
-				type="danger"
-				size="small"
-				link
-				:icon="Delete"
-				@click="removeVariable(index)"
-			/>
-		</div>
-		<el-button
-			type="primary"
-			size="small"
-			plain
-			:icon="Plus"
-			@click="addVariable"
-		>
-			{{ $t('添加变量') }}
-		</el-button>
+			<div
+				v-for="(varName, index) in config.inputVariables || []"
+				:key="index"
+				style="display: flex; gap: 6px; margin-bottom: 6px; align-items: flex-start"
+			>
+				<div style="flex: 1">
+					<el-input
+						v-model="config.inputVariables[index]"
+						:class="{ 'is-error': getVarError(index) }"
+						placeholder="变量名 (如 query)"
+						size="small"
+						@blur="validateVar(index)"
+					/>
+					<div v-if="getVarError(index)" class="var-error-tip">
+						{{ getVarError(index) }}
+					</div>
+				</div>
+				<el-button
+					type="danger"
+					size="small"
+					link
+					:icon="Delete"
+					@click="removeVariable(index)"
+				/>
+			</div>
+			<el-button type="primary" size="small" plain :icon="Plus" @click="addVariable">
+				{{ $t('添加变量') }}
+			</el-button>
 		</el-form-item>
 	</node-config-section>
 </template>
@@ -69,7 +67,9 @@ function validateVar(index: number) {
 
 	// 去重校验
 	const list = config.inputVariables || [];
-	const duplicateIndex = list.findIndex((v: string, i: number) => i !== index && v.trim() === name);
+	const duplicateIndex = list.findIndex(
+		(v: string, i: number) => i !== index && v.trim() === name
+	);
 	if (duplicateIndex !== -1) {
 		varErrors[index] = `变量名与第 ${duplicateIndex + 1} 个重复`;
 	}

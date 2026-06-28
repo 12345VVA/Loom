@@ -18,7 +18,12 @@
 			<el-button @click="$emit('export-workflow')" :icon="Download">
 				{{ $t('导出工作流') }}
 			</el-button>
-			<el-button type="primary" :icon="FolderChecked" :loading="saving" @click="$emit('save-workflow')">
+			<el-button
+				type="primary"
+				:icon="FolderChecked"
+				:loading="saving"
+				@click="$emit('save-workflow')"
+			>
 				{{ $t('保存工作流') }}
 			</el-button>
 		</div>
@@ -27,13 +32,7 @@
 
 <script lang="ts" setup>
 import { useI18n } from 'vue-i18n';
-import {
-	ArrowLeft,
-	Brush,
-	Document,
-	Download,
-	FolderChecked
-} from '@element-plus/icons-vue';
+import { ArrowLeft, Brush, Document, Download, FolderChecked } from '@element-plus/icons-vue';
 
 const { t } = useI18n();
 

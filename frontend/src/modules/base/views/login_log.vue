@@ -26,66 +26,66 @@
 
 <script lang="ts" setup>
 defineOptions({
-	name: "sys-login-log",
+	name: 'sys-login-log'
 });
 
-import { useCrud, useTable, useUpsert } from "@cool-vue/crud";
-import { useCool } from "/@/cool";
-import { useI18n } from "vue-i18n";
-import { ElMessage } from "element-plus";
+import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
+import { useCool } from '/@/cool';
+import { useI18n } from 'vue-i18n';
+import { ElMessage } from 'element-plus';
 
 const { service } = useCool();
 const { t } = useI18n();
 const loginLogService = service.base?.sys?.login_log;
 
 const loginTypeDict = [
-	{ label: "密码登录", value: "password", type: "success" },
-	{ label: "退出登录", value: "logout", type: "info" },
-	{ label: "短信登录", value: "sms", type: "warning" },
-	{ label: "验证码登录", value: "captcha", type: "warning" },
+	{ label: '密码登录', value: 'password', type: 'success' },
+	{ label: '退出登录', value: 'logout', type: 'info' },
+	{ label: '短信登录', value: 'sms', type: 'warning' },
+	{ label: '验证码登录', value: 'captcha', type: 'warning' }
 ];
 
 const statusDict = [
-	{ label: "成功", value: 1, type: "success" },
-	{ label: "失败", value: 0, type: "danger" },
+	{ label: '成功', value: 1, type: 'success' },
+	{ label: '失败', value: 0, type: 'danger' }
 ];
 
 const riskHitDict = [
-	{ label: "未命中", value: 0, type: "success" },
-	{ label: "已命中", value: 1, type: "danger" },
+	{ label: '未命中', value: 0, type: 'success' },
+	{ label: '已命中', value: 1, type: 'danger' }
 ];
 
 function getDictLabel(dict: { label: string; value: string | number }[], value: any) {
-	return dict.find((e) => e.value === value)?.label || (value ?? "-");
+	return dict.find(e => e.value === value)?.label || (value ?? '-');
 }
 
-function formatText(value: any, fallback = "-") {
-	return value === null || value === undefined || value === "" ? fallback : value;
+function formatText(value: any, fallback = '-') {
+	return value === null || value === undefined || value === '' ? fallback : value;
 }
 
 function getOs(userAgent?: string) {
-	const ua = (userAgent || "").toLowerCase();
+	const ua = (userAgent || '').toLowerCase();
 
-	if (!ua) return "未知系统";
-	if (ua.includes("windows")) return "Windows";
-	if (ua.includes("mac os")) return "macOS";
-	if (ua.includes("iphone") || ua.includes("ipad") || ua.includes("ios")) return "iOS";
-	if (ua.includes("android")) return "Android";
-	if (ua.includes("linux")) return "Linux";
+	if (!ua) return '未知系统';
+	if (ua.includes('windows')) return 'Windows';
+	if (ua.includes('mac os')) return 'macOS';
+	if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ios')) return 'iOS';
+	if (ua.includes('android')) return 'Android';
+	if (ua.includes('linux')) return 'Linux';
 
-	return "未知系统";
+	return '未知系统';
 }
 
 function getBrowser(userAgent?: string) {
-	const ua = userAgent || "";
+	const ua = userAgent || '';
 
-	if (!ua) return "未知浏览器";
+	if (!ua) return '未知浏览器';
 
 	const rules = [
-		{ name: "Edge", regex: /Edg\/([\d.]+)/i },
-		{ name: "Chrome", regex: /Chrome\/([\d.]+)/i },
-		{ name: "Firefox", regex: /Firefox\/([\d.]+)/i },
-		{ name: "Safari", regex: /Version\/([\d.]+).*Safari/i },
+		{ name: 'Edge', regex: /Edg\/([\d.]+)/i },
+		{ name: 'Chrome', regex: /Chrome\/([\d.]+)/i },
+		{ name: 'Firefox', regex: /Firefox\/([\d.]+)/i },
+		{ name: 'Safari', regex: /Version\/([\d.]+).*Safari/i }
 	];
 
 	for (const item of rules) {
@@ -96,7 +96,7 @@ function getBrowser(userAgent?: string) {
 		}
 	}
 
-	return "未知浏览器";
+	return '未知浏览器';
 }
 
 function getClientText(row: any) {
@@ -104,7 +104,7 @@ function getClientText(row: any) {
 		return row.clientType;
 	}
 
-	const ua = row.userAgent || "";
+	const ua = row.userAgent || '';
 	const os = getOs(ua);
 	const browser = getBrowser(ua);
 
@@ -113,7 +113,7 @@ function getClientText(row: any) {
 
 function getReasonText(row: any) {
 	if (row.status === 1) {
-		return "无";
+		return '无';
 	}
 
 	return formatText(row.reason);
@@ -123,183 +123,193 @@ function getReasonText(row: any) {
 const Upsert = useUpsert({
 	items: [
 		{
-			label: t("用户ID"),
-			prop: "userId",
-			component: { name: "el-input-number", props: { min: 1, controlsPosition: "right" } },
+			label: t('用户ID'),
+			prop: 'userId',
+			component: { name: 'el-input-number', props: { min: 1, controlsPosition: 'right' } }
 		},
 		{
-			label: t("登录方式"),
-			prop: "loginType",
+			label: t('登录方式'),
+			prop: 'loginType',
 			component: {
-				name: "el-select",
+				name: 'el-select',
 				props: { clearable: true },
-				options: loginTypeDict,
+				options: loginTypeDict
 			},
 			span: 12,
-			required: true,
+			required: true
 		},
 		{
-			label: t("登录账号"),
-			prop: "account",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('登录账号'),
+			prop: 'account',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("登录状态"),
-			prop: "status",
+			label: t('登录状态'),
+			prop: 'status',
 			component: {
-				name: "el-select",
+				name: 'el-select',
 				props: { clearable: true },
-				options: statusDict,
+				options: statusDict
 			},
 			span: 12,
-			required: true,
+			required: true
 		},
 		{
-			label: t("IP"),
-			prop: "ip",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('IP'),
+			prop: 'ip',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("是否命中风控"),
-			prop: "riskHit",
+			label: t('是否命中风控'),
+			prop: 'riskHit',
 			component: {
-				name: "el-select",
+				name: 'el-select',
 				props: { clearable: true },
-				options: riskHitDict,
+				options: riskHitDict
 			},
 			span: 12,
-			required: true,
+			required: true
 		},
 		{
-			label: t("失败原因"),
-			prop: "reason",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('失败原因'),
+			prop: 'reason',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("客户端类型"),
-			prop: "clientType",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('客户端类型'),
+			prop: 'clientType',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("选择设备标识"),
-			prop: "deviceId",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('选择设备标识'),
+			prop: 'deviceId',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("来源系统"),
-			prop: "sourceSystem",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
+			label: t('来源系统'),
+			prop: 'sourceSystem',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
 		},
 		{
-			label: t("用户代理"),
-			prop: "userAgent",
-			component: { name: "el-input", props: { clearable: true } },
-			span: 12,
-		},
-	],
+			label: t('用户代理'),
+			prop: 'userAgent',
+			component: { name: 'el-input', props: { clearable: true } },
+			span: 12
+		}
+	]
 });
 
 // cl-table
 const Table = useTable({
 	columns: [
-		{ label: t("#"), type: "index" },
-		{ label: t("姓名"), prop: "name", minWidth: 120, formatter: ({ name }: any) => formatText(name) },
-		{ label: t("登录账号"), prop: "account", minWidth: 120, formatter: ({ account }: any) => formatText(account) },
+		{ label: t('#'), type: 'index' },
 		{
-			label: t("登录方式"),
-			prop: "loginType",
+			label: t('姓名'),
+			prop: 'name',
+			minWidth: 120,
+			formatter: ({ name }: any) => formatText(name)
+		},
+		{
+			label: t('登录账号'),
+			prop: 'account',
+			minWidth: 120,
+			formatter: ({ account }: any) => formatText(account)
+		},
+		{
+			label: t('登录方式'),
+			prop: 'loginType',
 			minWidth: 120,
 			dict: loginTypeDict,
 			dictColor: true,
-			formatter: ({ loginType }: any) => getDictLabel(loginTypeDict, loginType),
+			formatter: ({ loginType }: any) => getDictLabel(loginTypeDict, loginType)
 		},
 		{
-			label: t("登录状态"),
-			prop: "status",
+			label: t('登录状态'),
+			prop: 'status',
 			minWidth: 110,
 			dict: statusDict,
 			dictColor: true,
-			formatter: ({ status }: any) => getDictLabel(statusDict, status),
+			formatter: ({ status }: any) => getDictLabel(statusDict, status)
 		},
-		{ label: t("IP"), prop: "ip", minWidth: 130, formatter: ({ ip }: any) => formatText(ip) },
+		{ label: t('IP'), prop: 'ip', minWidth: 130, formatter: ({ ip }: any) => formatText(ip) },
 		{
-			label: t("风控结果"),
-			prop: "riskHit",
+			label: t('风控结果'),
+			prop: 'riskHit',
 			minWidth: 110,
 			dict: riskHitDict,
 			dictColor: true,
-			formatter: ({ riskHit }: any) => getDictLabel(riskHitDict, riskHit),
+			formatter: ({ riskHit }: any) => getDictLabel(riskHitDict, riskHit)
 		},
 		{
-			label: t("失败原因"),
-			prop: "reason",
+			label: t('失败原因'),
+			prop: 'reason',
 			minWidth: 140,
 			showOverflowTooltip: true,
-			formatter: (row: any) => getReasonText(row),
+			formatter: (row: any) => getReasonText(row)
 		},
 		{
-			label: t("终端信息"),
-			prop: "clientType",
+			label: t('终端信息'),
+			prop: 'clientType',
 			minWidth: 180,
 			showOverflowTooltip: true,
-			formatter: (row: any) => getClientText(row),
+			formatter: (row: any) => getClientText(row)
 		},
 		{
-			label: t("设备标识"),
-			prop: "deviceId",
+			label: t('设备标识'),
+			prop: 'deviceId',
 			minWidth: 140,
 			showOverflowTooltip: true,
-			formatter: ({ deviceId }: any) => formatText(deviceId),
+			formatter: ({ deviceId }: any) => formatText(deviceId)
 		},
 		{
-			label: t("来源系统"),
-			prop: "sourceSystem",
+			label: t('来源系统'),
+			prop: 'sourceSystem',
 			minWidth: 120,
-			formatter: ({ sourceSystem }: any) => formatText(sourceSystem, "管理后台"),
+			formatter: ({ sourceSystem }: any) => formatText(sourceSystem, '管理后台')
 		},
 		{
-			label: t("用户代理"),
-			prop: "userAgent",
+			label: t('用户代理'),
+			prop: 'userAgent',
 			minWidth: 260,
 			showOverflowTooltip: true,
-			formatter: ({ userAgent }: any) => formatText(userAgent),
+			formatter: ({ userAgent }: any) => formatText(userAgent)
 		},
 		{
-			label: t("创建时间"),
-			prop: "createTime",
+			label: t('创建时间'),
+			prop: 'createTime',
 			minWidth: 170,
-			sortable: "desc",
-			component: { name: "cl-date-text" },
+			sortable: 'desc',
+			component: { name: 'cl-date-text' }
 		},
 		{
-			label: t("更新时间"),
-			prop: "updateTime",
+			label: t('更新时间'),
+			prop: 'updateTime',
 			minWidth: 170,
-			sortable: "custom",
-			component: { name: "cl-date-text" },
-		},
-	],
+			sortable: 'custom',
+			component: { name: 'cl-date-text' }
+		}
+	]
 });
 
 // cl-crud
 const Crud = useCrud(
 	{
-		service: loginLogService,
+		service: loginLogService
 	},
-	(app) => {
+	app => {
 		if (!loginLogService) {
-			ElMessage.error("登录日志服务未注册，请检查 EPS/service 命名");
+			ElMessage.error('登录日志服务未注册，请检查 EPS/service 命名');
 			return;
 		}
 
 		app.refresh();
-	},
+	}
 );
 
 // 刷新

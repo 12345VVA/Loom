@@ -1,6 +1,7 @@
 """
 模块约定式路由配置与构建工具
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

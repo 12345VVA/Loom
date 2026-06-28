@@ -1,6 +1,7 @@
 """
 统一异常输出
 """
+
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -23,10 +24,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         first_err = errors[0] if errors else {}
         field = ".".join(str(part) for part in first_err.get("loc", []))
         msg = f"参数错误: {field} {first_err.get('msg', '')}"
-        
+
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=error(msg, code=1001), 
+            content=error(msg, code=1001),
         )
 
     @app.exception_handler(Exception)

@@ -1,6 +1,7 @@
 """
 通知模板接口。
 """
+
 from fastapi import Depends
 from sqlmodel import Session
 

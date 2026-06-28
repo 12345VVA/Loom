@@ -5,7 +5,13 @@ from typing import Any
 
 import httpx
 
-from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCapabilityError, iter_sse_events, loads_json, normalize_usage
+from app.modules.ai.service.adapters.base import (
+    BaseHttpAdapter,
+    UnsupportedCapabilityError,
+    iter_sse_events,
+    loads_json,
+    normalize_usage,
+)
 
 
 class GeminiAdapter(BaseHttpAdapter):
@@ -39,7 +45,7 @@ class GeminiAdapter(BaseHttpAdapter):
             payload["systemInstruction"] = {"parts": [{"text": system_text}]}
         data, response = self._post(f"/models/{model}:generateContent", payload, self._headers())
         candidate = (data.get("candidates") or [{}])[0]
-        parts = ((candidate.get("content") or {}).get("parts") or [])
+        parts = (candidate.get("content") or {}).get("parts") or []
         return {
             "content": "\n".join(part.get("text", "") for part in parts if part.get("text")),
             "raw": data,
@@ -67,13 +73,15 @@ class GeminiAdapter(BaseHttpAdapter):
         if system_text:
             payload["systemInstruction"] = {"parts": [{"text": system_text}]}
         path = f"/models/{model}:streamGenerateContent?alt=sse"
-        with httpx.stream("POST", f"{self.base_url}{path}", json=payload, headers=self._headers(), timeout=self.timeout) as response:
+        with httpx.stream(
+            "POST", f"{self.base_url}{path}", json=payload, headers=self._headers(), timeout=self.timeout
+        ) as response:
             response.raise_for_status()
             request_id = response.headers.get("x-request-id")
             for event in iter_sse_events(response.iter_lines()):
                 data = loads_json(event.get("data"))
                 candidate = (data.get("candidates") or [{}])[0]
-                parts = ((candidate.get("content") or {}).get("parts") or [])
+                parts = (candidate.get("content") or {}).get("parts") or []
                 for part in parts:
                     text = part.get("text")
                     if text:
@@ -81,7 +89,13 @@ class GeminiAdapter(BaseHttpAdapter):
                 usage = normalize_usage(data.get("usageMetadata"))
                 finish_reason = candidate.get("finishReason")
                 if usage or finish_reason:
-                    yield {"event": "done", "raw": data, "usage": usage, "finishReason": finish_reason, "requestId": request_id}
+                    yield {
+                        "event": "done",
+                        "raw": data,
+                        "usage": usage,
+                        "finishReason": finish_reason,
+                        "requestId": request_id,
+                    }
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         texts = input if isinstance(input, list) else [input]
@@ -112,19 +126,16 @@ class GeminiAdapter(BaseHttpAdapter):
                     parts.append(part)
 
         parts.append({"text": prompt})
-        
+
         generation_config = {"responseModalities": ["TEXT", "IMAGE"]}
         for k, v in normalized_options.items():
             if k not in {"n", "response_format", "watermark"}:
                 generation_config[k] = v
 
-        payload = {
-            "contents": [{"parts": parts}],
-            "generationConfig": generation_config
-        }
-        
+        payload = {"contents": [{"parts": parts}], "generationConfig": generation_config}
+
         data, response = self._post(f"/models/{model}:generateContent", payload, self._headers())
-        
+
         output_images = []
         candidates = data.get("candidates") or []
         if candidates:
@@ -133,15 +144,13 @@ class GeminiAdapter(BaseHttpAdapter):
             for part in parts_output:
                 if "inlineData" in part:
                     inline_data = part["inlineData"]
-                    output_images.append({
-                        "b64_json": inline_data.get("data")
-                    })
+                    output_images.append({"b64_json": inline_data.get("data")})
 
         return {
             "data": output_images,
             "raw": data,
             "usage": normalize_usage(data.get("usageMetadata")),
-            "requestId": response.headers.get("x-request-id")
+            "requestId": response.headers.get("x-request-id"),
         }
 
     def video(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
@@ -189,7 +198,7 @@ def _prepare_gemini_image_part(val: str) -> dict | None:
                 content_length = r.headers.get("content-length")
                 if content_length and int(content_length) > MAX_IMAGE_DOWNLOAD_SIZE:
                     raise ValueError(f"Image size exceeds limit: {content_length} bytes")
-                
+
                 chunks = []
                 bytes_read = 0
                 for chunk in r.iter_bytes(chunk_size=8192):
@@ -198,7 +207,7 @@ def _prepare_gemini_image_part(val: str) -> dict | None:
                         raise ValueError("Image size exceeds limit (10MB)")
                     chunks.append(chunk)
                 content = b"".join(chunks)
-                
+
                 mime_type = r.headers.get("content-type", "image/png")
                 b64_data = base64.b64encode(content).decode("utf-8")
                 return {"inlineData": {"mimeType": mime_type, "data": b64_data}}

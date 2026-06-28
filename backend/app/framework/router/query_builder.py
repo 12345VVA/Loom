@@ -1,22 +1,29 @@
 """
 通用查询构造器，用于解析 CrudQuery 并生成 SQLAlchemy 查询语句
 """
+
 from __future__ import annotations
 
-from typing import Any, Type, Iterable
-from sqlalchemy import asc, desc, or_
-from sqlmodel import select, Session
+from typing import Any
 
-from app.framework.controller_meta import CrudQuery
+from sqlalchemy import asc, desc, or_
+
+from app.framework.controller_meta import CrudQuery, RelationConfig
 from app.modules.base.service.data_scope_service import DataScopeContext
 
 
 class QueryBuilder:
-    def __init__(self, model: Type[Any], query: CrudQuery | None = None):
+    def __init__(self, model: type[Any], query: CrudQuery | None = None):
         self.model = model
         self.query = query
 
-    def apply_all(self, statement, data_scope: DataScopeContext | None = None, current_user_id: int | None = None, relations: tuple[RelationConfig, ...] = ()):
+    def apply_all(
+        self,
+        statement,
+        data_scope: DataScopeContext | None = None,
+        current_user_id: int | None = None,
+        relations: tuple[RelationConfig, ...] = (),
+    ):
         """链式应用所有查询规则"""
         statement = self.apply_soft_delete(statement)
         statement = self.apply_data_scope(statement, data_scope, current_user_id)
@@ -24,20 +31,20 @@ class QueryBuilder:
         statement = self.apply_keyword(statement)
         statement = self.apply_ranges(statement)
         statement = self.apply_where(statement)
-        
+
         # 字段与关联处理
         # 1. 基础字段选择
         statement = self.apply_select(statement)
         # 2. 自动关联与额外列（放在 select 之后，用 add_columns 补全）
         statement = self.apply_relations(statement, relations)
-        
+
         statement = self.apply_sort(statement)
         return statement
 
     def apply_soft_delete(self, statement):
         """应用软删除过滤"""
         if hasattr(self.model, "delete_time"):
-            statement = statement.where(getattr(self.model, "delete_time") == None)
+            statement = statement.where(self.model.delete_time == None)  # noqa: E711
         return statement
 
     def apply_filters(self, statement):
@@ -49,10 +56,10 @@ class QueryBuilder:
             if not hasattr(self.model, field):
                 continue
             column = getattr(self.model, field)
-            
+
             # 自动转换布尔值和数字 (适配 query_params 原始字符串)
             coerced_value = self._coerce_value(column, value)
-            
+
             if isinstance(coerced_value, (list, tuple, set)):
                 statement = statement.where(column.in_(list(coerced_value)))
             else:
@@ -69,16 +76,16 @@ class QueryBuilder:
     def apply_keyword(self, statement):
         if not self.query or not self.query.keyword:
             return statement
-        
+
         # 优先使用 query.keyword_fields，没有则不处理关键词搜索
         if not self.query.keyword_fields:
             return statement
-        
+
         expressions = []
         for field in self.query.keyword_fields:
             if hasattr(self.model, field):
                 expressions.append(getattr(self.model, field).contains(self.query.keyword))
-        
+
         if expressions:
             statement = statement.where(or_(*expressions))
         return statement
@@ -86,25 +93,26 @@ class QueryBuilder:
     def apply_ranges(self, statement):
         if not self.query:
             return statement
-            
+
         params = self.query.raw_params
         # 常见范围参数后缀
         for key, value in params.items():
-            if not value: continue
-            
+            if not value:
+                continue
+
             # 处理开始时间/结束时间 (适配前端日期范围选择器)
             field_name = None
             op = None
-            
+
             if key.endswith("StartTime"):
                 field_name, op = key[:-9], ">="
             elif key.endswith("EndTime"):
                 field_name, op = key[:-7], "<="
-                
+
             if field_name and hasattr(self.model, field_name):
                 col = getattr(self.model, field_name)
                 statement = statement.where(col >= value if op == ">=" else col <= value)
-        
+
         return statement
 
     def apply_where(self, statement):
@@ -170,7 +178,7 @@ class QueryBuilder:
         if hasattr(self.model, fallback_field):
             column = getattr(self.model, fallback_field)
             statement = statement.order_by(desc(column))
-            
+
         return statement
 
     def apply_data_scope(self, statement, data_scope: DataScopeContext | None, current_user_id: int | None):
@@ -186,12 +194,12 @@ class QueryBuilder:
             return statement
 
         filters = []
-        
+
         # 1. 如果仅限本人 (或者 data_scope 没有任何其它部门权限)
         if user_id_col is not None and current_user_id is not None:
             # 基础过滤：允许访问本人创建的数据
             filters.append(user_id_col == current_user_id)
-            
+
         # 2. 如果允许特定部门
         if dept_id_col is not None and data_scope.allowed_department_ids:
             # 扩展过滤：允许访问这些部门下的数据
@@ -200,10 +208,10 @@ class QueryBuilder:
         if filters:
             # 使用 OR 连接：既能看自己的，也能看拥有权限的部门的
             return statement.where(or_(*filters))
-            
+
         # 兜底：如果没有任何确定的过滤条件但模型有字段，可能需要返回空集或默认隔离到本人
         if current_user_id is not None and user_id_col is not None:
-             return statement.where(user_id_col == current_user_id)
+            return statement.where(user_id_col == current_user_id)
 
         return statement
 
@@ -216,7 +224,7 @@ class QueryBuilder:
     def _coerce_single_value(self, column, value):
         if not isinstance(value, str):
             return value
-        
+
         # 简单转换逻辑，可根据需要扩展
         lowered = value.strip().lower()
         if lowered in {"true", "false"}:

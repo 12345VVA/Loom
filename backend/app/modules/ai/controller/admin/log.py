@@ -1,13 +1,14 @@
 """
 AI 模型调用日志接口。
 """
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
-from app.modules.ai.model.ai import AiCallStatsRequest, AiModelCallLogRead
+
 from fastapi import Depends
 from sqlmodel import Session
 
 from app.core.database import get_session
+from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
 from app.framework.router.route_meta import Post
+from app.modules.ai.model.ai import AiCallStatsRequest, AiModelCallLogRead
 from app.modules.ai.service.log_service import AiModelCallLogService
 from app.modules.ai.service.stats_service import AiModelCallStatsService
 from app.modules.base.model.auth import User

@@ -1,7 +1,15 @@
 """
 登录日志接口
 """
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
+
+from app.framework.controller_meta import (
+    BaseController,
+    CoolController,
+    CoolControllerMeta,
+    OrderByConfig,
+    QueryConfig,
+    QueryFieldConfig,
+)
 from app.modules.base.model.sys import SysLoginLogCreateRequest, SysLoginLogRead, SysLoginLogUpdateRequest
 from app.modules.base.service.sys_manage_service import SysLoginLogService
 

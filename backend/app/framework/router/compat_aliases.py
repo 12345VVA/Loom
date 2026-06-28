@@ -1,10 +1,11 @@
 """
 Loom-vue 兼容路由别名
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from importlib import import_module
-from typing import Iterable
 
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select

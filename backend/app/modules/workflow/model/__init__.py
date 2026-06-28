@@ -1,7 +1,7 @@
 from app.modules.workflow.model.workflow import (
     WorkflowDefinition,
-    WorkflowInstance,
     WorkflowExecutionLog,
+    WorkflowInstance,
 )
 
 __all__ = [

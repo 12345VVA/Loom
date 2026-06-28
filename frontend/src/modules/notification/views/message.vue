@@ -13,12 +13,22 @@
 				<cl-refresh-btn />
 				<cl-multi-delete-btn />
 				<cl-flex1 />
-				<el-select v-model="filters.messageType" clearable :placeholder="$t('类型')" @change="refresh">
+				<el-select
+					v-model="filters.messageType"
+					clearable
+					:placeholder="$t('类型')"
+					@change="refresh"
+				>
 					<el-option label="system" value="system" />
 					<el-option label="business" value="business" />
 					<el-option label="task" value="task" />
 				</el-select>
-				<el-select v-model="filters.level" clearable :placeholder="$t('级别')" @change="refresh">
+				<el-select
+					v-model="filters.level"
+					clearable
+					:placeholder="$t('级别')"
+					@change="refresh"
+				>
 					<el-option label="info" value="info" />
 					<el-option label="success" value="success" />
 					<el-option label="warning" value="warning" />
@@ -88,10 +98,18 @@
 						:closable="false"
 					/>
 					<el-descriptions :column="1" border class="mt">
-						<el-descriptions-item :label="$t('标题')">{{ send.form.title }}</el-descriptions-item>
-						<el-descriptions-item :label="$t('内容')">{{ send.form.content }}</el-descriptions-item>
-						<el-descriptions-item :label="$t('类型')">{{ send.form.messageType }}</el-descriptions-item>
-						<el-descriptions-item :label="$t('级别')">{{ send.form.level }}</el-descriptions-item>
+						<el-descriptions-item :label="$t('标题')">{{
+							send.form.title
+						}}</el-descriptions-item>
+						<el-descriptions-item :label="$t('内容')">{{
+							send.form.content
+						}}</el-descriptions-item>
+						<el-descriptions-item :label="$t('类型')">{{
+							send.form.messageType
+						}}</el-descriptions-item>
+						<el-descriptions-item :label="$t('级别')">{{
+							send.form.level
+						}}</el-descriptions-item>
 					</el-descriptions>
 				</div>
 			</div>
@@ -102,17 +120,27 @@
 				<el-button v-if="send.step < 2" type="primary" @click="nextStep">
 					{{ $t('下一步') }}
 				</el-button>
-				<el-button v-else type="primary" @click="submitSend">{{ $t('确认发送') }}</el-button>
+				<el-button v-else type="primary" @click="submitSend">{{
+					$t('确认发送')
+				}}</el-button>
 			</template>
 		</el-dialog>
 
 		<el-dialog v-model="detail.visible" :title="detail.item?.title" width="620px">
 			<p class="detail-content">{{ detail.item?.content }}</p>
 			<el-descriptions v-if="detail.item" :column="1" border>
-				<el-descriptions-item :label="$t('类型')">{{ detail.item.messageType }}</el-descriptions-item>
-				<el-descriptions-item :label="$t('级别')">{{ detail.item.level }}</el-descriptions-item>
-				<el-descriptions-item :label="$t('来源模块')">{{ detail.item.sourceModule || '-' }}</el-descriptions-item>
-				<el-descriptions-item :label="$t('撤回')">{{ detail.item.isRecalled ? $t('是') : $t('否') }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('类型')">{{
+					detail.item.messageType
+				}}</el-descriptions-item>
+				<el-descriptions-item :label="$t('级别')">{{
+					detail.item.level
+				}}</el-descriptions-item>
+				<el-descriptions-item :label="$t('来源模块')">{{
+					detail.item.sourceModule || '-'
+				}}</el-descriptions-item>
+				<el-descriptions-item :label="$t('撤回')">{{
+					detail.item.isRecalled ? $t('是') : $t('否')
+				}}</el-descriptions-item>
 			</el-descriptions>
 		</el-dialog>
 
@@ -254,9 +282,12 @@ async function nextStep() {
 		return ElMessage.warning(t('请填写标题和内容'));
 	}
 	if (send.step === 1) {
-		Object.assign(preview, await service.notification.message.previewRecipients({
-			audience: send.form.audience
-		}));
+		Object.assign(
+			preview,
+			await service.notification.message.previewRecipients({
+				audience: send.form.audience
+			})
+		);
 	}
 	send.step++;
 }

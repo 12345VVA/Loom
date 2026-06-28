@@ -1,4 +1,5 @@
 import redis
+
 from app.core.config import settings
 
 # 全局 Redis 客户端引用
@@ -30,9 +31,11 @@ def clear_cache_pattern(pattern: str):
     if batch:
         r.delete(*batch)
 
+
 # 便于直接导入使用的实例 (单例包装)
 class RedisClientProxy:
     def __getattr__(self, name):
         return getattr(get_redis(), name)
+
 
 redis_client = RedisClientProxy()

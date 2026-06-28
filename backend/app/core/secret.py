@@ -1,15 +1,14 @@
 """
 敏感配置加密工具。
 """
+
 from __future__ import annotations
 
 import base64
 import hashlib
 import hmac
-import os
 
 from app.core.config import settings
-
 
 _VERSION = "v2"
 _LEGACY_VERSION = "v1"

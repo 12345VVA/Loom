@@ -1,23 +1,23 @@
 """
 工作流动态编译器与节点注册表。
 """
+
 import ast
 import collections
 import json
 import logging
 import re
-from typing import Any, Annotated, Callable, Dict, TypedDict, Optional
+from collections.abc import Callable
+from typing import Annotated, Any, TypedDict
 
 logger = logging.getLogger(__name__)
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 
 
 class SafeEvaluator:
     def __init__(self, context: dict):
         self.context = context
-        self.allowed_calls = {
-            'len': len, 'str': str, 'int': int, 'float': float, 'bool': bool
-        }
+        self.allowed_calls = {"len": len, "str": str, "int": int, "float": float, "bool": bool}
 
     def evaluate(self, node: Any) -> Any:
         if isinstance(node, ast.Expression):
@@ -30,51 +30,80 @@ class SafeEvaluator:
             raise NameError(f"变量 '{node.id}' 未定义")
         elif isinstance(node, ast.Subscript):
             value = self.evaluate(node.value)
-            slice_val = self.evaluate(node.slice)
-            return value[slice_val]
+            if isinstance(node.slice, ast.Slice):
+                lower = self.evaluate(node.slice.lower) if getattr(node.slice, "lower", None) is not None else None
+                upper = self.evaluate(node.slice.upper) if getattr(node.slice, "upper", None) is not None else None
+                step = self.evaluate(node.slice.step) if getattr(node.slice, "step", None) is not None else None
+                return value[slice(lower, upper, step)]
+            else:
+                if hasattr(ast, "Index") and isinstance(node.slice, ast.Index):
+                    slice_val = self.evaluate(node.slice.value)  # type: ignore
+                else:
+                    slice_val = self.evaluate(node.slice)
+                return value[slice_val]
         elif isinstance(node, ast.BinOp):
             left = self.evaluate(node.left)
             right = self.evaluate(node.right)
-            if isinstance(node.op, ast.Add): return left + right
-            elif isinstance(node.op, ast.Sub): return left - right
-            elif isinstance(node.op, ast.Mult): return left * right
-            elif isinstance(node.op, ast.Div): return left / right
-            elif isinstance(node.op, ast.Mod): return left % right
+            if isinstance(node.op, ast.Add):
+                return left + right
+            elif isinstance(node.op, ast.Sub):
+                return left - right
+            elif isinstance(node.op, ast.Mult):
+                return left * right
+            elif isinstance(node.op, ast.Div):
+                return left / right
+            elif isinstance(node.op, ast.Mod):
+                return left % right
             raise TypeError(f"不支持的二元操作符类型: {type(node.op)}")
         elif isinstance(node, ast.Compare):
             left = self.evaluate(node.left)
             for op, comparator in zip(node.ops, node.comparators):
                 right = self.evaluate(comparator)
                 if isinstance(op, ast.Eq):
-                    if not (left == right): return False
+                    if not (left == right):
+                        return False
                 elif isinstance(op, ast.NotEq):
-                    if not (left != right): return False
+                    if not (left != right):
+                        return False
                 elif isinstance(op, ast.Lt):
-                    if not (left < right): return False
+                    if not (left < right):
+                        return False
                 elif isinstance(op, ast.LtE):
-                    if not (left <= right): return False
+                    if not (left <= right):
+                        return False
                 elif isinstance(op, ast.Gt):
-                    if not (left > right): return False
+                    if not (left > right):
+                        return False
                 elif isinstance(op, ast.GtE):
-                    if not (left >= right): return False
+                    if not (left >= right):
+                        return False
                 elif isinstance(op, ast.In):
-                    if not (left in right): return False
+                    if left not in right:
+                        return False
                 elif isinstance(op, ast.NotIn):
-                    if not (left not in right): return False
+                    if not (left not in right):
+                        return False
                 else:
                     raise TypeError(f"不支持的比较操作符类型: {type(op)}")
                 left = right
             return True
         elif isinstance(node, ast.BoolOp):
-            values = [self.evaluate(v) for v in node.values]
             if isinstance(node.op, ast.And):
-                return all(values)
+                for v in node.values:
+                    if not self.evaluate(v):
+                        return False
+                return True
             elif isinstance(node.op, ast.Or):
-                return any(values)
+                for v in node.values:
+                    if self.evaluate(v):
+                        return True
+                return False
         elif isinstance(node, ast.UnaryOp):
             operand = self.evaluate(node.operand)
-            if isinstance(node.op, ast.Not): return not operand
-            elif isinstance(node.op, ast.USub): return -operand
+            if isinstance(node.op, ast.Not):
+                return not operand
+            elif isinstance(node.op, ast.USub):
+                return -operand
             raise TypeError(f"不支持的一元操作符类型: {type(node.op)}")
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id in self.allowed_calls:
@@ -83,19 +112,20 @@ class SafeEvaluator:
             raise ValueError(f"不支持的函数调用: {node.func}")
         elif isinstance(node, ast.Attribute):
             value = self.evaluate(node.value)
-            if isinstance(value, dict) and node.attr in value:
-                return value[node.attr]
+            if isinstance(value, dict):
+                return value.get(node.attr)
             raise TypeError("不支持的属性访问。仅支持对字典(dict)内的键进行属性读取。")
         raise TypeError(f"不支持的 AST 节点类型: {type(node)}")
 
 
 def safe_eval(expr_str: str, context: dict) -> Any:
     try:
-        tree = ast.parse(expr_str.strip(), mode='eval')
+        tree = ast.parse(expr_str.strip(), mode="eval")
         evaluator = SafeEvaluator(context)
         return evaluator.evaluate(tree)
     except Exception as e:
         raise ValueError(f"表达式解析评估失败: {e}")
+
 
 def _deep_get(val: Any, path: str) -> Any:
     """支持点号分割的深层字典结构值获取"""
@@ -109,6 +139,7 @@ def _deep_get(val: Any, path: str) -> Any:
             return None
     return val
 
+
 def render_template(template: str, variables: dict) -> str:
     """
     自定义模板渲染引擎，替代 str.format()。
@@ -118,11 +149,12 @@ def render_template(template: str, variables: dict) -> str:
     {var.list.0}  → variables["var"]["list"][0]
     dict/list 自动序列化为 JSON。
     """
+
     def _resolve(match):
         path = match.group(1).strip()
         if not path:
-            return ''
-        parts = path.split('.')
+            return ""
+        parts = path.split(".")
         value = variables
         for part in parts:
             if isinstance(value, dict) and part in value:
@@ -132,13 +164,14 @@ def render_template(template: str, variables: dict) -> str:
                 if 0 <= idx < len(value):
                     value = value[idx]
                 else:
-                    return ''
+                    return ""
             else:
-                return ''
+                return ""
         if isinstance(value, (dict, list)):
             return json.dumps(value, ensure_ascii=False)
         return str(value)
-    return re.sub(r'\{([^}]+)\}', _resolve, template)
+
+    return re.sub(r"\{([a-zA-Z0-9_.]+)\}", _resolve, template)
 
 
 def strip_braces(val: str) -> str:
@@ -149,14 +182,16 @@ def strip_braces(val: str) -> str:
 
 
 def camel_to_snake(s: str) -> str:
-    return re.sub(r'(?<!^)(?=[A-Z])', '_', s).lower()
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
 
 
-def convert_keys_to_snake(d: Any) -> Any:
+def convert_keys_to_snake(d: Any, depth: int = 0) -> Any:
+    if depth > 100:
+        raise RecursionError("Maximum recursion depth exceeded in convert_keys_to_snake")
     if isinstance(d, dict):
-        return {camel_to_snake(k): convert_keys_to_snake(v) for k, v in d.items()}
+        return {camel_to_snake(k): convert_keys_to_snake(v, depth + 1) for k, v in d.items()}
     elif isinstance(d, list):
-        return [convert_keys_to_snake(x) for x in d]
+        return [convert_keys_to_snake(x, depth + 1) for x in d]
     return d
 
 
@@ -170,12 +205,13 @@ SUBGRAPH_NODE_TYPES = {"loop_controller", "batch_processor"}
 UNTESTABLE_NODE_TYPES = {"start", "end", "loop_controller", "batch_processor", "human_input", "loop_body_group"}
 
 
-def validate_graph(graph_json: Dict[str, Any]) -> None:
+def validate_graph(graph_json: dict[str, Any]) -> None:
     """
     工作流图拓扑结构校验，验证完整性与防错
     """
     nodes = graph_json.get("nodes", [])
     edges = graph_json.get("edges", [])
+    nodes_map = {n["id"]: n for n in nodes if "id" in n}
 
     node_ids = {n["id"] for n in nodes if "id" in n}
     node_types = {n["id"]: n.get("type") for n in nodes if "id" in n}
@@ -193,7 +229,7 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
         source = edge.get("source")
         target = edge.get("target")
         if not source or not target:
-            raise ValueError(f"第 {i+1} 条连线缺少 source 或 target 属性。")
+            raise ValueError(f"第 {i + 1} 条连线缺少 source 或 target 属性。")
         if source not in node_ids:
             raise ValueError(f"连线引用的源节点 ID '{source}' 在节点列表中不存在。")
         if target not in node_ids:
@@ -244,22 +280,19 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
                     exit_targets.append(tgt)
             if not exit_targets:
                 raise ValueError(
-                    f"节点 '{node_name}' 没有指向循环体外部的连线。"
-                    f"请为循环控制节点添加一条连向后续节点的出边。"
+                    f"节点 '{node_name}' 没有指向循环体外部的连线。请为循环控制节点添加一条连向后续节点的出边。"
                 )
 
             # 检查体入口歧义
             if body_node_ids:
                 entries = [
-                    nid for nid in body_node_ids
+                    nid
+                    for nid in body_node_ids
                     if not any(e["target"] == nid and e["source"] in body_node_ids for e in edges)
                 ]
                 if len(entries) > 1:
                     names = [nodes_map[eid].get("label", eid) for eid in entries if eid in nodes_map]
-                    raise ValueError(
-                        f"循环体有多个可能的入口节点: {', '.join(names)}。"
-                        f"请用连线明确节点执行顺序。"
-                    )
+                    raise ValueError(f"循环体有多个可能的入口节点: {', '.join(names)}。请用连线明确节点执行顺序。")
                 if len(entries) == 0 and len(body_node_ids) > 0:
                     raise ValueError("循环体内部存在环路，无法确定入口节点。")
 
@@ -278,14 +311,7 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
                 if body_entry and body_entry in node_ids:
                     all_body_node_ids.update(_find_body_nodes(n["id"], body_entry, edges))
 
-    # 收集连通节点：穿透 group 容器
-    _iso_group_to_controller = {}
-    for n in nodes:
-        if n.get("type") == "loop_body_group":
-            cfg = convert_keys_to_snake(n.get("config", {}))
-            ctrl = cfg.get("controller_node_id")
-            if ctrl:
-                _iso_group_to_controller[n["id"]] = ctrl
+    _iso_group_to_controller = _build_group_to_controller_map(nodes, edges, nodes_map)
 
     connected_nodes = set()
     for edge in edges:
@@ -302,7 +328,11 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
         connected_nodes.add(t)
 
     for nid, ntype in node_types.items():
-        if ntype not in ("start", "end", "loop_body_group") and nid not in connected_nodes and nid not in all_body_node_ids:
+        if (
+            ntype not in ("start", "end", "loop_body_group")
+            and nid not in connected_nodes
+            and nid not in all_body_node_ids
+        ):
             node_name = nid
             for n in nodes:
                 if n.get("id") == nid:
@@ -312,14 +342,7 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
 
     # 5. 无条件静态环路检测 (DFS 环检测)
     # 仅针对非条件节点的静态连线建图（条件节点能基于运行时决策打破环路）
-    # 预构建 group → controller 映射（用于环检测穿透）
-    _v_group_to_controller = {}
-    for n in nodes:
-        if n.get("type") == "loop_body_group":
-            cfg = convert_keys_to_snake(n.get("config", {}))
-            ctrl = cfg.get("controller_node_id")
-            if ctrl:
-                _v_group_to_controller[n["id"]] = ctrl
+    _v_group_to_controller = _build_group_to_controller_map(nodes, edges, nodes_map)
 
     adj = {nid: [] for nid in node_ids}
 
@@ -340,10 +363,10 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
 
         if source_type not in CONDITIONAL_NODE_TYPES:
             adj[source].append(target)
-            
+
     # DFS 状态跟踪：0 = 未访问, 1 = 正在访问, 2 = 已完全访问
     visit_state = {nid: 0 for nid in node_ids}
-    
+
     def dfs_has_cycle(u: str) -> bool:
         visit_state[u] = 1  # 正在访问
         for v in adj[u]:
@@ -354,7 +377,7 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
                     return True
         visit_state[u] = 2  # 已完全访问
         return False
-        
+
     for nid in node_ids:
         if visit_state[nid] == 0:
             if dfs_has_cycle(nid):
@@ -363,7 +386,9 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
                     if n.get("id") == nid:
                         node_name = n.get("name", nid)
                         break
-                raise ValueError(f"检测到无条件死循环：静态流程在节点 '{node_name}' (ID: {nid}) 附近形成了闭环且没有任何判定条件分支。")
+                raise ValueError(
+                    f"检测到无条件死循环：静态流程在节点 '{node_name}' (ID: {nid}) 附近形成了闭环且没有任何判定条件分支。"
+                )
 
     # 6. 模型节点配置完整性校验
     model_required_types = {"llm", "intent_classifier", "image_generator"}
@@ -380,14 +405,33 @@ def validate_graph(graph_json: Dict[str, Any]) -> None:
                 raise ValueError(f"节点 '{node_name}' 未选择模型 Profile，请先在配置面板中选择一个模型。")
 
 
+def _build_group_to_controller_map(nodes: list, edges: list, nodes_map: dict) -> dict[str, str]:
+    group_to_controller = {}
+    for node in nodes:
+        if node.get("type") == "loop_body_group":
+            cfg = convert_keys_to_snake(node.get("config", {}))
+            ctrl = cfg.get("controller_node_id")
+            if ctrl:
+                group_to_controller[node["id"]] = ctrl
+            else:
+                for edge in edges:
+                    if edge.get("target") == node["id"]:
+                        src_id = edge.get("source")
+                        src_node = nodes_map.get(src_id)
+                        if src_node and src_node.get("type") in ["loop_controller", "batch_processor"]:
+                            group_to_controller[node["id"]] = src_id
+                            break
+    return group_to_controller
+
+
 # --- 子图工具函数 ---
+
 
 def _find_body_nodes(parent_id: str, body_entry_id: str, edges: list) -> set[str]:
     """BFS 从 body_entry_id 出发，沿 forward edges 遍历，直到遇到 parent_id 停止。"""
     if body_entry_id == parent_id:
         raise ValueError(
-            f"循环体入口节点不能指向循环控制节点自身 (ID: {parent_id})。"
-            f"请选择一个不同的节点作为循环体入口。"
+            f"循环体入口节点不能指向循环控制节点自身 (ID: {parent_id})。请选择一个不同的节点作为循环体入口。"
         )
     body_nodes = set()
     queue = collections.deque([body_entry_id])
@@ -409,9 +453,7 @@ def _find_body_nodes(parent_id: str, body_entry_id: str, edges: list) -> set[str
     return body_nodes
 
 
-def _find_body_nodes_by_parent(
-    nodes: list, edges: list, controller_id: str
-) -> tuple[set[str], str | None]:
+def _find_body_nodes_by_parent(nodes: list, edges: list, controller_id: str) -> tuple[set[str], str | None]:
     """
     通过 parentNode 字段识别体节点（前端 group 容器模式）。
     流程：controller config.bodyGroupId → 找 group 子节点 → 推导入口。
@@ -442,10 +484,7 @@ def _find_body_nodes_by_parent(
     # 推导体入口：group 内没有来自 group 内部入边的节点
     body_entry = None
     for nid in body_node_ids:
-        has_internal_incoming = any(
-            e["target"] == nid and e["source"] in body_node_ids
-            for e in edges
-        )
+        has_internal_incoming = any(e["target"] == nid and e["source"] in body_node_ids for e in edges)
         if not has_internal_incoming:
             body_entry = nid
             break
@@ -470,9 +509,7 @@ def _extract_body_edges(body_node_ids: set[str], parent_id: str, edges: list) ->
     return body_edges
 
 
-def _validate_subgraph_boundaries(
-    parent_id: str, body_node_ids: set[str], edges: list, nodes_map: dict
-) -> None:
+def _validate_subgraph_boundaries(parent_id: str, body_node_ids: set[str], edges: list, nodes_map: dict) -> None:
     """校验体子图边界：无越界逃逸、无外部入边。"""
     for edge in edges:
         source = edge["source"]
@@ -517,16 +554,12 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                     false_route = e["target"]
         path_map = {END: END}
         if true_route:
-            node_config[true_route] = true_route
             path_map[true_route] = true_route
         if false_route:
-            node_config[false_route] = false_route
             path_map[false_route] = false_route
         if len(path_map) > 1:
             builder.add_conditional_edges(
-                node_id,
-                WorkflowCompiler.create_conditional_router(node_id, node_config),
-                path_map
+                node_id, WorkflowCompiler.create_conditional_router(node_id, node_config), path_map
             )
 
     elif node_type == "intent_classifier":
@@ -555,9 +588,7 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
         path_map[END] = END
         if path_map:
             builder.add_conditional_edges(
-                node_id,
-                WorkflowCompiler.create_intent_router(node_id, node_config),
-                path_map
+                node_id, WorkflowCompiler.create_intent_router(node_id, node_config), path_map
             )
 
     elif node_type == "switch":
@@ -586,15 +617,11 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
         path_map[END] = END
         if path_map:
             builder.add_conditional_edges(
-                node_id,
-                WorkflowCompiler.create_switch_router(node_id, node_config),
-                path_map
+                node_id, WorkflowCompiler.create_switch_router(node_id, node_config), path_map
             )
 
 
-def _compile_body_graph(
-    body_nodes: list, body_edges: list, body_entry_id: str, parent_id: str
-):
+def _compile_body_graph(body_nodes: list, body_edges: list, body_entry_id: str, parent_id: str):
     """将体节点编译为独立的 LangGraph StateGraph（无 checkpointer，瞬态执行）。"""
     builder = StateGraph(WorkflowState)
 
@@ -635,8 +662,7 @@ def _compile_body_graph(
         if node["type"] == "end":
             builder.add_edge(node["id"], END)
 
-    logger.info("[Compiler] Body sub-graph compiled: entry=%s, nodes=%s", body_entry_id,
-                [n["id"] for n in body_nodes])
+    logger.info("[Compiler] Body sub-graph compiled: entry=%s, nodes=%s", body_entry_id, [n["id"] for n in body_nodes])
     return builder.compile()
 
 
@@ -702,12 +728,15 @@ def _compile_subgraphs_recursive(graph_json: dict, nodes_map: dict) -> tuple[dic
     for sg_node in sg_nodes:
         _process(sg_node)
 
-    logger.info("[Compiler] Pre-pass complete: %d subgraph(s) extracted, body_nodes=%s",
-                len(subgraph_configs), all_body_node_ids)
+    logger.info(
+        "[Compiler] Pre-pass complete: %d subgraph(s) extracted, body_nodes=%s",
+        len(subgraph_configs),
+        all_body_node_ids,
+    )
     return subgraph_configs, all_body_node_ids
 
 
-def resolve_node_inputs(variables: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+def resolve_node_inputs(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """根据节点配置中的 inputs schema 或 input_mappings 解析最终输入。"""
     input_mappings = config.get("input_mappings", {})
     inputs_schema = config.get("inputs", [])
@@ -731,11 +760,11 @@ def resolve_node_inputs(variables: Dict[str, Any], config: Dict[str, Any]) -> Di
                 node_inputs[name] = val
     else:
         node_inputs = apply_input_mappings(variables, input_mappings)
-    
+
     return node_inputs
 
 
-def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_dicts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     """LangGraph reducer：合并多个节点对 variables 的并发更新"""
     return {**(left or {}), **(right or {})}
 
@@ -750,8 +779,9 @@ class WorkflowState(TypedDict):
     """
     工作流运行时状态共享上下文
     """
-    messages: Annotated[list, lambda l, r: (l or []) + (r or [])]
-    variables: Annotated[Dict[str, Any], _merge_dicts]
+
+    messages: Annotated[list, lambda left, right: (left or []) + (right or [])]
+    variables: Annotated[dict[str, Any], _merge_dicts]
     current_node: Annotated[str, _last_writer_wins]
 
 
@@ -760,17 +790,18 @@ class NodeExecutorRegistry:
     """
     节点执行器注册表，支持未来灵活扩展新的节点类型
     """
-    def __init__(self):
-        self._executors: Dict[str, Callable[[Dict[str, Any], Dict[str, Any]], Any]] = {}
 
-    def register(self, node_type: str, executor_func: Callable[[Dict[str, Any], Dict[str, Any]], Any]):
+    def __init__(self):
+        self._executors: dict[str, Callable[[dict[str, Any], dict[str, Any]], Any]] = {}
+
+    def register(self, node_type: str, executor_func: Callable[[dict[str, Any], dict[str, Any]], Any]):
         """
         注册一个节点执行函数。
         执行函数参数：(state: dict, config: dict) -> Dict[str, Any] (返回要更新的状态增量)
         """
         self._executors[node_type] = executor_func
 
-    def get(self, node_type: str) -> Optional[Callable[[Dict[str, Any], Dict[str, Any]], Any]]:
+    def get(self, node_type: str) -> Callable[[dict[str, Any], dict[str, Any]], Any] | None:
         return self._executors.get(node_type)
 
 
@@ -781,6 +812,8 @@ def apply_input_mappings(global_vars: dict, mappings: dict) -> dict:
     """根据映射配置提取节点需要的入参"""
     node_inputs = {}
     if not mappings:
+        # 未配置输入映射的节点：透传全局变量，保证提示词模板里的 {变量} 能正常渲染。
+        # 执行器（如 execute_llm_node）直接用本返回值渲染 prompt，返回 {} 会导致变量全部丢失。
         return global_vars
 
     for param_name, source_path in mappings.items():
@@ -811,8 +844,9 @@ class WorkflowCompiler:
     """
     工作流拓扑 JSON 编译器，负责实例化为 LangGraph 的 StateGraph
     """
+
     @classmethod
-    def compile_graph(cls, graph_json: Dict[str, Any]) -> StateGraph:
+    def compile_graph(cls, graph_json: dict[str, Any]) -> StateGraph:
         """
         根据前端配置的拓扑 JSON 编译成 LangGraph 图。
         支持 for_each / batch 子图：循环体在 Pre-pass 阶段提取为独立子图，
@@ -858,32 +892,13 @@ class WorkflowCompiler:
             if node_id in subgraph_configs:
                 node_config["_compiled_body"] = subgraph_configs[node_id]["compiled_body"]
 
-            builder.add_node(
-                node_id,
-                cls.create_node_runner(node_id, node_type, node_config)
-            )
+            builder.add_node(node_id, cls.create_node_runner(node_id, node_type, node_config))
 
         # 2. 遍历并建立连线关系
         added_edges = []
         skipped_edges = []
 
-        # 预构建 group → controller 映射（用于边短路）
-        group_to_controller = {}
-        for node in nodes:
-            if node.get("type") == "loop_body_group":
-                cfg = convert_keys_to_snake(node.get("config", {}))
-                ctrl = cfg.get("controller_node_id")
-                if ctrl:
-                    group_to_controller[node["id"]] = ctrl
-                else:
-                    # 从边中推断：找指向 group 且源头是 controller/batch_processor 的边
-                    for edge in edges:
-                        if edge.get("target") == node["id"]:
-                            src_id = edge.get("source")
-                            src_node = nodes_map.get(src_id)
-                            if src_node and src_node.get("type") in ["loop_controller", "batch_processor"]:
-                                group_to_controller[node["id"]] = src_id
-                                break
+        group_to_controller = _build_group_to_controller_map(nodes, edges, nodes_map)
 
         for edge in edges:
             source = edge["source"]
@@ -901,9 +916,7 @@ class WorkflowCompiler:
                 # group → X：短路为 controller → X
                 if source_type == "loop_body_group" and source in group_to_controller:
                     real_source = group_to_controller[source]
-                    if (target not in all_body_node_ids
-                        and target != real_source
-                        and target_type != "loop_body_group"):
+                    if target not in all_body_node_ids and target != real_source and target_type != "loop_body_group":
                         logger.info(f"[Compiler] Edge shortcut: {real_source} → {target} (via group {source})")
                         builder.add_edge(real_source, target)
                         added_edges.append(f"{real_source} → {target} (shortcut via {source})")
@@ -942,7 +955,9 @@ class WorkflowCompiler:
             builder.add_edge(source, target)
             added_edges.append(f"{source} → {target}")
 
-        logger.info(f"[Compiler] Graph edges summary: added={len(added_edges)}, skipped={len(skipped_edges)} | {added_edges}")
+        logger.info(
+            f"[Compiler] Graph edges summary: added={len(added_edges)}, skipped={len(skipped_edges)} | {added_edges}"
+        )
 
         # 2.5 结束节点统一连向 END
         for node in nodes:
@@ -966,11 +981,12 @@ class WorkflowCompiler:
         return builder
 
     @classmethod
-    def create_node_runner(cls, node_id: str, node_type: str, config: Dict[str, Any]):
+    def create_node_runner(cls, node_id: str, node_type: str, config: dict[str, Any]):
         """
         生成一个满足 LangGraph 要求的节点运行函数
         """
-        async def node_runner(state: WorkflowState) -> Dict[str, Any]:
+
+        async def node_runner(state: WorkflowState) -> dict[str, Any]:
             # 记录当前执行节点
             state["current_node"] = node_id
 
@@ -991,18 +1007,17 @@ class WorkflowCompiler:
             # 3. 应用输出变量映射，写回全局状态
             output_mappings = config.get("output_mappings", {})
             new_variables = apply_output_mappings(state["variables"], updates, output_mappings)
-            
-            return {
-                "variables": new_variables,
-                "current_node": node_id
-            }
+
+            return {"variables": new_variables, "current_node": node_id}
+
         return node_runner
 
     @classmethod
-    def create_conditional_router(cls, node_id: str, config: Dict[str, Any]):
+    def create_conditional_router(cls, node_id: str, config: dict[str, Any]):
         """
         生成条件边的动态路由逻辑
         """
+
         def conditional_router(state: WorkflowState) -> str:
             expression = config.get("expression", "True")
             true_route = config.get("true_route")
@@ -1030,20 +1045,23 @@ class WorkflowCompiler:
         return conditional_router
 
     @classmethod
-    def create_intent_router(cls, node_id: str, config: Dict[str, Any]):
+    def create_intent_router(cls, node_id: str, config: dict[str, Any]):
         """
         生成意图分类分支路由逻辑
         """
+
         def intent_router(state: WorkflowState) -> str:
             target_route = state.get("variables", {}).get(f"{node_id}_selected_route")
             return target_route or config.get("default_route") or END
+
         return intent_router
 
     @classmethod
-    def create_switch_router(cls, node_id: str, config: Dict[str, Any]):
+    def create_switch_router(cls, node_id: str, config: dict[str, Any]):
         """
         生成 Switch-Case 多路分支的动态路由逻辑
         """
+
         def switch_router(state: WorkflowState) -> str:
             var_name = strip_braces(config.get("variable", ""))
             val = state.get("variables", {})
@@ -1052,9 +1070,10 @@ class WorkflowCompiler:
                 val = val.get(var_key)
             else:
                 val = val.get(var_name)
-                
+
             for case in config.get("cases", []):
                 if str(case.get("value")) == str(val):
                     return case.get("target_route") or END
             return config.get("default_route") or END
+
         return switch_router

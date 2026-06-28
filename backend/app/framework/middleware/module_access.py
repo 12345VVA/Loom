@@ -1,6 +1,7 @@
 """
 模块级访问上下文中间件
 """
+
 from __future__ import annotations
 
 from starlette.middleware.base import BaseHTTPMiddleware

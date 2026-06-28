@@ -12,7 +12,11 @@ class OllamaAdapter(BaseHttpAdapter):
     supported_capabilities = {"chat", "stream_chat", "embedding"}
 
     def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]) -> dict:
-        response = httpx.post(f"{self.base_url}/api/chat", json={"model": model, "messages": messages, "stream": False, "options": options}, timeout=self.timeout)
+        response = httpx.post(
+            f"{self.base_url}/api/chat",
+            json={"model": model, "messages": messages, "stream": False, "options": options},
+            timeout=self.timeout,
+        )
         response.raise_for_status()
         data = response.json()
         return {
@@ -50,7 +54,9 @@ class OllamaAdapter(BaseHttpAdapter):
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         text = input if isinstance(input, str) else "\n".join(input)
-        response = httpx.post(f"{self.base_url}/api/embeddings", json={"model": model, "prompt": text, **options}, timeout=self.timeout)
+        response = httpx.post(
+            f"{self.base_url}/api/embeddings", json={"model": model, "prompt": text, **options}, timeout=self.timeout
+        )
         response.raise_for_status()
         data = response.json()
         return {"data": [{"embedding": data.get("embedding", [])}], "raw": data, "usage": {}}

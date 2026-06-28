@@ -1,12 +1,14 @@
 """
 进程内轻量事件总线。
 """
+
 from __future__ import annotations
 
 import inspect
 import logging
 from collections import defaultdict
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from app.modules.base.service.cache_service import get_redis_client
 

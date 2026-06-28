@@ -1,27 +1,26 @@
 from __future__ import annotations
 
-from datetime import datetime
-import unittest
-from unittest.mock import patch
 import json
-import logging
+import unittest
+from datetime import datetime
+from unittest.mock import patch
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from app.celery_app import AI_TASK_QUEUES, celery_app
 from app.core.secret import decrypt_secret, encrypt_secret, mask_secret
-import httpx
 from app.framework.controller_meta import CrudQuery, _invoke_service
 from app.modules.ai.model.ai import (
     AI_ADAPTERS,
-    AiChatRequest,
     AiCatalogImportRequest,
-    AiImageRequest,
+    AiChatRequest,
     AiGenerationTask,
     AiGovernanceEvent,
     AiGovernanceRule,
-    AiRuntimeInvocation,
+    AiImageRequest,
     AiModel,
     AiModelCallLog,
     AiModelCallLogRead,
@@ -33,16 +32,31 @@ from app.modules.ai.model.ai import (
     AiProviderRead,
     AiProviderUpdateRequest,
     AiResponseFormatRequest,
+    AiRuntimeInvocation,
     AiTaskSubmitRequest,
 )
-from app.celery_app import AI_TASK_QUEUES, celery_app
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
-from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
-from app.modules.ai.service.adapters.factory import ADAPTERS, BailianAdapter, DeepSeekAdapter, VolcengineArkAdapter, QianfanAdapter
+from app.modules.ai.service.adapters.factory import (
+    ADAPTERS,
+    BailianAdapter,
+    DeepSeekAdapter,
+    QianfanAdapter,
+    VolcengineArkAdapter,
+)
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
-from app.modules.ai.service.ai_service import AiGenerationTaskService, AiGovernanceCleanupService, AiGovernanceRuleService, AiModelCallLogService, AiModelProfileService, AiModelRegistryService, AiModelRuntimeService, AiModelService, AiProviderService
+from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
+from app.modules.ai.service.ai_service import (
+    AiGenerationTaskService,
+    AiGovernanceCleanupService,
+    AiModelCallLogService,
+    AiModelProfileService,
+    AiModelRegistryService,
+    AiModelRuntimeService,
+    AiModelService,
+    AiProviderService,
+)
 from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
 
 
@@ -58,7 +72,9 @@ def _parse_sse_chunks(chunks: list[str]) -> list[dict]:
 
 class AiModuleTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = create_engine(
+            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 
@@ -181,7 +197,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="writer", name="Writer", model_id=model.id, scenario="content", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="writer", name="Writer", model_id=model.id, scenario="content", is_default=True, is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
 
@@ -191,7 +209,13 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(resolved["model"].code, "gpt-test")
 
     def test_runtime_uses_adapter_and_logs_call(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -199,13 +223,19 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
 
         class FakeAdapter:
             def chat(self, *, model, messages, options):
-                return {"content": "ok", "raw": {"id": "1"}, "usage": {"promptTokens": 1, "completionTokens": 2, "totalTokens": 3}}
+                return {
+                    "content": "ok",
+                    "raw": {"id": "1"},
+                    "usage": {"promptTokens": 1, "completionTokens": 2, "totalTokens": 3},
+                }
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             result = AiModelRuntimeService(self.session).chat(
@@ -216,7 +246,13 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["content"], "ok")
 
     def test_runtime_logs_upstream_request_id(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -224,7 +260,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
 
@@ -239,15 +277,36 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(log.request_id, "upstream-1")
 
     def test_runtime_stream_chat_outputs_events_and_logs_success(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
-        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", default_config='{"temperature":0.3}', is_active=True)
+        model = AiModel(
+            provider_id=provider.id,
+            code="gpt-test",
+            name="GPT Test",
+            model_type="chat",
+            default_config='{"temperature":0.3}',
+            is_active=True,
+        )
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, max_tokens=64, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat",
+            name="Default",
+            model_id=model.id,
+            scenario="default",
+            is_default=True,
+            max_tokens=64,
+            is_active=True,
+        )
         self.session.add(profile)
         self.session.commit()
         seen_options = {}
@@ -257,10 +316,18 @@ class AiModuleTestCase(unittest.TestCase):
                 seen_options.update(options)
                 yield {"event": "delta", "content": "he"}
                 yield {"event": "delta", "content": "llo"}
-                yield {"event": "done", "usage": {"promptTokens": 1, "completionTokens": 2, "totalTokens": 3}, "requestId": "stream-1"}
+                yield {
+                    "event": "done",
+                    "usage": {"promptTokens": 1, "completionTokens": 2, "totalTokens": 3},
+                    "requestId": "stream-1",
+                }
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
-            chunks = list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.5})))
+            chunks = list(
+                AiModelRuntimeService(self.session).stream_chat(
+                    AiChatRequest(messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.5})
+                )
+            )
 
         events = _parse_sse_chunks(chunks)
         self.assertEqual([item["event"] for item in events], ["start", "delta", "delta", "done"])
@@ -281,7 +348,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
 
@@ -291,7 +360,9 @@ class AiModuleTestCase(unittest.TestCase):
                 yield {"event": "done", "usage": {"totalTokens": 1}}
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
-            stream = AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+            stream = AiModelRuntimeService(self.session).stream_chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
             next(stream)
             stream.close()
 
@@ -308,7 +379,15 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", response_format='{"type":"json_object"}', is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat",
+            name="Default",
+            model_id=model.id,
+            scenario="default",
+            response_format='{"type":"json_object"}',
+            is_default=True,
+            is_active=True,
+        )
         self.session.add(profile)
         self.session.commit()
 
@@ -317,7 +396,13 @@ class AiModuleTestCase(unittest.TestCase):
                 yield {"event": "delta", "content": "not json"}
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
-            events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
+            events = _parse_sse_chunks(
+                list(
+                    AiModelRuntimeService(self.session).stream_chat(
+                        AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+                    )
+                )
+            )
 
         self.assertEqual(events[-1]["event"], "done")
         self.assertIsNone(events[-1]["parsed"])
@@ -332,7 +417,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
 
@@ -341,7 +428,13 @@ class AiModuleTestCase(unittest.TestCase):
                 raise UnsupportedCapabilityError("no stream")
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
-            events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
+            events = _parse_sse_chunks(
+                list(
+                    AiModelRuntimeService(self.session).stream_chat(
+                        AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+                    )
+                )
+            )
 
         self.assertEqual(events[-1]["event"], "error")
         self.assertEqual(events[-1]["status"], 501)
@@ -356,18 +449,32 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.commit()
         self.session.refresh(primary_provider)
         self.session.refresh(fallback_provider)
-        primary_model = AiModel(provider_id=primary_provider.id, code="primary-model", name="Primary", model_type="chat", is_active=True)
-        fallback_model = AiModel(provider_id=fallback_provider.id, code="fallback-model", name="Fallback", model_type="chat", is_active=True)
+        primary_model = AiModel(
+            provider_id=primary_provider.id, code="primary-model", name="Primary", model_type="chat", is_active=True
+        )
+        fallback_model = AiModel(
+            provider_id=fallback_provider.id, code="fallback-model", name="Fallback", model_type="chat", is_active=True
+        )
         self.session.add(primary_model)
         self.session.add(fallback_model)
         self.session.commit()
         self.session.refresh(primary_model)
         self.session.refresh(fallback_model)
-        fallback_profile = AiModelProfile(code="fallback-profile", name="Fallback", model_id=fallback_model.id, scenario="default", is_active=True)
+        fallback_profile = AiModelProfile(
+            code="fallback-profile", name="Fallback", model_id=fallback_model.id, scenario="default", is_active=True
+        )
         self.session.add(fallback_profile)
         self.session.commit()
         self.session.refresh(fallback_profile)
-        primary_profile = AiModelProfile(code="primary-profile", name="Primary", model_id=primary_model.id, scenario="default", fallback_profile_id=fallback_profile.id, is_default=True, is_active=True)
+        primary_profile = AiModelProfile(
+            code="primary-profile",
+            name="Primary",
+            model_id=primary_model.id,
+            scenario="default",
+            fallback_profile_id=fallback_profile.id,
+            is_default=True,
+            is_active=True,
+        )
         self.session.add(primary_profile)
         self.session.commit()
 
@@ -380,8 +487,16 @@ class AiModuleTestCase(unittest.TestCase):
                     raise RuntimeError("primary failed")
                 yield {"event": "delta", "content": "fallback ok"}
 
-        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)):
-            events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
+        with patch(
+            "app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)
+        ):
+            events = _parse_sse_chunks(
+                list(
+                    AiModelRuntimeService(self.session).stream_chat(
+                        AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+                    )
+                )
+            )
 
         self.assertEqual(events[-1]["event"], "done")
         self.assertEqual(events[-1]["content"], "fallback ok")
@@ -395,7 +510,13 @@ class AiModuleTestCase(unittest.TestCase):
                 raise RuntimeError("late failed")
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=LateFailAdapter()):
-            late_events = _parse_sse_chunks(list(AiModelRuntimeService(self.session).stream_chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))))
+            late_events = _parse_sse_chunks(
+                list(
+                    AiModelRuntimeService(self.session).stream_chat(
+                        AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+                    )
+                )
+            )
 
         self.assertEqual(late_events[-1]["event"], "error")
         self.assertIn("late failed", late_events[-1]["message"])
@@ -409,7 +530,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default Chat", model_id=model.id, scenario="default", is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default Chat", model_id=model.id, scenario="default", is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
         self.session.refresh(profile)
@@ -466,15 +589,25 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
-        chat_model = AiModel(provider_id=provider.id, code="chat-model", name="Chat Model", model_type="chat", is_active=True)
-        image_model = AiModel(provider_id=provider.id, code="image-model", name="Image Model", model_type="image", is_active=True)
+        chat_model = AiModel(
+            provider_id=provider.id, code="chat-model", name="Chat Model", model_type="chat", is_active=True
+        )
+        image_model = AiModel(
+            provider_id=provider.id, code="image-model", name="Image Model", model_type="image", is_active=True
+        )
         self.session.add(chat_model)
         self.session.add(image_model)
         self.session.commit()
         self.session.refresh(chat_model)
         self.session.refresh(image_model)
-        self.session.add(AiModelProfile(code="chat-profile", name="Chat", model_id=chat_model.id, scenario="default", is_active=True))
-        self.session.add(AiModelProfile(code="image-profile", name="Image", model_id=image_model.id, scenario="default", is_active=True))
+        self.session.add(
+            AiModelProfile(code="chat-profile", name="Chat", model_id=chat_model.id, scenario="default", is_active=True)
+        )
+        self.session.add(
+            AiModelProfile(
+                code="image-profile", name="Image", model_id=image_model.id, scenario="default", is_active=True
+            )
+        )
         self.session.commit()
 
         result = AiModelProfileService(self.session).list(
@@ -503,7 +636,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        self.session.add(AiModelProfile(code="wan-image", name="Wan Image", model_id=model.id, scenario="default", is_active=True))
+        self.session.add(
+            AiModelProfile(code="wan-image", name="Wan Image", model_id=model.id, scenario="default", is_active=True)
+        )
         self.session.commit()
 
         result = AiModelProfileService(self.session).list(
@@ -520,7 +655,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
-        self.session.add(AiModel(provider_id=provider.id, code="image-model", name="Image Model", model_type="image", is_active=True))
+        self.session.add(
+            AiModel(provider_id=provider.id, code="image-model", name="Image Model", model_type="image", is_active=True)
+        )
         self.session.commit()
 
         result = AiModelService(self.session).page(CrudQuery(page=1, size=10, raw_params={"modelType": "image"}))
@@ -529,8 +666,20 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result.items[0]["code"], "image-model")
 
     def test_runtime_fallback_merges_fallback_options_and_preserves_request_options(self):
-        primary_provider = AiProvider(code="primary", name="Primary", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-primary"), is_active=True)
-        fallback_provider = AiProvider(code="fallback", name="Fallback", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-fallback"), is_active=True)
+        primary_provider = AiProvider(
+            code="primary",
+            name="Primary",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-primary"),
+            is_active=True,
+        )
+        fallback_provider = AiProvider(
+            code="fallback",
+            name="Fallback",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-fallback"),
+            is_active=True,
+        )
         self.session.add(primary_provider)
         self.session.add(fallback_provider)
         self.session.commit()
@@ -590,9 +739,16 @@ class AiModuleTestCase(unittest.TestCase):
                 seen_calls.append((self.provider.code, model, dict(options)))
                 if self.provider.code == "primary":
                     raise RuntimeError("primary failed")
-                return {"content": "fallback ok", "raw": {"id": "2"}, "usage": {"totalTokens": 5}, "requestId": "fallback-req"}
+                return {
+                    "content": "fallback ok",
+                    "raw": {"id": "2"},
+                    "usage": {"totalTokens": 5},
+                    "requestId": "fallback-req",
+                }
 
-        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)):
+        with patch(
+            "app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda provider: FakeAdapter(provider)
+        ):
             result = AiModelRuntimeService(self.session).chat(
                 AiChatRequest(messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.2})
             )
@@ -608,7 +764,13 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(logs[-1].request_id, "fallback-req")
 
     def test_profile_json_object_response_format_is_passed_to_chat_options(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -635,14 +797,22 @@ class AiModuleTestCase(unittest.TestCase):
                 return {"content": '{"ok": true}', "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
-            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
 
         self.assertEqual(seen_options["response_format"], {"type": "json_object"})
         self.assertEqual(result["parsed"], {"ok": True})
         self.assertIsNone(result["parseError"])
 
     def test_profile_json_schema_response_format_is_normalized_and_passed_to_chat_options(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -668,15 +838,25 @@ class AiModuleTestCase(unittest.TestCase):
                 return {"content": '{"answer": "ok"}', "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
-            result = AiModelRuntimeService(self.session).chat(AiChatRequest(profile_code=profile.code, messages=[{"role": "user", "content": "hi"}]))
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(profile_code=profile.code, messages=[{"role": "user", "content": "hi"}])
+            )
 
         self.assertEqual(seen_options["response_format"]["type"], "json_schema")
         self.assertEqual(seen_options["response_format"]["json_schema"]["name"], "answer_schema")
-        self.assertEqual(seen_options["response_format"]["json_schema"]["schema"]["properties"]["answer"]["type"], "string")
+        self.assertEqual(
+            seen_options["response_format"]["json_schema"]["schema"]["properties"]["answer"]["type"], "string"
+        )
         self.assertEqual(result["parsed"], {"answer": "ok"})
 
     def test_runtime_request_response_format_overrides_profile(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -712,7 +892,13 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(seen_options["response_format"], {"type": "json_object"})
 
     def test_runtime_structured_output_parse_error_does_not_fail_call(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -737,7 +923,9 @@ class AiModuleTestCase(unittest.TestCase):
                 return {"content": "not json", "raw": {"id": "1"}, "usage": {"totalTokens": 3}}
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
-            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
 
         self.assertTrue(result["success"])
         self.assertIsNone(result["parsed"])
@@ -851,7 +1039,14 @@ class AiModuleTestCase(unittest.TestCase):
 
     def test_catalog_import_restores_soft_deleted_provider_and_models(self):
         service = AiProviderService(self.session)
-        provider = AiProvider(code="deepseek", name="Deleted DeepSeek", adapter="deepseek", base_url="https://old.example.com", is_active=False, delete_time=datetime.utcnow())
+        provider = AiProvider(
+            code="deepseek",
+            name="Deleted DeepSeek",
+            adapter="deepseek",
+            base_url="https://old.example.com",
+            is_active=False,
+            delete_time=datetime.utcnow(),
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -869,7 +1064,9 @@ class AiModuleTestCase(unittest.TestCase):
         result = service.import_catalog(AiCatalogImportRequest(provider_code="deepseek"))
         page = service.page(CrudQuery(page=1, size=10))
         restored = self.session.exec(select(AiProvider).where(AiProvider.code == "deepseek")).first()
-        restored_model = self.session.exec(select(AiModel).where(AiModel.provider_id == restored.id, AiModel.code == "deepseek-v4-flash")).first()
+        restored_model = self.session.exec(
+            select(AiModel).where(AiModel.provider_id == restored.id, AiModel.code == "deepseek-v4-flash")
+        ).first()
 
         self.assertTrue(result["success"])
         self.assertIsNone(restored.delete_time)
@@ -919,15 +1116,19 @@ class AiModuleTestCase(unittest.TestCase):
                 return None
 
             def iter_lines(self):
-                return iter([
-                    'data: {"choices":[{"delta":{"content":"hi"}}]}',
-                    "",
-                    "data: [DONE]",
-                    "",
-                ])
+                return iter(
+                    [
+                        'data: {"choices":[{"delta":{"content":"hi"}}]}',
+                        "",
+                        "data: [DONE]",
+                        "",
+                    ]
+                )
 
         with patch("httpx.stream", return_value=FakeStreamResponse()):
-            events = list(adapter.stream_chat(model="qwen-plus", messages=[{"role": "user", "content": "hi"}], options={}))
+            events = list(
+                adapter.stream_chat(model="qwen-plus", messages=[{"role": "user", "content": "hi"}], options={})
+            )
 
         self.assertEqual(events[0]["event"], "delta")
         self.assertEqual(events[0]["content"], "hi")
@@ -971,7 +1172,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertTrue(result["success"])
 
     def test_openai_compatible_adapter_image_returns_request_id_and_usage_shape(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = OpenAICompatibleAdapter(provider)
 
         class FakeImageResponse:
@@ -992,7 +1195,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["data"][0]["url"], "https://example.com/a.png")
 
     def test_openai_compatible_adapter_image_returns_none_request_id_when_missing(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = OpenAICompatibleAdapter(provider)
 
         class FakeImageResponse:
@@ -1007,7 +1212,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["data"][0]["b64_json"], "abc")
 
     def test_openai_compatible_adapter_image_filters_nonstandard_options_and_logs_warning(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = OpenAICompatibleAdapter(provider)
 
         class FakeImageResponse:
@@ -1025,11 +1232,16 @@ class AiModuleTestCase(unittest.TestCase):
                 )
 
         self.assertEqual(result["requestId"], "img-req-2")
-        self.assertEqual(mocked.call_args.kwargs, {"model": "gpt-image-1", "prompt": "draw", "response_format": "url", "size": "1024x1024"})
+        self.assertEqual(
+            mocked.call_args.kwargs,
+            {"model": "gpt-image-1", "prompt": "draw", "response_format": "url", "size": "1024x1024"},
+        )
         self.assertTrue(any("已拦截非标准字段" in message for message in logs.output))
 
     def test_openai_compatible_adapter_gpt_image_2_constraints(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = OpenAICompatibleAdapter(provider)
 
         class FakeImageResponse:
@@ -1053,7 +1265,7 @@ class AiModuleTestCase(unittest.TestCase):
             "size": "1024x1024",
             "n": 1,
             "response_format": "b64_json",
-            "extra_body": {"thinking": True}
+            "extra_body": {"thinking": True},
         }
         self.assertEqual(mocked.call_args.kwargs, expected_kwargs)
 
@@ -1079,8 +1291,8 @@ class AiModuleTestCase(unittest.TestCase):
                     "negative_prompt": "ugly",
                     "seed": 123,
                     "image": "https://example.com/input.png",
-                    "size": "1024x1024"
-                }
+                    "size": "1024x1024",
+                },
             )
 
         self.assertEqual(result["requestId"], "qianfan-req-1")
@@ -1097,17 +1309,16 @@ class AiModuleTestCase(unittest.TestCase):
             adapter.image(
                 model="other-qianfan-model",
                 prompt="draw",
-                options={
-                    "image": "https://example.com/input.png",
-                    "refer_image": "https://example.com/input.png"
-                }
+                options={"image": "https://example.com/input.png", "refer_image": "https://example.com/input.png"},
             )
         payload = mocked.call_args.kwargs["json"]
         self.assertNotIn("image", payload)
         self.assertNotIn("refer_image", payload)
 
     def test_gemini_adapter_image_generation(self):
-        provider = AiProvider(code="gemini", name="Google Gemini", adapter="gemini", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="gemini", name="Google Gemini", adapter="gemini", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = GeminiAdapter(provider)
 
         class FakeResponse:
@@ -1121,29 +1332,18 @@ class AiModuleTestCase(unittest.TestCase):
                     "candidates": [
                         {
                             "content": {
-                                "parts": [
-                                    {
-                                        "inlineData": {
-                                            "mimeType": "image/png",
-                                            "data": "fake-b64-image-bytes"
-                                        }
-                                    }
-                                ]
+                                "parts": [{"inlineData": {"mimeType": "image/png", "data": "fake-b64-image-bytes"}}]
                             }
                         }
                     ],
-                    "usageMetadata": {
-                        "promptTokenCount": 10,
-                        "candidatesTokenCount": 20,
-                        "totalTokenCount": 30
-                    }
+                    "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 20, "totalTokenCount": 30},
                 }
 
         with patch("httpx.post", return_value=FakeResponse()) as mocked_post:
             result = adapter.image(
                 model="imagen-3.0-generate-002",
                 prompt="a beautiful cat",
-                options={"aspectRatio": "1:1", "number_of_images": 1}
+                options={"aspectRatio": "1:1", "number_of_images": 1},
             )
 
         self.assertEqual(result["requestId"], "gemini-img-req")
@@ -1160,7 +1360,7 @@ class AiModuleTestCase(unittest.TestCase):
             adapter.image(
                 model="imagen-3.0-generate-002",
                 prompt="make it red",
-                options={"image": "data:image/png;base64,abcdefg"}
+                options={"image": "data:image/png;base64,abcdefg"},
             )
         payload = mocked_post.call_args.kwargs["json"]
         parts = payload["contents"][0]["parts"]
@@ -1170,8 +1370,10 @@ class AiModuleTestCase(unittest.TestCase):
 
         class FakeStreamResponse:
             headers = {"content-type": "image/jpeg", "content-length": "15"}
+
             def raise_for_status(self):
                 return None
+
             def iter_bytes(self, chunk_size=8192):
                 yield b"fake-jpeg-bytes"
 
@@ -1181,22 +1383,27 @@ class AiModuleTestCase(unittest.TestCase):
                 self.url = url
                 self.args = args
                 self.kwargs = kwargs
+
             def __enter__(self):
                 return FakeStreamResponse()
+
             def __exit__(self, exc_type, exc_val, exc_tb):
                 pass
 
-        with patch("httpx.stream", side_effect=FakeStreamContext) as mocked_stream, \
-             patch("httpx.post", return_value=FakeResponse()) as mocked_post:
+        with (
+            patch("httpx.stream", side_effect=FakeStreamContext) as mocked_stream,
+            patch("httpx.post", return_value=FakeResponse()) as mocked_post,
+        ):
             adapter.image(
                 model="imagen-3.0-generate-002",
                 prompt="style of this",
-                options={"image": "https://example.com/style.jpg"}
+                options={"image": "https://example.com/style.jpg"},
             )
         mocked_stream.assert_called_once_with("GET", "https://example.com/style.jpg", timeout=15)
         payload = mocked_post.call_args.kwargs["json"]
         parts = payload["contents"][0]["parts"]
         import base64
+
         expected_b64 = base64.b64encode(b"fake-jpeg-bytes").decode("utf-8")
         self.assertEqual(parts[0], {"inlineData": {"mimeType": "image/jpeg", "data": expected_b64}})
 
@@ -1216,7 +1423,10 @@ class AiModuleTestCase(unittest.TestCase):
         with patch("httpx.post", return_value=FakeResponse()) as mocked:
             result = adapter.image(model="wan2.6-t2i", prompt="draw", options={"size": "1024x1024", "watermark": False})
 
-        self.assertEqual(str(mocked.call_args.args[0]), "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")
+        self.assertEqual(
+            str(mocked.call_args.args[0]),
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        )
         payload = mocked.call_args.kwargs["json"]
         self.assertEqual(payload["model"], "wan2.6-t2i")
         self.assertEqual(payload["input"]["messages"][0]["content"][0]["text"], "draw")
@@ -1261,13 +1471,20 @@ class AiModuleTestCase(unittest.TestCase):
                 return None
 
             def json(self):
-                return {"output": {"task_status": "SUCCEEDED", "results": [{"url": "https://example.com/wan26-async.png"}]}}
+                return {
+                    "output": {"task_status": "SUCCEEDED", "results": [{"url": "https://example.com/wan26-async.png"}]}
+                }
 
         with patch("httpx.post", return_value=PostResponse()) as mocked_post:
             with patch("httpx.get", return_value=GetResponse()):
-                result = adapter.image(model="wan2.6-t2i", prompt="draw", options={"async": True, "negativePrompt": "blur"})
+                result = adapter.image(
+                    model="wan2.6-t2i", prompt="draw", options={"async": True, "negativePrompt": "blur"}
+                )
 
-        self.assertEqual(str(mocked_post.call_args.args[0]), "https://dashscope.aliyuncs.com/api/v1/services/aigc/image-generation/generation")
+        self.assertEqual(
+            str(mocked_post.call_args.args[0]),
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/image-generation/generation",
+        )
         self.assertEqual(mocked_post.call_args.kwargs["headers"]["X-DashScope-Async"], "enable")
         payload = mocked_post.call_args.kwargs["json"]
         self.assertEqual(payload["input"]["negative_prompt"], "blur")
@@ -1304,9 +1521,14 @@ class AiModuleTestCase(unittest.TestCase):
 
         with patch("httpx.post", return_value=PostResponse()) as mocked_post:
             with patch("httpx.get", return_value=GetResponse()) as mocked_get:
-                result = adapter.image(model="wan2.5-t2i-preview", prompt="draw", options={"size": "1024x1024", "negative_prompt": "blur"})
+                result = adapter.image(
+                    model="wan2.5-t2i-preview", prompt="draw", options={"size": "1024x1024", "negative_prompt": "blur"}
+                )
 
-        self.assertEqual(str(mocked_post.call_args.args[0]), "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis")
+        self.assertEqual(
+            str(mocked_post.call_args.args[0]),
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis",
+        )
         self.assertEqual(mocked_post.call_args.kwargs["headers"]["X-DashScope-Async"], "enable")
         self.assertEqual(mocked_post.call_args.kwargs["headers"]["X-DashScope-WorkSpace"], "ws-1")
         payload = mocked_post.call_args.kwargs["json"]
@@ -1392,7 +1614,9 @@ class AiModuleTestCase(unittest.TestCase):
                 }
 
         with patch("httpx.post", return_value=FakeResponse()) as mocked:
-            result = adapter.chat(model="deepseek-v4-flash", messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.2})
+            result = adapter.chat(
+                model="deepseek-v4-flash", messages=[{"role": "user", "content": "hi"}], options={"temperature": 0.2}
+            )
 
         self.assertEqual(result["content"], "deepseek ok")
         self.assertEqual(result["usage"]["totalTokens"], 7)
@@ -1401,7 +1625,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(mocked.call_args.kwargs["json"]["model"], "deepseek-v4-flash")
 
     def test_volcengine_adapter_image_defaults_url_and_passes_options(self):
-        provider = AiProvider(code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = VolcengineArkAdapter(provider)
 
         class FakeResponse:
@@ -1433,7 +1659,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["requestId"], "volc-req-1")
 
     def test_volcengine_adapter_image_normalizes_custom_response_shapes(self):
-        provider = AiProvider(code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = VolcengineArkAdapter(provider)
 
         class FakeResponse:
@@ -1446,14 +1674,18 @@ class AiModuleTestCase(unittest.TestCase):
                 return {"result": {"images": [{"image_url": "https://example.com/custom.png"}, {"base64": "abc"}]}}
 
         with patch("httpx.post", return_value=FakeResponse()):
-            result = adapter.image(model="doubao-seedream-5.0-lite", prompt="draw", options={"response_format": "b64_json"})
+            result = adapter.image(
+                model="doubao-seedream-5.0-lite", prompt="draw", options={"response_format": "b64_json"}
+            )
 
         self.assertEqual(result["data"][0]["url"], "https://example.com/custom.png")
         self.assertEqual(result["data"][1]["b64_json"], "abc")
         self.assertEqual(result["requestId"], "tt-log-1")
 
     def test_volcengine_adapter_image_exposes_upstream_error_body(self):
-        provider = AiProvider(code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = VolcengineArkAdapter(provider)
 
         request = httpx.Request("POST", "https://ark.cn-beijing.volces.com/api/v3/images/generations")
@@ -1478,7 +1710,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertIn("tt-log-400", str(ctx.exception))
 
     def test_volcengine_adapter_rejects_too_small_seedream_4_image_size(self):
-        provider = AiProvider(code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk"))
+        provider = AiProvider(
+            code="volc", name="火山方舟", adapter="volcengine-ark", api_key_cipher=encrypt_secret("sk")
+        )
         adapter = VolcengineArkAdapter(provider)
 
         with self.assertRaises(HTTPException) as ctx:
@@ -1526,20 +1760,24 @@ class AiModuleTestCase(unittest.TestCase):
                 return None
 
             def iter_lines(self):
-                return iter([
-                    "event: content_block_delta",
-                    'data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"think"}}',
-                    "",
-                    "event: content_block_delta",
-                    'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}',
-                    "",
-                    "event: message_stop",
-                    'data: {"type":"message_stop"}',
-                    "",
-                ])
+                return iter(
+                    [
+                        "event: content_block_delta",
+                        'data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"think"}}',
+                        "",
+                        "event: content_block_delta",
+                        'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}',
+                        "",
+                        "event: message_stop",
+                        'data: {"type":"message_stop"}',
+                        "",
+                    ]
+                )
 
         with patch("httpx.stream", return_value=FakeStreamResponse()):
-            events = list(adapter.stream_chat(model="claude-test", messages=[{"role": "user", "content": "hi"}], options={}))
+            events = list(
+                adapter.stream_chat(model="claude-test", messages=[{"role": "user", "content": "hi"}], options={})
+            )
 
         self.assertEqual(events[0]["event"], "thinking_delta")
         self.assertEqual(events[1]["event"], "delta")
@@ -1562,13 +1800,17 @@ class AiModuleTestCase(unittest.TestCase):
                 return None
 
             def iter_lines(self):
-                return iter([
-                    'data: {"candidates":[{"content":{"parts":[{"text":"hello"}]}}],"usageMetadata":{"totalTokenCount":3}}',
-                    "",
-                ])
+                return iter(
+                    [
+                        'data: {"candidates":[{"content":{"parts":[{"text":"hello"}]}}],"usageMetadata":{"totalTokenCount":3}}',
+                        "",
+                    ]
+                )
 
         with patch("httpx.stream", return_value=FakeStreamResponse()):
-            events = list(adapter.stream_chat(model="gemini-2.5-flash", messages=[{"role": "user", "content": "hi"}], options={}))
+            events = list(
+                adapter.stream_chat(model="gemini-2.5-flash", messages=[{"role": "user", "content": "hi"}], options={})
+            )
 
         self.assertEqual(events[0]["event"], "delta")
         self.assertEqual(events[0]["content"], "hello")
@@ -1588,10 +1830,12 @@ class AiModuleTestCase(unittest.TestCase):
                 return None
 
             def iter_lines(self):
-                return iter([
-                    json.dumps({"message": {"content": "hi"}, "done": False}),
-                    json.dumps({"done": True, "prompt_eval_count": 1, "eval_count": 2}),
-                ])
+                return iter(
+                    [
+                        json.dumps({"message": {"content": "hi"}, "done": False}),
+                        json.dumps({"done": True, "prompt_eval_count": 1, "eval_count": 2}),
+                    ]
+                )
 
         with patch("httpx.stream", return_value=FakeStreamResponse()):
             events = list(adapter.stream_chat(model="llama", messages=[{"role": "user", "content": "hi"}], options={}))
@@ -1700,11 +1944,20 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
-        model = AiModel(provider_id=provider.id, code="image-test", name="Image Test", model_type="image", is_active=True)
+        model = AiModel(
+            provider_id=provider.id, code="image-test", name="Image Test", model_type="image", is_active=True
+        )
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="image-default", name="Image Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="image-default",
+            name="Image Default",
+            model_id=model.id,
+            scenario="default",
+            is_default=True,
+            is_active=True,
+        )
         self.session.add(profile)
         self.session.commit()
 
@@ -1714,7 +1967,13 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 501)
 
     def test_runtime_profile_timeout_applies_to_adapter(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -1722,7 +1981,15 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", timeout=7, is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat",
+            name="Default",
+            model_id=model.id,
+            scenario="default",
+            timeout=7,
+            is_default=True,
+            is_active=True,
+        )
         self.session.add(profile)
         self.session.commit()
 
@@ -1734,13 +2001,21 @@ class AiModuleTestCase(unittest.TestCase):
 
         adapter = FakeAdapter()
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=adapter):
-            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
 
         self.assertEqual(result["raw"]["timeout"], 7.0)
         self.assertEqual(adapter.timeout, 60)
 
     def test_ai_generation_task_submit_and_execute_success(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
@@ -1748,14 +2023,19 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
 
         class FakeAsyncResult:
             id = "celery-1"
 
-        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", return_value=FakeAsyncResult()):
+        with patch(
+            "app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async",
+            return_value=FakeAsyncResult(),
+        ):
             submitted = AiGenerationTaskService(self.session).submit(
                 AiTaskSubmitRequest(
                     task_type="chat",
@@ -1771,7 +2051,10 @@ class AiModuleTestCase(unittest.TestCase):
             def chat(self, *, model, messages, options):
                 return {"content": "ok", "raw": {}, "usage": {"totalTokens": 1}}
 
-        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()), patch("app.modules.ai.tasks.generation_tasks.engine", self.engine):
+        with (
+            patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()),
+            patch("app.modules.ai.tasks.generation_tasks.engine", self.engine),
+        ):
             result = execute_ai_generation_task.run(task.id)
 
         self.assertTrue(result["success"])
@@ -1782,23 +2065,38 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertIn("ok", saved.result_payload)
 
     def test_ai_generation_task_uses_isolated_queue_and_declares_worker_queues(self):
-        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk-test"), is_active=True)
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
-        model = AiModel(provider_id=provider.id, code="image-test", name="Image Test", model_type="image", is_active=True)
+        model = AiModel(
+            provider_id=provider.id, code="image-test", name="Image Test", model_type="image", is_active=True
+        )
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-image", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-image", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
 
         class FakeAsyncResult:
             id = "celery-image-1"
 
-        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", return_value=FakeAsyncResult()) as mocked:
-            AiGenerationTaskService(self.session).submit(AiTaskSubmitRequest(task_type="image", payload={"prompt": "hi"}))
+        with patch(
+            "app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async",
+            return_value=FakeAsyncResult(),
+        ) as mocked:
+            AiGenerationTaskService(self.session).submit(
+                AiTaskSubmitRequest(task_type="image", payload={"prompt": "hi"})
+            )
 
         self.assertEqual(mocked.call_args.kwargs["queue"], "ai.image")
         declared_queues = {queue.name for queue in celery_app.conf.task_queues}
@@ -1812,19 +2110,28 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.refresh(provider)
 
         with patch("app.modules.ai.service.provider_service.build_adapter") as build_adapter_mock:
-            build_adapter_mock.return_value.list_models.return_value = [{"code": "new-image-model", "name": "New Image Model"}]
+            build_adapter_mock.return_value.list_models.return_value = [
+                {"code": "new-image-model", "name": "New Image Model"}
+            ]
             result = AiProviderService(self.session).sync_models(provider.id)
 
-        saved = self.session.exec(select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == "new-image-model")).one()
+        saved = self.session.exec(
+            select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == "new-image-model")
+        ).one()
         self.assertTrue(result["success"])
         self.assertFalse(saved.is_active)
         self.assertEqual(saved.model_type, "chat")
         self.assertEqual(saved.capabilities, "sync-pending,manual-classification-required")
 
     def test_ai_generation_task_submit_marks_failed_when_enqueue_fails(self):
-        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", side_effect=RuntimeError("broker down")):
+        with patch(
+            "app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async",
+            side_effect=RuntimeError("broker down"),
+        ):
             with self.assertRaises(HTTPException) as ctx:
-                AiGenerationTaskService(self.session).submit(AiTaskSubmitRequest(task_type="chat", payload={"messages": []}))
+                AiGenerationTaskService(self.session).submit(
+                    AiTaskSubmitRequest(task_type="chat", payload={"messages": []})
+                )
 
         self.assertEqual(ctx.exception.status_code, 503)
         task = self.session.exec(select(AiGenerationTask)).one()
@@ -1834,7 +2141,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertIsNone(task.celery_task_id)
 
     def test_ai_generation_task_does_not_overwrite_cancelled_after_runtime(self):
-        task = AiGenerationTask(task_type="chat", request_payload='{"messages":[{"role":"user","content":"hi"}]}', status="pending")
+        task = AiGenerationTask(
+            task_type="chat", request_payload='{"messages":[{"role":"user","content":"hi"}]}', status="pending"
+        )
         self.session.add(task)
         self.session.commit()
         self.session.refresh(task)
@@ -1846,7 +2155,10 @@ class AiModuleTestCase(unittest.TestCase):
             session.commit()
             return {"content": "late result"}
 
-        with patch("app.modules.ai.tasks.generation_tasks.engine", self.engine), patch("app.modules.ai.tasks.generation_tasks._invoke_runtime", side_effect=cancel_during_call):
+        with (
+            patch("app.modules.ai.tasks.generation_tasks.engine", self.engine),
+            patch("app.modules.ai.tasks.generation_tasks._invoke_runtime", side_effect=cancel_during_call),
+        ):
             result = execute_ai_generation_task.run(task.id)
 
         self.assertFalse(result["success"])
@@ -1870,7 +2182,10 @@ class AiModuleTestCase(unittest.TestCase):
         class FakeAsyncResult:
             id = "retry-1"
 
-        with patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async", return_value=FakeAsyncResult()):
+        with patch(
+            "app.modules.ai.tasks.generation_tasks.execute_ai_generation_task.apply_async",
+            return_value=FakeAsyncResult(),
+        ):
             retry = AiGenerationTaskService(self.session).retry(task.id)
         self.assertTrue(retry["success"])
         self.session.refresh(task)
@@ -1891,10 +2206,20 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
-        self.session.add(AiGovernanceRule(code="global-one", name="Global One", scope_type="global", period="day", max_requests=1, is_active=True))
-        self.session.add(AiModelCallLog(provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success"))
+        self.session.add(
+            AiGovernanceRule(
+                code="global-one", name="Global One", scope_type="global", period="day", max_requests=1, is_active=True
+            )
+        )
+        self.session.add(
+            AiModelCallLog(
+                provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success"
+            )
+        )
         self.session.commit()
 
         with self.assertRaises(HTTPException) as ctx:
@@ -1914,9 +2239,21 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
-        self.session.add(AiGovernanceRule(code="conc-one", name="Concurrent One", scope_type="profile", profile_id=profile.id, period="day", max_concurrent=1, is_active=True))
+        self.session.add(
+            AiGovernanceRule(
+                code="conc-one",
+                name="Concurrent One",
+                scope_type="profile",
+                profile_id=profile.id,
+                period="day",
+                max_concurrent=1,
+                is_active=True,
+            )
+        )
         self.session.commit()
 
         class FakeAdapter:
@@ -1924,8 +2261,12 @@ class AiModuleTestCase(unittest.TestCase):
                 return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
-            first = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
-            second = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+            first = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
+            second = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
 
         self.assertTrue(first["success"])
         self.assertTrue(second["success"])
@@ -1935,17 +2276,29 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
-        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", pricing_config='{"input_per_1m": 2, "output_per_1m": 4}', is_active=True)
+        model = AiModel(
+            provider_id=provider.id,
+            code="gpt-test",
+            name="GPT Test",
+            model_type="chat",
+            pricing_config='{"input_per_1m": 2, "output_per_1m": 4}',
+            is_active=True,
+        )
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
         self.session.commit()
 
         class FakeAdapter:
             def chat(self, *, model, messages, options):
-                return {"content": "ok", "usage": {"promptTokens": 1_000_000, "completionTokens": 500_000, "totalTokens": 1_500_000}}
+                return {
+                    "content": "ok",
+                    "usage": {"promptTokens": 1_000_000, "completionTokens": 500_000, "totalTokens": 1_500_000},
+                }
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
             AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
@@ -1962,10 +2315,25 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
-        self.session.add(AiGovernanceRule(code="token-rule", name="Token Rule", scope_type="global", period="day", max_tokens=100, is_active=True))
-        self.session.add(AiModelCallLog(provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success", total_tokens=100))
+        self.session.add(
+            AiGovernanceRule(
+                code="token-rule", name="Token Rule", scope_type="global", period="day", max_tokens=100, is_active=True
+            )
+        )
+        self.session.add(
+            AiModelCallLog(
+                provider_id=provider.id,
+                model_id=model.id,
+                profile_id=profile.id,
+                model_type="chat",
+                status="success",
+                total_tokens=100,
+            )
+        )
         self.session.commit()
 
         with patch("app.modules.ai.service.runtime_service.build_adapter") as mocked_build_adapter:
@@ -1987,10 +2355,30 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
-        self.session.add(AiGovernanceRule(code="cost-rule", name="Cost Rule", scope_type="global", period="day", max_cost_micro_usd=100, is_active=True))
-        self.session.add(AiModelCallLog(provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success", cost_micro_usd=100))
+        self.session.add(
+            AiGovernanceRule(
+                code="cost-rule",
+                name="Cost Rule",
+                scope_type="global",
+                period="day",
+                max_cost_micro_usd=100,
+                is_active=True,
+            )
+        )
+        self.session.add(
+            AiModelCallLog(
+                provider_id=provider.id,
+                model_id=model.id,
+                profile_id=profile.id,
+                model_type="chat",
+                status="success",
+                cost_micro_usd=100,
+            )
+        )
         self.session.commit()
 
         with patch("app.modules.ai.service.runtime_service.build_adapter") as mocked_build_adapter:
@@ -2012,18 +2400,43 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
-        self.session.add(AiGovernanceRule(code="observe-token-rule", name="Observe Token Rule", scope_type="global", period="day", max_tokens=100, mode="observe", is_active=True))
-        self.session.add(AiModelCallLog(provider_id=provider.id, model_id=model.id, profile_id=profile.id, model_type="chat", status="success", total_tokens=100))
+        self.session.add(
+            AiGovernanceRule(
+                code="observe-token-rule",
+                name="Observe Token Rule",
+                scope_type="global",
+                period="day",
+                max_tokens=100,
+                mode="observe",
+                is_active=True,
+            )
+        )
+        self.session.add(
+            AiModelCallLog(
+                provider_id=provider.id,
+                model_id=model.id,
+                profile_id=profile.id,
+                model_type="chat",
+                status="success",
+                total_tokens=100,
+            )
+        )
         self.session.commit()
 
         class FakeAdapter:
             def chat(self, *, model, messages, options):
                 return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
 
-        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()) as mocked_build_adapter:
-            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+        with patch(
+            "app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()
+        ) as mocked_build_adapter:
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
 
         self.assertTrue(result["success"])
         mocked_build_adapter.assert_called_once()
@@ -2035,14 +2448,36 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.add(provider)
         self.session.commit()
         self.session.refresh(provider)
-        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", pricing_config='{"input_per_1m": 1, "output_per_1m": 1}', is_active=True)
+        model = AiModel(
+            provider_id=provider.id,
+            code="gpt-test",
+            name="GPT Test",
+            model_type="chat",
+            pricing_config='{"input_per_1m": 1, "output_per_1m": 1}',
+            is_active=True,
+        )
         self.session.add(model)
         self.session.commit()
         self.session.refresh(model)
-        profile = AiModelProfile(code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
         self.session.add(profile)
-        self.session.add(AiGovernanceRule(code="token-rule", name="Token Rule", scope_type="global", period="day", max_tokens=100, is_active=True))
-        self.session.add(AiGovernanceRule(code="cost-rule", name="Cost Rule", scope_type="global", period="day", max_cost_micro_usd=100, is_active=True))
+        self.session.add(
+            AiGovernanceRule(
+                code="token-rule", name="Token Rule", scope_type="global", period="day", max_tokens=100, is_active=True
+            )
+        )
+        self.session.add(
+            AiGovernanceRule(
+                code="cost-rule",
+                name="Cost Rule",
+                scope_type="global",
+                period="day",
+                max_cost_micro_usd=100,
+                is_active=True,
+            )
+        )
         self.session.commit()
 
         class FakeAdapter:
@@ -2101,14 +2536,17 @@ class AiModuleTestCase(unittest.TestCase):
     def test_volcengine_ark_adapter_image_includes_image_payload(self):
         provider = AiProvider(code="volcengine", name="Volcengine", adapter="volcengine-ark", is_active=True)
         from app.modules.ai.service.adapters.factory import VolcengineArkAdapter
+
         adapter = VolcengineArkAdapter(provider)
-        
+
         class FakeResponse:
             headers = {"x-request-id": "req-1"}
-            
+
         with patch.object(adapter, "_post", return_value=({}, FakeResponse())) as mocked_post:
-            adapter.image(model="doubao-seedream-5.0-lite", prompt="draw", options={"image": "https://example.com/test.jpg"})
-            
+            adapter.image(
+                model="doubao-seedream-5.0-lite", prompt="draw", options={"image": "https://example.com/test.jpg"}
+            )
+
         self.assertEqual(mocked_post.call_args[0][0], adapter.images_path)
         payload = mocked_post.call_args[0][1]
         self.assertEqual(payload["image"], "https://example.com/test.jpg")
@@ -2116,54 +2554,59 @@ class AiModuleTestCase(unittest.TestCase):
     def test_bailian_adapter_qwen_image_sync_multimodal_payload(self):
         provider = AiProvider(code="bailian", name="Bailian", adapter="bailian", is_active=True)
         from app.modules.ai.service.adapters.factory import BailianAdapter
+
         adapter = BailianAdapter(provider)
-        
+
         class FakeResponse:
             headers = {"x-request-id": "req-1"}
-            
+
         with patch.object(adapter, "_post_dashscope", return_value=({}, FakeResponse())) as mocked_post:
             adapter.image(
                 model="qwen-image-2.0",
                 prompt="draw",
-                options={"image": ["https://example.com/1.jpg", "https://example.com/2.jpg"], "negative_prompt": "blurry"}
+                options={
+                    "image": ["https://example.com/1.jpg", "https://example.com/2.jpg"],
+                    "negative_prompt": "blurry",
+                },
             )
-            
+
         self.assertEqual(mocked_post.call_args[0][0], "/services/aigc/multimodal-generation/generation")
         payload = mocked_post.call_args[0][1]
         self.assertEqual(payload["model"], "qwen-image-2.0")
         messages = payload["input"]["messages"]
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0]["role"], "user")
-        
+
         content = messages[0]["content"]
         self.assertEqual(content[0], {"image": "https://example.com/1.jpg"})
         self.assertEqual(content[1], {"image": "https://example.com/2.jpg"})
         self.assertEqual(content[2], {"text": "draw"})
-        
+
         parameters = payload["parameters"]
         self.assertEqual(parameters["negative_prompt"], "blurry")
 
     def test_openai_compatible_adapter_image_passes_extra_body(self):
         provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
         from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
+
         adapter = OpenAICompatibleAdapter(provider)
-        
+
         class FakeImageResponse:
             def model_dump(self, mode="json"):
                 return {"data": []}
-                
+
         with patch.object(adapter.client.images, "generate", return_value=FakeImageResponse()) as mocked_generate:
             adapter.image(
                 model="gpt-image-2-custom",
                 prompt="draw",
-                options={"image": "https://example.com/ref.png", "size": "1024x1024"}
+                options={"image": "https://example.com/ref.png", "size": "1024x1024"},
             )
-            
+
         kwargs = mocked_generate.call_args.kwargs
         self.assertEqual(kwargs["model"], "gpt-image-2-custom")
         self.assertEqual(kwargs["prompt"], "draw")
         self.assertEqual(kwargs["size"], "1024x1024")
-        
+
         extra_body = kwargs["extra_body"]
         self.assertEqual(extra_body["image"], "https://example.com/ref.png")
 

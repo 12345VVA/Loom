@@ -1,13 +1,23 @@
 """
 字典数据接口
 """
+
 from fastapi import Depends
 from sqlmodel import Session
+
 from app.core.database import get_session
-from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig, QueryFieldConfig
+from app.framework.controller_meta import (
+    BaseController,
+    CoolController,
+    CoolControllerMeta,
+    OrderByConfig,
+    QueryConfig,
+    QueryFieldConfig,
+)
 from app.framework.router.route_meta import Get, Post
 from app.modules.dict.model.dict import DictInfoCreateRequest, DictInfoRead, DictInfoUpdateRequest
 from app.modules.dict.service.dict_service import DictInfoService
+
 
 @CoolController(
     CoolControllerMeta(
@@ -59,5 +69,6 @@ class DictInfoController(BaseController):
         session: Session = Depends(get_session),
     ) -> list[dict]:
         return DictInfoService(session).types()
+
 
 router = DictInfoController.router

@@ -1,8 +1,8 @@
 """
 Base 模块菜单清单
 """
-from app.modules.module_config import MenuManifestItem
 
+from app.modules.module_config import MenuManifestItem
 
 MENU_ITEMS = (
     MenuManifestItem(

@@ -1,13 +1,14 @@
 """
 模块启动加载器
 """
+
 from __future__ import annotations
 
-from importlib import import_module
 import json
 import logging
-from pathlib import Path
 import os
+from importlib import import_module
+from pathlib import Path
 
 from sqlmodel import Session
 
@@ -31,7 +32,9 @@ def load_module_configs() -> list[ModuleConfig]:
     modules_root = Path(__file__).resolve().parent
     configs: list[ModuleConfig] = []
 
-    for module_dir in sorted(path for path in modules_root.iterdir() if path.is_dir() and not path.name.startswith("__")):
+    for module_dir in sorted(
+        path for path in modules_root.iterdir() if path.is_dir() and not path.name.startswith("__")
+    ):
         config_file = module_dir / "config.py"
         if not config_file.exists():
             continue
@@ -66,20 +69,20 @@ def load_scope_whitelists() -> dict[str, set[str]]:
         "aiapi": set(),
         "public": set(),
     }
-    
+
     for config in load_module_configs():
         # Admin 端口
         for path in config.admin_whitelist:
             whitelists["admin"].add(path.rstrip("/") or "/")
-        
+
         # APP 端口
         for path in config.app_whitelist:
             whitelists["app"].add(path.rstrip("/") or "/")
-            
+
         # AiApi 端口
         for path in config.aiapi_whitelist:
             whitelists["aiapi"].add(path.rstrip("/") or "/")
-            
+
     return whitelists
 
 
@@ -87,11 +90,7 @@ def load_permission_configs() -> list[PermissionConfig]:
     """聚合所有模块权限定义。"""
     from app.framework.controller_meta import get_registered_permission_configs
 
-    permissions = [
-        permission
-        for config in load_module_configs()
-        for permission in config.permissions
-    ]
+    permissions = [permission for config in load_module_configs() for permission in config.permissions]
     permissions.extend(get_registered_permission_configs())
     for config in load_module_configs():
         for resource in config.admin_resources:
@@ -184,13 +183,16 @@ def _load_menu_manifest(config: ModuleConfig) -> list[MenuManifestItem]:
         return []
     suffix = Path(resource.absolute_path).suffix.lower()
     if suffix == ".py":
-        module_path = f"app.modules.{config.name}.{Path(config.init_menu_file).with_suffix('').as_posix().replace('/', '.')}"
+        module_path = (
+            f"app.modules.{config.name}.{Path(config.init_menu_file).with_suffix('').as_posix().replace('/', '.')}"
+        )
         module = import_module(module_path)
         raw_items = getattr(module, "MENU_ITEMS", ())
     elif suffix == ".json":
         raw_items = json.loads(Path(resource.absolute_path).read_text(encoding="utf-8"))
     else:
         return []
+
     def parse_items(items: list, parent_code: str | None = None) -> list[MenuManifestItem]:
         res: list[MenuManifestItem] = []
         for it in items:
@@ -198,11 +200,11 @@ def _load_menu_manifest(config: ModuleConfig) -> list[MenuManifestItem]:
                 # 如果没有显式设置 parent_code 且存在传入的 parent_code，则自动关联
                 if parent_code and not it.get("parent_code"):
                     it["parent_code"] = parent_code
-                
+
                 children_data = it.pop("children", [])
                 item_obj = MenuManifestItem(**it)
                 res.append(item_obj)
-                
+
                 if children_data:
                     res.extend(parse_items(children_data, parent_code=item_obj.code))
             elif isinstance(it, MenuManifestItem):
@@ -263,7 +265,9 @@ def _execute_module_init_resources(config: ModuleConfig, session: Session) -> No
         suffix = Path(resource.absolute_path).suffix.lower()
         if suffix != ".py":
             continue
-        module_path = f"app.modules.{config.name}.{Path(resource.configured_path).with_suffix('').as_posix().replace('/', '.')}"
+        module_path = (
+            f"app.modules.{config.name}.{Path(resource.configured_path).with_suffix('').as_posix().replace('/', '.')}"
+        )
         try:
             module = import_module(module_path)
             runner = getattr(module, "run", None) or getattr(module, "bootstrap", None)

@@ -2,13 +2,13 @@
 	<div class="output-section">
 		<div class="output-header">
 			<div class="output-title">
-				<el-icon class="arrow-icon"><ArrowDown /></el-icon>
+				<el-icon class="arrow-icon"><arrow-down /></el-icon>
 				{{ title || $t('输出') }}
 				<el-tooltip v-if="tooltip" placement="top" effect="dark" :content="tooltip">
-					<el-icon class="hint-icon"><Warning /></el-icon>
+					<el-icon class="hint-icon"><warning /></el-icon>
 				</el-tooltip>
 			</div>
-			
+
 			<div class="output-actions">
 				<slot name="actions"></slot>
 			</div>
@@ -83,7 +83,9 @@ defineProps<{
 				border-radius: 4px;
 				color: var(--el-text-color-secondary);
 				cursor: pointer;
-				transition: background-color 0.2s, color 0.2s;
+				transition:
+					background-color 0.2s,
+					color 0.2s;
 				margin-left: 2px;
 
 				&:hover {

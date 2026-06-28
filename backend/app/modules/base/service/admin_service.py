@@ -1,71 +1,56 @@
 """
 Base 模块管理服务
 """
+
 from __future__ import annotations
 
+import json
+import logging
 from collections import defaultdict
 from datetime import datetime
+from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import asc, desc, func, or_
-from sqlalchemy.orm import load_only
+from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.core.security import hash_password, add_user_all_tokens_to_blacklist
+from app.core.security import add_user_all_tokens_to_blacklist, hash_password, validate_password_strength
 from app.framework.controller_meta import CrudQuery, RelationConfig
 from app.modules.base.compat import get_menu_parent_code, get_resource_compat
 from app.modules.base.model.auth import (
     Department,
-    DepartmentCreateRequest,
-    DepartmentDeleteRequest,
     DepartmentOrderItem,
-    DepartmentRead,
-    DepartmentUpdateRequest,
     Menu,
-    MenuCreateRequest,
     MenuCreateAutoItem,
     MenuCreateAutoRequest,
+    MenuCreateRequest,
     MenuExportRequest,
     MenuImportNode,
     MenuImportRequest,
-    MenuParseRequest,
     MenuParseItem,
+    MenuParseRequest,
     MenuRead,
     MenuTreeItem,
     MenuUpdateRequest,
     PageResult,
     Role,
-    RoleCreateRequest,
+    RoleDepartmentLink,
     RoleMenuAssignRequest,
     RoleMenuLink,
-    RoleRead,
-    RoleUpdateRequest,
     User,
-    UserCreateRequest,
-    UserInfoItem,
     UserListItem,
     UserMoveRequest,
     UserRoleAssignRequest,
     UserRoleLink,
-    UserUpdateRequest,
-    RoleDepartmentLink,
 )
 from app.modules.base.service.authority_service import (
     clear_login_caches,
     clear_login_caches_for_menus,
     clear_login_caches_for_roles,
     clear_login_caches_for_users,
-    get_user_permissions,
     get_user_roles,
 )
-from app.modules.base.service.data_scope_service import can_access_user, resolve_data_scope
-from app.core.security import validate_password_strength
-
-
-from typing import Any, Type
-import logging
-import json
-
+from app.modules.base.service.data_scope_service import resolve_data_scope
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +99,9 @@ def compute_entity_diff(old_data: dict, new_data: dict, exclude_fields: set = No
         # 处理None值和空字符串/零值的比较
         if old_value != new_value:
             # 对于datetime等特殊类型，转换为字符串进行比较
-            if hasattr(old_value, 'isoformat'):
+            if hasattr(old_value, "isoformat"):
                 old_value = old_value.isoformat()
-            if hasattr(new_value, 'isoformat'):
+            if hasattr(new_value, "isoformat"):
                 new_value = new_value.isoformat()
 
             if old_value != new_value:
@@ -149,7 +134,7 @@ def entity_to_dict(entity, exclude_fields: set = None) -> dict:
         value = getattr(entity, key, None)
         if value is not None:
             # 处理datetime类型
-            if hasattr(value, 'isoformat'):
+            if hasattr(value, "isoformat"):
                 result[key] = value.isoformat()
             else:
                 result[key] = value
@@ -160,7 +145,7 @@ def entity_to_dict(entity, exclude_fields: set = None) -> dict:
 class BaseAdminCrudService:
     """管理资源通用服务基类"""
 
-    def __init__(self, session: Session, model: Type[Any] | None = None, **kwargs):
+    def __init__(self, session: Session, model: type[Any] | None = None, **kwargs):
         self.session = session
         self.model = model
         self.soft_delete = kwargs.get("soft_delete", False)
@@ -179,6 +164,7 @@ class BaseAdminCrudService:
     ):
         """统一应用所有查询规则 (过滤、关键字、范围、排序、数据权限)"""
         from app.framework.router.query_builder import QueryBuilder
+
         builder = QueryBuilder(model, query)
 
         # 获取当前用户ID和数据权限上下文，用于 QueryBuilder 自动注入隔离条件
@@ -192,50 +178,52 @@ class BaseAdminCrudService:
         """获取资源详情"""
         statement = select(self.model).where(self.model.id == id)
         statement = self._apply_query(statement, self.model, None, current_user, relations=relations)
-        
+
         result = self.session.exec(statement).first()
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
-        
+
         # 处理可能的 Tuple 结果 (Model + Relation Columns)
         return self._finalize_data(self._row_to_dict(result))
 
     def list(
-        self, 
-        query: CrudQuery | None = None, 
-        current_user: User | None = None, 
+        self,
+        query: CrudQuery | None = None,
+        current_user: User | None = None,
         relations: tuple[RelationConfig, ...] | None = None,
         is_tree: bool | None = None,
-        parent_field: str | None = None
+        parent_field: str | None = None,
     ) -> list[dict]:
         """通用获取列表"""
         # 使用传入参数或实例属性（来自元数据注入）
         active_relations = relations if relations is not None else self.relations
         active_is_tree = is_tree if is_tree is not None else self.is_tree
         active_parent_field = parent_field if parent_field is not None else self.parent_field
-        
+
         statement = select(self.model)
         statement = self._apply_query(statement, self.model, query, current_user, relations=active_relations)
         results = list(self.session.exec(statement).all())
         data = [self._row_to_dict(r) for r in results]
-        
+
         if active_is_tree:
             return self._finalize_data(self._to_tree(data, parent_field=active_parent_field))
         return self._finalize_data(data)
 
-    def page(self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> PageResult[dict]:
+    def page(
+        self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
+    ) -> PageResult[dict]:
         """通用获取分页"""
         page = query.page or 1
         page_size = query.size or 10
-        
+
         statement = select(self.model)
         statement = self._apply_query(statement, self.model, query, current_user, relations=relations)
-        
+
         count_statement = select(func.count()).select_from(statement.subquery())
         total = int(self.session.exec(count_statement).one())
-        
+
         results = list(self.session.exec(statement.offset((page - 1) * page_size).limit(page_size)).all())
-        
+
         return PageResult(
             items=self._finalize_data([self._row_to_dict(r) for r in results]),
             total=total,
@@ -244,12 +232,23 @@ class BaseAdminCrudService:
         )
 
     # 声明生命周期钩子签名，子类可按需覆盖 (支持 data/payload 参数)
-    def _before_add(self, data: dict) -> dict: return data
-    def _after_add(self, entity: Any, payload: Any = None) -> None: pass
-    def _before_update(self, data: dict, entity: Any) -> dict: return data
-    def _after_update(self, entity: Any, payload: Any = None) -> None: pass
-    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]: return ids
-    def _after_delete(self, ids: list[int], payload: Any = None) -> None: pass
+    def _before_add(self, data: dict) -> dict:
+        return data
+
+    def _after_add(self, entity: Any, payload: Any = None) -> None:
+        pass
+
+    def _before_update(self, data: dict, entity: Any) -> dict:
+        return data
+
+    def _after_update(self, entity: Any, payload: Any = None) -> None:
+        pass
+
+    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
+        return ids
+
+    def _after_delete(self, ids: list[int], payload: Any = None) -> None:
+        pass
 
     def _finalize_data(self, data: Any) -> Any:
         """
@@ -257,6 +256,7 @@ class BaseAdminCrudService:
         支持 dict 和 list[dict]。
         """
         from app.framework.api.naming import resolve_alias
+
         if data is None:
             return None
         if isinstance(data, list):
@@ -299,7 +299,8 @@ class BaseAdminCrudService:
                 raw_data = row[0].model_dump()
                 if hasattr(row, "_fields"):
                     for i, field in enumerate(row._fields):
-                        if i == 0: continue
+                        if i == 0:
+                            continue
                         raw_data[field] = row[i]
             else:
                 raw_data = {"id": row[0]} if len(row) > 0 else {}
@@ -314,15 +315,15 @@ class BaseAdminCrudService:
         """通用新增资源 (支持单条或列表)"""
         if isinstance(payload, list):
             return [self.add(item) for item in payload]
-            
+
         data = payload.model_dump() if hasattr(payload, "model_dump") else payload
         data = self._before_add(data)
-        
+
         entity = self.model(**data)
         self.session.add(entity)
         self.session.commit()
         self.session.refresh(entity)
-        
+
         self._after_add(entity, payload)
         return entity
 
@@ -340,7 +341,8 @@ class BaseAdminCrudService:
         data = self._before_update(data, entity)
 
         for key, value in data.items():
-            if key == "id": continue
+            if key == "id":
+                continue
             setattr(entity, key, value)
 
         self.session.add(entity)
@@ -381,10 +383,11 @@ class BaseAdminCrudService:
                 entities_before_delete[entity.id] = entity_to_dict(entity)
 
             from sqlalchemy import update
+
             statement = (
                 update(self.model)
                 .where(self.model.id.in_(list(target_ids)))
-                .where(self.model.delete_time == None) # 避免重复软删除
+                .where(self.model.delete_time == None)  # noqa: E711  避免重复软删除
                 .values(delete_time=datetime.utcnow())
             )
             self.session.execute(statement)
@@ -419,32 +422,44 @@ class BaseAdminCrudService:
         """递归收集所有后代 ID"""
         if not hasattr(self.model, "parent_id"):
             return []
-            
+
         # 简单实现：一次性查出所有数据在内存中构建（适用于字典、菜单等小规模树）
         # 对于超大规模树，应改用递归 SQL 或闭包表
         all_rows = list(self.session.exec(select(self.model.id, self.model.parent_id)).all())
         children_map = {}
         for row in all_rows:
             children_map.setdefault(row.parent_id, []).append(row.id)
-            
+
         result = set()
         stack = list(root_ids)
         while stack:
             curr = stack.pop()
-            if curr in result: continue
+            if curr in result:
+                continue
             result.add(curr)
             if curr in children_map:
                 stack.extend(children_map[curr])
-        
+
         return list(result)
 
     # 生命周期钩子 (Lifecycle Hooks)
-    def _before_add(self, data: dict) -> dict: return data
-    def _after_add(self, entity: Any, payload: Any = None) -> None: pass
-    def _before_update(self, data: dict, entity: Any) -> dict: return data
-    def _after_update(self, entity: Any, payload: Any = None) -> None: pass
-    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]: return ids
-    def _after_delete(self, ids: list[int], payload: Any = None) -> None: pass
+    def _before_add(self, data: dict) -> dict:
+        return data
+
+    def _after_add(self, entity: Any, payload: Any = None) -> None:
+        pass
+
+    def _before_update(self, data: dict, entity: Any) -> dict:
+        return data
+
+    def _after_update(self, entity: Any, payload: Any = None) -> None:
+        pass
+
+    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
+        return ids
+
+    def _after_delete(self, ids: list[int], payload: Any = None) -> None:
+        pass
 
     def _log_entity_change(self, entity_id: int, operation: str, diff: dict, payload: Any = None) -> None:
         """
@@ -457,8 +472,9 @@ class BaseAdminCrudService:
             payload: 请求载荷（用于获取上下文信息）
         """
         try:
-            from app.modules.base.model.sys import SysLog
             import json
+
+            from app.modules.base.model.sys import SysLog
 
             # 获取当前用户信息（如果有）
             current_user_id = None
@@ -483,7 +499,7 @@ class BaseAdminCrudService:
                 params=params_json,
                 ip=None,  # 中间件中会设置
                 status=1,
-                message=message
+                message=message,
             )
             self.session.add(log)
             # 不commit，让外层事务处理
@@ -519,10 +535,13 @@ class UserAdminService(BaseAdminCrudService):
                 operation="create",
                 module="user",
                 resource_path=f"/admin/base/sys/user/{entity.id}",
-                new_value=json.dumps({"username": entity.username, "full_name": entity.full_name, "email": entity.email}, ensure_ascii=False),
+                new_value=json.dumps(
+                    {"username": entity.username, "full_name": entity.full_name, "email": entity.email},
+                    ensure_ascii=False,
+                ),
                 business_type="user_management",
                 status=1,
-                remark="创建新用户"
+                remark="创建新用户",
             )
         except Exception as exc:
             logger.warning(f"记录用户创建审计日志失败 - user_id: {entity.id}", exc_info=exc)
@@ -530,7 +549,12 @@ class UserAdminService(BaseAdminCrudService):
         if hasattr(payload, "role_ids"):
             self._replace_user_roles(entity.id, payload.role_ids)
 
-    def list(self, query: CrudQuery | None = None, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> list[UserListItem]:
+    def list(
+        self,
+        query: CrudQuery | None = None,
+        current_user: User | None = None,
+        relations: tuple[RelationConfig, ...] = (),
+    ) -> list[UserListItem]:
         items = super().list(query, current_user, relations)
         return [UserListItem.model_validate(item) for item in items]
 
@@ -552,7 +576,7 @@ class UserAdminService(BaseAdminCrudService):
         else:
             data["role_ids"] = []
             data["role_name"] = ""
-            
+
         return data
 
     # 钩子实现 (Hooks)
@@ -632,7 +656,7 @@ class UserAdminService(BaseAdminCrudService):
                         diff_data=json.dumps(diff_data, ensure_ascii=False),
                         business_type="user_management",
                         status=1,
-                        remark=f"执行敏感操作: {', '.join(sensitive_operations)}"
+                        remark=f"执行敏感操作: {', '.join(sensitive_operations)}",
                     )
         except Exception as exc:
             logger.warning(f"记录用户更新审计日志失败 - user_id: {entity.id}", exc_info=exc)
@@ -651,7 +675,9 @@ class UserAdminService(BaseAdminCrudService):
         users = list(self.session.exec(select(User).where(User.id.in_(ids))).all())
         protected_users = [user.username for user in users if user.is_super_admin]
         if protected_users:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"不能删除超级管理员: {', '.join(protected_users)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=f"不能删除超级管理员: {', '.join(protected_users)}"
+            )
         return ids
 
     def _after_delete(self, ids: list[int]) -> None:
@@ -678,10 +704,13 @@ class UserAdminService(BaseAdminCrudService):
                     operation="delete",
                     module="user",
                     resource_path=f"/admin/base/sys/user/{user.id}",
-                    old_value=json.dumps({"username": user.username, "full_name": user.full_name, "email": user.email}, ensure_ascii=False),
+                    old_value=json.dumps(
+                        {"username": user.username, "full_name": user.full_name, "email": user.email},
+                        ensure_ascii=False,
+                    ),
                     business_type="user_management",
                     status=1,
-                    remark="删除用户"
+                    remark="删除用户",
                 )
         except Exception as exc:
             logger.warning(f"记录用户删除审计日志失败 - user_ids: {ids}", exc_info=exc)
@@ -690,7 +719,6 @@ class UserAdminService(BaseAdminCrudService):
         for user_id in ids:
             add_user_all_tokens_to_blacklist(user_id)
         clear_login_caches_for_users(ids)
-
 
     def _replace_user_roles(self, user_id: int, role_ids: list[int]) -> None:
         existing_links = list(self.session.exec(select(UserRoleLink).where(UserRoleLink.user_id == user_id)).all())
@@ -757,10 +785,12 @@ class RoleAdminService(BaseAdminCrudService):
                 operation="create",
                 module="role",
                 resource_path=f"/admin/base/sys/role/{entity.id}",
-                new_value=json.dumps({"name": entity.name, "code": entity.code, "data_scope": entity.data_scope}, ensure_ascii=False),
+                new_value=json.dumps(
+                    {"name": entity.name, "code": entity.code, "data_scope": entity.data_scope}, ensure_ascii=False
+                ),
                 business_type="role_management",
                 status=1,
-                remark="创建新角色"
+                remark="创建新角色",
             )
         except Exception as exc:
             logger.warning(f"记录角色创建审计日志失败 - role_id: {entity.id}", exc_info=exc)
@@ -801,7 +831,7 @@ class RoleAdminService(BaseAdminCrudService):
                     resource_path=f"/admin/base/sys/role/{entity.id}",
                     business_type="role_management",
                     status=1,
-                    remark=f"调整角色权限: {', '.join(sensitive_operations)}"
+                    remark=f"调整角色权限: {', '.join(sensitive_operations)}",
                 )
         except Exception as exc:
             logger.warning(f"记录角色更新审计日志失败 - role_id: {entity.id}", exc_info=exc)
@@ -836,7 +866,7 @@ class RoleAdminService(BaseAdminCrudService):
                     old_value=json.dumps({"name": role.name, "code": role.code}, ensure_ascii=False),
                     business_type="role_management",
                     status=1,
-                    remark="删除角色"
+                    remark="删除角色",
                 )
         except Exception as exc:
             logger.warning(f"记录角色删除审计日志失败 - role_ids: {ids}", exc_info=exc)
@@ -846,8 +876,13 @@ class RoleAdminService(BaseAdminCrudService):
     def _row_to_dict(self, row: Any) -> dict:
         data = super()._row_to_dict(row)
         # 补充关联列表
-        data["menu_ids"] = [link.menu_id for link in self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == row.id)).all()]
-        data["department_ids"] = [link.department_id for link in self.session.exec(select(RoleDepartmentLink).where(RoleDepartmentLink.role_id == row.id)).all()]
+        data["menu_ids"] = [
+            link.menu_id for link in self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == row.id)).all()
+        ]
+        data["department_ids"] = [
+            link.department_id
+            for link in self.session.exec(select(RoleDepartmentLink).where(RoleDepartmentLink.role_id == row.id)).all()
+        ]
         return data
 
     def _before_add(self, data: dict) -> dict:
@@ -856,7 +891,7 @@ class RoleAdminService(BaseAdminCrudService):
         existing = self.session.exec(select(Role).where((Role.code == code) | (Role.label == label))).first()
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="角色编码或标识已存在")
-        
+
         data["code"] = code
         data["data_scope"] = "department" if data.get("department_ids") else "self"
         return data
@@ -870,7 +905,7 @@ class RoleAdminService(BaseAdminCrudService):
     def _before_update(self, data: dict, entity: Role) -> dict:
         label = data.get("label") or entity.label
         code = data.get("code") or data.get("label") or entity.code
-        
+
         duplicate = self.session.exec(
             select(Role).where((Role.id != entity.id) & ((Role.code == code) | (Role.label == label)))
         ).first()
@@ -892,9 +927,11 @@ class RoleAdminService(BaseAdminCrudService):
         roles = list(self.session.exec(select(Role).where(Role.id.in_(ids))).all())
         if any(role.code == "admin" for role in roles):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不能删除系统管理员角色")
-        
+
         # 收集受影响的用户 ID 以便后续清理缓存
-        affected_user_ids = [link.user_id for link in self.session.exec(select(UserRoleLink).where(UserRoleLink.role_id.in_(ids))).all()]
+        affected_user_ids = [
+            link.user_id for link in self.session.exec(select(UserRoleLink).where(UserRoleLink.role_id.in_(ids))).all()
+        ]
         self._affected_user_ids_storage = affected_user_ids  # 临时存储
         return ids
 
@@ -911,7 +948,6 @@ class RoleAdminService(BaseAdminCrudService):
         self._clear_role_related_caches([payload.role_id])
         return {"success": True, "role_id": payload.role_id, "menu_ids": payload.menu_ids}
 
-
     def _replace_role_menus(self, role_id: int, menu_ids: list[int]) -> None:
         for link in list(self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == role_id)).all()):
             self.session.delete(link)
@@ -927,7 +963,9 @@ class RoleAdminService(BaseAdminCrudService):
         self.session.commit()
 
     def _replace_role_departments(self, role_id: int, department_ids: list[int]) -> None:
-        for link in list(self.session.exec(select(RoleDepartmentLink).where(RoleDepartmentLink.role_id == role_id)).all()):
+        for link in list(
+            self.session.exec(select(RoleDepartmentLink).where(RoleDepartmentLink.role_id == role_id)).all()
+        ):
             self.session.delete(link)
         if department_ids:
             departments = list(self.session.exec(select(Department).where(Department.id.in_(department_ids))).all())
@@ -977,7 +1015,11 @@ class DepartmentAdminService(BaseAdminCrudService):
                 for user in list(self.session.exec(select(User).where(User.department_id == department_id)).all()):
                     clear_login_caches(user.id)
                     self.session.delete(user)
-            for link in list(self.session.exec(select(RoleDepartmentLink).where(RoleDepartmentLink.department_id == department_id)).all()):
+            for link in list(
+                self.session.exec(
+                    select(RoleDepartmentLink).where(RoleDepartmentLink.department_id == department_id)
+                ).all()
+            ):
                 self.session.delete(link)
             self.session.delete(department)
         self.session.commit()
@@ -1006,7 +1048,6 @@ class DepartmentAdminService(BaseAdminCrudService):
         return data
 
 
-
 class MenuAdminService(BaseAdminCrudService):
     """菜单资源管理服务"""
 
@@ -1029,7 +1070,7 @@ class MenuAdminService(BaseAdminCrudService):
         existing = self.session.exec(select(Menu).where(Menu.code == code)).first()
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="菜单编码已存在")
-        
+
         data["code"] = code
         data["type"] = self._normalize_menu_type(data.get("type"))
         return data
@@ -1041,7 +1082,8 @@ class MenuAdminService(BaseAdminCrudService):
             if duplicate:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="菜单编码已存在")
 
-        if "type" in data: data["type"] = self._normalize_menu_type(data["type"])
+        if "type" in data:
+            data["type"] = self._normalize_menu_type(data["type"])
         return data
 
     def _after_add(self, entity: Menu, payload: Any = None) -> None:
@@ -1053,18 +1095,24 @@ class MenuAdminService(BaseAdminCrudService):
     def _after_delete(self, ids: list[int], payload: Any = None) -> None:
         self._clear_menu_related_caches(ids)
 
-
     def tree(self) -> list[dict]:
         return self.list(is_tree=True)
 
     def role_menu_ids(self, role_id: int) -> list[int]:
-        return [link.menu_id for link in self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == role_id)).all()]
+        return [
+            link.menu_id
+            for link in self.session.exec(select(RoleMenuLink).where(RoleMenuLink.role_id == role_id)).all()
+        ]
 
     def export(self, payload: MenuExportRequest | dict) -> list[dict]:
         if isinstance(payload, dict):
             payload = MenuExportRequest(**payload)
         menu_ids = self._collect_descendant_ids(payload.ids)
-        menus = list(self.session.exec(select(Menu).where(Menu.id.in_(menu_ids)).order_by(Menu.sort_order.asc(), Menu.created_at.asc())).all())
+        menus = list(
+            self.session.exec(
+                select(Menu).where(Menu.id.in_(menu_ids)).order_by(Menu.sort_order.asc(), Menu.created_at.asc())
+            ).all()
+        )
         tree = self._build_import_tree(menus)
         selected_ids = set(payload.ids)
         result = [node for node in tree if node.id in selected_ids]
@@ -1115,7 +1163,9 @@ class MenuAdminService(BaseAdminCrudService):
                                 "method": api.get("method"),
                                 "path": api.get("path"),
                                 "summary": self._guess_action_summary(api.get("name"), api.get("path")),
-                                "permission": self._build_permission_from_resource(module_name, resource, api.get("name"), api.get("path")),
+                                "permission": self._build_permission_from_resource(
+                                    module_name, resource, api.get("name"), api.get("path")
+                                ),
                             }
                             for api in controller.get("api", [])
                         ],
@@ -1140,6 +1190,7 @@ class MenuAdminService(BaseAdminCrudService):
         statement = select(Menu).where(Menu.is_active == True)  # noqa: E712
         if not current_user.is_super_admin:
             from app.modules.base.service.authority_service import get_user_roles
+
             role_ids = [role.id for role in get_user_roles(self.session, current_user.id) if role.id is not None]
             if not role_ids:
                 return []
@@ -1159,17 +1210,19 @@ class MenuAdminService(BaseAdminCrudService):
                     break
                 expanded[parent.id] = parent
                 parent_id = parent.parent_id
-        
+
         # 预加载所有涉及到的节点的父级名称
         name_map = {m.id: m.name for m in expanded.values()}
         menu_list = sorted(expanded.values(), key=lambda item: (item.sort_order, item.created_at))
-        
+
         # 构建树时，我们需要一个能够传递 parent_name 的 build_tree
         return self._build_tree_with_names(menu_list, name_map)
 
     def _build_tree_with_names(self, menus: list[Menu], name_map: dict[int, str]) -> list[MenuTreeItem]:
         nodes = {
-            menu.id: MenuTreeItem(**self._build_menu_read(menu, parent_name=name_map.get(menu.parent_id)).model_dump(by_alias=True))
+            menu.id: MenuTreeItem(
+                **self._build_menu_read(menu, parent_name=name_map.get(menu.parent_id)).model_dump(by_alias=True)
+            )
             for menu in menus
         }
         children_map: dict[int | None, list[MenuTreeItem]] = defaultdict(list)
@@ -1186,6 +1239,7 @@ class MenuAdminService(BaseAdminCrudService):
         statement = select(Menu).where(Menu.is_active == True)  # noqa: E712
         if not current_user.is_super_admin:
             from app.modules.base.service.authority_service import get_user_roles
+
             role_ids = [role.id for role in get_user_roles(self.session, current_user.id) if role.id is not None]
             if not role_ids:
                 return []
@@ -1195,7 +1249,7 @@ class MenuAdminService(BaseAdminCrudService):
                 .where(RoleMenuLink.role_id.in_(role_ids), Menu.is_active == True)  # noqa: E712
             )
         menus = list(self.session.exec(statement.order_by(Menu.sort_order.asc(), Menu.created_at.asc())).all())
-        
+
         # 预加载父级名称以提高性能
         menu_map = {menu.id: menu for menu in menus}
         # 如果是超管，可能需要所有菜单的名称，如果不是，只需在授权范围内的
@@ -1206,10 +1260,13 @@ class MenuAdminService(BaseAdminCrudService):
             extra_parents = list(self.session.exec(select(Menu).where(Menu.id.in_(list(missing_parent_ids)))).all())
             for p in extra_parents:
                 menu_map[p.id] = p
-        
-        return [self._build_menu_read(menu, parent_name=menu_map[menu.parent_id].name if menu.parent_id in menu_map else None) for menu in menus]
 
-
+        return [
+            self._build_menu_read(
+                menu, parent_name=menu_map[menu.parent_id].name if menu.parent_id in menu_map else None
+            )
+            for menu in menus
+        ]
 
     @staticmethod
     def _normalize_menu_type(value: int | str) -> str:
@@ -1324,7 +1381,10 @@ class MenuAdminService(BaseAdminCrudService):
                 continue
             button = self.session.exec(select(Menu).where(Menu.permission == perms)).first()
             if button is None:
-                button = Menu(code=self._next_unique_code(self._slugify(perms)), name=api.get("summary") or api.get("name") or "权限")
+                button = Menu(
+                    code=self._next_unique_code(self._slugify(perms)),
+                    name=api.get("summary") or api.get("name") or "权限",
+                )
             button.parent_id = menu.id
             button.name = api.get("summary") or api.get("name") or "权限"
             button.type = "button"

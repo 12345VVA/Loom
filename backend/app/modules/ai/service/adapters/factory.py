@@ -40,13 +40,17 @@ class BailianAdapter(OpenAIHttpAdapter):
             "/services/aigc/multimodal-generation/generation",
             _build_bailian_wan26_sync_payload(model, prompt, options),
         )
-        return _bailian_image_result(data, response.headers.get("x-request-id") or response.headers.get("x-dashscope-request-id"))
+        return _bailian_image_result(
+            data, response.headers.get("x-request-id") or response.headers.get("x-dashscope-request-id")
+        )
 
     def _image_async(self, *, path: str, payload: dict[str, Any]) -> dict:
         data, response = self._post_dashscope(path, payload, extra_headers={"X-DashScope-Async": "enable"})
         task_id = _extract_bailian_task_id(data)
         if not task_id:
-            raise UpstreamApiError("百炼生图任务创建失败: 响应缺少 task_id", request_id=_bailian_request_id(response.headers))
+            raise UpstreamApiError(
+                "百炼生图任务创建失败: 响应缺少 task_id", request_id=_bailian_request_id(response.headers)
+            )
         final_data, final_response = self._poll_bailian_task(task_id)
         request_id = _bailian_request_id(final_response.headers) or _bailian_request_id(response.headers) or task_id
         result = _bailian_image_result(final_data, request_id)
@@ -54,7 +58,9 @@ class BailianAdapter(OpenAIHttpAdapter):
         return result
 
     def _post_dashscope(self, path: str, payload: dict[str, Any], extra_headers: dict[str, str] | None = None):
-        return self._post(path, payload, headers=self._dashscope_headers(extra_headers), base_url=self._dashscope_base_url())
+        return self._post(
+            path, payload, headers=self._dashscope_headers(extra_headers), base_url=self._dashscope_base_url()
+        )
 
     def _get_dashscope(self, path: str):
         return self._get(path, headers=self._dashscope_headers(), base_url=self._dashscope_base_url())
@@ -63,20 +69,25 @@ class BailianAdapter(OpenAIHttpAdapter):
         interval = _float_config(self.extra_config.get("image_poll_interval_seconds"), 2.0)
         timeout = _float_config(self.extra_config.get("image_poll_timeout_seconds"), 180.0)
         deadline = time.monotonic() + timeout
-        last_data: dict[str, Any] = {}
-        last_response = None
         while True:
             data, response = self._get_dashscope(f"/tasks/{task_id}")
-            last_data = data
-            last_response = response
             status_value = str((data.get("output") or {}).get("task_status") or data.get("task_status") or "").upper()
             if status_value in {"SUCCEEDED", "SUCCESS"}:
                 return data, response
             if status_value in {"FAILED", "CANCELED", "CANCELLED", "UNKNOWN"}:
-                message = (data.get("output") or {}).get("message") or data.get("message") or f"百炼生图任务失败: {status_value}"
-                raise UpstreamApiError(f"{message} (taskId: {task_id})", request_id=_bailian_request_id(response.headers) or task_id)
+                message = (
+                    (data.get("output") or {}).get("message")
+                    or data.get("message")
+                    or f"百炼生图任务失败: {status_value}"
+                )
+                raise UpstreamApiError(
+                    f"{message} (taskId: {task_id})", request_id=_bailian_request_id(response.headers) or task_id
+                )
             if time.monotonic() >= deadline:
-                raise UpstreamApiError(f"百炼生图任务轮询超时 (taskId: {task_id})", request_id=_bailian_request_id(response.headers) or task_id)
+                raise UpstreamApiError(
+                    f"百炼生图任务轮询超时 (taskId: {task_id})",
+                    request_id=_bailian_request_id(response.headers) or task_id,
+                )
             time.sleep(interval)
 
     def _dashscope_base_url(self) -> str:
@@ -135,7 +146,7 @@ class QianfanAdapter(OpenAIHttpAdapter):
             if len(prompt) > 220:
                 logger.warning(
                     f"Model {model} only supports prompt length <= 220. Automatically truncating prompt.",
-                    extra={"model": model, "original_length": len(prompt)}
+                    extra={"model": model, "original_length": len(prompt)},
                 )
                 prompt = prompt[:220]
             normalized_options.pop("negative_prompt", None)

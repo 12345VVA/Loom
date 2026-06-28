@@ -1,6 +1,7 @@
 """
 通知模块服务。
 """
+
 from __future__ import annotations
 
 import json
@@ -18,7 +19,6 @@ from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.notification.model.notification import (
     AudienceRule,
     NotificationMessage,
-    NotificationMessageCreateRequest,
     NotificationRecipient,
     NotificationRule,
     NotificationTemplate,
@@ -76,16 +76,19 @@ class NotificationMessageService(BaseAdminCrudService):
         return result
 
     def unread_count(self, user_id: int) -> int:
-        return len(self.session.exec(
-            select(NotificationRecipient.id).where(
-                NotificationRecipient.user_id == user_id,
-                NotificationRecipient.is_read == False,  # noqa: E712
-                NotificationRecipient.is_deleted == False,  # noqa: E712
-                NotificationRecipient.is_archived == False,  # noqa: E712
-                NotificationMessage.is_recalled == False,  # noqa: E712
-            )
-            .join(NotificationMessage, NotificationMessage.id == NotificationRecipient.message_id)
-        ).all())
+        return len(
+            self.session.exec(
+                select(NotificationRecipient.id)
+                .where(
+                    NotificationRecipient.user_id == user_id,
+                    NotificationRecipient.is_read == False,  # noqa: E712
+                    NotificationRecipient.is_deleted == False,  # noqa: E712
+                    NotificationRecipient.is_archived == False,  # noqa: E712
+                    NotificationMessage.is_recalled == False,  # noqa: E712
+                )
+                .join(NotificationMessage, NotificationMessage.id == NotificationRecipient.message_id)
+            ).all()
+        )
 
     def info_for_user(self, user_id: int, message_id: int) -> dict:
         row = self.session.exec(
@@ -400,13 +403,20 @@ class NotificationService:
 
     def render_template(self, code: str, context: dict[str, Any]) -> tuple[str, str, str, str | None]:
         template = self.session.exec(
-            select(NotificationTemplate).where(NotificationTemplate.code == code, NotificationTemplate.is_active == True)  # noqa: E712
+            select(NotificationTemplate).where(
+                NotificationTemplate.code == code,
+                NotificationTemplate.is_active == True,  # noqa: E712
+            )
         ).first()
         if not template:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="通知模板不存在或已禁用")
-        missing = _missing_template_keys(template.title_template, context) | _missing_template_keys(template.content_template, context)
+        missing = _missing_template_keys(template.title_template, context) | _missing_template_keys(
+            template.content_template, context
+        )
         if missing:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"通知模板缺少变量: {', '.join(sorted(missing))}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=f"通知模板缺少变量: {', '.join(sorted(missing))}"
+            )
         return (
             template.title_template.format(**context),
             template.content_template.format(**context),
@@ -447,12 +457,15 @@ class NotificationService:
                 role_statement = role_statement.where(clauses[0])
             elif clauses:
                 from sqlalchemy import or_
+
                 role_statement = role_statement.where(or_(*clauses))
             resolved_role_ids = [row for row in self.session.exec(role_statement).all() if row is not None]
             if resolved_role_ids:
                 user_ids = [
                     row.user_id
-                    for row in self.session.exec(select(UserRoleLink).where(UserRoleLink.role_id.in_(resolved_role_ids))).all()
+                    for row in self.session.exec(
+                        select(UserRoleLink).where(UserRoleLink.role_id.in_(resolved_role_ids))
+                    ).all()
                 ]
                 if user_ids:
                     statements.append(select(User).where(User.id.in_(user_ids), User.is_active == True))  # noqa: E712
@@ -475,7 +488,9 @@ class NotificationService:
                     users[user.id] = user
         return list(users.values())
 
-    def create_recipients(self, message: NotificationMessage, audience: AudienceRule | dict | str | None) -> list[NotificationRecipient]:
+    def create_recipients(
+        self, message: NotificationMessage, audience: AudienceRule | dict | str | None
+    ) -> list[NotificationRecipient]:
         users = self.resolve_recipients(audience)
         recipients: list[NotificationRecipient] = []
         with transaction(self.session):

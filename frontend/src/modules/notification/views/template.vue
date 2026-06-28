@@ -39,10 +39,18 @@
 			<el-button type="primary" @click="doPreview">{{ $t('预览') }}</el-button>
 		</el-form>
 		<el-descriptions v-if="preview.result" :column="1" border class="result">
-			<el-descriptions-item :label="$t('标题')">{{ preview.result.title }}</el-descriptions-item>
-			<el-descriptions-item :label="$t('内容')">{{ preview.result.content }}</el-descriptions-item>
-			<el-descriptions-item :label="$t('级别')">{{ preview.result.level }}</el-descriptions-item>
-			<el-descriptions-item :label="$t('链接')">{{ preview.result.linkUrl || '-' }}</el-descriptions-item>
+			<el-descriptions-item :label="$t('标题')">{{
+				preview.result.title
+			}}</el-descriptions-item>
+			<el-descriptions-item :label="$t('内容')">{{
+				preview.result.content
+			}}</el-descriptions-item>
+			<el-descriptions-item :label="$t('级别')">{{
+				preview.result.level
+			}}</el-descriptions-item>
+			<el-descriptions-item :label="$t('链接')">{{
+				preview.result.linkUrl || '-'
+			}}</el-descriptions-item>
 		</el-descriptions>
 	</el-drawer>
 </template>
@@ -63,7 +71,8 @@ const { t } = useI18n();
 const preview = reactive({
 	visible: false,
 	code: '',
-	context: '{\\n  "taskName": "示例任务",\\n  "taskId": 1,\\n  "status": "成功",\\n  "consumeTime": 1200,\\n  "detail": "执行完成",\\n  "executedAt": "2026-05-02T00:00:00"\\n}',
+	context:
+		'{\\n  "taskName": "示例任务",\\n  "taskId": 1,\\n  "status": "成功",\\n  "consumeTime": 1200,\\n  "detail": "执行完成",\\n  "executedAt": "2026-05-02T00:00:00"\\n}',
 	result: null as any
 });
 
@@ -73,14 +82,24 @@ const Upsert = useUpsert({
 	items: [
 		{ label: t('编码'), prop: 'code', required: true, component: { name: 'el-input' } },
 		{ label: t('名称'), prop: 'name', required: true, component: { name: 'el-input' } },
-		{ label: t('标题模板'), prop: 'titleTemplate', required: true, component: { name: 'el-input' } },
+		{
+			label: t('标题模板'),
+			prop: 'titleTemplate',
+			required: true,
+			component: { name: 'el-input' }
+		},
 		{
 			label: t('内容模板'),
 			prop: 'contentTemplate',
 			required: true,
 			component: { name: 'cl-editor', props: { name: 'cl-editor-markdown', height: 280 } }
 		},
-		{ label: t('默认级别'), prop: 'defaultLevel', value: 'info', component: { name: 'el-input' } },
+		{
+			label: t('默认级别'),
+			prop: 'defaultLevel',
+			value: 'info',
+			component: { name: 'el-input' }
+		},
 		{ label: t('默认链接'), prop: 'defaultLinkUrl', component: { name: 'el-input' } },
 		{ label: t('启用'), prop: 'isActive', value: true, component: { name: 'el-switch' } }
 	]

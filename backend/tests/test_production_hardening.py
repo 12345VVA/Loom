@@ -1,11 +1,11 @@
 import os
 import sys
 import unittest
+import warnings
 from datetime import datetime
 
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -16,7 +16,11 @@ from app.framework.io import ImportExportField, ImportExportSchema, import_rows_
 from app.framework.middleware.metrics import record_metric_event, render_metrics  # noqa: E402
 from app.modules.base.service.cache_service import CacheNamespace  # noqa: E402
 from app.modules.task.model.task import TaskInfo  # noqa: E402
-from app.modules.task.service.task_service import compute_next_run_time, sync_task_schedule_state, TASK_SCHEDULE_CACHE  # noqa: E402
+from app.modules.task.service.task_service import (  # noqa: E402
+    TASK_SCHEDULE_CACHE,
+    compute_next_run_time,
+    sync_task_schedule_state,
+)
 
 
 class TxRow(SQLModel, table=True):
@@ -24,6 +28,14 @@ class TxRow(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str
+
+
+# 夹具表仅供事务单元测试在隔离 engine 上使用，从全局 metadata 摘除，
+# 避免被 app lifespan 的 init_db()（真实数据库如 PG 上的 create_all）带建到生产库。
+# 注：MetaData.remove 在 SQLAlchemy 2.0 已 deprecated，但用于测试夹具隔离仍是最简方式。
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    SQLModel.metadata.remove(TxRow.__table__)
 
 
 class ProductionHardeningTests(unittest.TestCase):
@@ -65,14 +77,16 @@ class ProductionHardeningTests(unittest.TestCase):
             self.assertEqual(session.exec(select(TxRow)).all(), [])
 
     def test_startup_settings_reports_production_risks(self):
-        prod = settings.model_copy(update={
-            "DEBUG": False,
-            "JWT_SECRET_KEY": "short",
-            "DEFAULT_ADMIN_PASSWORD": "admin",
-            "CORS_ORIGINS": '["*"]',
-            "REDIS_URL": "",
-            "CELERY_BROKER_URL": "",
-        })
+        prod = settings.model_copy(
+            update={
+                "DEBUG": False,
+                "JWT_SECRET_KEY": "short",
+                "DEFAULT_ADMIN_PASSWORD": "admin",
+                "CORS_ORIGINS": '["*"]',
+                "REDIS_URL": "",
+                "CELERY_BROKER_URL": "",
+            }
+        )
         results = validate_startup_settings(prod)
         keys = {item.key for item in results if item.level == "error"}
         self.assertIn("JWT_SECRET_KEY", keys)
@@ -87,10 +101,12 @@ class ProductionHardeningTests(unittest.TestCase):
         self.assertIsNone(namespace.get("user", 1))
 
     def test_import_rows_reports_missing_required_fields(self):
-        schema = ImportExportSchema([
-            ImportExportField("name", required=True),
-            ImportExportField("status"),
-        ])
+        schema = ImportExportSchema(
+            [
+                ImportExportField("name", required=True),
+                ImportExportField("status"),
+            ]
+        )
         result = import_rows_from_csv("name,status\n,1\n", schema)
         self.assertFalse(result.success)
         self.assertEqual(result.errors[0].row, 2)

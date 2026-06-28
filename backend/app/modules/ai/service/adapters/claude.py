@@ -4,7 +4,13 @@ from typing import Any
 
 import httpx
 
-from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCapabilityError, iter_sse_events, loads_json, normalize_usage
+from app.modules.ai.service.adapters.base import (
+    BaseHttpAdapter,
+    UnsupportedCapabilityError,
+    iter_sse_events,
+    loads_json,
+    normalize_usage,
+)
 
 
 class ClaudeAdapter(BaseHttpAdapter):
@@ -26,7 +32,11 @@ class ClaudeAdapter(BaseHttpAdapter):
         call_options.pop("response_format", None)
         payload = {
             "model": model,
-            "messages": [{"role": _claude_role(item), "content": item.get("content", "")} for item in messages if item.get("role") != "system"],
+            "messages": [
+                {"role": _claude_role(item), "content": item.get("content", "")}
+                for item in messages
+                if item.get("role") != "system"
+            ],
             "max_tokens": max_tokens,
             **call_options,
         }
@@ -34,7 +44,9 @@ class ClaudeAdapter(BaseHttpAdapter):
             payload["system"] = system_text
         data, response = self._post("/messages", payload, self._headers())
         return {
-            "content": "\n".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"),
+            "content": "\n".join(
+                block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"
+            ),
             "raw": data,
             "usage": normalize_usage(data.get("usage")),
             "requestId": response.headers.get("request-id"),
@@ -48,14 +60,20 @@ class ClaudeAdapter(BaseHttpAdapter):
         call_options.pop("response_format", None)
         payload = {
             "model": model,
-            "messages": [{"role": _claude_role(item), "content": item.get("content", "")} for item in messages if item.get("role") != "system"],
+            "messages": [
+                {"role": _claude_role(item), "content": item.get("content", "")}
+                for item in messages
+                if item.get("role") != "system"
+            ],
             "max_tokens": max_tokens,
             "stream": True,
             **call_options,
         }
         if system_text:
             payload["system"] = system_text
-        with httpx.stream("POST", f"{self.base_url}/messages", json=payload, headers=self._headers(), timeout=self.timeout) as response:
+        with httpx.stream(
+            "POST", f"{self.base_url}/messages", json=payload, headers=self._headers(), timeout=self.timeout
+        ) as response:
             response.raise_for_status()
             request_id = response.headers.get("request-id")
             for event in iter_sse_events(response.iter_lines()):
@@ -67,18 +85,33 @@ class ClaudeAdapter(BaseHttpAdapter):
                     if delta_type == "text_delta" and delta.get("text"):
                         yield {"event": "delta", "content": delta.get("text"), "raw": data, "requestId": request_id}
                     elif delta_type == "thinking_delta" and delta.get("thinking"):
-                        yield {"event": "thinking_delta", "content": delta.get("thinking"), "raw": data, "requestId": request_id}
+                        yield {
+                            "event": "thinking_delta",
+                            "content": delta.get("thinking"),
+                            "raw": data,
+                            "requestId": request_id,
+                        }
                     elif delta_type == "input_json_delta" and delta.get("partial_json"):
-                        yield {"event": "tool_delta", "content": delta.get("partial_json"), "raw": data, "requestId": request_id}
+                        yield {
+                            "event": "tool_delta",
+                            "content": delta.get("partial_json"),
+                            "raw": data,
+                            "requestId": request_id,
+                        }
                 elif event_type == "message_delta":
-                    usage = normalize_usage((data.get("usage") or {}))
+                    usage = normalize_usage(data.get("usage") or {})
                     if usage:
                         yield {"event": "done", "raw": data, "usage": usage, "requestId": request_id}
                 elif event_type == "message_stop":
                     yield {"event": "done", "raw": data, "requestId": request_id}
                 elif event_type == "error":
                     error = data.get("error") or {}
-                    yield {"event": "error", "content": error.get("message") or "Claude 流式调用失败", "raw": data, "requestId": request_id}
+                    yield {
+                        "event": "error",
+                        "content": error.get("message") or "Claude 流式调用失败",
+                        "raw": data,
+                        "requestId": request_id,
+                    }
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         raise UnsupportedCapabilityError("Claude 原生 API 暂不提供通用 embedding")

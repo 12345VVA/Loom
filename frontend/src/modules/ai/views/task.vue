@@ -21,9 +21,23 @@
 		<cl-row>
 			<cl-table ref="Table">
 				<template #slot-op="{ scope }">
-					<el-button text type="primary" @click="showPayload(scope.row)">{{ $t('查看') }}</el-button>
-					<el-button v-if="canCancel(scope.row)" text type="danger" @click="cancelTask(scope.row)">{{ $t('取消') }}</el-button>
-					<el-button v-if="canRetry(scope.row)" text type="warning" @click="retryTask(scope.row)">{{ $t('重试') }}</el-button>
+					<el-button text type="primary" @click="showPayload(scope.row)">{{
+						$t('查看')
+					}}</el-button>
+					<el-button
+						v-if="canCancel(scope.row)"
+						text
+						type="danger"
+						@click="cancelTask(scope.row)"
+						>{{ $t('取消') }}</el-button
+					>
+					<el-button
+						v-if="canRetry(scope.row)"
+						text
+						type="warning"
+						@click="retryTask(scope.row)"
+						>{{ $t('重试') }}</el-button
+					>
 				</template>
 			</cl-table>
 		</cl-row>
@@ -59,10 +73,18 @@
 			</el-tab-pane>
 			<el-tab-pane :label="$t('结果')">
 				<el-descriptions v-if="viewer.row" class="task-meta" border :column="2">
-					<el-descriptions-item label="Task ID">{{ viewer.row.id || '-' }}</el-descriptions-item>
-					<el-descriptions-item :label="$t('状态')">{{ optionLabel(statusOptions, viewer.row.status) }}</el-descriptions-item>
-					<el-descriptions-item :label="$t('配置')">{{ viewer.row.profileCode || '-' }}</el-descriptions-item>
-					<el-descriptions-item :label="$t('进度')">{{ viewer.row.progress ?? '-' }}</el-descriptions-item>
+					<el-descriptions-item label="Task ID">{{
+						viewer.row.id || '-'
+					}}</el-descriptions-item>
+					<el-descriptions-item :label="$t('状态')">{{
+						optionLabel(statusOptions, viewer.row.status)
+					}}</el-descriptions-item>
+					<el-descriptions-item :label="$t('配置')">{{
+						viewer.row.profileCode || '-'
+					}}</el-descriptions-item>
+					<el-descriptions-item :label="$t('进度')">{{
+						viewer.row.progress ?? '-'
+					}}</el-descriptions-item>
 				</el-descriptions>
 				<div v-if="taskImageItems.length" class="image-results">
 					<div v-for="(item, index) in taskImageItems" :key="index" class="image-result">
@@ -75,8 +97,16 @@
 							preview-teleported
 						/>
 						<div class="image-result__actions">
-							<el-button text type="primary" @click="copyText(item.value)">{{ $t('复制') }}</el-button>
-							<el-button v-if="item.url" text type="primary" @click="openUrl(item.url)">{{ $t('打开') }}</el-button>
+							<el-button text type="primary" @click="copyText(item.value)">{{
+								$t('复制')
+							}}</el-button>
+							<el-button
+								v-if="item.url"
+								text
+								type="primary"
+								@click="openUrl(item.url)"
+								>{{ $t('打开') }}</el-button
+							>
 						</div>
 					</div>
 				</div>
@@ -135,7 +165,8 @@ const submitter = reactive({
 	taskType: 'chat',
 	scenario: 'default',
 	profileCode: '',
-	payload: '{\n  "messages": [\n    { "role": "user", "content": "你好" }\n  ],\n  "options": { "max_tokens": 512 }\n}'
+	payload:
+		'{\n  "messages": [\n    { "role": "user", "content": "你好" }\n  ],\n  "options": { "max_tokens": 512 }\n}'
 });
 const viewer = reactive({
 	visible: false,
@@ -158,10 +189,20 @@ const taskPreviewUrls = computed(() => taskImageItems.value.map(item => item.src
 
 const Table = useTable({
 	columns: [
-		{ label: t('类型'), prop: 'taskType', minWidth: 100, formatter: ({ taskType }: any) => optionLabel(taskTypeOptions, taskType) },
+		{
+			label: t('类型'),
+			prop: 'taskType',
+			minWidth: 100,
+			formatter: ({ taskType }: any) => optionLabel(taskTypeOptions, taskType)
+		},
 		{ label: t('场景'), prop: 'scenario', minWidth: 120 },
 		{ label: t('配置'), prop: 'profileCode', minWidth: 140 },
-		{ label: t('状态'), prop: 'status', minWidth: 110, formatter: ({ status }: any) => optionLabel(statusOptions, status) },
+		{
+			label: t('状态'),
+			prop: 'status',
+			minWidth: 110,
+			formatter: ({ status }: any) => optionLabel(statusOptions, status)
+		},
 		{ label: t('进度'), prop: 'progress', minWidth: 90 },
 		{ label: t('重试'), prop: 'retryCount', minWidth: 80 },
 		{ label: t('错误信息'), prop: 'errorMessage', minWidth: 220, showOverflowTooltip: true },
@@ -274,7 +315,9 @@ function extractImageItems(value: any): { src: string; value: string; url?: stri
 				return { src: url, value: url, url };
 			}
 			if (b64) {
-				const src = String(b64).startsWith('data:image') ? String(b64) : `data:image/png;base64,${b64}`;
+				const src = String(b64).startsWith('data:image')
+					? String(b64)
+					: `data:image/png;base64,${b64}`;
 				return { src, value: String(b64) };
 			}
 			return null;

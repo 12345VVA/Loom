@@ -1,4 +1,5 @@
 """AI 服务层共享工具。"""
+
 from __future__ import annotations
 
 import json
@@ -47,23 +48,32 @@ def normalize_response_format(value: Any) -> dict[str, Any] | None:
     if format_type == "json_object":
         return {"type": "json_object"}
     if format_type != "json_schema":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="responseFormat.type 仅支持 text、json_object、json_schema")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="responseFormat.type 仅支持 text、json_object、json_schema"
+        )
 
     json_schema = value.get("json_schema") or value.get("jsonSchema")
     if hasattr(json_schema, "model_dump"):
         json_schema = json_schema.model_dump(by_alias=True, exclude_none=True)
     if not isinstance(json_schema, dict):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="responseFormat.jsonSchema 必须是 JSON 对象")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="responseFormat.jsonSchema 必须是 JSON 对象"
+        )
 
     name = str(json_schema.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="responseFormat.jsonSchema.name 不能为空")
     if len(name) > 64 or not re.fullmatch(r"[A-Za-z0-9_-]+", name):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="responseFormat.jsonSchema.name 仅支持字母、数字、下划线、短横线，最长 64")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="responseFormat.jsonSchema.name 仅支持字母、数字、下划线、短横线，最长 64",
+        )
 
     schema = json_schema.get("schema") or json_schema.get("schema_")
     if not isinstance(schema, dict):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="responseFormat.jsonSchema.schema 必须是 JSON 对象")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="responseFormat.jsonSchema.schema 必须是 JSON 对象"
+        )
 
     normalized_schema = {
         "name": name,

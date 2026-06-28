@@ -7,10 +7,10 @@ import unittest
 from unittest.mock import Mock, patch
 
 from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel, Session, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.modules.ai.model.ai import AiGenerationTask, AiImageRequest
 from app.modules.ai.controller.aiapi.model import AiRuntimeController, _run_sync_image_pipeline
+from app.modules.ai.model.ai import AiGenerationTask, AiImageRequest
 from app.modules.base.model.auth import User
 from app.modules.media.model.media import MediaAsset
 from app.modules.media.service.media_service import MediaAssetService, _validate_remote_url
@@ -27,7 +27,9 @@ class FakeUploadFile:
 
 class MediaModuleTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = create_engine(
+            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 
@@ -141,7 +143,9 @@ class MediaModuleTestCase(unittest.TestCase):
         self.session.add(MediaAsset(asset_type="video", source_type="upload", status="success", created_by=2))
         self.session.commit()
 
-        stats = MediaAssetService(self.session).stats(User(id=1, username="u1", full_name="u1", password_hash="x", is_active=True))
+        stats = MediaAssetService(self.session).stats(
+            User(id=1, username="u1", full_name="u1", password_hash="x", is_active=True)
+        )
 
         self.assertEqual(stats["typeCounts"], {"image": 1})
 
@@ -150,7 +154,9 @@ class MediaModuleTestCase(unittest.TestCase):
         self.session.add(MediaAsset(asset_type="video", source_type="upload", status="success", created_by=2))
         self.session.commit()
 
-        stats = MediaAssetService(self.session).stats(User(id=1, username="admin", full_name="admin", password_hash="x", is_active=True, is_super_admin=True))
+        stats = MediaAssetService(self.session).stats(
+            User(id=1, username="admin", full_name="admin", password_hash="x", is_active=True, is_super_admin=True)
+        )
 
         self.assertEqual(stats["typeCounts"], {"image": 1, "video": 1})
 
@@ -162,7 +168,11 @@ class MediaModuleTestCase(unittest.TestCase):
         with patch("app.modules.media.service.media_service.StorageService.get_instance", return_value=storage):
             assets = MediaAssetService(self.session).create_from_ai_result(
                 task_type="image",
-                result={"provider": "volc", "model": "seedream", "data": [{"b64_json": payload, "mime_type": "image/png"}]},
+                result={
+                    "provider": "volc",
+                    "model": "seedream",
+                    "data": [{"b64_json": payload, "mime_type": "image/png"}],
+                },
                 request_payload={"prompt": "draw", "options": {}},
                 source_type="ai_sync",
                 created_by=1,
@@ -236,7 +246,9 @@ class MediaModuleTestCase(unittest.TestCase):
             self.assertEqual(func.keywords["payload"].profile_code, "image-profile")
             return expected
 
-        with patch("app.modules.ai.controller.aiapi.model.run_in_threadpool", side_effect=fake_run_in_threadpool) as mocked:
+        with patch(
+            "app.modules.ai.controller.aiapi.model.run_in_threadpool", side_effect=fake_run_in_threadpool
+        ) as mocked:
             import asyncio
 
             result = asyncio.run(
@@ -258,7 +270,10 @@ class MediaModuleTestCase(unittest.TestCase):
         self.session.refresh(user)
 
         with patch("app.modules.ai.controller.aiapi.model.AiModelRuntimeService") as runtime_cls:
-            runtime_cls.return_value.image.return_value = {"success": True, "data": [{"url": "https://example.com/a.png"}]}
+            runtime_cls.return_value.image.return_value = {
+                "success": True,
+                "data": [{"url": "https://example.com/a.png"}],
+            }
             with patch("app.modules.ai.controller.aiapi.model.MediaAssetService") as media_cls:
                 result = _run_sync_image_pipeline(payload=payload, current_user_id=user.id)
 
@@ -332,7 +347,27 @@ class MediaModuleTestCase(unittest.TestCase):
         self.session.add(asset)
         self.session.commit()
 
-        result = MediaAssetService(self.session).page(type("Q", (), {"page": 1, "size": 20, "eq_filters": {}, "like_filters": {}, "raw_params": {}, "keyword": None, "order": None, "sort": None, "keyword_fields": (), "order_fields": (), "select_fields": (), "add_order_by": (), "where_handler": None})())
+        result = MediaAssetService(self.session).page(
+            type(
+                "Q",
+                (),
+                {
+                    "page": 1,
+                    "size": 20,
+                    "eq_filters": {},
+                    "like_filters": {},
+                    "raw_params": {},
+                    "keyword": None,
+                    "order": None,
+                    "sort": None,
+                    "keyword_fields": (),
+                    "order_fields": (),
+                    "select_fields": (),
+                    "add_order_by": (),
+                    "where_handler": None,
+                },
+            )()
+        )
         row = result.items[0]
         self.assertIsNone(row["originalUrl"])
         self.assertTrue(row["hasInlineOriginal"])
@@ -375,7 +410,9 @@ class MediaModuleTestCase(unittest.TestCase):
         for address in ("10.0.0.1", "127.0.0.1"):
             with patch("socket.getaddrinfo", return_value=[(None, None, None, None, (address, 0))]):
                 with self.assertRaises(ValueError):
-                    _validate_remote_url("https://ark-content-generation-v2-cn-beijing.tos-cn-beijing.volces.com/image.png")
+                    _validate_remote_url(
+                        "https://ark-content-generation-v2-cn-beijing.tos-cn-beijing.volces.com/image.png"
+                    )
 
 
 if __name__ == "__main__":

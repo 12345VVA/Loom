@@ -1,22 +1,11 @@
 """
 Base 模块用户控制器
 """
+
 from fastapi import Depends
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.modules.base.model.auth import (
-    CoolUserInfo,
-    Department,
-    PageResult,
-    User,
-    UserListItem,
-    UserInfoItem,
-    UserCreateRequest,
-    UserUpdateRequest,
-    UserRoleAssignRequest,
-    UserMoveRequest,
-)
 from app.framework.controller_meta import (
     BaseController,
     CoolController,
@@ -26,10 +15,21 @@ from app.framework.controller_meta import (
     QueryFieldConfig,
     RelationConfig,
 )
+from app.framework.router.route_meta import Get, Post
+from app.modules.base.model.auth import (
+    CoolUserInfo,
+    Department,
+    User,
+    UserCreateRequest,
+    UserInfoItem,
+    UserListItem,
+    UserMoveRequest,
+    UserRoleAssignRequest,
+    UserUpdateRequest,
+)
 from app.modules.base.service.admin_service import UserAdminService
 from app.modules.base.service.auth_service import AuthService
 from app.modules.base.service.security_service import get_current_user
-from app.framework.router.route_meta import Get, Post
 
 
 @CoolController(
@@ -53,7 +53,20 @@ from app.framework.router.route_meta import Get, Post
             keyword_like_fields=("username", "full_name", "email", "phone", "nick_name"),
             field_eq=(QueryFieldConfig("department_id", "departmentIds"), QueryFieldConfig("is_active", "status")),
             field_like=("username", "full_name", "nick_name", "email", "phone"),
-            select=("id", "username", "full_name", "nick_name", "head_img", "email", "phone", "remark", "department_id", "is_active", "created_at", "updated_at"),
+            select=(
+                "id",
+                "username",
+                "full_name",
+                "nick_name",
+                "head_img",
+                "email",
+                "phone",
+                "remark",
+                "department_id",
+                "is_active",
+                "created_at",
+                "updated_at",
+            ),
             order_fields=("created_at", "updated_at", "username"),
             add_order_by=(OrderByConfig("created_at", "desc"),),
         ),
@@ -61,19 +74,27 @@ from app.framework.router.route_meta import Get, Post
             keyword_like_fields=("username", "full_name", "email", "phone", "nick_name"),
             field_eq=(QueryFieldConfig("department_id", "departmentIds"), QueryFieldConfig("is_active", "status")),
             field_like=("username", "full_name", "nick_name", "email", "phone"),
-            select=("id", "username", "full_name", "nick_name", "head_img", "email", "phone", "remark", "department_id", "is_active", "created_at", "updated_at"),
+            select=(
+                "id",
+                "username",
+                "full_name",
+                "nick_name",
+                "head_img",
+                "email",
+                "phone",
+                "remark",
+                "department_id",
+                "is_active",
+                "created_at",
+                "updated_at",
+            ),
             order_fields=("created_at", "updated_at", "username"),
             add_order_by=(OrderByConfig("created_at", "desc"),),
         ),
         soft_delete=True,
         relations=(
-            RelationConfig(
-                model=Department,
-                column="department_id",
-                target_column="name",
-                alias="departmentName"
-            ),
-        )
+            RelationConfig(model=Department, column="department_id", target_column="name", alias="departmentName"),
+        ),
     )
 )
 class BaseUserController(BaseController):

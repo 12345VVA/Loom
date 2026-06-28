@@ -15,7 +15,10 @@
 
 		<template v-else>
 			<div class="captcha-track" ref="trackRef" @pointerdown="onTrackPointerDown">
-				<div class="captcha-target" :style="{ left: `${targetX}px`, width: `${handleWidth}px` }"></div>
+				<div
+					class="captcha-target"
+					:style="{ left: `${targetX}px`, width: `${handleWidth}px` }"
+				></div>
 				<div class="captcha-progress" :style="{ width: `${progressWidth}px` }"></div>
 				<div
 					class="captcha-handle"
@@ -89,7 +92,9 @@ const trackPoints = ref<TrackPoint[]>([]);
 let resetTimer: ReturnType<typeof window.setTimeout> | undefined;
 
 const maxX = computed(() => Math.max(0, trackWidth.value - handleWidth.value));
-const progressWidth = computed(() => Math.min(trackWidth.value, currentX.value + handleWidth.value / 2));
+const progressWidth = computed(() =>
+	Math.min(trackWidth.value, currentX.value + handleWidth.value / 2)
+);
 const displayText = computed(() => {
 	if (status.value == 'success') {
 		return t('验证通过');
@@ -245,7 +250,10 @@ function onTrackPointerDown(e: PointerEvent) {
 		return;
 	}
 
-	currentX.value = Math.max(0, Math.min(maxX.value, e.clientX - rect.left - handleWidth.value / 2));
+	currentX.value = Math.max(
+		0,
+		Math.min(maxX.value, e.clientX - rect.left - handleWidth.value / 2)
+	);
 	beginDrag(e.clientX);
 }
 
@@ -349,12 +357,11 @@ defineExpose({
 		z-index: 1;
 		border: 1px solid rgba(var(--el-color-primary-rgb), 0.24);
 		border-radius: 6px;
-		background:
-			linear-gradient(
-				135deg,
-				rgba(var(--el-color-primary-rgb), 0.04) 0%,
-				rgba(var(--el-color-primary-rgb), 0.14) 100%
-			);
+		background: linear-gradient(
+			135deg,
+			rgba(var(--el-color-primary-rgb), 0.04) 0%,
+			rgba(var(--el-color-primary-rgb), 0.14) 100%
+		);
 		box-shadow:
 			inset 0 0 0 1px rgba(255, 255, 255, 0.72),
 			inset 0 6px 14px rgba(var(--el-color-primary-rgb), 0.08);
@@ -451,12 +458,11 @@ defineExpose({
 	&.is-success {
 		.captcha-target {
 			border-color: rgba(var(--el-color-success-rgb), 0.34);
-			background:
-				linear-gradient(
-					135deg,
-					rgba(var(--el-color-success-rgb), 0.06) 0%,
-					rgba(var(--el-color-success-rgb), 0.16) 100%
-				);
+			background: linear-gradient(
+				135deg,
+				rgba(var(--el-color-success-rgb), 0.06) 0%,
+				rgba(var(--el-color-success-rgb), 0.16) 100%
+			);
 			box-shadow:
 				inset 0 0 0 1px rgba(255, 255, 255, 0.72),
 				inset 0 6px 14px rgba(var(--el-color-success-rgb), 0.1);
@@ -474,12 +480,11 @@ defineExpose({
 	&.is-error {
 		.captcha-target {
 			border-color: rgba(var(--el-color-danger-rgb), 0.34);
-			background:
-				linear-gradient(
-					135deg,
-					rgba(var(--el-color-danger-rgb), 0.04) 0%,
-					rgba(var(--el-color-danger-rgb), 0.14) 100%
-				);
+			background: linear-gradient(
+				135deg,
+				rgba(var(--el-color-danger-rgb), 0.04) 0%,
+				rgba(var(--el-color-danger-rgb), 0.14) 100%
+			);
 			box-shadow:
 				inset 0 0 0 1px rgba(255, 255, 255, 0.72),
 				inset 0 6px 14px rgba(var(--el-color-danger-rgb), 0.08);

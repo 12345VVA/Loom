@@ -1,12 +1,14 @@
 """
 Base 模块健康检查
 """
+
+from sqlalchemy import text
+
 from app.core.config import settings
 from app.core.database import engine
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
 from app.framework.router.route_meta import Get
 from app.modules.base.service.cache_service import get_redis_client
-from sqlalchemy import text
 
 
 @CoolController(

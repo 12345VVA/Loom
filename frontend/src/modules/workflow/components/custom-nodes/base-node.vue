@@ -1,29 +1,54 @@
 <template>
 	<div class="custom-flow-node-wrapper" :class="{ 'node-entering': isEntering }">
-		<div class="custom-flow-node" :class="[meta.colorClass, { 'is-selected': selected, 'is-child': isChild }]" :style="nodeStyle">
+		<div
+			class="custom-flow-node"
+			:class="[meta.colorClass, { 'is-selected': selected, 'is-child': isChild }]"
+			:style="nodeStyle"
+		>
 			<handle v-if="hasTarget" type="target" :position="Position.Left" />
 			<el-icon class="node-icon">
 				<component :is="meta.icon" />
 			</el-icon>
 			<span class="node-label">{{ label }}</span>
 			<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
-			<el-tooltip v-if="incomplete" effect="dark" :content="$t('节点存在未完成的必填配置')" placement="top">
+			<el-tooltip
+				v-if="incomplete"
+				effect="dark"
+				:content="$t('节点存在未完成的必填配置')"
+				placement="top"
+			>
 				<span class="node-incomplete-dot" />
 			</el-tooltip>
 			<div class="node-actions" v-if="canTestNode">
 				<el-tooltip effect="dark" :content="$t('测试节点')" placement="top">
-					<el-icon class="play-btn" @click.stop="handleTestNode"><VideoPlay /></el-icon>
+					<el-icon class="play-btn" @click.stop="handleTestNode"><video-play /></el-icon>
 				</el-tooltip>
 			</div>
 
 			<!-- 默认单输出 Handle -->
-			<handle v-if="hasSource && !customOutputHandles?.length" type="source" :position="Position.Right" />
+			<handle
+				v-if="hasSource && !customOutputHandles?.length"
+				type="source"
+				:position="Position.Right"
+			/>
 
 			<!-- 自定义多输出 Handle（condition / switch 等分支节点） -->
 			<div v-if="customOutputHandles?.length" class="output-handles">
 				<div v-for="h in customOutputHandles" :key="h.id" class="handle-group">
-					<span class="handle-label" :class="h.labelClass" :style="{ top: h.topPercent + '%' }">{{ h.label }}</span>
-					<handle :id="h.id" type="source" :position="Position.Right" :style="{ top: h.topPercent + '%' }" class="custom-handle" :class="h.handleClass" />
+					<span
+						class="handle-label"
+						:class="h.labelClass"
+						:style="{ top: h.topPercent + '%' }"
+						>{{ h.label }}</span
+					>
+					<handle
+						:id="h.id"
+						type="source"
+						:position="Position.Right"
+						:style="{ top: h.topPercent + '%' }"
+						class="custom-handle"
+						:class="h.handleClass"
+					/>
 				</div>
 			</div>
 		</div>
@@ -33,31 +58,50 @@
 			<!-- 头部状态栏 -->
 			<div class="log-header" @click="isLogExpanded = !isLogExpanded">
 				<div class="log-status">
-					<el-icon v-if="runLog.status === 'success'" color="#67c23a"><CircleCheckFilled /></el-icon>
-					<el-icon v-else-if="runLog.status === 'error'" color="#f56c6c"><CircleCloseFilled /></el-icon>
-					<el-icon v-else-if="runLog.status === 'running'" class="is-loading" color="#409eff"><Loading /></el-icon>
-					<el-icon v-else color="#909399"><InfoFilled /></el-icon>
+					<el-icon v-if="runLog.status === 'success'" color="#67c23a"
+						><circle-check-filled
+					/></el-icon>
+					<el-icon v-else-if="runLog.status === 'error'" color="#f56c6c"
+						><circle-close-filled
+					/></el-icon>
+					<el-icon
+						v-else-if="runLog.status === 'running'"
+						class="is-loading"
+						color="#409eff"
+						><loading
+					/></el-icon>
+					<el-icon v-else color="#909399"><info-filled /></el-icon>
 
 					<span class="status-text" v-if="runLog">
 						{{ statusText }}
 					</span>
 					<span v-if="runLog.timeCost" class="time-cost">{{ runLog.timeCost }}ms</span>
 				</div>
-				<el-icon class="expand-icon"><ArrowDown v-if="isLogExpanded" /><ArrowRight v-else /></el-icon>
+				<el-icon class="expand-icon"
+					><arrow-down v-if="isLogExpanded" /><arrow-right v-else
+				/></el-icon>
 			</div>
 
 			<div v-show="isLogExpanded" class="log-body">
 				<div v-if="runLog.inputData" class="log-section">
 					<div class="log-title">
 						<span>{{ $t('输入') }}</span>
-						<el-icon class="copy-btn" @click.stop="copyToClipboard(formatJson(runLog.inputData))"><CopyDocument /></el-icon>
+						<el-icon
+							class="copy-btn"
+							@click.stop="copyToClipboard(formatJson(runLog.inputData))"
+							><copy-document
+						/></el-icon>
 					</div>
 					<div class="log-content" v-html="highlightJson(runLog.inputData)"></div>
 				</div>
 				<div v-if="runLog.outputData" class="log-section">
 					<div class="log-title">
 						<span>{{ $t('输出') }}</span>
-						<el-icon class="copy-btn" @click.stop="copyToClipboard(formatJson(runLog.outputData))"><CopyDocument /></el-icon>
+						<el-icon
+							class="copy-btn"
+							@click.stop="copyToClipboard(formatJson(runLog.outputData))"
+							><copy-document
+						/></el-icon>
 					</div>
 					<div class="log-content" v-html="highlightJson(runLog.outputData)"></div>
 				</div>
@@ -72,7 +116,16 @@
 <script setup lang="ts">
 import { Handle, Position, useNode } from '@vue-flow/core';
 import { computed, ref, onMounted, inject } from 'vue';
-import { CircleCheckFilled, CircleCloseFilled, Loading, InfoFilled, ArrowDown, ArrowRight, CopyDocument, VideoPlay } from '@element-plus/icons-vue';
+import {
+	CircleCheckFilled,
+	CircleCloseFilled,
+	Loading,
+	InfoFilled,
+	ArrowDown,
+	ArrowRight,
+	CopyDocument,
+	VideoPlay
+} from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
 import { formatJson, copyToClipboard } from '../../utils';
 import { getNodeMeta } from '../../utils/node-type-registry';
@@ -98,7 +151,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
 	hasTarget: true,
 	hasSource: true,
-	nodeHeight: 42,
+	nodeHeight: 42
 });
 
 const isEntering = ref(true);
@@ -145,21 +198,24 @@ function highlightJson(data: any): string {
 	const jsonStr = formatJson(data);
 	if (!jsonStr) return '';
 	let html = jsonStr.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-	html = html.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
-		let cls = 'json-number';
-		if (/^"/.test(match)) {
-			if (/:$/.test(match)) {
-				cls = 'json-key';
-			} else {
-				cls = 'json-string';
+	html = html.replace(
+		/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+		function (match) {
+			let cls = 'json-number';
+			if (/^"/.test(match)) {
+				if (/:$/.test(match)) {
+					cls = 'json-key';
+				} else {
+					cls = 'json-string';
+				}
+			} else if (/true|false/.test(match)) {
+				cls = 'json-boolean';
+			} else if (/null/.test(match)) {
+				cls = 'json-null';
 			}
-		} else if (/true|false/.test(match)) {
-			cls = 'json-boolean';
-		} else if (/null/.test(match)) {
-			cls = 'json-null';
+			return '<span class="' + cls + '">' + match + '</span>';
 		}
-		return '<span class="' + cls + '">' + match + '</span>';
-	});
+	);
 	return html;
 }
 </script>
@@ -191,7 +247,9 @@ function highlightJson(data: any): string {
 
 	&.is-selected {
 		border-color: var(--el-color-primary);
-		box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2), 0 4px 12px rgba(64, 158, 255, 0.1);
+		box-shadow:
+			0 0 0 2px rgba(64, 158, 255, 0.2),
+			0 4px 12px rgba(64, 158, 255, 0.1);
 	}
 
 	&.is-child {
@@ -239,7 +297,9 @@ function highlightJson(data: any): string {
 		border: 2px solid #ffffff;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 		border-radius: 50%;
-		transition: background-color 0.2s, transform 0.2s;
+		transition:
+			background-color 0.2s,
+			transform 0.2s;
 
 		&:hover {
 			background-color: #66b1ff;
@@ -344,47 +404,70 @@ function highlightJson(data: any): string {
 
 .node-start {
 	border-left: 4px solid var(--wf-color-start);
-	.node-icon { color: var(--wf-color-start); }
+	.node-icon {
+		color: var(--wf-color-start);
+	}
 }
 .node-llm {
 	border-left: 4px solid var(--wf-color-llm);
-	.node-icon { color: var(--wf-color-llm); }
+	.node-icon {
+		color: var(--wf-color-llm);
+	}
 }
-.node-tool, .node-tool_executor {
+.node-tool,
+.node-tool_executor {
 	border-left: 4px solid var(--wf-color-tool);
-	.node-icon { color: var(--wf-color-tool); }
+	.node-icon {
+		color: var(--wf-color-tool);
+	}
 }
 .node-condition {
 	border-left: 4px solid var(--wf-color-condition);
-	.node-icon { color: var(--wf-color-condition); }
+	.node-icon {
+		color: var(--wf-color-condition);
+	}
 }
 .node-switch {
 	border-left: 4px solid var(--wf-color-switch);
-	.node-icon { color: var(--wf-color-switch); }
+	.node-icon {
+		color: var(--wf-color-switch);
+	}
 }
 .node-human_input {
 	border-left: 4px solid var(--wf-color-human-input);
-	.node-icon { color: var(--wf-color-human-input); }
+	.node-icon {
+		color: var(--wf-color-human-input);
+	}
 }
 .node-intent_classifier {
 	border-left: 4px solid var(--wf-color-intent-classifier);
-	.node-icon { color: var(--wf-color-intent-classifier); }
+	.node-icon {
+		color: var(--wf-color-intent-classifier);
+	}
 }
 .node-loop_controller {
 	border-left: 4px solid var(--wf-color-loop-controller);
-	.node-icon { color: var(--wf-color-loop-controller); }
+	.node-icon {
+		color: var(--wf-color-loop-controller);
+	}
 }
 .node-batch_processor {
 	border-left: 4px solid var(--wf-color-batch-processor);
-	.node-icon { color: var(--wf-color-batch-processor); }
+	.node-icon {
+		color: var(--wf-color-batch-processor);
+	}
 }
 .node-image_generator {
 	border-left: 4px solid var(--wf-color-image-generator);
-	.node-icon { color: var(--wf-color-image-generator); }
+	.node-icon {
+		color: var(--wf-color-image-generator);
+	}
 }
 .node-end {
 	border-left: 4px solid var(--wf-color-end);
-	.node-icon { color: var(--wf-color-end); }
+	.node-icon {
+		color: var(--wf-color-end);
+	}
 }
 
 /*
@@ -401,8 +484,6 @@ function highlightJson(data: any): string {
 	}
 }
 
-
-
 .node-run-log {
 	position: absolute;
 	top: 100%;
@@ -418,9 +499,15 @@ function highlightJson(data: any): string {
 	display: flex;
 	flex-direction: column;
 
-	&.status-success { border-top: 3px solid var(--el-color-success); }
-	&.status-error { border-top: 3px solid var(--el-color-danger); }
-	&.status-running { border-top: 3px solid var(--el-color-primary); }
+	&.status-success {
+		border-top: 3px solid var(--el-color-success);
+	}
+	&.status-error {
+		border-top: 3px solid var(--el-color-danger);
+	}
+	&.status-running {
+		border-top: 3px solid var(--el-color-primary);
+	}
 
 	.log-header {
 		display: flex;
@@ -467,14 +554,24 @@ function highlightJson(data: any): string {
 		overflow-y: auto;
 
 		/* 滚动条美化 */
-		&::-webkit-scrollbar { width: 4px; height: 4px; }
-		&::-webkit-scrollbar-thumb { background: #dcdfe6; border-radius: 2px; }
-		&::-webkit-scrollbar-track { background: transparent; }
+		&::-webkit-scrollbar {
+			width: 4px;
+			height: 4px;
+		}
+		&::-webkit-scrollbar-thumb {
+			background: #dcdfe6;
+			border-radius: 2px;
+		}
+		&::-webkit-scrollbar-track {
+			background: transparent;
+		}
 	}
 
 	.log-section {
 		margin-bottom: 12px;
-		&:last-child { margin-bottom: 0; }
+		&:last-child {
+			margin-bottom: 0;
+		}
 
 		.log-title {
 			display: flex;
@@ -507,11 +604,22 @@ function highlightJson(data: any): string {
 			line-height: 1.4;
 			border: 1px solid var(--el-border-color-lighter);
 
-			:deep(.json-string) { color: #067b14; }
-			:deep(.json-number) { color: #098658; }
-			:deep(.json-boolean) { color: #0000ff; }
-			:deep(.json-null) { color: #0000ff; }
-			:deep(.json-key) { color: #a31515; font-weight: bold; }
+			:deep(.json-string) {
+				color: #067b14;
+			}
+			:deep(.json-number) {
+				color: #098658;
+			}
+			:deep(.json-boolean) {
+				color: #0000ff;
+			}
+			:deep(.json-null) {
+				color: #0000ff;
+			}
+			:deep(.json-key) {
+				color: #a31515;
+				font-weight: bold;
+			}
 		}
 	}
 

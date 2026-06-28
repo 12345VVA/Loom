@@ -1,12 +1,19 @@
 <template>
 	<node-config-section :title="$t('变量赋值')">
 		<template #actions>
-			<el-button type="primary" link size="small" :icon="Plus" @click.stop="addAssignment">{{ $t('添加') }}</el-button>
+			<el-button type="primary" link size="small" :icon="Plus" @click.stop="addAssignment">{{
+				$t('添加')
+			}}</el-button>
 		</template>
 		<div v-for="(item, index) in config.assignments" :key="index" class="assignment-item">
 			<div class="assignment-header">
 				<span>{{ $t('变量') }} {{ Number(index) + 1 }}</span>
-				<el-button type="danger" link :icon="Delete" @click="removeAssignment(Number(index))" />
+				<el-button
+					type="danger"
+					link
+					:icon="Delete"
+					@click="removeAssignment(Number(index))"
+				/>
 			</div>
 			<el-form-item :label="$t('变量名')" class="assignment-field">
 				<el-input v-model="item.variable_name" placeholder="例如: base_url" />
@@ -30,7 +37,7 @@
 			</el-form-item>
 		</div>
 		<div v-if="!config.assignments?.length" class="empty-hint" @click="addAssignment">
-			<el-icon class="empty-icon"><Plus /></el-icon>
+			<el-icon class="empty-icon"><plus /></el-icon>
 			<span>{{ $t('暂无赋值变量，点击添加') }}</span>
 		</div>
 	</node-config-section>

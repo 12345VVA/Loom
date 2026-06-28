@@ -7,7 +7,7 @@
 				class="item"
 				:class="{ 'is-active': item.status }"
 				@click="edit(item)"
-				@contextmenu="(e) => onContextMenu(e, item)"
+				@contextmenu="e => onContextMenu(e, item)"
 			>
 				<div class="header">
 					<p class="name">{{ item.name }}</p>
@@ -29,9 +29,7 @@
 						<span class="label">{{ $t('规则') }}</span>
 						<span class="value">
 							{{
-								item.taskType == 1
-									? $t('每隔{n}s', { n: item._every })
-									: item.cron
+								item.taskType == 1 ? $t('每隔{n}s', { n: item._every }) : item.cron
 							}}
 						</span>
 					</div>
@@ -39,7 +37,10 @@
 
 				<div class="footer">
 					<div class="actions">
-						<el-tooltip :content="item.status ? $t('暂停') : $t('启动')" placement="top">
+						<el-tooltip
+							:content="item.status ? $t('暂停') : $t('启动')"
+							placement="top"
+						>
 							<el-icon
 								v-permission="
 									item.status
@@ -149,9 +150,16 @@ function refresh() {
 // 统一操作处理器
 async function handleAction(item: Eps.TaskInfoEntity, actionName: string, run: () => Promise<any>) {
 	try {
-		await ElMessageBox.confirm(t('此操作将{action}任务（{name}），是否继续？', { action: actionName, name: item.name }), t('提示'), {
-			type: 'warning'
-		});
+		await ElMessageBox.confirm(
+			t('此操作将{action}任务（{name}），是否继续？', {
+				action: actionName,
+				name: item.name
+			}),
+			t('提示'),
+			{
+				type: 'warning'
+			}
+		);
 		await run();
 		ElMessage.success(t('{action}成功', { action: actionName }));
 		refresh();
@@ -432,7 +440,7 @@ function onContextMenu(e: any, item: Eps.TaskInfoEntity) {
 							stop(item);
 							done();
 						}
-				  }
+					}
 				: {
 						label: t('开始'),
 						hidden: !service.task.info._permission.start,
@@ -440,7 +448,7 @@ function onContextMenu(e: any, item: Eps.TaskInfoEntity) {
 							start(item);
 							done();
 						}
-				  },
+					},
 			{
 				label: t('立即执行'),
 				hidden: !service.task.info._permission.once,

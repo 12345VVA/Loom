@@ -1,13 +1,14 @@
 """
 按 scope 拆分的鉴权中间件
 """
+
 from __future__ import annotations
 
 from fastapi import HTTPException
+from sqlmodel import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from sqlmodel import Session
 
 from app.core.database import engine
 from app.framework.api.response import FORBIDDEN_CODE, UNAUTHORIZED_CODE, error
@@ -40,7 +41,13 @@ class ScopeAuthorityMiddleware(BaseHTTPMiddleware):
             with Session(engine) as session:
                 authorize_request(session, request, effective_scope, route_tags, scope_whitelist, matched_route)
         except HTTPException as exc:
-            code = UNAUTHORIZED_CODE if exc.status_code == 401 else FORBIDDEN_CODE if exc.status_code == 403 else exc.status_code
+            code = (
+                UNAUTHORIZED_CODE
+                if exc.status_code == 401
+                else FORBIDDEN_CODE
+                if exc.status_code == 403
+                else exc.status_code
+            )
             return JSONResponse(status_code=exc.status_code, content=error(str(exc.detail), code=code))
 
         return await call_next(request)

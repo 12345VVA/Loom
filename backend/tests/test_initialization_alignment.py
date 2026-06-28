@@ -7,12 +7,10 @@ from pathlib import Path
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.modules.dict.init_db import run as init_dict  # noqa: E402
 from app.modules.dict.model.dict import DictInfo, DictType  # noqa: E402
-
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
@@ -95,20 +93,19 @@ class InitializationAlignmentTests(unittest.TestCase):
             init_dict(session)
             status_dict = session.exec(select(DictType).where(DictType.key == "status")).one()
             values = session.exec(
-                select(DictInfo)
-                .where(DictInfo.type_id == status_dict.id)
-                .order_by(DictInfo.sort_order)
+                select(DictInfo).where(DictInfo.type_id == status_dict.id).order_by(DictInfo.sort_order)
             ).all()
 
-            self.assertEqual([(item.name, item.value, item.sort_order) for item in values], [
-                ("禁用", "0", 0),
-                ("启用", "1", 1),
-            ])
+            self.assertEqual(
+                [(item.name, item.value, item.sort_order) for item in values],
+                [
+                    ("禁用", "0", 0),
+                    ("启用", "1", 1),
+                ],
+            )
 
             init_dict(session)
-            values_after_second_run = session.exec(
-                select(DictInfo).where(DictInfo.type_id == status_dict.id)
-            ).all()
+            values_after_second_run = session.exec(select(DictInfo).where(DictInfo.type_id == status_dict.id)).all()
             self.assertEqual(len(values_after_second_run), 2)
 
 

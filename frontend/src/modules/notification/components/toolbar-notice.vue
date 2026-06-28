@@ -45,12 +45,7 @@
 							<span class="time">{{ item.createTime || item.createdAt }}</span>
 						</div>
 
-						<el-button
-							link
-							size="small"
-							type="info"
-							@click.stop="archive(item)"
-						>
+						<el-button link size="small" type="info" @click.stop="archive(item)">
 							{{ $t('归档') }}
 						</el-button>
 					</div>
@@ -140,7 +135,10 @@ async function refresh() {
 		return;
 	}
 
-	const res = await service.notification.message.mine({ includeArchived: false, readStatus: 'unread' });
+	const res = await service.notification.message.mine({
+		includeArchived: false,
+		readStatus: 'unread'
+	});
 	list.value = (res || []).slice(0, 8);
 	await refreshCount();
 }

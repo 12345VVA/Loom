@@ -1,6 +1,7 @@
 """
 模块运行时中间件桥接
 """
+
 from __future__ import annotations
 
 from starlette.middleware.base import BaseHTTPMiddleware

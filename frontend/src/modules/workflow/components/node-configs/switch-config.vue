@@ -1,29 +1,47 @@
 <template>
 	<node-config-section :title="$t('条件分支')">
 		<el-form-item :label="$t('匹配变量名')" required>
-		<cl-variable-input v-model="config.variable" placeholder="例如: status" />
-		<div class="field-hint">
-			支持输入变量路径（如 variables.status 或 status）来进行值匹配。
-		</div>
-	</el-form-item>
-	<el-form-item :label="$t('Case 分支列表')">
-		<div
-			v-for="(item, index) in (config.cases || [])"
-			:key="index"
-			class="case-item">
-			<div class="case-row">
-				<el-input v-model="item.value" :placeholder="'匹配值 ' + (Number(index) + 1)" size="small" class="case-value-input" />
-				<el-button type="danger" size="small" link :icon="Delete" @click="config.cases.splice(index, 1)">
-					{{ $t('删除') }}
-				</el-button>
+			<cl-variable-input v-model="config.variable" placeholder="例如: status" />
+			<div class="field-hint">
+				支持输入变量路径（如 variables.status 或 status）来进行值匹配。
 			</div>
-		</div>
-		<el-button type="primary" size="small" plain :icon="Plus" style="width: 100%" @click="addCase">
-			{{ $t('添加 Case 分支') }}
-		</el-button>
-	</el-form-item>
-		<node-config-hint style="margin-top: 8px;">
-			<span>添加 Case 后，节点右侧自动生成对应端口。从端口直接连线到目标节点，最后一个是默认路由。</span>
+		</el-form-item>
+		<el-form-item :label="$t('Case 分支列表')">
+			<div v-for="(item, index) in config.cases || []" :key="index" class="case-item">
+				<div class="case-row">
+					<el-input
+						v-model="item.value"
+						:placeholder="'匹配值 ' + (Number(index) + 1)"
+						size="small"
+						class="case-value-input"
+					/>
+					<el-button
+						type="danger"
+						size="small"
+						link
+						:icon="Delete"
+						@click="removeCase(index)"
+					>
+						{{ $t('删除') }}
+					</el-button>
+				</div>
+			</div>
+			<el-button
+				type="primary"
+				size="small"
+				plain
+				:icon="Plus"
+				style="width: 100%"
+				@click="addCase"
+			>
+				{{ $t('添加 Case 分支') }}
+			</el-button>
+		</el-form-item>
+		<node-config-hint style="margin-top: 8px">
+			<span
+				>添加 Case
+				后，节点右侧自动生成对应端口。从端口直接连线到目标节点，最后一个是默认路由。</span
+			>
 		</node-config-hint>
 	</node-config-section>
 </template>
@@ -33,18 +51,42 @@ import { Delete, Plus } from '@element-plus/icons-vue';
 import NodeConfigHint from './node-config-hint.vue';
 import NodeConfigSection from './node-config-section.vue';
 import ClVariableInput from '../cl-variable-input.vue';
+import { useVueFlow } from '@vue-flow/core';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
+	nodeId?: string;
 }>();
 
 const config = props.modelValue;
+const { getEdges, removeEdges } = useVueFlow();
 
 function addCase() {
 	if (!config.cases) {
 		config.cases = [];
 	}
 	config.cases.push({ value: '' });
+}
+
+function removeCase(index: number) {
+	if (props.nodeId) {
+		const edges = getEdges.value;
+		const edgeToRemove = edges.find(
+			(e) => e.source === props.nodeId && e.sourceHandle === `case_${index}`
+		);
+		if (edgeToRemove) {
+			removeEdges([edgeToRemove.id]);
+		}
+		edges.forEach((e) => {
+			if (e.source === props.nodeId && e.sourceHandle && e.sourceHandle.startsWith('case_')) {
+				const idx = parseInt(e.sourceHandle.replace('case_', ''));
+				if (idx > index) {
+					e.sourceHandle = `case_${idx - 1}`;
+				}
+			}
+		});
+	}
+	config.cases.splice(index, 1);
 }
 </script>
 
@@ -72,5 +114,4 @@ function addCase() {
 .case-value-input {
 	flex: 1;
 }
-
 </style>

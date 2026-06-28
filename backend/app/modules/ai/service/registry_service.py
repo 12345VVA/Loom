@@ -1,4 +1,5 @@
 """AI 模型调用配置解析服务。"""
+
 from __future__ import annotations
 
 from fastapi import HTTPException, status
@@ -14,7 +15,9 @@ class AiModelRegistryService:
 
     def resolve(self, *, model_type: str, scenario: str = "default", profile_code: str | None = None) -> dict:
         if profile_code:
-            profile = self.session.exec(select(AiModelProfile).where(AiModelProfile.code == profile_code, AiModelProfile.is_active == True)).first()  # noqa: E712
+            profile = self.session.exec(
+                select(AiModelProfile).where(AiModelProfile.code == profile_code, AiModelProfile.is_active == True)  # noqa: E712
+            ).first()
         else:
             profile = self.session.exec(
                 select(AiModelProfile)
@@ -38,7 +41,12 @@ class AiModelRegistryService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="模型厂商不存在或已禁用")
         if model.model_type != model_type:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="调用配置模型类型不匹配")
-        return {"profile": profile, "model": model, "provider": provider, "options": self._merge_options(model, profile)}
+        return {
+            "profile": profile,
+            "model": model,
+            "provider": provider,
+            "options": self._merge_options(model, profile),
+        }
 
     def _merge_options(self, model: AiModel, profile: AiModelProfile) -> dict:
         options = _loads(model.default_config)

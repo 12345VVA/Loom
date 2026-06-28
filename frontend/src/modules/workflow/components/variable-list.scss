@@ -4,7 +4,7 @@
 }
 .var-group {
 	margin-bottom: 10px;
-	
+
 	&:last-child {
 		margin-bottom: 0;
 	}
@@ -25,16 +25,16 @@
 	border-radius: 4px;
 	transition: background-color 0.2s;
 	font-size: 12px;
-	
+
 	&:hover {
 		background-color: var(--el-fill-color-light);
 		color: var(--el-color-primary);
 	}
-	
+
 	span {
 		font-family: monospace;
 	}
-	
+
 	small {
 		color: var(--el-text-color-placeholder);
 		font-size: 10px;

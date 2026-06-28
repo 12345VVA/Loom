@@ -1,13 +1,21 @@
 """
 AI 厂商管理接口。
 """
+
 from fastapi import Depends
 from sqlmodel import Session
 
 from app.core.database import get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
 from app.framework.router.route_meta import Post
-from app.modules.ai.model.ai import AiCatalogImportRequest, AiProviderCreateRequest, AiProviderRead, AiProviderSyncModelsRequest, AiProviderTestRequest, AiProviderUpdateRequest
+from app.modules.ai.model.ai import (
+    AiCatalogImportRequest,
+    AiProviderCreateRequest,
+    AiProviderRead,
+    AiProviderSyncModelsRequest,
+    AiProviderTestRequest,
+    AiProviderUpdateRequest,
+)
 from app.modules.ai.service.provider_service import AiProviderService
 from app.modules.base.model.auth import User
 from app.modules.base.service.security_service import get_current_user

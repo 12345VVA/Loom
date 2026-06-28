@@ -275,10 +275,13 @@ function open() {
 				}
 
 				if (props.onSubmit) {
-					props.onSubmit({
-						...upload,
-						..._
-					}, { done, close });
+					props.onSubmit(
+						{
+							...upload,
+							..._
+						},
+						{ done, close }
+					);
 				} else {
 					ElMessage.error(t('[cl-import-btn] onSubmit is required'));
 					done();

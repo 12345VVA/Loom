@@ -1,17 +1,18 @@
 """
 AI 模型管理实体与 DTO。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field as PydanticField, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import Field as PydanticField
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
 from app.framework.models.entity import BaseEntity
-
 
 AI_ADAPTERS = {
     "openai-compatible",
@@ -41,10 +42,10 @@ class AiProvider(BaseEntity, table=True):
     code: str = Field(index=True, unique=True, max_length=100)
     name: str = Field(index=True, max_length=100)
     adapter: str = Field(default="openai-compatible", index=True, max_length=50)
-    base_url: Optional[str] = Field(default=None, max_length=500)
-    api_key_cipher: Optional[str] = None
-    api_key_mask: Optional[str] = Field(default=None, max_length=100)
-    extra_config: Optional[str] = None
+    base_url: str | None = Field(default=None, max_length=500)
+    api_key_cipher: str | None = None
+    api_key_mask: str | None = Field(default=None, max_length=100)
+    extra_config: str | None = None
     is_active: bool = Field(default=True, index=True)
     sort_order: int = Field(default=0, index=True)
 
@@ -56,11 +57,11 @@ class AiModel(BaseEntity, table=True):
     code: str = Field(index=True, max_length=150)
     name: str = Field(index=True, max_length=150)
     model_type: str = Field(default="chat", index=True, max_length=50)
-    capabilities: Optional[str] = None
-    context_window: Optional[int] = None
-    max_output_tokens: Optional[int] = None
-    pricing_config: Optional[str] = None
-    default_config: Optional[str] = None
+    capabilities: str | None = None
+    context_window: int | None = None
+    max_output_tokens: int | None = None
+    pricing_config: str | None = None
+    default_config: str | None = None
     is_active: bool = Field(default=True, index=True)
     sort_order: int = Field(default=0, index=True)
 
@@ -72,15 +73,15 @@ class AiModelProfile(BaseEntity, table=True):
     name: str = Field(index=True, max_length=100)
     model_id: int = Field(index=True)
     scenario: str = Field(default="default", index=True, max_length=100)
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    max_tokens: Optional[int] = None
-    response_format: Optional[str] = None
-    tools_config: Optional[str] = None
-    timeout: Optional[int] = None
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    response_format: str | None = None
+    tools_config: str | None = None
+    timeout: int | None = None
     retry_count: int = Field(default=0)
     retry_delay_seconds: int = Field(default=0)
-    fallback_profile_id: Optional[int] = Field(default=None, index=True)
+    fallback_profile_id: int | None = Field(default=None, index=True)
     is_default: bool = Field(default=False, index=True)
     is_active: bool = Field(default=True, index=True)
     sort_order: int = Field(default=0, index=True)
@@ -89,11 +90,11 @@ class AiModelProfile(BaseEntity, table=True):
 class AiModelCallLog(BaseEntity, table=True):
     __tablename__ = "ai_model_call_log"
 
-    provider_id: Optional[int] = Field(default=None, index=True)
-    model_id: Optional[int] = Field(default=None, index=True)
-    profile_id: Optional[int] = Field(default=None, index=True)
-    user_id: Optional[int] = Field(default=None, index=True)
-    scenario: Optional[str] = Field(default=None, index=True, max_length=100)
+    provider_id: int | None = Field(default=None, index=True)
+    model_id: int | None = Field(default=None, index=True)
+    profile_id: int | None = Field(default=None, index=True)
+    user_id: int | None = Field(default=None, index=True)
+    scenario: str | None = Field(default=None, index=True, max_length=100)
     model_type: str = Field(default="chat", index=True, max_length=50)
     status: str = Field(default="success", index=True, max_length=50)
     latency_ms: int = Field(default=0)
@@ -102,8 +103,8 @@ class AiModelCallLog(BaseEntity, table=True):
     total_tokens: int = Field(default=0)
     cost_micro_usd: int = Field(default=0)
     currency: str = Field(default="USD", max_length=20)
-    error_message: Optional[str] = Field(default=None, max_length=500)
-    request_id: Optional[str] = Field(default=None, index=True, max_length=100)
+    error_message: str | None = Field(default=None, max_length=500)
+    request_id: str | None = Field(default=None, index=True, max_length=100)
 
 
 class AiGenerationTask(BaseEntity, table=True):
@@ -111,16 +112,16 @@ class AiGenerationTask(BaseEntity, table=True):
 
     task_type: str = Field(default="chat", index=True, max_length=50)
     scenario: str = Field(default="default", index=True, max_length=100)
-    profile_code: Optional[str] = Field(default=None, index=True, max_length=100)
+    profile_code: str | None = Field(default=None, index=True, max_length=100)
     status: str = Field(default="pending", index=True, max_length=50)
     progress: int = Field(default=0)
-    request_payload: Optional[str] = None
-    result_payload: Optional[str] = None
-    error_message: Optional[str] = Field(default=None, max_length=1000)
-    celery_task_id: Optional[str] = Field(default=None, index=True, max_length=100)
-    created_by: Optional[int] = Field(default=None, index=True)
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    request_payload: str | None = None
+    result_payload: str | None = None
+    error_message: str | None = Field(default=None, max_length=1000)
+    celery_task_id: str | None = Field(default=None, index=True, max_length=100)
+    created_by: int | None = Field(default=None, index=True)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
     retry_count: int = Field(default=0)
 
 
@@ -130,13 +131,13 @@ class AiGovernanceRule(BaseEntity, table=True):
     code: str = Field(index=True, unique=True, max_length=100)
     name: str = Field(index=True, max_length=100)
     scope_type: str = Field(default="global", index=True, max_length=50)
-    user_id: Optional[int] = Field(default=None, index=True)
-    profile_id: Optional[int] = Field(default=None, index=True)
+    user_id: int | None = Field(default=None, index=True)
+    profile_id: int | None = Field(default=None, index=True)
     period: str = Field(default="day", index=True, max_length=50)
-    max_requests: Optional[int] = None
-    max_tokens: Optional[int] = None
-    max_cost_micro_usd: Optional[int] = None
-    max_concurrent: Optional[int] = None
+    max_requests: int | None = None
+    max_tokens: int | None = None
+    max_cost_micro_usd: int | None = None
+    max_concurrent: int | None = None
     mode: str = Field(default="enforce", index=True, max_length=50)
     notify_enabled: bool = Field(default=True, index=True)
     is_active: bool = Field(default=True, index=True)
@@ -146,18 +147,18 @@ class AiGovernanceRule(BaseEntity, table=True):
 class AiGovernanceEvent(BaseEntity, table=True):
     __tablename__ = "ai_governance_event"
 
-    rule_id: Optional[int] = Field(default=None, index=True)
-    user_id: Optional[int] = Field(default=None, index=True)
-    profile_id: Optional[int] = Field(default=None, index=True)
-    model_id: Optional[int] = Field(default=None, index=True)
-    provider_id: Optional[int] = Field(default=None, index=True)
+    rule_id: int | None = Field(default=None, index=True)
+    user_id: int | None = Field(default=None, index=True)
+    profile_id: int | None = Field(default=None, index=True)
+    model_id: int | None = Field(default=None, index=True)
+    provider_id: int | None = Field(default=None, index=True)
     event_type: str = Field(default="allowed", index=True, max_length=50)
     metric: str = Field(default="request", index=True, max_length=50)
     current_value: int = Field(default=0)
     limit_value: int = Field(default=0)
-    window_start: Optional[datetime] = Field(default=None, index=True)
-    window_end: Optional[datetime] = Field(default=None, index=True)
-    message: Optional[str] = Field(default=None, max_length=1000)
+    window_start: datetime | None = Field(default=None, index=True)
+    window_end: datetime | None = Field(default=None, index=True)
+    message: str | None = Field(default=None, max_length=1000)
     notified: bool = Field(default=False, index=True)
 
 
@@ -165,28 +166,28 @@ class AiRuntimeInvocation(BaseEntity, table=True):
     __tablename__ = "ai_runtime_invocation"
 
     invocation_id: str = Field(index=True, unique=True, max_length=100)
-    user_id: Optional[int] = Field(default=None, index=True)
-    profile_id: Optional[int] = Field(default=None, index=True)
-    model_id: Optional[int] = Field(default=None, index=True)
-    provider_id: Optional[int] = Field(default=None, index=True)
+    user_id: int | None = Field(default=None, index=True)
+    profile_id: int | None = Field(default=None, index=True)
+    model_id: int | None = Field(default=None, index=True)
+    provider_id: int | None = Field(default=None, index=True)
     status: str = Field(default="running", index=True, max_length=50)
     started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
-    finished_at: Optional[datetime] = Field(default=None, index=True)
+    finished_at: datetime | None = Field(default=None, index=True)
 
 
 class AiModelCallLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    provider_id: Optional[int] = None
-    provider_name: Optional[str] = None
-    model_id: Optional[int] = None
-    model_name: Optional[str] = None
-    profile_id: Optional[int] = None
-    profile_name: Optional[str] = None
-    user_id: Optional[int] = None
-    username: Optional[str] = None
-    scenario: Optional[str] = None
+    provider_id: int | None = None
+    provider_name: str | None = None
+    model_id: int | None = None
+    model_name: str | None = None
+    profile_id: int | None = None
+    profile_name: str | None = None
+    user_id: int | None = None
+    username: str | None = None
+    scenario: str | None = None
     model_type: str
     status: str
     latency_ms: int = 0
@@ -196,8 +197,8 @@ class AiModelCallLogRead(BaseModel):
     cost_micro_usd: int = 0
     cost_usd: float = 0
     currency: str = "USD"
-    error_message: Optional[str] = None
-    request_id: Optional[str] = None
+    error_message: str | None = None
+    request_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -209,10 +210,10 @@ class AiProviderRead(BaseModel):
     code: str
     name: str
     adapter: str
-    base_url: Optional[str] = None
-    api_key_mask: Optional[str] = None
+    base_url: str | None = None
+    api_key_mask: str | None = None
     has_api_key: bool = False
-    extra_config: Optional[str] = None
+    extra_config: str | None = None
     is_active: bool
     sort_order: int = 0
     created_at: datetime
@@ -225,9 +226,9 @@ class AiProviderCreateRequest(BaseModel):
     code: str
     name: str
     adapter: str = "openai-compatible"
-    base_url: Optional[str] = None
-    api_key: Optional[str] = None
-    extra_config: Optional[str] = None
+    base_url: str | None = None
+    api_key: str | None = None
+    extra_config: str | None = None
     is_active: bool = True
     sort_order: int = 0
 
@@ -267,15 +268,15 @@ class AiModelRead(BaseModel):
 
     id: int
     provider_id: int
-    provider_name: Optional[str] = None
+    provider_name: str | None = None
     code: str
     name: str
     model_type: str
-    capabilities: Optional[str] = None
-    context_window: Optional[int] = None
-    max_output_tokens: Optional[int] = None
-    pricing_config: Optional[str] = None
-    default_config: Optional[str] = None
+    capabilities: str | None = None
+    context_window: int | None = None
+    max_output_tokens: int | None = None
+    pricing_config: str | None = None
+    default_config: str | None = None
     is_active: bool
     sort_order: int = 0
     created_at: datetime
@@ -289,11 +290,11 @@ class AiModelCreateRequest(BaseModel):
     code: str
     name: str
     model_type: str = "chat"
-    capabilities: Optional[str] = None
-    context_window: Optional[int] = None
-    max_output_tokens: Optional[int] = None
-    pricing_config: Optional[str] = None
-    default_config: Optional[str] = None
+    capabilities: str | None = None
+    context_window: int | None = None
+    max_output_tokens: int | None = None
+    pricing_config: str | None = None
+    default_config: str | None = None
     is_active: bool = True
     sort_order: int = 0
 
@@ -316,24 +317,24 @@ class AiModelProfileRead(BaseModel):
     code: str
     name: str
     model_id: int
-    model_name: Optional[str] = None
-    model_type: Optional[str] = None
-    model_code: Optional[str] = None
-    model_capabilities: Optional[str] = None
-    provider_name: Optional[str] = None
-    provider_code: Optional[str] = None
-    provider_adapter: Optional[str] = None
-    model_default_config: Optional[str] = None
+    model_name: str | None = None
+    model_type: str | None = None
+    model_code: str | None = None
+    model_capabilities: str | None = None
+    provider_name: str | None = None
+    provider_code: str | None = None
+    provider_adapter: str | None = None
+    model_default_config: str | None = None
     scenario: str
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    max_tokens: Optional[int] = None
-    response_format: Optional[str] = None
-    tools_config: Optional[str] = None
-    timeout: Optional[int] = None
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    response_format: str | None = None
+    tools_config: str | None = None
+    timeout: int | None = None
     retry_count: int = 0
     retry_delay_seconds: int = 0
-    fallback_profile_id: Optional[int] = None
+    fallback_profile_id: int | None = None
     is_default: bool
     is_active: bool
     sort_order: int = 0
@@ -348,15 +349,15 @@ class AiModelProfileCreateRequest(BaseModel):
     name: str
     model_id: int
     scenario: str = "default"
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    max_tokens: Optional[int] = None
-    response_format: Optional[str] = None
-    tools_config: Optional[str] = None
-    timeout: Optional[int] = None
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    response_format: str | None = None
+    tools_config: str | None = None
+    timeout: int | None = None
     retry_count: int = 0
     retry_delay_seconds: int = 0
-    fallback_profile_id: Optional[int] = None
+    fallback_profile_id: int | None = None
     is_default: bool = False
     is_active: bool = True
     sort_order: int = 0
@@ -390,7 +391,7 @@ class AiResponseJsonSchema(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     schema_: dict[str, Any] = PydanticField(alias="schema")
     strict: bool = True
 
@@ -399,17 +400,17 @@ class AiResponseFormatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     type: str = "text"
-    json_schema: Optional[AiResponseJsonSchema | dict[str, Any]] = None
+    json_schema: AiResponseJsonSchema | dict[str, Any] | None = None
 
 
 class AiChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     scenario: str = "default"
-    profile_code: Optional[str] = None
+    profile_code: str | None = None
     messages: list[AiRuntimeMessage]
     options: dict[str, Any] = PydanticField(default_factory=dict)
-    response_format: Optional[AiResponseFormatRequest | dict[str, Any]] = None
+    response_format: AiResponseFormatRequest | dict[str, Any] | None = None
     skip_masking: bool = False
 
 
@@ -417,7 +418,7 @@ class AiEmbeddingRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     scenario: str = "default"
-    profile_code: Optional[str] = None
+    profile_code: str | None = None
     input: str | list[str]
     options: dict[str, Any] = PydanticField(default_factory=dict)
 
@@ -426,9 +427,9 @@ class AiImageRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     scenario: str = "default"
-    profile_code: Optional[str] = None
+    profile_code: str | None = None
     prompt: str
-    image: Optional[Union[str, list[str]]] = None
+    image: str | list[str] | None = None
     options: dict[str, Any] = PydanticField(default_factory=dict)
 
 
@@ -436,7 +437,7 @@ class AiRerankRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     scenario: str = "default"
-    profile_code: Optional[str] = None
+    profile_code: str | None = None
     query: str
     documents: list[str]
     options: dict[str, Any] = PydanticField(default_factory=dict)
@@ -446,7 +447,7 @@ class AiAudioRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     scenario: str = "default"
-    profile_code: Optional[str] = None
+    profile_code: str | None = None
     input: str
     options: dict[str, Any] = PydanticField(default_factory=dict)
 
@@ -455,7 +456,7 @@ class AiVideoRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     scenario: str = "default"
-    profile_code: Optional[str] = None
+    profile_code: str | None = None
     prompt: str
     options: dict[str, Any] = PydanticField(default_factory=dict)
 
@@ -466,16 +467,16 @@ class AiGenerationTaskRead(BaseModel):
     id: int
     task_type: str
     scenario: str
-    profile_code: Optional[str] = None
+    profile_code: str | None = None
     status: str
     progress: int = 0
-    request_payload: Optional[str] = None
-    result_payload: Optional[str] = None
-    error_message: Optional[str] = None
-    celery_task_id: Optional[str] = None
-    created_by: Optional[int] = None
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    request_payload: str | None = None
+    result_payload: str | None = None
+    error_message: str | None = None
+    celery_task_id: str | None = None
+    created_by: int | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
     retry_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -486,7 +487,7 @@ class AiTaskSubmitRequest(BaseModel):
 
     task_type: str = "chat"
     scenario: str = "default"
-    profile_code: Optional[str] = None
+    profile_code: str | None = None
     payload: dict[str, Any]
 
 
@@ -510,15 +511,15 @@ class AiGovernanceRuleRead(BaseModel):
     code: str
     name: str
     scope_type: str
-    user_id: Optional[int] = None
-    username: Optional[str] = None
-    profile_id: Optional[int] = None
-    profile_name: Optional[str] = None
+    user_id: int | None = None
+    username: str | None = None
+    profile_id: int | None = None
+    profile_name: str | None = None
     period: str
-    max_requests: Optional[int] = None
-    max_tokens: Optional[int] = None
-    max_cost_micro_usd: Optional[int] = None
-    max_concurrent: Optional[int] = None
+    max_requests: int | None = None
+    max_tokens: int | None = None
+    max_cost_micro_usd: int | None = None
+    max_concurrent: int | None = None
     mode: str
     notify_enabled: bool
     is_active: bool
@@ -533,13 +534,13 @@ class AiGovernanceRuleCreateRequest(BaseModel):
     code: str
     name: str
     scope_type: str = "global"
-    user_id: Optional[int] = None
-    profile_id: Optional[int] = None
+    user_id: int | None = None
+    profile_id: int | None = None
     period: str = "day"
-    max_requests: Optional[int] = None
-    max_tokens: Optional[int] = None
-    max_cost_micro_usd: Optional[int] = None
-    max_concurrent: Optional[int] = None
+    max_requests: int | None = None
+    max_tokens: int | None = None
+    max_cost_micro_usd: int | None = None
+    max_concurrent: int | None = None
     mode: str = "enforce"
     notify_enabled: bool = True
     is_active: bool = True
@@ -580,31 +581,31 @@ class AiGovernanceRuleActionRequest(BaseModel):
 class AiGovernanceRuleMatchRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    user_id: Optional[int] = None
-    profile_id: Optional[int] = None
+    user_id: int | None = None
+    profile_id: int | None = None
 
 
 class AiGovernanceEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    rule_id: Optional[int] = None
-    rule_name: Optional[str] = None
-    user_id: Optional[int] = None
-    username: Optional[str] = None
-    profile_id: Optional[int] = None
-    profile_name: Optional[str] = None
-    model_id: Optional[int] = None
-    model_name: Optional[str] = None
-    provider_id: Optional[int] = None
-    provider_name: Optional[str] = None
+    rule_id: int | None = None
+    rule_name: str | None = None
+    user_id: int | None = None
+    username: str | None = None
+    profile_id: int | None = None
+    profile_name: str | None = None
+    model_id: int | None = None
+    model_name: str | None = None
+    provider_id: int | None = None
+    provider_name: str | None = None
     event_type: str
     metric: str
     current_value: int = 0
     limit_value: int = 0
-    window_start: Optional[datetime] = None
-    window_end: Optional[datetime] = None
-    message: Optional[str] = None
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    message: str | None = None
     notified: bool = False
     created_at: datetime
     updated_at: datetime

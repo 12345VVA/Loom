@@ -1,6 +1,7 @@
 """
 轻量级请求指标。
 """
+
 from __future__ import annotations
 
 import threading
@@ -51,9 +52,7 @@ def render_metrics() -> str:
     ]
     with _lock:
         for (method, path, status_code), value in sorted(_requests.items()):
-            lines.append(
-                f'loom_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {value}'
-            )
+            lines.append(f'loom_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {value}')
         lines.extend(
             [
                 "# HELP loom_http_request_duration_seconds_avg Average HTTP request duration.",

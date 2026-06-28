@@ -1,15 +1,18 @@
 """
 Base 模块认证与权限相关模型
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field as PydanticField, field_validator, field_serializer
-from sqlmodel import Field, SQLModel
-from app.framework.models.entity import BaseEntity
+from pydantic import AliasChoices, BaseModel, ConfigDict, field_serializer, field_validator
+from pydantic import Field as PydanticField
+from sqlmodel import Field
+
 from app.framework.api.naming import resolve_alias
+from app.framework.models.entity import BaseEntity
 
 
 class Department(BaseEntity, table=True):
@@ -18,7 +21,7 @@ class Department(BaseEntity, table=True):
     __tablename__ = "sys_department"
 
     name: str = Field(index=True, unique=True)
-    parent_id: Optional[int] = Field(default=None)
+    parent_id: int | None = Field(default=None)
     sort_order: int = Field(default=0)
     is_active: bool = Field(default=True)
 
@@ -31,7 +34,7 @@ class Role(BaseEntity, table=True):
     name: str = Field(index=True, unique=True)
     code: str = Field(index=True, unique=True)
     label: str = Field(index=True, unique=True)
-    remark: Optional[str] = None
+    remark: str | None = None
     data_scope: str = Field(default="self")
     is_active: bool = Field(default=True)
 
@@ -41,16 +44,16 @@ class Menu(BaseEntity, table=True):
 
     __tablename__ = "sys_menu"
 
-    parent_id: Optional[int] = Field(default=None)
+    parent_id: int | None = Field(default=None)
     name: str
     code: str = Field(index=True, unique=True)
     type: str = Field(default="button")
-    path: Optional[str] = None
-    component: Optional[str] = None
-    icon: Optional[str] = None
+    path: str | None = None
+    component: str | None = None
+    icon: str | None = None
     keep_alive: bool = Field(default=True)
     is_show: bool = Field(default=True)
-    permission: Optional[str] = Field(default=None, index=True)
+    permission: str | None = Field(default=None, index=True)
     sort_order: int = Field(default=0)
     is_active: bool = Field(default=True)
 
@@ -62,20 +65,20 @@ class User(BaseEntity, table=True):
 
     username: str = Field(index=True, unique=True)
     full_name: str
-    nick_name: Optional[str] = None
-    head_img: Optional[str] = None
-    email: Optional[str] = Field(default=None, index=True, unique=True)
-    phone: Optional[str] = None
-    remark: Optional[str] = None
+    nick_name: str | None = None
+    head_img: str | None = None
+    email: str | None = Field(default=None, index=True, unique=True)
+    phone: str | None = None
+    remark: str | None = None
     password_hash: str
     password_version: int = Field(default=1)
-    password_changed_at: Optional[datetime] = Field(default=None)  # 密码最后修改时间
-    department_id: Optional[int] = Field(default=None)
+    password_changed_at: datetime | None = Field(default=None)  # 密码最后修改时间
+    department_id: int | None = Field(default=None)
     is_super_admin: bool = Field(default=False)
     is_manager: bool = Field(default=False)
     is_department_leader: bool = Field(default=False)
     is_active: bool = Field(default=True)
-    last_login_at: Optional[datetime] = None
+    last_login_at: datetime | None = None
 
 
 class UserRoleLink(BaseEntity, table=True):
@@ -112,8 +115,8 @@ class LoginRequest(BaseModel):
 
     username: str
     password: str
-    captcha_id: Optional[str] = None
-    verify_code: Optional[str] = None
+    captcha_id: str | None = None
+    verify_code: str | None = None
 
     @field_validator("username", "password", mode="before")
     @classmethod
@@ -129,7 +132,7 @@ class RefreshTokenRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    refresh_token: Optional[str] = None
+    refresh_token: str | None = None
 
     @property
     def token_value(self) -> str | None:
@@ -144,23 +147,23 @@ class UserPersonRead(BaseModel):
     id: int
     created_at: datetime
     updated_at: datetime
-    department_id: Optional[int] = None
+    department_id: int | None = None
     full_name: str
     username: str
     password_version: int = 1
-    nick_name: Optional[str] = None
-    head_img: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    remark: Optional[str] = None
+    nick_name: str | None = None
+    head_img: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    remark: str | None = None
     is_active: bool = True
     is_super_admin: int = 0
     is_manager: int = 0
     is_department_leader: int = 0
     sort_order: int = 0
-    open_id: Optional[str] = None
-    union_id: Optional[str] = None
-    socket_id: Optional[str] = None
+    open_id: str | None = None
+    union_id: str | None = None
+    socket_id: str | None = None
 
     @field_serializer("is_active")
     def serialize_status(self, v: bool) -> int:
@@ -172,17 +175,17 @@ class UserPersonUpdateRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    nick_name: Optional[str] = None
-    head_img: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    remark: Optional[str] = None
-    password: Optional[str] = None
-    old_password: Optional[str] = None
+    nick_name: str | None = None
+    head_img: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    remark: str | None = None
+    password: str | None = None
+    old_password: str | None = None
 
     @field_validator("password", "old_password", mode="before")
     @classmethod
-    def strip_passwords(cls, v: Optional[str]) -> Optional[str]:
+    def strip_passwords(cls, v: str | None) -> str | None:
         """去除密码的前后空格"""
         if isinstance(v, str):
             return v.strip()
@@ -195,7 +198,7 @@ class UserProfile(BaseModel):
     id: int
     username: str
     full_name: str
-    department_id: Optional[int]
+    department_id: int | None
     is_super_admin: bool
     is_manager: bool
     is_department_leader: bool
@@ -210,8 +213,8 @@ class CoolUserInfo(BaseModel):
 
     user_id: int
     username: str
-    nick_name: Optional[str] = None
-    department_id: Optional[int]
+    nick_name: str | None = None
+    department_id: int | None
     role_codes: list[str]
     permission: list[str]
     is_super_admin: bool
@@ -244,15 +247,15 @@ class UserListItem(BaseModel):
     id: int
     username: str
     full_name: str
-    nick_name: Optional[str] = None
-    head_img: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    remark: Optional[str] = None
-    department_id: Optional[int] = None
-    department_name: Optional[str] = None
+    nick_name: str | None = None
+    head_img: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    remark: str | None = None
+    department_id: int | None = None
+    department_name: str | None = None
     role_ids: list[int] = PydanticField(default_factory=list)
-    role_name: Optional[str] = None
+    role_name: str | None = None
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
@@ -263,7 +266,7 @@ class UserListItem(BaseModel):
 
 
 class UserInfoItem(UserListItem):
-    password_version: Optional[int] = PydanticField(default=None)
+    password_version: int | None = PydanticField(default=None)
 
 
 class UserCreateRequest(BaseModel):
@@ -275,11 +278,11 @@ class UserCreateRequest(BaseModel):
     full_name: str
     nick_name: str = ""
     password: str
-    head_img: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    remark: Optional[str] = None
-    department_id: Optional[int] = None
+    head_img: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    remark: str | None = None
+    department_id: int | None = None
     role_ids: list[int] = PydanticField(default_factory=list)
     is_active: bool = True
 
@@ -307,18 +310,18 @@ class UserUpdateRequest(BaseModel):
     id: int
     full_name: str
     nick_name: str = ""
-    head_img: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    remark: Optional[str] = None
-    department_id: Optional[int] = None
+    head_img: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    remark: str | None = None
+    department_id: int | None = None
     role_ids: list[int] = PydanticField(default_factory=list)
     is_active: bool = True
-    password: Optional[str] = None
+    password: str | None = None
 
     @field_validator("password", mode="before")
     @classmethod
-    def strip_password(cls, v: Optional[str]) -> Optional[str]:
+    def strip_password(cls, v: str | None) -> str | None:
         """去除密码的前后空格"""
         if isinstance(v, str):
             return v.strip()
@@ -336,14 +339,14 @@ class UserRoleAssignRequest(BaseModel):
     """用户角色分配请求"""
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
-    
+
     user_id: int
     role_ids: list[int] = PydanticField(default_factory=list)
 
 
 class UserMoveRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
-    
+
     department_id: int
     user_ids: list[int] = PydanticField(default_factory=list)
 
@@ -357,7 +360,7 @@ class RoleRead(BaseModel):
     name: str
     label: str
     code: str
-    remark: Optional[str] = None
+    remark: str | None = None
     is_active: bool = True
     relevance: int = 1
     menu_ids: list[int] = PydanticField(default_factory=list)
@@ -377,8 +380,8 @@ class RoleCreateRequest(BaseModel):
 
     name: str
     label: str
-    code: Optional[str] = None
-    remark: Optional[str] = None
+    code: str | None = None
+    remark: str | None = None
     is_active: bool = True
     relevance: int = 1
     menu_ids: list[int] = PydanticField(default_factory=list)
@@ -400,8 +403,8 @@ class RoleUpdateRequest(BaseModel):
     id: int
     name: str
     label: str
-    code: Optional[str] = None
-    remark: Optional[str] = None
+    code: str | None = None
+    remark: str | None = None
     is_active: bool = True
     relevance: int = 1
     menu_ids: list[int] = PydanticField(default_factory=list)
@@ -428,17 +431,17 @@ class MenuRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    parent_id: Optional[int] = None
-    parent_name: Optional[str] = None
+    parent_id: int | None = None
+    parent_name: str | None = None
     name: str
     code: str
     type: int
-    path: Optional[str] = None
-    component: Optional[str] = None
-    icon: Optional[str] = None
+    path: str | None = None
+    component: str | None = None
+    icon: str | None = None
     keep_alive: bool = True
     is_show: bool = True
-    permission: Optional[str] = None
+    permission: str | None = None
     sort_order: int
     is_active: bool = True
     created_at: datetime
@@ -453,7 +456,7 @@ class MenuRead(BaseModel):
             return 1
         if v in (2, "2", "button"):
             return 2
-        return v # 让 pydantic 自己报 int 转换错误，如果不匹配以上
+        return v  # 让 pydantic 自己报 int 转换错误，如果不匹配以上
 
     @field_serializer("is_active")
     def serialize_status(self, v: bool) -> int:
@@ -465,16 +468,16 @@ class MenuCreateRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    parent_id: Optional[int] = None
+    parent_id: int | None = None
     name: str
-    code: Optional[str] = None
+    code: str | None = None
     type: int | str = 2
-    path: Optional[str] = None
-    component: Optional[str] = None
-    icon: Optional[str] = None
+    path: str | None = None
+    component: str | None = None
+    icon: str | None = None
     keep_alive: bool = True
     is_show: bool = True
-    permission: Optional[str] = None
+    permission: str | None = None
     sort_order: int = 0
     is_active: bool = True
 
@@ -492,16 +495,16 @@ class MenuUpdateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    parent_id: Optional[int] = None
+    parent_id: int | None = None
     name: str
-    code: Optional[str] = None
+    code: str | None = None
     type: int | str = 2
-    path: Optional[str] = None
-    component: Optional[str] = None
-    icon: Optional[str] = None
+    path: str | None = None
+    component: str | None = None
+    icon: str | None = None
     keep_alive: bool = True
     is_show: bool = True
-    permission: Optional[str] = None
+    permission: str | None = None
     sort_order: int = 0
     is_active: bool = True
 
@@ -516,16 +519,16 @@ class MenuUpdateRequest(BaseModel):
 class MenuTreeItem(MenuRead):
     """菜单树节点"""
 
-    children: list["MenuTreeItem"] = PydanticField(default_factory=list)
+    children: list[MenuTreeItem] = PydanticField(default_factory=list)
 
 
 class DepartmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    parent_id: Optional[int] = None
+    parent_id: int | None = None
     name: str
-    parent_name: Optional[str] = None
+    parent_name: str | None = None
     sort_order: int
     is_active: bool = True
     created_at: datetime
@@ -538,8 +541,8 @@ class DepartmentRead(BaseModel):
 
 class DepartmentCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
-    
-    parent_id: Optional[int] = None
+
+    parent_id: int | None = None
     name: str
     sort_order: int = 0
 
@@ -552,7 +555,7 @@ class DepartmentOrderItem(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    parent_id: Optional[int] = None
+    parent_id: int | None = None
     sort_order: int = 0
 
 
@@ -569,18 +572,18 @@ class MenuExportRequest(DeleteRequest):
 class MenuImportNode(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    id: Optional[int] = None
-    parent_id: Optional[int] = None
+    id: int | None = None
+    parent_id: int | None = None
     name: str
-    path: Optional[str] = None
-    component: Optional[str] = None
-    permission: Optional[str] = None
+    path: str | None = None
+    component: str | None = None
+    permission: str | None = None
     type: int = 1
-    icon: Optional[str] = None
+    icon: str | None = None
     sort_order: int = 0
     keep_alive: bool = True
     is_show: bool = True
-    child_menus: list["MenuImportNode"] = PydanticField(default_factory=list)
+    child_menus: list[MenuImportNode] = PydanticField(default_factory=list)
 
 
 class MenuImportRequest(BaseModel):
@@ -600,31 +603,33 @@ class MenuParseItem(BaseModel):
     controller: str
     name: str
     path: str
-    component: Optional[str] = None
-    icon: Optional[str] = None
-    parent_code: Optional[str] = None
+    component: str | None = None
+    icon: str | None = None
+    parent_code: str | None = None
     api: list[dict] = PydanticField(default_factory=list)
 
 
 class MenuParseResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    items: list[MenuParseItem] = PydanticField(default_factory=list, validation_alias=AliasChoices("items", "list"), serialization_alias="list")
+    items: list[MenuParseItem] = PydanticField(
+        default_factory=list, validation_alias=AliasChoices("items", "list"), serialization_alias="list"
+    )
 
 
 class MenuCreateAutoItem(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    parent_id: Optional[int] = None
+    parent_id: int | None = None
     name: str
     path: str
-    module: Optional[str] = None
-    prefix: Optional[str] = None
-    icon: Optional[str] = None
+    module: str | None = None
+    prefix: str | None = None
+    icon: str | None = None
     sort_order: int = 0
     keep_alive: bool = True
     api: list[dict] = PydanticField(default_factory=list)
-    component: Optional[str] = None
+    component: str | None = None
 
 
 class MenuCreateAutoRequest(BaseModel):
@@ -673,22 +678,19 @@ class CoolMenuItem(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    parent_id: Optional[int] = None
-    parent_name: Optional[str] = None
+    parent_id: int | None = None
+    parent_name: str | None = None
     name: str
-    path: Optional[str] = None
-    component: Optional[str] = None
-    permission: Optional[str] = None
+    path: str | None = None
+    component: str | None = None
+    permission: str | None = None
     type: int = 1
-    icon: Optional[str] = None
+    icon: str | None = None
     sort_order: int = 0
     keep_alive: bool = True
     is_show: bool = True
     is_active: bool = True
-    child_menus: list["CoolMenuItem"] = PydanticField(
-        default_factory=list,
-        serialization_alias="children"
-    )
+    child_menus: list[CoolMenuItem] = PydanticField(default_factory=list, serialization_alias="children")
 
     @field_serializer("is_active")
     def serialize_status(self, v: bool) -> int:

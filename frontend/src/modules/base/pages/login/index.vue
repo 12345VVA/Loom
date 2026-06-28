@@ -105,9 +105,9 @@ async function toLogin() {
 		return ElMessage.error(t('密码不能为空'));
 	}
 
-	if (!form.verifyCode) {
-		return ElMessage.error(t('请完成滑块验证'));
-	}
+	// if (!form.verifyCode) {
+	// 	return ElMessage.error(t('请完成滑块验证'));
+	// }
 
 	saving.value = true;
 

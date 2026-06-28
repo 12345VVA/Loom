@@ -1,6 +1,7 @@
 """
 Loom 兼容响应包装
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
@@ -10,6 +11,7 @@ from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel
+
 from app.framework.api.error_codes import ErrorCode
 
 SUCCESS_CODE = ErrorCode.SUCCESS

@@ -1,6 +1,7 @@
 """
 AI 治理规则接口。
 """
+
 from fastapi import Depends
 from sqlmodel import Session
 
