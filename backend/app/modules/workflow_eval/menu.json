@@ -3,6 +3,7 @@
     "code": "nav_workflow_eval",
     "name": "工作流评价",
     "type": "group",
+    "parent_code": "nav_workflow",
     "icon": "icon-task",
     "sort_order": 39,
     "role_codes": ["admin"],

@@ -134,6 +134,7 @@ class WorkflowEvalCaseResultRead(BaseModel):
     id: int
     eval_run_id: int
     case_key: str
+    input_data: str | None = None  # 输入快照，供标注抽屉展示 Prompt 上下文
     actual_output: str | None = None
     expected_output: str | None = None
     score: float

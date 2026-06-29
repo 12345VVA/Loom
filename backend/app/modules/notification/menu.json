@@ -5,7 +5,6 @@
     "type": "group",
     "icon": "icon-notification",
     "sort_order": 60,
-    "parent_code": "nav_system",
     "role_codes": ["admin"],
     "children": [
       {

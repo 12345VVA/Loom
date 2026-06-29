@@ -189,6 +189,11 @@
 			<el-table-column prop="latencyMs" :label="$t('耗时(ms)')" width="100" />
 			<el-table-column prop="actualOutput" :label="$t('实际输出')" min-width="220" show-overflow-tooltip />
 			<el-table-column prop="errorMessage" :label="$t('错误')" min-width="160" show-overflow-tooltip />
+			<el-table-column :label="$t('操作')" width="80" fixed="right">
+				<template #default="{ row }">
+					<el-button text type="primary" @click="openAnnotation(row)">{{ $t('标注') }}</el-button>
+				</template>
+			</el-table-column>
 		</el-table>
 		<div class="detail-pager">
 			<el-pagination
@@ -201,6 +206,13 @@
 			/>
 		</div>
 	</el-drawer>
+
+	<annotation-drawer
+		v-model:visible="annotation.visible"
+		:case-result-id="annotation.caseResultId"
+		:context="annotation.context"
+		@saved="loadCases"
+	/>
 </template>
 
 <script lang="ts" setup>
@@ -212,6 +224,7 @@ import { reactive, ref } from 'vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import AnnotationDrawer from '/$/workflow_annotation/views/annotation-drawer.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -419,6 +432,25 @@ async function loadCases() {
 function onDetailPage(p: number) {
 	detail.page = p;
 	loadCases();
+}
+
+// 标注抽屉：从用例结果行打开，自动绑定 caseResultId + 透传上下文
+const annotation = reactive<{ visible: boolean; caseResultId: number; context: any }>({
+	visible: false,
+	caseResultId: 0,
+	context: {}
+});
+function openAnnotation(row: any) {
+	annotation.caseResultId = row.id;
+	annotation.context = {
+		inputData: row.inputData,
+		actualOutput: row.actualOutput,
+		expectedOutput: row.expectedOutput,
+		score: row.score,
+		passed: row.passed,
+		evaluatorDetail: row.evaluatorDetail
+	};
+	annotation.visible = true;
 }
 </script>
 

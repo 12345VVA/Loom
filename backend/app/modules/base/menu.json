@@ -466,16 +466,6 @@
     ]
   },
   {
-    "code": "nav_data",
-    "name": "数据管理",
-    "type": "group",
-    "icon": "icon-data",
-    "keep_alive": true,
-    "is_show": true,
-    "sort_order": 50,
-    "role_codes": ["admin"]
-  },
-  {
     "code": "common_hidden",
     "name": "通用",
     "type": "group",

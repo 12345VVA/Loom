@@ -9,7 +9,7 @@
     "component": "modules/dict/views/list.vue",
     "icon": "icon-dict",
     "sort_order": 51,
-    "parent_code": "nav_data",
+    "parent_code": "nav_system",
     "role_codes": ["admin"],
     "children": [
       { "code": "dict_type_add", "name": "新增类型", "type": "button", "permission": "dict:type:add", "role_codes": ["admin"] },

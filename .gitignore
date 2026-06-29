@@ -50,6 +50,7 @@ logs/
 # IDE
 .vscode/
 .workbuddy/
+deliverables/
 .gstack/
 .idea/
 .claude/
