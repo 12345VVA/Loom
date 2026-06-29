@@ -348,8 +348,8 @@ defineOptions({
 	name: 'workflow-editor'
 });
 
-import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, provide } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, reactive, onMounted, onActivated, onDeactivated, onBeforeUnmount, computed, watch, provide } from 'vue';
+import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { useCool } from '/@/cool';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
@@ -789,9 +789,65 @@ onMounted(() => {
 		_persistSig = persistSignature(elements.value);
 	}
 	fetchAiProfiles();
+	// 键盘监听改由 onActivated/onDeactivated 配对管理（keep-alive 下 onMounted 仅首次触发）
+});
 
-	// 监听键盘按键删除元素
+// keep-alive 缓存复用：激活时确保键盘监听在位；切换到不同工作流（route.query.id 变化）时重置画布并重新加载，
+// 避免残留上一个工作流的拓扑。同一工作流来回切换则保留编辑状态（缓存的正常价值）。
+onActivated(() => {
+	// 激活时注册键盘监听（离开页面由 onDeactivated 注销，避免在别的页面误触 Ctrl+S/Delete）
 	window.addEventListener('keydown', handleKeyDown);
+	const currentId = (route.query.id as string) || null;
+	if (currentId === workflowId.value) return;
+	// 切换到不同工作流：清脏标记（旧工作流未保存编辑已在路由守卫确认放弃），新工作流按干净状态加载
+	isDirty.value = false;
+	// 清空与具体工作流绑定的临时状态
+	selectedNodeId.value = null;
+	contextMenu.visible = false;
+	clearTestStatus();
+	workflowId.value = currentId;
+	if (currentId) {
+		fetchWorkflowData();
+	} else {
+		// 新建工作流：清空画布至初始空拓扑
+		elements.value = [];
+		loaded.value = true;
+		initUndoRedo();
+		_persistSig = persistSignature(elements.value);
+	}
+	fetchAiProfiles();
+});
+
+// 停用时注销键盘监听（keep-alive 下 onBeforeUnmount 不触发，用 onDeactivated 配对管理）
+onDeactivated(() => {
+	window.removeEventListener('keydown', handleKeyDown);
+});
+
+// 未保存修改时，离开编辑器或切换工作流前提示，避免误丢编辑
+async function confirmDiscardIfDirty(): Promise<boolean> {
+	if (!isDirty.value) return true;
+	try {
+		await ElMessageBox.confirm(
+			t('当前工作流有未保存的修改，继续将丢弃这些修改。'),
+			t('未保存提示'),
+			{ type: 'warning', confirmButtonText: t('放弃修改'), cancelButtonText: t('取消') }
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// 离开编辑器到其他页面
+onBeforeRouteLeave(async () => {
+	if (!(await confirmDiscardIfDirty())) return false;
+});
+
+// 同组件切换工作流（/editor?id=A → /editor?id=B）
+onBeforeRouteUpdate(async to => {
+	if (String(to.query.id ?? '') !== String(route.query.id ?? '')) {
+		if (!(await confirmDiscardIfDirty())) return false;
+	}
 });
 
 function handleKeyDown(event: KeyboardEvent) {
