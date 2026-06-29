@@ -4,6 +4,8 @@ import { config } from '/@/config';
 export function useStream() {
 	const { user } = useBase();
 	let abortController: AbortController | null = null;
+	// 是否已主动取消：用于吞掉 abort 引发的 reader.read() 拒绝，避免 Uncaught (in promise)
+	let cancelled = false;
 
 	// 调用
 	async function invoke({
@@ -18,6 +20,7 @@ export function useStream() {
 		cb?: (result: any) => void;
 	}) {
 		abortController = new AbortController();
+		cancelled = false;
 
 		let cacheText = '';
 
@@ -38,8 +41,8 @@ export function useStream() {
 						start(controller) {
 							function push() {
 								reader.read().then(({ done, value }) => {
-									if (done) {
-										controller.close();
+									if (done || cancelled) {
+										if (!cancelled) controller.close();
 										return;
 									}
 
@@ -51,8 +54,15 @@ export function useStream() {
 										cacheText = parsed.rest;
 									}
 
+									// cb 可能在 forEach 中触发 cancel()，此时停止后续写入与递归
+									if (cancelled) return;
+
 									controller.enqueue(text);
 									push();
+								}).catch(err => {
+									// 主动 cancel() 会 abort fetch，导致 reader.read() 以 AbortError 拒绝，属预期，静默
+									if (cancelled || err?.name === 'AbortError') return;
+									console.error(err);
 								});
 							}
 							push();
@@ -72,6 +82,7 @@ export function useStream() {
 
 	// 取消
 	function cancel() {
+		cancelled = true;
 		if (abortController) {
 			abortController.abort();
 			abortController = null;
