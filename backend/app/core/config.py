@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     WORKFLOW_CHECKPOINT_BACKEND: str = "sqlite"  # "memory" | "sqlite" | "postgres"
     WORKFLOW_NODE_TEST_TIMEOUT: int = 180  # 单节点测试超时秒数（LLM 节点常需 60-180 秒）
     WORKFLOW_NODE_TIMEOUT: int = 600  # 正式执行单节点超时秒数（比 30 分钟硬上限短，留足图像节点空间）
+    # 节点级自动重试：失败后按指数退避重试，覆盖 LLM / 外部 API 临时故障
+    # max_attempts 含首次（1=不重试）；delay = base * 2^(attempt-1)；节点 config 可覆盖（retry_max_attempts / retry_backoff_base）
+    WORKFLOW_NODE_RETRY_MAX_ATTEMPTS: int = 1
+    WORKFLOW_NODE_RETRY_BACKOFF_BASE: float = 2.0
     # 评测系统 llm_judge 兜底模型 Profile（用例未单独配置 judge_profile_code 时使用；空表示未配置）
     WORKFLOW_EVAL_JUDGE_PROFILE: str = ""
     # 评测回归对比：单 case score 变化阈值（B 相对 A 超此值视为退化/改善）

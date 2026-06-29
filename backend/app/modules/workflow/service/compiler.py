@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 from langgraph.graph import END, START, StateGraph
 
 
+class NodeExecutionError(Exception):
+    """节点执行失败（重试耗尽后抛出），携带 node_id 供上层记录 failed_node_id。"""
+
+    def __init__(self, node_id: str, attempts: int, cause: Exception):
+        self.node_id = node_id
+        self.attempts = attempts
+        self.cause = cause
+        super().__init__(f"节点 '{node_id}' 执行失败（已尝试 {attempts} 次）: {cause}")
+
+
 class SafeEvaluator:
     def __init__(self, context: dict):
         self.context = context
@@ -1011,6 +1021,10 @@ class WorkflowCompiler:
         """
 
         async def node_runner(state: WorkflowState) -> dict[str, Any]:
+            import asyncio
+
+            from app.core.config import settings
+
             # 记录当前执行节点
             state["current_node"] = node_id
 
@@ -1022,9 +1036,32 @@ class WorkflowCompiler:
             # 1. 应用输入变量映射，提炼入参
             node_inputs = resolve_node_inputs(state["variables"], config)
 
-            # 2. 运行执行器（注入 node_id 供需要路由回写的执行器使用）
+            # 2. 运行执行器（节点级自动重试：全局默认 + 节点 config 覆盖；指数退避）
+            #    重试在 node_runner 内部，updates 在 return 后才 apply 到 state，故前次失败不污染 state
             executor_config = {**config, "id": node_id}
-            updates = await executor(node_inputs, executor_config)
+            max_attempts = config.get("retry_max_attempts")
+            if max_attempts is None:
+                max_attempts = settings.WORKFLOW_NODE_RETRY_MAX_ATTEMPTS
+            max_attempts = max(1, int(max_attempts))  # 至少尝试 1 次
+            backoff_base = config.get("retry_backoff_base")
+            if backoff_base is None:
+                backoff_base = settings.WORKFLOW_NODE_RETRY_BACKOFF_BASE
+
+            updates = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    updates = await executor(node_inputs, executor_config)
+                    break
+                except Exception as e:
+                    if attempt >= max_attempts:
+                        # 重试耗尽：抛 NodeExecutionError 携带 node_id，供上层写 failed_node_id
+                        raise NodeExecutionError(node_id, attempt, e) from e
+                    delay = float(backoff_base) * (2 ** (attempt - 1))
+                    logger.warning(
+                        "节点 '%s' 第 %d/%d 次执行失败，%.1fs 后重试: %s",
+                        node_id, attempt, max_attempts, delay, e,
+                    )
+                    await asyncio.sleep(delay)
             if updates is None:
                 updates = {}
 

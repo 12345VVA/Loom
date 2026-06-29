@@ -443,7 +443,9 @@ async def _async_execute(
             with Session(engine) as session:
                 error_msg_safe = str(e) if isinstance(e, ValueError) else "执行失败，发生内部错误。"
                 # 仅 running→failed，不覆盖 cancelled（用户在异常发生时取消的情况）
-                _cas(session, "running", status="failed", error_message=error_msg_safe)
+                # failed_node_id 来自 NodeExecutionError（业务异常精确到节点）；超时等无则留空
+                failed_node_id = getattr(e, "node_id", None)
+                _cas(session, "running", status="failed", error_message=error_msg_safe, failed_node_id=failed_node_id)
                 session.commit()
         except Exception as se:
             logger.error("记录工作流异常失败: %s", se, exc_info=True)

@@ -43,6 +43,7 @@ class WorkflowInstance(BaseEntity, table=True):
     error_message: str | None = Field(default=None, max_length=1000)
     celery_task_id: str | None = Field(default=None, max_length=200, index=True)
     user_id: int | None = Field(default=None, index=True)  # 启动者，用于数据权限隔离
+    failed_node_id: str | None = Field(default=None, max_length=100)  # 失败节点ID（可观测性 + 为断点续跑铺路）
 
 
 class WorkflowExecutionLog(BaseEntity, table=True):

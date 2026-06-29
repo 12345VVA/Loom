@@ -61,6 +61,41 @@
 					:upstream-vars="upstreamOutputVarsOriginal"
 				/>
 
+				<!-- 节点级失败重试（除 start/end 外的执行类节点） -->
+				<node-config-section
+					v-if="selectedNode.type !== 'start' && selectedNode.type !== 'end'"
+					:title="$t('失败重试')"
+					:tooltip="$t('节点执行失败时按指数退避自动重试；留空则使用服务端全局默认')"
+					:default-expanded="false"
+				>
+					<el-form-item :label="$t('最大尝试次数')" style="margin-bottom: 0">
+						<el-input-number
+							v-model="selectedNode.data.config.retryMaxAttempts"
+							:min="1"
+							:max="10"
+							:step="1"
+							controls-position="right"
+							style="width: 100%"
+						/>
+						<div class="field-hint">
+							{{ $t('含首次执行；1 = 不重试。留空使用服务端默认') }}
+						</div>
+					</el-form-item>
+					<el-form-item :label="$t('退避基数(秒)')" style="margin-top: 18px; margin-bottom: 0">
+						<el-input-number
+							v-model="selectedNode.data.config.retryBackoffBase"
+							:min="0.5"
+							:max="60"
+							:step="0.5"
+							controls-position="right"
+							style="width: 100%"
+						/>
+						<div class="field-hint">
+							{{ $t('指数退避：第 N 次重试等待 = 基数 × 2^(N-1) 秒') }}
+						</div>
+					</el-form-item>
+				</node-config-section>
+
 				<!-- 动态载入对应节点的表单配置组件 -->
 				<div :key="selectedNode.id">
 					<component
@@ -126,6 +161,7 @@ import LoopBodyGroupConfig from './node-configs/loop-body-group-config.vue';
 import VariableAssignmentConfig from './node-configs/variable-assignment-config.vue';
 import VariableTransformConfig from './node-configs/variable-transform-config.vue';
 import NodeInputsEditor from './node-inputs-editor.vue';
+import NodeConfigSection from './node-configs/node-config-section.vue';
 
 const { t } = useI18n();
 
