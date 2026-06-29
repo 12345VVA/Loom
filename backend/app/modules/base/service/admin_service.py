@@ -337,7 +337,9 @@ class BaseAdminCrudService:
         # 记录变更前的数据
         old_data = entity_to_dict(entity)
 
-        data = payload.model_dump() if hasattr(payload, "model_dump") else payload
+        # exclude_unset：仅写入请求中实际提供的字段，支持部分更新（cl-switch 等行内编辑只传 {id, 字段}）。
+        # 全量编辑表单提交时所有字段均 set，行为与原先一致；各 _before_update 已用 data.get()/"k" in data 安全访问。
+        data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload
         data = self._before_update(data, entity)
 
         for key, value in data.items():

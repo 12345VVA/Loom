@@ -496,7 +496,7 @@ class MenuUpdateRequest(BaseModel):
 
     id: int
     parent_id: int | None = None
-    name: str
+    name: str | None = None
     code: str | None = None
     type: int | str = 2
     path: str | None = None
