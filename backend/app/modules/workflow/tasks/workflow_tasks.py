@@ -20,6 +20,7 @@ from app.celery_app import celery_app
 from app.core.database import Session, engine
 from app.core.logging import workflow_instance_id_ctx
 from sqlmodel import select
+from sqlalchemy import update
 from app.modules.ai.service.security_service import AiSecurityService
 from app.modules.workflow.model.workflow import (
     WorkflowDefinition,
@@ -155,6 +156,26 @@ async def _drain_flush(queue: asyncio.Queue, task: asyncio.Task) -> None:
         task.cancel()
 
 
+def _mark_instance_failed(instance_id: int, message: str, expected: str = "running") -> None:
+    """Celery 任务入口兜底：把实例置为 failed 并发布事件（仅当当前状态==expected，避免覆盖 cancelled）。
+
+    用于 execute_workflow 在 asyncio.run 之前就失败的场景（如参数 JSON 解析失败）：
+    此时实例仍为 running，若不主动写终态，需等进程重启由 recover_orphaned_instances 兜底（最长 30 分钟）。
+    """
+    try:
+        with Session(engine) as session:
+            result = session.execute(
+                update(WorkflowInstance)
+                .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == expected)
+                .values(status="failed", error_message=(message or "")[:500])
+            )
+            session.commit()
+            if result.rowcount:
+                publish_event(instance_id, "failed", {"status": "failed", "error": message})
+    except Exception as se:
+        logger.error("记录工作流实例 %d failed 终态失败: %s", instance_id, se, exc_info=True)
+
+
 @celery_app.task(
     name="workflow.execute",
     bind=True,
@@ -165,8 +186,14 @@ def execute_workflow(self, instance_id: int, definition_id: int, initial_vars_js
     """
     在 Celery Worker 中执行或恢复一个工作流实例。
     """
-    initial_vars = json.loads(initial_vars_json)
-    resume_val = json.loads(resume_val_json) if resume_val_json else None
+    try:
+        initial_vars = json.loads(initial_vars_json)
+        resume_val = json.loads(resume_val_json) if resume_val_json else None
+    except (json.JSONDecodeError, TypeError) as e:
+        # 参数 JSON 畸形：立即写 failed 终态，避免实例假死在 running（否则需进程重启兜底）
+        _mark_instance_failed(instance_id, f"初始参数解析失败: {e}")
+        logger.error("工作流 %d 参数 JSON 解析失败: %s", instance_id, e)
+        return
     asyncio.run(_async_execute(instance_id, definition_id, initial_vars, resume_val))
 
 
@@ -407,7 +434,7 @@ async def _async_execute(
         try:
             await _drain_flush(flush_queue, flush_task)
         except Exception:
-            logger.debug("异常路径 drain flush_task 失败", exc_info=True)
+            logger.error("异常路径 drain flush_task 失败，节点日志可能部分丢失", exc_info=True)
         logger.error("工作流运行异常: %s", e, exc_info=True)
         # 预置默认值：若下方 DB 写入失败走到 except se，error_msg_safe 仍已被赋值，
         # 否则 publish_event 会触发 UnboundLocalError

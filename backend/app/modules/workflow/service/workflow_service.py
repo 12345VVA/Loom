@@ -559,8 +559,8 @@ async def execute_image_generator_node(variables: dict[str, Any], config: dict[s
     if not image_val and config.get("image_template"):
         try:
             image_val = render_template(config.get("image_template"), variables)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("生图节点 image_template 渲染失败，跳过参考图: %s", e)
 
     # 3. 合并自定义参数（支持前端 optionsJson 字段）
     custom_options = config.get("options") or {}
@@ -1148,20 +1148,33 @@ class WorkflowInstanceService(BaseAdminCrudService):
         # 注：start_instance 不校验 definition owner —— 设计上任何用户均可启动已启用的工作流
         # 定义、实例归属启动者；definition 的可见性已由 DataScope 在 page/list/info 限制。
 
-        # 2秒防重放：检查是否有相同参数且相同定义的实例在最近运行中
-        from datetime import datetime, timedelta
+        # 防重放：优先用 Redis SETNX 抢占式去重锁（覆盖 Celery 多 worker / 高并发盲区，
+        # 原 DB 2 秒窗口查询存在竞态）。Redis 不可用时（如本地开发）退回 DB 查询兜底。
+        import hashlib
 
-        two_seconds_ago = datetime.utcnow() - timedelta(seconds=2)
-
-        stmt = select(WorkflowInstance).where(
-            WorkflowInstance.definition_id == definition_id,
-            WorkflowInstance.status == "running",
-            WorkflowInstance.created_at >= two_seconds_ago,
+        dedup_key = (
+            f"loom:workflow:start:{definition_id}:"
+            f"{hashlib.sha1(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()}"
         )
-        recent_instances = self.session.exec(stmt).all()
-        for inst in recent_instances:
-            if inst.state_data == json.dumps(inputs):
+        try:
+            from app.core.redis import redis_client
+
+            if not redis_client.set(dedup_key, "1", nx=True, ex=10):
                 raise HTTPException(status_code=400, detail="检测到重复的启动请求，请稍后再试。")
+        except HTTPException:
+            raise
+        except Exception:
+            # Redis 不可用：降级为 DB 2 秒窗口查询兜底，保持与原行为一致，不阻断正常启动
+            logger.warning("工作流启动去重锁 Redis 不可用，降级为 DB 查询兜底", exc_info=True)
+            two_seconds_ago = datetime.utcnow() - timedelta(seconds=2)
+            stmt = select(WorkflowInstance).where(
+                WorkflowInstance.definition_id == definition_id,
+                WorkflowInstance.status == "running",
+                WorkflowInstance.created_at >= two_seconds_ago,
+            )
+            for inst in self.session.exec(stmt).all():
+                if inst.state_data == json.dumps(inputs):
+                    raise HTTPException(status_code=400, detail="检测到重复的启动请求，请稍后再试。")
 
         # 初始化实例记录
         thread_id = str(uuid4())

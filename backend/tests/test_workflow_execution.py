@@ -85,6 +85,20 @@ class CheckpointerBackendTestCase(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ckpt_module.get_checkpointer()
 
+    def test_close_checkpointer_resets_singleton(self):
+        """#10：close_checkpointer 关闭底层连接并重置单例，不抛异常（供 lifespan shutdown 调用）。"""
+        from app.modules.workflow.service.checkpointer import close_checkpointer
+
+        tmp = Path(tempfile.mkdtemp())
+        with (
+            patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "sqlite"),
+            patch.object(ckpt_module, "get_db_path", return_value=tmp / "app.db"),
+        ):
+            ckpt_module.get_checkpointer()
+            self.assertIsNotNone(ckpt_module._checkpointer)
+            close_checkpointer()
+            self.assertIsNone(ckpt_module._checkpointer)
+
 
 class StartupCheckCheckpointTestCase(unittest.TestCase):
     def test_prod_memory_is_error(self):

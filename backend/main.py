@@ -55,7 +55,10 @@ async def lifespan(app: FastAPI):
         recover_orphaned_instances(session)
     print(f"{settings.APP_NAME} v{settings.APP_VERSION} 启动中...")
     yield
-    # 关闭时执行
+    # 关闭时执行：释放 checkpointer 持有的底层 DB 连接（sqlite3 / psycopg 单例）
+    from app.modules.workflow.service.checkpointer import close_checkpointer
+
+    close_checkpointer()
     print(f"{settings.APP_NAME} 已关闭")
 
 

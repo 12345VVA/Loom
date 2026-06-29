@@ -86,6 +86,25 @@ def get_checkpointer():
     return _checkpointer
 
 
+def close_checkpointer() -> None:
+    """关闭 checkpointer 持有的底层连接（sqlite3 / psycopg Connection）。
+
+    在应用 shutdown 时调用，与 get_checkpointer 对称：启动时按配置创建单例，关闭时释放，
+    避免 Connection 单例永久占用（进程结束前）。MemorySaver 无底层连接则跳过。
+    """
+    global _checkpointer
+    saver = _checkpointer
+    if saver is None:
+        return
+    conn = getattr(saver, "conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception as e:
+            logger.warning("关闭 checkpointer 连接失败: %s", e)
+    _checkpointer = None
+
+
 import contextlib
 from typing import Any, AsyncGenerator
 
