@@ -244,6 +244,9 @@ def validate_graph(graph_json: dict[str, Any]) -> None:
         raise ValueError("工作流定义必须包含一个 'start' (开始) 节点。")
     if len(start_nodes) > 1:
         raise ValueError("工作流定义不能包含多个 'start' (开始) 节点。")
+    # 1.1 start 节点必须有出边：否则图无入口，langgraph 编译会报 "Graph must have an entrypoint"
+    if not any(edge.get("source") == start_nodes[0] for edge in edges):
+        raise ValueError("'start' (开始) 节点必须连接到至少一个下游节点。")
 
     # 2. 悬空边与重复边校验
     seen_edges = set()

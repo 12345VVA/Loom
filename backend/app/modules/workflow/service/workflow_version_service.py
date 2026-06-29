@@ -40,6 +40,13 @@ def validate_graph_json(graph_json: str) -> dict:
         raise HTTPException(status_code=400, detail=f"保存失败：画布拓扑 JSON 解析失败: {e}")
     if not isinstance(graph, dict) or "nodes" not in graph or "edges" not in graph:
         raise HTTPException(status_code=400, detail="工作流拓扑结构不合法（缺少 nodes/edges）")
+    # start 节点若有则必须有出边，否则 langgraph 编译报 "Graph must have an entrypoint"。
+    # 不在此强制 start 存在等其他规则（留给执行期 validate_graph 完整校验），以免影响测试用简化拓扑。
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    start_ids = [n.get("id") for n in nodes if n.get("type") == "start" and n.get("id")]
+    if start_ids and not any(e.get("source") == start_ids[0] for e in edges):
+        raise HTTPException(status_code=400, detail="保存失败：'start' (开始) 节点必须连接到至少一个下游节点。")
     return graph
 
 

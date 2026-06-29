@@ -211,6 +211,9 @@ export function useWorkflowTest(
 		scheduleLogRefresh(currentNode);
 
 		if (TERMINAL_STATUSES.has(status)) {
+			// 终态立即刷新一次 logs/节点状态：stopStream 会清掉防抖 timer，若仅依赖 scheduleLogRefresh 的防抖，
+			// 快速工作流会因防抖(300ms)未触发就收到终态 → status=success 但日志为空、节点仍停在 running（画布卡住）
+			fetchLogsAndRefresh(currentNode);
 			stopStream();
 		}
 	}
