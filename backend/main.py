@@ -2,6 +2,16 @@
 Loom API - FastAPI 主入口
 """
 
+import warnings
+
+# pydantic 在运行时为第三方库（langgraph/langchain 工具与 agent 等）生成 schema 时，会因
+# Field(alias=...) 被用在 Annotated/union 上而抛出 UnsupportedFieldAttributeWarning。该提示对功能
+# 无影响（pydantic 自述该 alias 本就不生效），项目代码经排查不含此类用法，仅精准过滤该条消息以保持日志整洁。
+warnings.filterwarnings(
+    "ignore",
+    message=r"The 'alias' attribute with value .* was provided to the `Field\(\)` function.*",
+)
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 
