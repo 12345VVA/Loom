@@ -118,7 +118,8 @@ export function useWorkflowTest(
 
 		testDialog.loading = true;
 		try {
-			const res = await (service as any).workflow.instance.start({
+			// 试运行走 /trial（跑草稿版）；正式运行入口 instance.vue 仍用 .start（跑已发布版）
+			const res = await (service as any).workflow.instance.trial({
 				definitionId: Number(workflowId.value),
 				inputs
 			});

@@ -1185,7 +1185,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
         self, definition_id: int, inputs: dict[str, Any], current_user: User | None = None
     ) -> WorkflowInstance:
         """
-        创建一个工作流实例并启动异步执行
+        创建一个工作流实例并启动异步执行（正式运行：跑已发布版 current_version_id）。
         """
         definition = self.session.get(WorkflowDefinition, definition_id)
         if not definition or not definition.is_active:
@@ -1194,40 +1194,80 @@ class WorkflowInstanceService(BaseAdminCrudService):
             raise HTTPException(status_code=400, detail="该工作流尚未发布任何版本，无法启动实例")
         # 注：start_instance 不校验 definition owner —— 设计上任何用户均可启动已启用的工作流
         # 定义、实例归属启动者；definition 的可见性已由 DataScope 在 page/list/info 限制。
+        return self._create_and_dispatch_instance(
+            definition, definition.current_version_id, inputs, current_user, dedup=True
+        )
+
+    def start_trial_instance(
+        self, definition_id: int, inputs: dict[str, Any], current_user: User | None = None
+    ) -> WorkflowInstance:
+        """
+        试运行实例：跑草稿版（draft_version_id），无草稿回退已发布版。
+
+        与正式 start_instance 分流 —— 编辑器试运行应反映最新保存的草稿，而非上次发布版
+        （start_instance 固定走 current_version_id，保存草稿不会改变它，导致试运行跑旧版）。
+        不要求已发布（发布前即可试运行）；关闭去重（试运行允许反复触发，前端已防双击）。
+        """
+        definition = self.session.get(WorkflowDefinition, definition_id)
+        if not definition or not definition.is_active:
+            raise HTTPException(status_code=404, detail="工作流定义不存在或未启用")
+        draft_vid = definition.draft_version_id or definition.current_version_id
+        if draft_vid is None:
+            raise HTTPException(status_code=400, detail="该工作流尚无任何版本（草稿/发布），无法试运行")
+        return self._create_and_dispatch_instance(
+            definition, draft_vid, inputs, current_user, dedup=False
+        )
+
+    def _create_and_dispatch_instance(
+        self,
+        definition: WorkflowDefinition,
+        version_id: int,
+        inputs: dict[str, Any],
+        current_user: User | None,
+        *,
+        dedup: bool = True,
+    ) -> WorkflowInstance:
+        """建实例（绑定指定 version_id）+ 可选防重放去重 + 派发 Celery 执行。
+
+        start_instance（正式，dedup=True）与 start_trial_instance（试运行，dedup=False）共用。
+        版本来源由调用方决定：正式走 current_version_id，试运行走草稿。
+        """
+        definition_id = definition.id
 
         # 防重放：优先用 Redis SETNX 抢占式去重锁（覆盖 Celery 多 worker / 高并发盲区，
         # 原 DB 2 秒窗口查询存在竞态）。Redis 不可用时（如本地开发）退回 DB 查询兜底。
-        import hashlib
+        if dedup:
+            import hashlib
 
-        dedup_key = (
-            f"loom:workflow:start:{definition_id}:"
-            f"{hashlib.sha1(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()}"
-        )
-        try:
-            from app.core.redis import redis_client
-
-            if not redis_client.set(dedup_key, "1", nx=True, ex=10):
-                raise HTTPException(status_code=400, detail="检测到重复的启动请求，请稍后再试。")
-        except HTTPException:
-            raise
-        except Exception:
-            # Redis 不可用：降级为 DB 2 秒窗口查询兜底，保持与原行为一致，不阻断正常启动
-            logger.warning("工作流启动去重锁 Redis 不可用，降级为 DB 查询兜底", exc_info=True)
-            two_seconds_ago = datetime.utcnow() - timedelta(seconds=2)
-            stmt = select(WorkflowInstance).where(
-                WorkflowInstance.definition_id == definition_id,
-                WorkflowInstance.status == "running",
-                WorkflowInstance.created_at >= two_seconds_ago,
+            dedup_key = (
+                f"loom:workflow:start:{definition_id}:"
+                f"{hashlib.sha1(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()}"
             )
-            for inst in self.session.exec(stmt).all():
-                if inst.state_data == json.dumps(inputs):
+            try:
+                from app.core.redis import redis_client
+
+                if not redis_client.set(dedup_key, "1", nx=True, ex=10):
                     raise HTTPException(status_code=400, detail="检测到重复的启动请求，请稍后再试。")
+            except HTTPException:
+                raise
+            except Exception:
+                # Redis 不可用：降级为 DB 2 秒窗口查询兜底，保持与原行为一致，不阻断正常启动
+                logger.warning("工作流启动去重锁 Redis 不可用，降级为 DB 查询兜底", exc_info=True)
+                two_seconds_ago = datetime.utcnow() - timedelta(seconds=2)
+                stmt = select(WorkflowInstance).where(
+                    WorkflowInstance.definition_id == definition_id,
+                    WorkflowInstance.status == "running",
+                    WorkflowInstance.created_at >= two_seconds_ago,
+                )
+                for inst in self.session.exec(stmt).all():
+                    if inst.state_data == json.dumps(inputs):
+                        raise HTTPException(status_code=400, detail="检测到重复的启动请求，请稍后再试。")
 
         # 初始化实例记录
         thread_id = str(uuid4())
         instance = WorkflowInstance(
             definition_id=definition.id,
-            version_id=definition.current_version_id,
+            version_id=version_id,
             thread_id=thread_id,
             status="running",
             state_data=json.dumps(inputs),

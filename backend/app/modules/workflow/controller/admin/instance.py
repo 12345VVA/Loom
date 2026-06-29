@@ -88,6 +88,18 @@ class WorkflowInstanceController(BaseController):
         instance = service.start_instance(payload.definition_id, payload.inputs, current_user)
         return {"id": instance.id}
 
+    @Post("/trial", summary="试运行工作流（草稿版）", permission="workflow:instance:start")
+    def trial(
+        self,
+        payload: WorkflowInstanceStartRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        """编辑器试运行：跑草稿版（draft_version_id），区别于 /start 跑已发布版。"""
+        service = WorkflowInstanceService(session)
+        instance = service.start_trial_instance(payload.definition_id, payload.inputs, current_user)
+        return {"id": instance.id}
+
     @Post("/resume", summary="提供人工确认恢复执行", permission="workflow:instance:resume")
     def resume(
         self,

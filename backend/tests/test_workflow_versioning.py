@@ -187,6 +187,41 @@ class VersioningTestCase(unittest.TestCase):
             instance = inst_svc.start_instance(self.def_id, {"q": "hi"}, _user(7))
         self.assertEqual(instance.version_id, pub.id)
 
+    # --------------------------------- start_trial_instance ---------------------------------
+
+    def test_start_trial_uses_draft_version(self):
+        """试运行用草稿版：publish 后再改草稿，trial 应指向草稿而非已发布版。"""
+        svc = self._svc()
+        svc.save_draft(self.def_id, _graph(base=1), current_user=_user(1))
+        pub = svc.publish(self.def_id, "v1", current_user=_user(1))
+        # publish 自动建新草稿；再保存一次让草稿内容区别于已发布版
+        draft = svc.save_draft(self.def_id, _graph(base=2), current_user=_user(1))
+        self.assertNotEqual(draft.id, pub.id)
+
+        inst_svc = WorkflowInstanceService(self.session)
+        with patch("app.modules.workflow.tasks.workflow_tasks.execute_workflow") as mock_exec:
+            mock_exec.delay.return_value = Mock(id="task-trial")
+            instance = inst_svc.start_trial_instance(self.def_id, {"q": "hi"}, _user(7))
+        self.assertEqual(instance.version_id, draft.id)  # 试运行跑草稿
+        self.assertNotEqual(instance.version_id, pub.id)  # 而非已发布版
+
+    def test_start_trial_runs_without_publish(self):
+        """未发布（仅有草稿）时：正式 start 拒绝，但试运行可用草稿跑。"""
+        svc = self._svc()
+        draft = svc.save_draft(self.def_id, _graph(), current_user=_user(1))
+        d = self.session.get(WorkflowDefinition, self.def_id)
+        self.assertIsNone(d.current_version_id)  # 未发布
+
+        inst_svc = WorkflowInstanceService(self.session)
+        with self.assertRaises(HTTPException) as cm:
+            inst_svc.start_instance(self.def_id, {"q": "hi"}, _user(7))
+        self.assertEqual(cm.exception.status_code, 400)
+
+        with patch("app.modules.workflow.tasks.workflow_tasks.execute_workflow") as mock_exec:
+            mock_exec.delay.return_value = Mock(id="task-trial")
+            instance = inst_svc.start_trial_instance(self.def_id, {"q": "hi"}, _user(7))
+        self.assertEqual(instance.version_id, draft.id)
+
 
 if __name__ == "__main__":
     unittest.main()
