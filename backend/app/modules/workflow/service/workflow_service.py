@@ -1117,16 +1117,19 @@ class WorkflowInstanceService(BaseAdminCrudService):
         result = super().info(id, current_user, relations)
         if isinstance(result, dict):
             self._enrich_version_no([result])
+            self._enrich_token_cost([result])
         return result
 
     def list(self, query=None, current_user=None, relations=None, is_tree=None, parent_field=None):
         data = super().list(query, current_user, relations, is_tree, parent_field)
         self._enrich_version_no(data)
+        self._enrich_token_cost(data)
         return data
 
     def page(self, query, current_user=None, relations=()):
         result = super().page(query, current_user, relations)
         self._enrich_version_no(result.items)
+        self._enrich_token_cost(result.items)
         return result
 
     def _enrich_version_no(self, items: list) -> None:
@@ -1149,6 +1152,34 @@ class WorkflowInstanceService(BaseAdminCrudService):
                 vno = version_nos.get(it.get("versionId"))
                 if vno is not None:
                     it["versionNo"] = vno
+
+    def _enrich_token_cost(self, items: list) -> None:
+        """回填 totalTokens/costUsd（按 instance 聚合 AiModelCallLog，一次 group by 避免 N+1）。"""
+        if not items:
+            return
+        from sqlalchemy import func
+
+        from app.modules.ai.model.ai import AiModelCallLog
+
+        instance_ids = [it.get("id") for it in items if isinstance(it, dict) and it.get("id")]
+        if not instance_ids:
+            return
+        rows = self.session.exec(
+            select(
+                AiModelCallLog.workflow_instance_id,
+                func.sum(AiModelCallLog.total_tokens),
+                func.sum(func.coalesce(AiModelCallLog.cost_micro_usd, 0)),
+            )
+            .where(AiModelCallLog.workflow_instance_id.in_(instance_ids))
+            .group_by(AiModelCallLog.workflow_instance_id)
+        ).all()
+        cost_map = {row[0]: (int(row[1] or 0), int(row[2] or 0)) for row in rows}
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            tokens, cost_micro = cost_map.get(it.get("id")) or (0, 0)
+            it["totalTokens"] = tokens
+            it["costUsd"] = cost_micro / 1_000_000.0
 
     def start_instance(
         self, definition_id: int, inputs: dict[str, Any], current_user: User | None = None

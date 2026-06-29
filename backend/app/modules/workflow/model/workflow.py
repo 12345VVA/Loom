@@ -140,6 +140,8 @@ class WorkflowInstanceRead(BaseModel):
     user_id: int | None = None
     created_at: datetime
     updated_at: datetime
+    total_tokens: int | None = None  # 本次运行 LLM 累计 token（按 instance 聚合 AiModelCallLog）
+    cost_usd: float | None = None  # 本次运行累计成本（USD）
 
 
 class WorkflowInstanceStartRequest(BaseModel):

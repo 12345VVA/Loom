@@ -273,6 +273,13 @@ const Table = useTable({
 		},
 		{ label: t('当前激活节点'), prop: 'currentNode', minWidth: 140 },
 		{ label: t('错误信息'), prop: 'errorMessage', minWidth: 180, showOverflowTooltip: true },
+		{ label: t('累计 Tokens'), prop: 'totalTokens', minWidth: 110 },
+		{
+			label: t('成本(USD)'),
+			prop: 'costUsd',
+			minWidth: 110,
+			formatter: ({ costUsd }: any) => (costUsd != null ? Number(costUsd).toFixed(4) : '-')
+		},
 		{ label: t('更新时间'), prop: 'updateTime', sortable: 'desc', minWidth: 170 },
 		{
 			type: 'op',
