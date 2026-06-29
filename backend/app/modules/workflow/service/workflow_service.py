@@ -274,6 +274,54 @@ def _build_json_desc_recursive(fields: list[dict], indent: int = 1) -> str:
     return ",\n".join(parts)
 
 
+def _build_llm_response_format(output_format: str, json_fields: list) -> tuple[dict[str, Any] | None, str]:
+    """根据输出模式构建 response_format 与追加到 prompt 的格式化指令。
+
+    Tier 1: json_schema（有 jsonFields 时自动生成 Schema）；Tier 2: json_object（宽松模式）。
+    返回 (response_format, format_instructions)。
+    """
+    response_format: dict[str, Any] | None = None
+    format_instructions = ""
+
+    if output_format == "json":
+        # Tier 1: json_schema — 有字段定义时生成 Schema
+        schema = _build_json_schema_from_fields(json_fields)
+        if schema:
+            response_format = schema
+        else:
+            # Tier 2: json_object — 无字段定义，宽松模式
+            response_format = {"type": "json_object"}
+        # 文本指令始终追加作为兜底
+        if json_fields:
+            field_desc = _build_json_desc_recursive(json_fields, 1)
+            format_instructions = (
+                f"\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。\n"
+                f"JSON 结构如下：\n{{\n{field_desc}\n}}"
+            )
+        else:
+            format_instructions = "\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。"
+    elif output_format == "json_object":
+        # Tier 2: json_object — 用户显式选择宽松模式
+        response_format = {"type": "json_object"}
+        format_instructions = "\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。"
+
+    return response_format, format_instructions
+
+
+def _parse_llm_output(content: str, output_format: str, output_variable: str) -> dict[str, Any]:
+    """解析 LLM 输出：JSON 模式去 markdown 后 json.loads，失败保留原始文本。"""
+    if output_format in ("json", "json_object"):
+        stripped = content.strip()
+        if stripped.startswith("```"):
+            stripped = re.sub(r"^```\w*\n?", "", stripped)
+            stripped = re.sub(r"\n?```\s*$", "", stripped)
+        try:
+            return {output_variable: json.loads(stripped)}
+        except json.JSONDecodeError:
+            logger.warning("LLM JSON 输出解析失败，保留原始文本")
+    return {output_variable: content}
+
+
 async def execute_llm_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     LLM 节点执行逻辑，支持分层 JSON 输出：
@@ -285,65 +333,25 @@ async def execute_llm_node(variables: dict[str, Any], config: dict[str, Any]) ->
     system_prompt_template = config.get("system_prompt_template", "")
     user_prompt_template = config.get("prompt_template", "")
     output_variable = config.get("output_variable", "output")
-
     output_format = config.get("output_format", "text")
     json_fields = config.get("json_fields", [])
-    response_format = None
 
-    # 确定格式化指令应该追加到哪里（优先追加到 System Prompt）
-    format_instructions = ""
-
-    if output_format == "json":
-        # Tier 1: json_schema — 有字段定义时生成 Schema
-        schema = _build_json_schema_from_fields(json_fields)
-        if schema:
-            response_format = schema
-        else:
-            # Tier 2: json_object — 无字段定义，宽松模式
-            response_format = {"type": "json_object"}
-
-        # 文本指令始终追加作为兜底
-        if json_fields:
-            field_desc = _build_json_desc_recursive(json_fields, 1)
-            format_instructions = (
-                f"\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。\n"
-                f"JSON 结构如下：\n{{\n{field_desc}\n}}"
-            )
-        else:
-            format_instructions = "\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。"
-
-    elif output_format == "json_object":
-        # Tier 2: json_object — 用户显式选择宽松模式
-        response_format = {"type": "json_object"}
-        format_instructions = "\n\n请以纯 JSON 格式输出，不要包含 markdown 代码块或任何额外文本。"
-
+    response_format, format_instructions = _build_llm_response_format(output_format, json_fields)
+    # 格式化指令优先追加到 System Prompt，否则追加到 User Prompt
     if format_instructions:
         if system_prompt_template.strip():
             system_prompt_template += format_instructions
         else:
             user_prompt_template += format_instructions
 
-    # 移除强制的系统级安全指令，交给统一的 AiSecurityService 处理
-
-    # 渲染 Prompt 变量
+    # 渲染 Prompt 变量（输入安全检查由 run_ai_chat → runtime_service.chat 统一处理）
     system_prompt = render_template(system_prompt_template, variables) if system_prompt_template else None
     user_prompt = render_template(user_prompt_template, variables)
 
     # 调用统一的 AI 对话驱动
     content = await asyncio.to_thread(run_ai_chat, profile_code, user_prompt, system_prompt, response_format)
 
-    # JSON 模式自动解析结构化输出
-    if output_format in ("json", "json_object"):
-        stripped = content.strip()
-        if stripped.startswith("```"):
-            stripped = re.sub(r"^```\w*\n?", "", stripped)
-            stripped = re.sub(r"\n?```\s*$", "", stripped)
-        try:
-            return {output_variable: json.loads(stripped)}
-        except json.JSONDecodeError:
-            logger.warning("LLM JSON 输出解析失败，保留原始文本")
-
-    return {output_variable: content}
+    return _parse_llm_output(content, output_format, output_variable)
 
 
 async def execute_tool_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -685,9 +693,17 @@ async def tool_mock_weather_api(location: str) -> str:
 
 async def execute_tool_executor_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
-    通用工具执行器节点逻辑
+    通用工具执行器节点逻辑。
+
+    注意：web_search / file_system / mock_weather_api 当前为 [Mock] 占位实现，
+    返回演示数据；生产部署请替换为真实工具接入（见 tool_web_search 等）。
     """
+    from app.core.config import settings
+
     tool_code = config.get("tool_code", "unknown")
+    # 生产环境保护：调用 mock 占位工具时告警，避免演示数据被误当真实结果
+    if tool_code in ("web_search", "file_system", "mock_weather_api") and not settings.DEBUG:
+        logger.warning("[Mock] 工具 '%s' 为占位实现，返回演示数据，生产环境请替换为真实工具", tool_code)
     arguments = variables.get("arguments") or config.get("arguments") or {}
     if not arguments:
         arguments_json_str = config.get("arguments_json", "")
@@ -1295,23 +1311,18 @@ class WorkflowInstanceService(BaseAdminCrudService):
     # 节点级运行（开发期调试 / 强一致性）
     # ==========================================
 
-    async def test_node(
+    async def _resolve_node_for_test(
         self,
         definition_id: int,
         node_id: str,
-        mock_variables: dict[str, Any],
-        current_user: User | None = None,
-    ) -> "NodeTestResponse":
-        """
-        单节点测试：直接调用注册的节点执行器，不走完整的 LangGraph，不创建实例和日志。
-        """
-        from app.core.redis import redis_client
-        from app.modules.workflow.model.workflow import NodeTestResponse
+        current_user: User | None,
+    ) -> tuple[dict[str, Any], Any]:
+        """解析待测试节点：校验定义/版本/节点，返回 (config, executor)。失败抛 HTTPException。"""
+        from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
         from app.modules.workflow.service.compiler import (
             UNTESTABLE_NODE_TYPES,
             convert_keys_to_snake,
             node_registry,
-            resolve_node_inputs,
         )
 
         definition = self.session.get(WorkflowDefinition, definition_id)
@@ -1320,8 +1331,6 @@ class WorkflowInstanceService(BaseAdminCrudService):
         assert_workflow_owner(self.session, definition, current_user)
 
         # 节点测试在 editor 编辑草稿过程中，测草稿版（无草稿回退 current）
-        from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
-
         draft_vid = definition.draft_version_id or definition.current_version_id
         if draft_vid is None:
             raise HTTPException(status_code=400, detail="该工作流尚无任何版本，无法测试节点")
@@ -1333,8 +1342,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
         except Exception:
             raise HTTPException(status_code=400, detail="工作流拓扑解析失败")
 
-        nodes = graph_json.get("nodes", [])
-        node = next((n for n in nodes if n.get("id") == node_id), None)
+        node = next((n for n in graph_json.get("nodes", []) if n.get("id") == node_id), None)
         if not node:
             raise HTTPException(status_code=404, detail=f"节点 '{node_id}' 不存在")
 
@@ -1347,25 +1355,41 @@ class WorkflowInstanceService(BaseAdminCrudService):
         executor = node_registry.get(node_type)
         if not executor:
             raise HTTPException(status_code=400, detail=f"工作流中使用了未注册的节点类型: '{node_type}'")
+        return config, executor
 
-        # 防重放：同一节点 2 秒内不重复执行 (使用 Redis)
+    async def test_node(
+        self,
+        definition_id: int,
+        node_id: str,
+        mock_variables: dict[str, Any],
+        current_user: User | None = None,
+    ) -> "NodeTestResponse":
+        """
+        单节点测试：直接调用注册的节点执行器，不走完整的 LangGraph，不创建实例和日志。
+        """
+        from app.core.config import settings
+        from app.core.redis import redis_client
+        from app.modules.workflow.model.workflow import NodeTestResponse
+        from app.modules.workflow.service.compiler import resolve_node_inputs
+
+        # 1. 解析节点（校验定义/版本/节点/类型，返回 config + executor）
+        config, executor = await self._resolve_node_for_test(definition_id, node_id, current_user)
+
+        # 2. 防重放：同一节点 2 秒内不重复执行 (使用 Redis)
         dedup_key = f"loom:workflow:test_node:{definition_id}:{node_id}"
         if not redis_client.set(dedup_key, "1", nx=True, ex=2):
             raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
 
-        # 1. 提炼入参
+        # 3. 执行节点（提炼入参 + 超时控制，默认 180 秒；LLM 节点常需 60-180 秒响应）
         node_inputs = resolve_node_inputs(mock_variables, config)
+        executor_config = {**config, "id": node_id}
+        timeout_seconds = settings.WORKFLOW_NODE_TEST_TIMEOUT
 
         start_time = time.perf_counter()
         error_msg = None
         is_timeout = False
         updates = {}
         try:
-            executor_config = {**config, "id": node_id}
-            # 执行节点（可配置超时，默认 180 秒；LLM 节点常需 60-180 秒响应）
-            from app.core.config import settings
-
-            timeout_seconds = settings.WORKFLOW_NODE_TEST_TIMEOUT
             updates = await asyncio.wait_for(executor(node_inputs, executor_config), timeout=timeout_seconds)
             if updates is None:
                 updates = {}
@@ -1379,7 +1403,6 @@ class WorkflowInstanceService(BaseAdminCrudService):
             is_timeout = False
 
         latency_ms = int((time.perf_counter() - start_time) * 1000)
-
         # 单节点测试主要关心节点本身的输出 updates，不关心写回全局后的完整 variables 状态
         return NodeTestResponse(output=updates, latency_ms=latency_ms, error=error_msg, is_timeout=is_timeout)
 

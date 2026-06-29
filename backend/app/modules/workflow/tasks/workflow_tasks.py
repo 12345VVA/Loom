@@ -208,6 +208,39 @@ def sweep_archived_versions() -> None:
         logger.info("清理 %d 个过期归档工作流版本", swept)
 
 
+def _resolve_execution_graph(
+    session: Session,
+    instance_id: int,
+    definition_id: int,
+    version_id: int | None,
+    graph_json_override: dict | None,
+) -> tuple[dict, str] | None:
+    """解析工作流拓扑：返回 (graph_json, thread_id)；实例/定义/版本缺失时返回 None。
+
+    版本优先级：graph_json_override（eval 存量 fallback）> version_id > instance.version_id
+    > definition.current_version_id。graph_json 现已存版本表（纯版本表模型）。
+    """
+    instance = session.get(WorkflowInstance, instance_id)
+    definition = session.get(WorkflowDefinition, definition_id)
+    if not instance or not definition:
+        logger.error("工作流执行失败: 找不到实例 %d 或定义 %d", instance_id, definition_id)
+        return None
+    thread_id = instance.thread_id
+    if graph_json_override is not None:
+        graph_json = graph_json_override
+    else:
+        effective_vid = version_id or instance.version_id or definition.current_version_id
+        if effective_vid is None:
+            logger.error("工作流执行失败: 实例 %d 无可用版本（未发布？）", instance_id)
+            return None
+        version = session.get(WorkflowDefinitionVersion, effective_vid)
+        if not version:
+            logger.error("工作流执行失败: 版本 %d 不存在", effective_vid)
+            return None
+        graph_json = json.loads(version.graph_json)
+    return graph_json, thread_id
+
+
 async def _async_execute(
     instance_id: int,
     definition_id: int,
@@ -249,28 +282,14 @@ async def _async_execute(
     _inst_ctx_token = workflow_instance_id_ctx.set(instance_id)
 
     try:
-        # 1. 编译拓扑
+        # 1. 编译拓扑：解析 graph_json + thread_id（实例/定义/版本缺失则提前退出）
         with Session(engine) as session:
-            instance = session.get(WorkflowInstance, instance_id)
-            definition = session.get(WorkflowDefinition, definition_id)
-            if not instance or not definition:
-                logger.error("工作流执行失败: 找不到实例 %d 或定义 %d", instance_id, definition_id)
+            resolved = _resolve_execution_graph(
+                session, instance_id, definition_id, version_id, graph_json_override
+            )
+            if resolved is None:
                 return
-            thread_id = instance.thread_id
-            # 版本解析优先级：graph_json_override（eval 存量 fallback）> version_id > instance.version_id
-            # > definition.current_version_id。graph_json 现已存版本表（纯版本表模型）。
-            if graph_json_override is not None:
-                graph_json = graph_json_override
-            else:
-                effective_vid = version_id or instance.version_id or definition.current_version_id
-                if effective_vid is None:
-                    logger.error("工作流执行失败: 实例 %d 无可用版本（未发布？）", instance_id)
-                    return
-                version = session.get(WorkflowDefinitionVersion, effective_vid)
-                if not version:
-                    logger.error("工作流执行失败: 版本 %d 不存在", effective_vid)
-                    return
-                graph_json = json.loads(version.graph_json)
+            graph_json, thread_id = resolved
         logger.info(
             "[Workflow] Compiling graph: instance=%d, nodes=%s, edges=%s",
             instance_id,
