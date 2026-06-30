@@ -69,7 +69,7 @@ defineOptions({
 	name: 'ai-chat'
 });
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
@@ -78,6 +78,11 @@ import { useStream } from '/@/cool/service/stream';
 const { service } = useCool();
 const { t } = useI18n();
 const stream = useStream();
+
+// 组件卸载时取消进行中的 SSE 流：避免连接泄漏与回调向已卸载组件写状态
+onBeforeUnmount(() => {
+	stream.cancel();
+});
 
 const profileOptions = ref<{ label: string; value: string }[]>([]);
 const prompt = ref('你好，请用一句话介绍你自己。');

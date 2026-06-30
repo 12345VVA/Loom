@@ -821,6 +821,10 @@ onActivated(() => {
 // 停用时注销键盘监听（keep-alive 下 onBeforeUnmount 不触发，用 onDeactivated 配对管理）
 onDeactivated(() => {
 	window.removeEventListener('keydown', handleKeyDown);
+	// 切出页面时一并停止试运行 SSE 流与重连/防抖定时器：useWorkflowTest 持有 stream.invoke +
+	// reconnectTimer + logRefreshTimer 三个副作用，keep-alive 下 onBeforeUnmount 不会触发，
+	// 仅清 keydown 会让它们在后台继续空跑（多次进出还会叠加多个 SSE 连接）
+	stopLogPolling();
 });
 
 // 未保存修改时，离开编辑器或切换工作流前提示，避免误丢编辑

@@ -39,7 +39,7 @@
 <script lang="ts" setup>
 defineOptions({ name: 'workflow-eval-trend' });
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onActivated, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
@@ -54,11 +54,16 @@ const runs = ref<any[]>([]);
 const loading = ref(false);
 const metric = ref('passRate');
 
-onMounted(async () => {
-	const ids = String(route.query.runIds || '')
+function parseRunIds() {
+	return String(route.query.runIds || '')
 		.split(',')
 		.map(s => Number(s))
 		.filter(n => !Number.isNaN(n) && n > 0);
+}
+
+async function loadRuns() {
+	const ids = parseRunIds();
+	runs.value = [];
 	if (ids.length < 2) {
 		ElMessage.warning(t('请从评估运行列表选择至少两个运行'));
 		return;
@@ -73,6 +78,20 @@ onMounted(async () => {
 			.sort((a: any, b: any) => new Date(a.createTime).getTime() - new Date(b.createTime).getTime());
 	} finally {
 		loading.value = false;
+	}
+}
+
+// 记录上次加载的 run 集合，用于 keep-alive 切回时判断是否需要重载
+let loadedKey = String(route.query.runIds || '');
+
+onMounted(loadRuns);
+
+// keep-alive 缓存复用：切回时若选中的 run 集合变化，重新加载，避免残留上次图表
+onActivated(() => {
+	const key = String(route.query.runIds || '');
+	if (key !== loadedKey) {
+		loadedKey = key;
+		loadRuns();
 	}
 });
 

@@ -114,7 +114,7 @@
 <script lang="ts" setup>
 defineOptions({ name: 'workflow-version' });
 
-import { onMounted, ref } from 'vue';
+import { onMounted, onActivated, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useCool } from '/@/cool';
@@ -125,7 +125,8 @@ const { service } = useCool();
 const { t } = useI18n();
 const wfService = (service as any).workflow;
 
-const definitionId = Number(route.query.definitionId);
+// 当前页面展示的工作流定义 id（keep-alive 缓存复用：切换不同工作流时需重载）
+let activeDefinitionId = Number(route.query.definitionId);
 const defName = ref('');
 const loading = ref(false);
 const versions = ref<any[]>([]);
@@ -140,25 +141,40 @@ const previewVisible = ref(false);
 const previewRow = ref<any>(null);
 const previewGraph = ref<any>(null);
 
-onMounted(async () => {
-	if (!definitionId) {
+async function initPage(defId: number) {
+	if (!defId) {
 		ElMessage.warning(t('缺少工作流定义参数'));
 		return;
 	}
 	// 取 definition 名称用于标题
 	try {
-		const def = await wfService.definition.info({ id: definitionId });
+		const def = await wfService.definition.info({ id: defId });
 		defName.value = def.name;
 	} catch (e) {
 		// ignore
 	}
+	page.value = 1;
 	await loadVersions();
+}
+
+onMounted(() => initPage(activeDefinitionId));
+
+// keep-alive 缓存复用：切回本页时若路由指向不同工作流，重置状态并重新加载，
+// 避免残留上一个工作流的版本列表/diff/预览（与 editor 画布缓存同源问题）
+onActivated(async () => {
+	const incoming = Number(route.query.definitionId);
+	if (incoming === activeDefinitionId) return;
+	activeDefinitionId = incoming;
+	selected.value = [];
+	diff.value = null;
+	previewVisible.value = false;
+	await initPage(incoming);
 });
 
 async function loadVersions() {
 	loading.value = true;
 	try {
-		const res = await wfService.version.page({ definitionId, page: page.value, size: size.value });
+		const res = await wfService.version.page({ definitionId: activeDefinitionId, page: page.value, size: size.value });
 		versions.value = res.list || [];
 		total.value = res.pagination?.total || 0;
 	} catch (err: any) {
@@ -203,7 +219,7 @@ async function rollback(row: any) {
 			t('回滚确认'),
 			{ type: 'warning', distinguishCancelAndClose: true }
 		);
-		await wfService.version.rollback({ definitionId, targetVersionId: row.id, immediate: false });
+		await wfService.version.rollback({ definitionId: activeDefinitionId, targetVersionId: row.id, immediate: false });
 		ElMessage.success(t('已生成回滚草稿，请进入编辑器确认后发布'));
 		await loadVersions();
 	} catch (e: any) {
