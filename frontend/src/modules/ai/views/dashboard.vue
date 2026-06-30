@@ -1,9 +1,9 @@
 <template>
-	<div class="ai-dashboard">
+	<div class="ai-dashboard" v-loading="loading">
 		<header class="toolbar">
 			<cl-select v-model="query.groupBy" :options="groupOptions" :width="160" />
 			<el-input-number v-model="query.days" :min="1" :max="365" controls-position="right" />
-			<el-button type="primary" @click="loadStats">{{ $t('刷新') }}</el-button>
+			<el-button type="primary" :loading="loading" @click="loadStats">{{ $t('刷新') }}</el-button>
 		</header>
 
 		<section class="summary">
@@ -46,7 +46,8 @@ defineOptions({
 	name: 'ai-dashboard'
 });
 
-import { onMounted, reactive } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
+import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 
@@ -74,23 +75,32 @@ const stats = reactive({
 	groups: [] as any[]
 });
 
+const loading = ref(false);
+
 onMounted(loadStats);
 
 async function loadStats() {
-	const res = await (service.ai as any).dashboard.cost({
-		days: query.days,
-		groupBy: query.groupBy
-	});
-	Object.assign(stats, {
-		total: res?.total || 0,
-		success: res?.success || 0,
-		error: res?.error || 0,
-		successRate: res?.successRate || 0,
-		avgLatencyMs: res?.avgLatencyMs || 0,
-		totalTokens: res?.totalTokens || 0,
-		costUsd: res?.costUsd || 0,
-		groups: res?.groups || []
-	});
+	loading.value = true;
+	try {
+		const res = await (service.ai as any).dashboard.cost({
+			days: query.days,
+			groupBy: query.groupBy
+		});
+		Object.assign(stats, {
+			total: res?.total || 0,
+			success: res?.success || 0,
+			error: res?.error || 0,
+			successRate: res?.successRate || 0,
+			avgLatencyMs: res?.avgLatencyMs || 0,
+			totalTokens: res?.totalTokens || 0,
+			costUsd: res?.costUsd || 0,
+			groups: res?.groups || []
+		});
+	} catch (err: any) {
+		ElMessage.error(err?.message || t('加载统计数据失败'));
+	} finally {
+		loading.value = false;
+	}
 }
 </script>
 

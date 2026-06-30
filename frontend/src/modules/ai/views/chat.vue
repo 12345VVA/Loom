@@ -21,14 +21,14 @@
 				/>
 			</header>
 
-			<div class="messages">
+			<div ref="messagesContainer" class="messages">
 				<div v-for="item in messages" :key="item.id" class="message" :class="item.role">
 					<div class="role">{{ item.role === 'user' ? $t('用户') : $t('AI') }}</div>
 					<pre>{{ item.content }}</pre>
 				</div>
 			</div>
 
-			<footer class="composer" @keydown.ctrl.enter.prevent="sendChat">
+			<footer class="composer">
 				<cl-editor-markdown v-model="prompt" :height="200" simple />
 
 				<div class="actions">
@@ -69,7 +69,7 @@ defineOptions({
 	name: 'ai-chat'
 });
 
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
@@ -82,6 +82,7 @@ const stream = useStream();
 // 组件卸载时取消进行中的 SSE 流：避免连接泄漏与回调向已卸载组件写状态
 onBeforeUnmount(() => {
 	stream.cancel();
+	window.removeEventListener('keydown', onCtrlEnter);
 });
 
 const profileOptions = ref<{ label: string; value: string }[]>([]);
@@ -109,8 +110,33 @@ const streamStatusType = computed(() => {
 	return 'info';
 });
 
+const messagesContainer = ref<HTMLElement>();
+// 流式取消标志：stopStream 置 true，使回调中迟到的 error 事件不再误报失败
+let streamCancelled = false;
+
+function onCtrlEnter(e: KeyboardEvent) {
+	if (e.ctrlKey && e.key === 'Enter') {
+		e.preventDefault();
+		sendChat();
+	}
+}
+
+// 新消息加入后自动滚到底部
+watch(
+	() => messages.value.length,
+	() => {
+		nextTick(() => {
+			messagesContainer.value?.scrollTo({
+				top: messagesContainer.value.scrollHeight,
+				behavior: 'smooth'
+			});
+		});
+	}
+);
+
 onMounted(() => {
 	loadProfiles();
+	window.addEventListener('keydown', onCtrlEnter);
 });
 
 async function loadProfiles() {
@@ -166,6 +192,7 @@ async function sendStream() {
 		return;
 	}
 
+	streamCancelled = false;
 	loading.stream = true;
 	streamStatus.value = 'start';
 	streamEvents.value = [];
@@ -194,6 +221,7 @@ async function sendStream() {
 				}
 
 				if (event.event === 'error') {
+					if (streamCancelled) return;
 					ElMessage.error(event.message || t('流式调用失败'));
 					loading.stream = false;
 				}
@@ -209,6 +237,7 @@ async function sendStream() {
 }
 
 function stopStream() {
+	streamCancelled = true;
 	stream.cancel();
 	loading.stream = false;
 	streamStatus.value = 'aborted';
