@@ -29,6 +29,40 @@ class TaskInfoService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, TaskInfo)
 
+    def _before_add(self, data: dict) -> dict:
+        self._validate_schedule(data)
+        return data
+
+    def _before_update(self, data: dict, entity: Any) -> dict:
+        self._validate_schedule(data, entity)
+        return data
+
+    def _validate_schedule(self, data: dict, entity: Any = None) -> None:
+        """校验调度参数：间隔任务 every 必须为正；cron 任务必须有合法 cron 表达式。
+
+        防止 every=0 导致 dispatch 每轮重复派发（重复执行/扣费），或 cron 畸形导致任务静默不执行。
+        部分更新时以 entity 现有值兜底，合并判断最终调度配置。
+        """
+        task_type = data.get("task_type")
+        if task_type is None and entity is not None:
+            task_type = getattr(entity, "task_type", None)
+        if task_type == 1:
+            every = data.get("every")
+            if every is None and entity is not None:
+                every = getattr(entity, "every", None)
+            if not every or every <= 0:
+                raise HTTPException(status_code=400, detail="间隔任务必须设置大于 0 的执行间隔(ms)")
+        else:
+            cron = data.get("cron")
+            if cron is None and entity is not None:
+                cron = getattr(entity, "cron", None)
+            if not cron:
+                raise HTTPException(status_code=400, detail="定时任务必须设置 cron 表达式")
+            try:
+                compute_next_cron_run_time(cron)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"cron 表达式非法: {e}")
+
     def _after_add(self, entity: TaskInfo, payload: Any = None) -> None:
         sync_task_schedule_state(entity)
 

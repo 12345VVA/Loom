@@ -119,6 +119,11 @@ class WorkflowVersionService(BaseAdminCrudService):
         if not draft or draft.status != WorkflowVersionStatus.DRAFT:
             raise HTTPException(status_code=400, detail="草稿状态异常，请刷新后重试")
 
+        # 发布前对草稿 graph 做基础结构校验（与 save_draft 一致）：堵住 rollback(immediate=True) 等
+        # 绕过保存校验的路径把坏图（如 start 无出边）直接上线。完整校验（孤立节点/模型 profile 等）
+        # 仍由运行期 compile_graph 负责，以免影响测试用简化拓扑。
+        validate_graph_json(draft.graph_json)
+
         now = datetime.utcnow()
         publisher_id = current_user.id if current_user else None
         draft_graph = draft.graph_json  # 建新草稿用（CAS 后状态会变）
