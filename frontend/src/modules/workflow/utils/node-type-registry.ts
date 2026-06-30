@@ -63,7 +63,7 @@ export const NODE_REGISTRY = [
 		labelKey: '工具执行器',
 		icon: MagicStick,
 		colorClass: 'node-tool_executor',
-		colorHex: '#e6a23c',
+		colorHex: '#8a2be2',
 		category: 'system',
 		descKey: '执行外部工具、API 或自定义代码'
 	},
@@ -135,7 +135,7 @@ export const NODE_REGISTRY = [
 		labelKey: '工具执行',
 		icon: MagicStick,
 		colorClass: 'node-tool',
-		colorHex: '#e6a23c',
+		colorHex: '#8a2be2',
 		category: 'system',
 		descKey: '旧版工具节点',
 		deprecated: true

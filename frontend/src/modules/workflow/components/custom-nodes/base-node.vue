@@ -470,6 +470,18 @@ function highlightJson(data: any): string {
 		color: var(--wf-color-end);
 	}
 }
+.node-variable_assignment {
+	border-left: 4px solid var(--wf-color-variable-assignment);
+	.node-icon {
+		color: var(--wf-color-variable-assignment);
+	}
+}
+.node-variable_transform {
+	border-left: 4px solid var(--wf-color-variable-transform);
+	.node-icon {
+		color: var(--wf-color-variable-transform);
+	}
+}
 
 /*
  * ⚠️ 节点动画防坑说明 ⚠️

@@ -116,7 +116,7 @@ const nodeHeight = computed(() => Math.max(56, totalCount.value * 28 + 28));
 	:deep(.vue-flow__handle) {
 		width: 8px;
 		height: 8px;
-		background-color: #20b2aa;
+		background-color: var(--wf-color-intent-classifier);
 		border: 2px solid #ffffff;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 		border-radius: 50%;
@@ -129,9 +129,9 @@ const nodeHeight = computed(() => Math.max(56, totalCount.value * 28 + 28));
 }
 
 .node-intent_classifier {
-	border-left: 4px solid #20b2aa;
+	border-left: 4px solid var(--wf-color-intent-classifier);
 	.node-icon {
-		color: #20b2aa;
+		color: var(--wf-color-intent-classifier);
 	}
 }
 
@@ -153,7 +153,7 @@ const nodeHeight = computed(() => Math.max(56, totalCount.value * 28 + 28));
 	right: 16px;
 	font-size: 10px;
 	font-weight: 600;
-	color: #20b2aa;
+	color: var(--wf-color-intent-classifier);
 	transform: translateY(-50%);
 	z-index: 2;
 	user-select: none;
@@ -164,7 +164,7 @@ const nodeHeight = computed(() => Math.max(56, totalCount.value * 28 + 28));
 }
 
 .handle-label--intent {
-	color: #20b2aa;
+	color: var(--wf-color-intent-classifier);
 }
 
 .handle-label--default {
