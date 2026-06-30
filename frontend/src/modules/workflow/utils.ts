@@ -14,6 +14,15 @@ export function formatJson(val?: string): string {
 }
 
 /**
+ * 格式化工作流版本号：整数序号 → V0.0.x（如 1 → V0.0.1）
+ * 后端 version_no 仍是递增整数，前端统一展示为语义化样式。
+ */
+export function formatVersionNo(n: number | null | undefined): string {
+	if (n === null || n === undefined) return '-';
+	return `V0.0.${n}`;
+}
+
+/**
  * 复制文本到剪贴板，支持 HTTP 环境降级
  */
 export async function copyToClipboard(

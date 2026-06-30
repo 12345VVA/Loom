@@ -23,14 +23,6 @@
 						{{ $t('设计工作流') }}
 					</el-button>
 				</template>
-				<template #slot-publish="{ scope }">
-					<el-button
-						text
-						type="success"
-						:disabled="!scope.row.draftVersionId"
-						@click="publishDraft(scope.row)"
-					>{{ $t('发布') }}</el-button>
-				</template>
 				<template #slot-version="{ scope }">
 					<el-button text type="primary" @click="versionHistory(scope.row)">
 						{{ $t('版本') }}
@@ -58,8 +50,10 @@ import { useCool } from '/@/cool';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { Upload } from '@element-plus/icons-vue';
+import WorkflowCodeField from '../components/workflow-code-field.vue';
+import { formatVersionNo } from '../utils';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -71,7 +65,13 @@ const Upsert = useUpsert({
 	dialog: { width: '600px' },
 	props: { labelWidth: '100px' },
 	items: [
-		{ label: t('工作流编码'), prop: 'code', required: true, component: { name: 'el-input' } },
+		// 编码：系统自动生成且唯一。新增时不显示；编辑态只读展示、可复制（见 workflow-code-field）
+		() => ({
+			label: t('工作流编码'),
+			prop: 'code',
+			hidden: Upsert.value?.mode !== 'update',
+			component: { vm: WorkflowCodeField }
+		}),
 		{ label: t('工作流名称'), prop: 'name', required: true, component: { name: 'el-input' } },
 		{
 			label: t('描述'),
@@ -109,17 +109,20 @@ const Upsert = useUpsert({
 const Table = useTable({
 	columns: [
 		{ type: 'selection' },
-		{ label: t('工作流编码'), prop: 'code', minWidth: 160 },
 		{ label: t('工作流名称'), prop: 'name', minWidth: 180 },
 		{ label: t('描述'), prop: 'description', minWidth: 260, showOverflowTooltip: true },
 		{ label: t('启用'), prop: 'status', width: 100, component: { name: 'cl-switch' } },
-		{ label: t('当前版本'), prop: 'currentVersionNo', width: 100 },
+		{
+			label: t('当前版本'),
+			prop: 'currentVersionNo',
+			width: 110,
+			formatter: (_row: any, _col: any, val: any) => formatVersionNo(val)
+		},
 		{ label: t('发布时间'), prop: 'currentPublishedAt', minWidth: 170 },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
 		{
 			type: 'op',
-			width: 480,
-			buttons: ['edit', 'delete', 'slot-design', 'slot-publish', 'slot-version']
+			width: 360,
+			buttons: ['edit', 'delete', 'slot-design', 'slot-version']
 		}
 	]
 });
@@ -152,22 +155,6 @@ function designWorkflow(scope: WorkflowDefinition) {
 	});
 }
 
-// 发布当前草稿（草稿→发布一步上线；运行中实例按其版本继续跑，不受影响）
-async function publishDraft(row: any) {
-	try {
-		await ElMessageBox.confirm(
-			t('确认发布当前草稿？发布后新启动的实例将使用此版本，正在运行的实例不受影响。'),
-			t('提示'),
-			{ type: 'warning' }
-		);
-		await (service as any).workflow.version.publish({ definitionId: row.id });
-		ElMessage.success(t('发布成功'));
-		Crud.value?.refresh();
-	} catch (e: any) {
-		if (e !== 'cancel') ElMessage.error(t('发布失败：') + (e?.message || e));
-	}
-}
-
 // 跳转版本历史页（版本列表 / 对比 / 回滚）
 function versionHistory(scope: WorkflowDefinition) {
 	router.push({ path: '/workflow/version', query: { definitionId: scope.id } });
@@ -198,7 +185,7 @@ function handleFileImport(e: Event) {
 				description: data.metadata?.description || '',
 				status: 1
 			});
-			ElMessage.success(t('已解析导出文件，请设定唯一编码后保存'));
+			ElMessage.success(t('已解析导出文件，保存后将自动生成编码'));
 		} catch (error: any) {
 			ElMessage.error(t('文件解析失败：') + error.message);
 		} finally {

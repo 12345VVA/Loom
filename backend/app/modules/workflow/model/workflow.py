@@ -95,7 +95,8 @@ class WorkflowDefinitionRead(BaseModel):
 class WorkflowDefinitionCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    code: str
+    # code 可选：前端不传时由 service._before_add 自动生成（WF+日期+序列，唯一）
+    code: str | None = None
     name: str
     description: str | None = None
     is_active: bool = True
