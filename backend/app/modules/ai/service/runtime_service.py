@@ -609,6 +609,26 @@ class AiModelRuntimeService:
                     cost_micro_usd=0,
                 )
 
+    def _fallback_chain_has_cycle(self, profile: AiModelProfile) -> bool:
+        """运行期同步检测 fallback 链是否存在环或超过最大深度。
+
+        不依赖 contextvar，对流式生成器的惰性求值同样可靠，作为保存期环校验的运行期兜底
+        （堵住 TOCTOU 并发或直接改库形成的环）。返回 True 时调用方应停止降级。
+        """
+        visited: set[int] = set()
+        cursor = profile
+        depth = 0
+        while cursor is not None and cursor.fallback_profile_id and depth < MAX_FALLBACK_DEPTH:
+            if cursor.id in visited:
+                return True
+            visited.add(cursor.id)
+            nxt = self.session.get(AiModelProfile, cursor.fallback_profile_id)
+            if nxt is None:
+                return False
+            cursor = nxt
+            depth += 1
+        return cursor is not None and cursor.fallback_profile_id is not None
+
     def _stream_fallback(
         self,
         profile: AiModelProfile,
@@ -620,7 +640,11 @@ class AiModelRuntimeService:
     ) -> Iterable[str] | None:
         if not profile.fallback_profile_id:
             return None
-        # 深度兜底：fallback 链过长或成环时停止降级，避免 _stream_invoke 失败再回调本方法形成无限递归
+        # 运行期同步防环（不依赖 contextvar 的生成器时序，流式路径可靠）：堵住并发/脏数据成环导致的无限递归
+        if self._fallback_chain_has_cycle(profile):
+            logger.warning("AI 流式 fallback 链检测到环或超深，停止降级")
+            return None
+        # 深度兜底：fallback 链过长时停止降级
         depth = _fallback_depth.get()
         if depth >= MAX_FALLBACK_DEPTH:
             logger.warning("AI 流式 fallback 链已达最大深度 %d，停止降级", MAX_FALLBACK_DEPTH)
@@ -663,7 +687,11 @@ class AiModelRuntimeService:
     ) -> dict | None:
         if not profile.fallback_profile_id:
             return None
-        # 深度兜底：fallback 链过长或成环时停止降级，避免 _invoke 失败再回调本方法形成无限递归
+        # 运行期同步防环（不依赖 contextvar）：堵住并发/脏数据成环导致的无限递归
+        if self._fallback_chain_has_cycle(profile):
+            logger.warning("AI fallback 链检测到环或超深，停止降级")
+            return None
+        # 深度兜底：fallback 链过长时停止降级
         depth = _fallback_depth.get()
         if depth >= MAX_FALLBACK_DEPTH:
             logger.warning("AI fallback 链已达最大深度 %d，停止降级", MAX_FALLBACK_DEPTH)

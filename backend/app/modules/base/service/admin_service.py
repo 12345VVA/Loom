@@ -616,6 +616,9 @@ class UserAdminService(BaseAdminCrudService):
 
     def _after_update(self, entity: User, payload: Any) -> None:
         """用户更新后记录安全审计日志"""
+        # 仅依据"本次实际传入"的字段判断：部分更新时未传字段会取 DTO 默认值（如 is_active=True、
+        # role_ids=[]），不能据默认值误判为"启用用户/清空角色"，否则任意单字段更新都会误触发。
+        update_fields = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else {}
         try:
             from app.modules.base.service.sys_manage_service import SysSecurityLogService
 
@@ -628,9 +631,9 @@ class UserAdminService(BaseAdminCrudService):
             sensitive_operations = []
             diff_data = {}
 
-            # 检查是否禁用/启用用户
-            if hasattr(payload, "is_active"):
-                if not payload.is_active:
+            # 检查是否禁用/启用用户（仅当本次显式传入 is_active）
+            if "is_active" in update_fields:
+                if not update_fields["is_active"]:
                     sensitive_operations.append("disable_user")
                     diff_data["is_active"] = {"old": "enabled", "new": "disabled"}
                 else:
@@ -638,7 +641,7 @@ class UserAdminService(BaseAdminCrudService):
                     diff_data["is_active"] = {"old": "disabled", "new": "enabled"}
 
             # 检查是否重置密码
-            if hasattr(payload, "password") and payload.password:
+            if "password" in update_fields and update_fields["password"]:
                 sensitive_operations.append("reset_password")
                 diff_data["password"] = {"old": "******", "new": "******"}
 
@@ -663,15 +666,16 @@ class UserAdminService(BaseAdminCrudService):
         except Exception as exc:
             logger.warning(f"记录用户更新审计日志失败 - user_id: {entity.id}", exc_info=exc)
 
-        if hasattr(payload, "role_ids"):
+        # 仅当本次显式传入 role_ids 时才重置角色（避免部分更新用默认空列表误清空角色）
+        if "role_ids" in update_fields:
             self._replace_user_roles(entity.id, payload.role_ids)
 
-        # 如果用户被禁用，将该用户的所有Token加入黑名单
-        # 检查payload中的is_active字段，如果为False则禁用用户
-        if hasattr(payload, "is_active") and not payload.is_active:
-            add_user_all_tokens_to_blacklist(entity.id)
-        else:
-            clear_login_caches(entity.id)
+        # is_active 黑名单/登录缓存：仅当本次显式传入时才处理（避免部分更新误清登录缓存）
+        if "is_active" in update_fields:
+            if not update_fields["is_active"]:
+                add_user_all_tokens_to_blacklist(entity.id)
+            else:
+                clear_login_caches(entity.id)
 
     def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
         users = list(self.session.exec(select(User).where(User.id.in_(ids))).all())

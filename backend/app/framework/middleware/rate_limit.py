@@ -97,7 +97,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if current is None:
             # Redis 计数不可靠：fail-open 放行，跳过限流判断（避免不可靠计数误拒正常请求）
             logger.warning("限流计数不可靠（Redis 异常），client_id=%s path=%s 本次放行", client_id, path)
-            return await call_next(request)
+            response = await call_next(request)
+            response.headers["X-RateLimit-Limit"] = str(limit)
+            return response
         if current > limit:
             logger.warning("限流触发: client_id=%s path=%s limit=%d", client_id, path, limit)
             record_metric_event("rate_limited", path=path)
