@@ -67,7 +67,7 @@
 						:content="$t('标记后该结果将纳入评测基准集，用于自动化评测对比。请谨慎标记。')"
 						placement="top"
 					>
-						<el-icon class="ann-help"><InfoFilled /></el-icon>
+						<el-icon class="ann-help"><info-filled /></el-icon>
 					</el-tooltip>
 				</template>
 				<el-switch v-model="form.isGold" />

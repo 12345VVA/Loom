@@ -16,6 +16,8 @@ function toPath(dir: string) {
 // https://vitejs.dev/config
 export default ({ mode }: ConfigEnv): UserConfig => {
 	const isDev = mode === 'development';
+	// bundle 分析模式：`npm run build:analyze` 触发，生成 dist/stats.html
+	const enableAnalyze = mode === 'analyze';
 
 	return {
 		plugins: [
@@ -34,11 +36,14 @@ export default ({ mode }: ConfigEnv): UserConfig => {
 				},
 				demo: mode == 'demo' // 是否开启演示模式
 			}),
-			// visualizer({
-			// 	open: false,
-			// 	gzipSize: true,
-			// 	brotliSize: true
-			// }),
+			// bundle 分析：仅在 build:analyze 模式下注入 visualizer，不影响默认 build
+			enableAnalyze &&
+				visualizer({
+					open: true,
+					gzipSize: true,
+					brotliSize: true,
+					filename: 'dist/stats.html'
+				}),
 			VueI18nPlugin({
 				include: [toPath('./src/{modules,plugins}/**/locales/**')]
 			})

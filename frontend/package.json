@@ -7,6 +7,7 @@
 		"build": "vite build",
 		"build-static": "vite build --mode static",
 		"build-demo": "vite build --mode demo",
+		"build:analyze": "vite build --mode analyze",
 		"preview": "vite preview",
 		"type-check": "vue-tsc --build --force",
 		"test:unit": "vitest run",
