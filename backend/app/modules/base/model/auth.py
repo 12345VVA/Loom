@@ -308,7 +308,8 @@ class UserUpdateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    full_name: str
+    # full_name 放开为可选：支持部分更新（如禁用用户只传 {id, isActive:false}、改手机号只传 {id, phone}）
+    full_name: str | None = None
     nick_name: str = ""
     head_img: str | None = None
     email: str | None = None
@@ -401,8 +402,9 @@ class RoleUpdateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
-    name: str
-    label: str
+    # name/label 放开为可选：支持行内编辑/单字段更新（如只改 remark 或切换 is_active）
+    name: str | None = None
+    label: str | None = None
     code: str | None = None
     remark: str | None = None
     is_active: bool = True
@@ -549,6 +551,8 @@ class DepartmentCreateRequest(BaseModel):
 
 class DepartmentUpdateRequest(DepartmentCreateRequest):
     id: int
+    # 放开继承自 Create 的必填 name，支持部分更新（如调 sort_order/parent_id）
+    name: str | None = None
 
 
 class DepartmentOrderItem(BaseModel):

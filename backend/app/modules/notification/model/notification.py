@@ -130,6 +130,9 @@ class NotificationMessageCreateRequest(BaseModel):
 
 class NotificationMessageUpdateRequest(NotificationMessageCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段，支持部分更新（如召回 is_recalled、改 level）
+    title: str | None = None
+    content: str | None = None
 
 
 class NotificationMessageSendRequest(BaseModel):
@@ -187,6 +190,11 @@ class NotificationTemplateCreateRequest(BaseModel):
 
 class NotificationTemplateUpdateRequest(NotificationTemplateCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段，支持部分更新（如切换 is_active）
+    code: str | None = None
+    name: str | None = None
+    title_template: str | None = None
+    content_template: str | None = None
 
 
 class NotificationRuleRead(BaseModel):
@@ -224,3 +232,6 @@ class NotificationRuleCreateRequest(BaseModel):
 
 class NotificationRuleUpdateRequest(NotificationRuleCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段，支持部分更新（如切换 is_active/受众字段）
+    code: str | None = None
+    name: str | None = None

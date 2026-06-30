@@ -244,6 +244,9 @@ class AiProviderCreateRequest(BaseModel):
 
 class AiProviderUpdateRequest(AiProviderCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段，支持部分更新（如只改 is_active/api_key）
+    code: str | None = None
+    name: str | None = None
 
 
 class AiProviderTestRequest(BaseModel):
@@ -310,6 +313,10 @@ class AiModelCreateRequest(BaseModel):
 
 class AiModelUpdateRequest(AiModelCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段，支持部分更新（如只改 is_active/pricing_config）
+    provider_id: int | None = None
+    code: str | None = None
+    name: str | None = None
 
 
 class AiModelProfileRead(BaseModel):
@@ -374,6 +381,10 @@ class AiModelProfileCreateRequest(BaseModel):
 
 class AiModelProfileUpdateRequest(AiModelProfileCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段，支持部分更新（如切 is_default/is_active、调 temperature）
+    code: str | None = None
+    name: str | None = None
+    model_id: int | None = None
 
 
 class AiProfileActionRequest(BaseModel):
@@ -572,6 +583,9 @@ class AiGovernanceRuleCreateRequest(BaseModel):
 
 class AiGovernanceRuleUpdateRequest(AiGovernanceRuleCreateRequest):
     id: int
+    # 放开继承自 Create 的必填 code/name，支持部分更新（启停已有 toggle 旁路，其余字段也可行内编辑）
+    code: str | None = None
+    name: str | None = None
 
 
 class AiGovernanceRuleActionRequest(BaseModel):

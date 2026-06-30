@@ -108,6 +108,8 @@ class TaskInfoCreateRequest(BaseModel):
 
 class TaskInfoUpdateRequest(TaskInfoCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段 name，支持部分更新（启停已有 start/stop 旁路）
+    name: str | None = None
 
 
 class TaskLogRead(BaseModel):

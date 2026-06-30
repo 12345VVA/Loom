@@ -54,6 +54,9 @@ class DictTypeCreateRequest(BaseModel):
 
 class DictTypeUpdateRequest(DictTypeCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段，支持部分更新（如只改 sort 时的行内编辑）
+    name: str | None = None
+    key: str | None = None
 
 
 class DictInfoRead(BaseModel):
@@ -83,3 +86,6 @@ class DictInfoCreateRequest(BaseModel):
 
 class DictInfoUpdateRequest(DictInfoCreateRequest):
     id: int
+    # 放开继承自 Create 的必填字段，支持部分更新（如只改 value/sort_order）
+    type_id: int | None = None
+    name: str | None = None

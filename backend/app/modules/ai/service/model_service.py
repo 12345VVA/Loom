@@ -25,7 +25,9 @@ class AiModelService(BaseAdminCrudService):
         return data
 
     def _before_update(self, data: dict, entity: AiModel) -> dict:
-        self._ensure_provider(data.get("provider_id"))
+        # 部分更新：仅当显式传了 provider_id 才校验厂商存在（_ensure_provider 对 None 会报错）
+        if data.get("provider_id") is not None:
+            self._ensure_provider(data.get("provider_id"))
         self._ensure_unique_model(
             data.get("provider_id"), data.get("code"), data.get("model_type"), exclude_id=entity.id
         )
