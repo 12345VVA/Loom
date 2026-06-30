@@ -5,6 +5,23 @@ interface Snapshot {
 }
 
 /**
+ * 深拷贝：优先 structuredClone（保真 Date/Map/Set 等 JSON 无法保留的类型），
+ * 不可结构化克隆时（如含 Vue 组件引用、函数）回退 JSON。
+ * 注意：elements 节点的 icon 字段是 Vue 组件引用，structuredClone 会抛 DataCloneError，
+ * 故必须保留 JSON 兜底，否则 undo/redo 会直接崩溃。
+ */
+function deepClone<T>(value: T): T {
+	if (typeof structuredClone === 'function') {
+		try {
+			return structuredClone(value);
+		} catch {
+			// 回退 JSON（结构化克隆失败，通常因含函数/组件引用）
+		}
+	}
+	return JSON.parse(JSON.stringify(value));
+}
+
+/**
  * 撤销/重做 composable
  * 管理 elements 的历史快照，支持 Ctrl+Z / Ctrl+Shift+Z
  */
@@ -24,7 +41,7 @@ export function useUndoRedo(elements: Ref<any[]>) {
 		history.value = history.value.slice(0, pointer.value + 1);
 
 		const snapshot: Snapshot = {
-			elements: JSON.parse(JSON.stringify(elements.value))
+			elements: deepClone(elements.value)
 		};
 		history.value.push(snapshot);
 
@@ -41,7 +58,7 @@ export function useUndoRedo(elements: Ref<any[]>) {
 	function undo(): boolean {
 		if (!canUndo.value) return false;
 		pointer.value--;
-		elements.value = JSON.parse(JSON.stringify(history.value[pointer.value].elements));
+		elements.value = deepClone(history.value[pointer.value].elements);
 		return true;
 	}
 
@@ -51,7 +68,7 @@ export function useUndoRedo(elements: Ref<any[]>) {
 	function redo(): boolean {
 		if (!canRedo.value) return false;
 		pointer.value++;
-		elements.value = JSON.parse(JSON.stringify(history.value[pointer.value].elements));
+		elements.value = deepClone(history.value[pointer.value].elements);
 		return true;
 	}
 

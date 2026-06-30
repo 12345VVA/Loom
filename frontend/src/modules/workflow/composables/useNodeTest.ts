@@ -187,10 +187,18 @@ export function useNodeTest(
 		nodeTestDialog.visible = false;
 	}
 
+	/** 清理指定节点的测试输入缓存（节点删除时调用，避免内存泄漏） */
+	function clearMockCache(nodeIds: string[]) {
+		nodeIds.forEach(id => {
+			delete mockVariablesCache[id];
+		});
+	}
+
 	return {
 		nodeTestDialog,
 		openNodeTestDialog,
 		startNodeTest,
-		closeNodeTestDialog
+		closeNodeTestDialog,
+		clearMockCache
 	};
 }

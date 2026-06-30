@@ -32,7 +32,9 @@ export default defineConfig({
 				'src/modules/base/store/**/*.ts',
 				'src/modules/base/utils/**/*.ts',
 				'src/modules/dict/store/**/*.ts',
-				'src/modules/dict/utils/**/*.ts'
+				'src/modules/dict/utils/**/*.ts',
+				'src/modules/workflow/composables/**/*.ts',
+				'src/modules/workflow/utils/**/*.ts'
 			],
 			exclude: [
 				'**/*.d.ts',

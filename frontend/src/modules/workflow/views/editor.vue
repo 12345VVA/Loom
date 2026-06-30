@@ -406,6 +406,8 @@ import { useWorkflowTest } from '../composables/useWorkflowTest';
 import { useAlignmentGuides } from '../composables/useAlignmentGuides';
 import { useUndoRedo } from '../composables/useUndoRedo';
 import { useNodeTest } from '../composables/useNodeTest';
+import { useGraphBuilder } from '../composables/useGraphBuilder';
+import { planNodeRemoval } from '../composables/useNodeOps';
 
 // 导入重构的子组件
 import NodeConfigPanel from '../components/node-config-panel.vue';
@@ -535,24 +537,12 @@ const elements = ref<(FlowNode | FlowEdge)[]>([]);
 const _upstreamCache = new Map<string, { result: any[]; version: number }>();
 let _elementsVersion = 0;
 
-// 计算剥离运行态字段（class、data.runLog/runData）后的拓扑签名。
-// 用于区分"真实编辑"与"试运行/单节点测试写入的运行态"，避免后者污染 isDirty、误清上游缓存。
-function persistSignature(els: any[]): string {
-	return JSON.stringify(
-		els.map((el: any) => {
-			if (!el) return el;
-			const { class: _class, ...rest } = el;
-			if (rest && rest.data) {
-				const { runLog: _runLog, runData: _runData, ...dataRest } = rest.data;
-				rest.data = dataRest;
-			}
-			return rest;
-		})
-	);
-}
 let _persistSig = '';
 
 const { canUndo, canRedo, pushSnapshot, undo, redo, init: initUndoRedo } = useUndoRedo(elements);
+
+// 图构建（buildGraphPayload / persistSignature）抽离为 composable，便于单元测试
+const { persistSignature, buildGraphPayload } = useGraphBuilder(elements);
 
 // 测试运行相关方法使用 composable
 const {
@@ -661,7 +651,7 @@ function getUpstreamVariablesForNode(nodeId: string) {
 }
 
 // 单节点测试 composable
-const { nodeTestDialog, openNodeTestDialog, startNodeTest, closeNodeTestDialog } = useNodeTest(
+const { nodeTestDialog, openNodeTestDialog, startNodeTest, closeNodeTestDialog, clearMockCache } = useNodeTest(
 	service,
 	t,
 	workflowId,
@@ -895,30 +885,14 @@ function deleteSelectedElements() {
 	const edgesToRemove = elements.value.filter(el => 'source' in el && (el as any).selected);
 
 	if (nodesToRemove.length > 0 || edgesToRemove.length > 0) {
-		const nodeIdsToRemove = new Set(nodesToRemove.map(n => n.id));
-		const edgeIdsToRemove = new Set(edgesToRemove.map(e => e.id));
-
-		elements.value = elements.value.filter(el => {
-			if ('source' in el) {
-				return (
-					!edgeIdsToRemove.has(el.id) &&
-					!nodeIdsToRemove.has(el.source) &&
-					!nodeIdsToRemove.has(el.target)
-				);
-			} else {
-				return !nodeIdsToRemove.has(el.id);
-			}
+		// 级联清理关联 group + 子节点坐标转换（planNodeRemoval）
+		elements.value = planNodeRemoval(elements.value, {
+			nodeIds: nodesToRemove.map(n => n.id),
+			edgeIds: edgesToRemove.map(e => e.id)
 		});
+		clearMockCache(nodesToRemove.map(n => n.id));
 
-		// 解除子节点的关联（防止删除 group 时子节点丢失 parentNode 导致渲染异常）
-		elements.value.forEach(el => {
-			if (!('source' in el) && nodeIdsToRemove.has((el as any).parentNode)) {
-				delete (el as any).parentNode;
-				delete (el as any).expandParent;
-			}
-		});
-
-		if (selectedNodeId.value && nodeIdsToRemove.has(selectedNodeId.value)) {
+		if (selectedNodeId.value && nodesToRemove.some(n => n.id === selectedNodeId.value)) {
 			selectedNodeId.value = null;
 		}
 
@@ -1227,7 +1201,6 @@ function handleAddNode(type: string, x: number, y: number) {
 	}
 
 	elements.value.push(newNode);
-	pushSnapshot();
 
 	// 自动创建组容器（不连线，由用户自行从容器 handle 连出）
 	if (type === 'loop_controller' || type === 'batch_processor') {
@@ -1242,6 +1215,10 @@ function handleAddNode(type: string, x: number, y: number) {
 		};
 		elements.value.push(groupNode);
 	}
+
+	// [P0 修复] 快照在 group 加入后拍摄，保证 undo 时主节点 + group 原子撤销
+	// （原快照在加 group 前拍摄，undo 后 group 残留）
+	pushSnapshot();
 }
 
 // 通过点击面板添加节点
@@ -1383,9 +1360,14 @@ function onConnect(params: Connection) {
 		return;
 	}
 
-	// 去重
+	// 去重：同 source + target + sourceHandle 视为重复。
+	// [P0 修复] 加入 sourceHandle 比较，避免 condition/switch 多分支连同一目标被误拒
 	const exists = elements.value.some(
-		(el: any) => 'source' in el && el.source === source && el.target === target
+		(el: any) =>
+			'source' in el &&
+			el.source === source &&
+			el.target === target &&
+			(el as any).sourceHandle === sourceHandle
 	);
 	if (exists) return;
 
@@ -1701,21 +1683,9 @@ function duplicateNode() {
 
 function deleteContextNode() {
 	const nodeId = contextMenu.nodeId;
-	elements.value = elements.value.filter(el => {
-		if ('source' in el) {
-			return el.source !== nodeId && el.target !== nodeId;
-		}
-		return el.id !== nodeId;
-	});
-
-	// 解除子节点的关联
-	elements.value.forEach(el => {
-		if (!('source' in el) && (el as any).parentNode === nodeId) {
-			delete (el as any).parentNode;
-			delete (el as any).expandParent;
-		}
-	});
-
+	// 级联清理关联 group + 子节点坐标转换（planNodeRemoval）
+	elements.value = planNodeRemoval(elements.value, { nodeIds: [nodeId] });
+	clearMockCache([nodeId]);
 	if (selectedNodeId.value === nodeId) {
 		selectedNodeId.value = null;
 	}
@@ -1727,80 +1697,19 @@ function deleteContextNode() {
 function deleteSelectedNode() {
 	if (!selectedNodeId.value) return;
 	const nodeId = selectedNodeId.value;
-	// 移除关联的连线
-	elements.value = elements.value.filter(el => {
-		if ('source' in el) {
-			const edge = el as FlowEdge;
-			return edge.id !== nodeId && edge.source !== nodeId && edge.target !== nodeId;
-		}
-		return el.id !== nodeId;
-	});
-
-	// 解除子节点的关联
-	elements.value.forEach(el => {
-		if (!('source' in el) && (el as any).parentNode === nodeId) {
-			delete (el as any).parentNode;
-			delete (el as any).expandParent;
-		}
-	});
-
+	// 级联清理关联 group + 子节点坐标转换（planNodeRemoval）
+	elements.value = planNodeRemoval(elements.value, { nodeIds: [nodeId] });
+	clearMockCache([nodeId]);
 	selectedNodeId.value = null;
 }
 
-// 构建后端标准的拓扑 JSON 结构
-function buildGraphPayload() {
-	const nodes = elements.value.filter(el => !('source' in el)) as FlowNode[];
-	const edges = elements.value.filter(el => 'source' in el) as FlowEdge[];
-
-	// 剥离运行态数据 (runLog 等) 防止被错误保存并造成体积膨胀
-	const cleanElements = elements.value.map(el => {
-		if ('source' in el) return el;
-		const { class: _, ...restNode } = el as any;
-		const data = { ...(restNode.data || {}) };
-		delete data.runLog;
-		return { ...restNode, data };
-	});
-
-	return {
-		elements: cleanElements,
-		nodes: nodes.map(n => {
-			const conf = { ...(n.data?.config || {}) };
-			if (n.type === 'tool_executor') {
-				try {
-					conf.arguments = JSON.parse(conf.argumentsJson || '{}');
-				} catch (e) {
-					conf.arguments = {};
-				}
-			}
-			const serialized: any = {
-				id: n.id,
-				type: n.type,
-				name: n.label,
-				config: conf
-			};
-			if ((n as any).parentNode) serialized.parentNode = (n as any).parentNode;
-			if ((n as any).extent) serialized.extent = (n as any).extent;
-			if ((n as any).expandParent) serialized.expandParent = (n as any).expandParent;
-			if (n.style) serialized.style = n.style;
-			return serialized;
-		}),
-		edges: edges.map(e => {
-			const edge: any = {
-				source: e.source,
-				target: e.target,
-				type: e.type || 'direct',
-				condition: e.data?.condition || ''
-			};
-			if ((e as any).sourceHandle) edge.sourceHandle = (e as any).sourceHandle;
-			if (e.data?.label) edge.data = { label: e.data.label };
-			return edge;
-		})
-	};
-}
+// buildGraphPayload / persistSignature 已抽离至 useGraphBuilder composable
 
 // 将 Vue Flow 画布信息转换打包为后端标准工作流 JSON 格式并存储
 async function saveWorkflow() {
 	if (!workflowId.value) return;
+	// [P0 修复] 并发互斥：快速双击保存时阻止重入，避免竞态写入
+	if (saving.value) return;
 	// 阻断：节点 inputs 变量名非法（空/格式错/重名）时不允许保存
 	const invalidInput = findInvalidNodeInput(elements.value);
 	if (invalidInput) {
