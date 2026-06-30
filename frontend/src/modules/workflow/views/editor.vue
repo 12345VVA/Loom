@@ -32,7 +32,7 @@
 				>
 					<background pattern-color="#e0e0e0" :gap="16" />
 					<controls position="bottom-right" />
-					<mini-map />
+					<mini-map v-if="miniMapVisible" />
 					<!-- 对齐辅助线 -->
 					<svg
 						v-if="guides.length"
@@ -61,7 +61,6 @@
 						/>
 					</svg>
 					<editor-bottom-toolbar
-						:is-dirty="isDirty"
 						:has-incomplete-nodes="hasIncompleteNodes"
 						:workflow-name="workflowName"
 						:workflow-code="workflowCode"
@@ -84,31 +83,48 @@
 					/>
 				</vue-flow>
 
-				<!-- 右键上下文菜单 -->
+				<!-- MiniMap 显隐切换（#28） -->
+				<el-tooltip
+					:content="miniMapVisible ? $t('隐藏缩略图') : $t('显示缩略图')"
+					placement="right"
+				>
+					<el-button class="minimap-toggle" circle :icon="Grid" @click="toggleMiniMap" />
+				</el-tooltip>
+
+				<!-- 右键上下文菜单（#23 键盘 a11y：方向键导航 + Enter 触发 + Escape 关闭） -->
 				<div
+					ref="contextMenuRef"
 					v-if="contextMenu.visible"
 					class="context-menu"
 					role="menu"
+					tabindex="-1"
 					:style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+					@keydown="onMenuKeydown"
 				>
-					<div class="context-menu-item" @click="editContextNode">
+					<div class="context-menu-item" role="menuitem" tabindex="-1" @click="editContextNode">
 						<el-icon><edit /></el-icon>
 						<span>{{ $t('配置节点') }}</span>
 					</div>
 					<div
 						class="context-menu-item"
+						role="menuitem"
+						tabindex="-1"
+						:aria-disabled="!canTestContextNode"
 						@click="testContextNode"
 						:class="{ 'is-disabled': !canTestContextNode }"
 					>
 						<el-icon><caret-right /></el-icon>
 						<span>{{ $t('测试节点') }}</span>
 					</div>
-					<div class="context-menu-item" @click="duplicateNode">
+					<div class="context-menu-item" role="menuitem" tabindex="-1" @click="duplicateNode">
 						<el-icon><copy-document /></el-icon>
 						<span>{{ $t('复制节点') }}</span>
 					</div>
 					<div
 						class="context-menu-item"
+						role="menuitem"
+						tabindex="-1"
+						:aria-disabled="!canDistribute"
 						@click="distributeHorizontal"
 						:class="{ 'is-disabled': !canDistribute }"
 					>
@@ -117,16 +133,20 @@
 					</div>
 					<div
 						class="context-menu-item"
+						role="menuitem"
+						tabindex="-1"
+						:aria-disabled="!canDistribute"
 						@click="distributeVertical"
 						:class="{ 'is-disabled': !canDistribute }"
 					>
 						<el-icon><operation /></el-icon>
 						<span>{{ $t('垂直等距分布') }}</span>
 					</div>
-					<div class="context-menu-divider" />
+					<div class="context-menu-divider" role="separator" />
 					<div
 						class="context-menu-item context-menu-item--danger"
 						role="menuitem"
+						tabindex="-1"
 						@click="deleteContextNode"
 					>
 						<el-icon><delete /></el-icon>
@@ -241,105 +261,18 @@
 			</template>
 		</el-dialog>
 
-		<!-- 测试运行日志抽屉 -->
-		<el-drawer
-			v-model="testLogDrawer.visible"
+		<log-drawer
+			v-model:visible="testLogDrawer.visible"
+			:items="testLogDrawer.items"
+			:loading="testLogDrawer.loading"
+			:status="testLogDrawer.status"
 			:title="$t('测试运行日志')"
 			size="500px"
+			:empty-text="$t('暂无执行记录，等待后端运行')"
 			@close="stopLogPolling"
-			destroy-on-close
-		>
-			<div v-loading="testLogDrawer.loading" style="padding: 10px; padding-top: 0">
-				<div
-					style="
-						margin-bottom: 15px;
-						display: flex;
-						justify-content: space-between;
-						align-items: center;
-					"
-				>
-					<el-tag
-						:type="
-							testLogDrawer.status === 'success'
-								? 'success'
-								: testLogDrawer.status === 'failed'
-									? 'danger'
-									: 'primary'
-						"
-					>
-						{{ $t('状态：') }}{{ testLogDrawer.status || $t('准备中') }}
-					</el-tag>
-					<div>
-						<el-button size="small" @click="expandAllTestLogs">{{
-							$t('展开')
-						}}</el-button>
-						<el-button size="small" @click="collapseAllTestLogs">{{
-							$t('折叠')
-						}}</el-button>
-					</div>
-				</div>
-				<el-timeline v-if="testLogDrawer.items.length > 0">
-					<el-timeline-item
-						v-for="(item, index) in testLogDrawer.items"
-						:key="index"
-						:timestamp="formatTime(item.createTime)"
-						:type="item.status === 'success' ? 'success' : 'danger'"
-					>
-						<el-card shadow="hover" style="margin-bottom: 10px">
-							<template #header>
-								<div
-									style="
-										display: flex;
-										justify-content: space-between;
-										align-items: center;
-										cursor: pointer;
-									"
-									@click="item.isExpanded = !item.isExpanded"
-								>
-									<div style="display: flex; align-items: center; gap: 8px">
-										<el-icon
-											><arrow-down v-if="item.isExpanded" /><arrow-right
-												v-else
-										/></el-icon>
-										<strong style="font-size: 15px">{{ item.nodeName }}</strong>
-									</div>
-									<el-tag size="small" type="info">{{ item.nodeType }}</el-tag>
-								</div>
-							</template>
-							<div class="log-payload" v-show="item.isExpanded">
-								<div class="log-payload__section">
-									<div class="section-header">
-										<strong>{{ $t('上游输入：') }}</strong>
-										<el-button
-											link
-											type="primary"
-											:icon="CopyDocument"
-											@click="copyToClipboard(formatJson(item.inputData))"
-											>{{ $t('复制') }}</el-button
-										>
-									</div>
-									<pre>{{ formatJson(item.inputData) }}</pre>
-								</div>
-								<div class="log-payload__section" style="margin-top: 10px">
-									<div class="section-header">
-										<strong>{{ $t('执行输出：') }}</strong>
-										<el-button
-											link
-											type="primary"
-											:icon="CopyDocument"
-											@click="copyToClipboard(formatJson(item.outputData))"
-											>{{ $t('复制') }}</el-button
-										>
-									</div>
-									<pre>{{ formatJson(item.outputData) }}</pre>
-								</div>
-							</div>
-						</el-card>
-					</el-timeline-item>
-				</el-timeline>
-				<el-empty v-else :description="$t('暂无执行记录，等待后端运行')" />
-			</div>
-		</el-drawer>
+			@expand-all="expandAllTestLogs"
+			@collapse-all="collapseAllTestLogs"
+		/>
 	</div>
 </template>
 
@@ -348,7 +281,7 @@ defineOptions({
 	name: 'workflow-editor'
 });
 
-import { ref, reactive, onMounted, onActivated, onDeactivated, onBeforeUnmount, computed, watch, provide } from 'vue';
+import { ref, reactive, onMounted, onActivated, onDeactivated, onBeforeUnmount, computed, watch, provide, nextTick } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { useCool } from '/@/cool';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -380,7 +313,6 @@ import {
 	Search,
 	Edit,
 	CopyDocument,
-	ArrowRight,
 	ArrowDown,
 	CaretRight,
 	Delete,
@@ -397,8 +329,14 @@ import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
 
-import { formatJson, copyToClipboard, genId, findInvalidNodeInput } from '../utils';
+import {
+	formatJson,
+	genId,
+	findInvalidNodeInput,
+	isRequiredConfigMissing
+} from '../utils';
 import { getNodeMeta } from '../utils/node-type-registry';
+import LogDrawer from '../components/log-drawer.vue';
 import { UNTESTABLE_NODE_TYPES, OPEN_NODE_TEST_DIALOG_KEY } from '../components/constants';
 import dayjs from 'dayjs';
 
@@ -481,11 +419,52 @@ const contextMenu = reactive({
 	nodeId: ''
 });
 
+const contextMenuRef = ref<HTMLElement>();
+
+// MiniMap 显隐（#28）：localStorage 持久化，默认显示
+const miniMapVisible = ref(localStorage.getItem('loom_editor_minimap_visible') !== 'false');
+function toggleMiniMap() {
+	miniMapVisible.value = !miniMapVisible.value;
+	localStorage.setItem('loom_editor_minimap_visible', String(miniMapVisible.value));
+}
+
+// 右键菜单键盘导航（#23 a11y）：方向键在可选项间循环、Enter/Space 触发、Escape 关闭
+function onMenuKeydown(event: KeyboardEvent) {
+	const root = contextMenuRef.value;
+	if (!root) return;
+	const items = Array.from(
+		root.querySelectorAll<HTMLElement>('.context-menu-item:not(.is-disabled)')
+	);
+	if (items.length === 0) return;
+	const currentIndex = items.findIndex(el => el === document.activeElement);
+	if (event.key === 'ArrowDown') {
+		event.preventDefault();
+		items[(currentIndex + 1) % items.length]?.focus();
+	} else if (event.key === 'ArrowUp') {
+		event.preventDefault();
+		items[(currentIndex - 1 + items.length) % items.length]?.focus();
+	} else if (event.key === 'Enter' || event.key === ' ') {
+		if (currentIndex >= 0) {
+			event.preventDefault();
+			items[currentIndex]?.click();
+		}
+	} else if (event.key === 'Escape') {
+		contextMenu.visible = false;
+	}
+}
+
 watch(
 	() => contextMenu.visible,
 	newVal => {
 		if (!newVal) {
 			contextMenu.nodeId = '';
+		} else {
+			// 打开时聚焦首个可选项，使方向键/Enter 可达（#23 a11y）
+			nextTick(() => {
+				contextMenuRef.value
+					?.querySelector<HTMLElement>('.context-menu-item:not(.is-disabled)')
+					?.focus();
+			});
 		}
 	}
 );
@@ -554,8 +533,7 @@ const {
 	startTestRun,
 	stopLogPolling,
 	expandAllTestLogs,
-	collapseAllTestLogs,
-	formatTime
+	collapseAllTestLogs
 } = useWorkflowTest(service, t, workflowId, isDirty, elements, saveWorkflow);
 
 // getUpstreamVariablesForNode moved here to fix hoisting issue
@@ -691,33 +669,6 @@ const availableTargetNodes = computed(() => {
 		el => !('source' in el) && el.id !== selectedNodeId.value
 	) as FlowNode[];
 });
-
-// 判断节点配置是否不完整
-function isRequiredConfigMissing(node: FlowNode): boolean {
-	const cfg = node.data?.config || {};
-	switch (node.type) {
-		case 'llm':
-			return !cfg.modelProfileCode || !cfg.promptTemplate;
-		case 'condition':
-			return !cfg.expression;
-		case 'switch':
-			return !cfg.variable || !cfg.cases?.length;
-		case 'image_generator':
-			return !cfg.modelProfileCode || !cfg.promptTemplate;
-		case 'tool_executor':
-			return !cfg.toolCode;
-		case 'human_input':
-			return !cfg.message;
-		case 'intent_classifier':
-			return !cfg.modelProfileCode || !cfg.intents?.length;
-		case 'variable_assignment':
-			return !cfg.assignments?.length;
-		case 'variable_transform':
-			return !cfg.input_variable || !cfg.transform_type || !cfg.output_variable;
-		default:
-			return false;
-	}
-}
 
 const hasIncompleteNodes = computed(() => {
 	return elements.value.some((el: any) => !('source' in el) && isRequiredConfigMissing(el));
@@ -2006,6 +1957,15 @@ function exportWorkflow() {
 	overflow: hidden;
 }
 
+.minimap-toggle {
+	position: absolute;
+	top: 16px;
+	left: 16px;
+	z-index: 5;
+	background: rgba(255, 255, 255, 0.85);
+	backdrop-filter: blur(8px);
+}
+
 // 半透明遮罩
 .config-panel-backdrop {
 	position: absolute;
@@ -2182,26 +2142,6 @@ function exportWorkflow() {
 		height: 1px;
 		background: var(--el-border-color-lighter);
 		margin: 4px 0;
-	}
-}
-
-.log-payload {
-	.section-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 4px;
-	}
-	pre {
-		background-color: var(--el-fill-color-light);
-		padding: 10px;
-		border-radius: 4px;
-		font-family: monospace;
-		font-size: 12px;
-		margin: 4px 0 0 0;
-		overflow-x: auto;
-		white-space: pre-wrap;
-		word-break: break-all;
 	}
 }
 

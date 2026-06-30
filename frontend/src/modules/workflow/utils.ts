@@ -84,3 +84,84 @@ export function findInvalidNodeInput(nodes: any[]): { label: string; error: stri
 	}
 	return null;
 }
+
+/**
+ * 节点配置必填字段缺失检测：返回缺失字段的中文标签列表（空数组 = 配置完整）。
+ * 与 editor.vue 的 hasIncompleteNodes 判定同源；供配置面板做字段级内联提示。
+ * 注：默认分支（start/end/loop_controller/batch_processor 等）无必填业务字段，返回 []。
+ */
+export function getMissingConfigFields(node: {
+	type?: string;
+	data?: { config?: Record<string, any> } | null;
+}): string[] {
+	const cfg = node?.data?.config || {};
+	switch (node?.type) {
+		case 'llm': {
+			const miss: string[] = [];
+			if (!cfg.modelProfileCode) miss.push('AI 模型');
+			if (!cfg.promptTemplate) miss.push('提示词模板');
+			return miss;
+		}
+		case 'condition':
+			return !cfg.expression ? ['条件表达式'] : [];
+		case 'switch': {
+			const miss: string[] = [];
+			if (!cfg.variable) miss.push('判断变量');
+			if (!cfg.cases?.length) miss.push('分支配置');
+			return miss;
+		}
+		case 'image_generator': {
+			const miss: string[] = [];
+			if (!cfg.modelProfileCode) miss.push('AI 模型');
+			if (!cfg.promptTemplate) miss.push('提示词模板');
+			return miss;
+		}
+		case 'tool_executor':
+			return !cfg.toolCode ? ['工具'] : [];
+		case 'human_input':
+			return !cfg.message ? ['提示消息'] : [];
+		case 'intent_classifier': {
+			const miss: string[] = [];
+			if (!cfg.modelProfileCode) miss.push('AI 模型');
+			if (!cfg.intents?.length) miss.push('意图分支');
+			return miss;
+		}
+		case 'variable_assignment':
+			return !cfg.assignments?.length ? ['赋值规则'] : [];
+		case 'variable_transform': {
+			const miss: string[] = [];
+			if (!cfg.input_variable) miss.push('输入变量');
+			if (!cfg.transform_type) miss.push('转换类型');
+			if (!cfg.output_variable) miss.push('输出变量');
+			return miss;
+		}
+		default:
+			return [];
+	}
+}
+
+/**
+ * 节点配置是否不完整（存在缺失的必填字段）。基于 getMissingConfigFields，
+ * 供 hasIncompleteNodes 等仅需布尔判定的场景使用。
+ */
+export function isRequiredConfigMissing(node: {
+	type?: string;
+	data?: { config?: Record<string, any> } | null;
+}): boolean {
+	return getMissingConfigFields(node).length > 0;
+}
+
+/**
+ * 工作流执行日志项（节点级输入/输出快照）。
+ * editor 测试运行抽屉与 instance 步骤日志抽屉共用，供 <LogDrawer> 组件统一渲染。
+ */
+export interface WorkflowLogItem {
+	id?: number;
+	nodeName?: string;
+	nodeType?: string;
+	inputData?: string;
+	outputData?: string;
+	status?: string;
+	createTime?: string;
+	isExpanded?: boolean;
+}

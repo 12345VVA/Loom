@@ -85,84 +85,17 @@
 		</template>
 	</el-dialog>
 
-	<!-- 步骤日志抽屉 -->
-	<el-drawer
-		v-model="logDrawer.visible"
+	<log-drawer
+		v-model:visible="logDrawer.visible"
+		:items="logDrawer.items"
+		:loading="logDrawer.loading"
 		:title="$t('工作流步骤执行日志')"
 		size="650px"
-		destroy-on-close
-	>
-		<div v-loading="logDrawer.loading" style="padding: 10px">
-			<div
-				style="margin-bottom: 15px; display: flex; justify-content: flex-end; gap: 10px"
-				v-if="logDrawer.items.length > 0"
-			>
-				<el-button size="small" @click="expandAllLogs">{{ $t('展开全部') }}</el-button>
-				<el-button size="small" @click="collapseAllLogs">{{ $t('折叠全部') }}</el-button>
-			</div>
-			<el-timeline v-if="logDrawer.items.length > 0">
-				<el-timeline-item
-					v-for="(item, index) in logDrawer.items"
-					:key="index"
-					:timestamp="formatTime(item.createTime)"
-					:type="item.status === 'success' ? 'success' : 'danger'"
-				>
-					<el-card shadow="hover" style="margin-bottom: 10px">
-						<template #header>
-							<div
-								style="
-									display: flex;
-									justify-content: space-between;
-									align-items: center;
-									cursor: pointer;
-								"
-								@click="item.isExpanded = !item.isExpanded"
-							>
-								<div style="display: flex; align-items: center; gap: 8px">
-									<el-icon
-										><arrow-down v-if="item.isExpanded" /><arrow-right v-else
-									/></el-icon>
-									<strong style="font-size: 15px">{{ item.nodeName }}</strong>
-								</div>
-								<el-tag size="small" type="info">{{ item.nodeType }}</el-tag>
-							</div>
-						</template>
-						<div class="log-payload" v-show="item.isExpanded">
-							<div class="log-payload__section">
-								<div class="section-header">
-									<strong>{{ $t('上游输入：') }}</strong>
-									<el-button
-										link
-										type="primary"
-										:icon="CopyDocument"
-										@click="copyToClipboard(formatJson(item.inputData))"
-									>
-										{{ $t('复制') }}
-									</el-button>
-								</div>
-								<pre>{{ formatJson(item.inputData) }}</pre>
-							</div>
-							<div class="log-payload__section" style="margin-top: 10px">
-								<div class="section-header">
-									<strong>{{ $t('执行输出：') }}</strong>
-									<el-button
-										link
-										type="primary"
-										:icon="CopyDocument"
-										@click="copyToClipboard(formatJson(item.outputData))"
-									>
-										{{ $t('复制') }}
-									</el-button>
-								</div>
-								<pre>{{ formatJson(item.outputData) }}</pre>
-							</div>
-						</div>
-					</el-card>
-				</el-timeline-item>
-			</el-timeline>
-			<el-empty v-else :description="$t('暂无节点执行步骤记录')" />
-		</div>
-	</el-drawer>
+		time-format="YYYY-MM-DD HH:mm:ss"
+		:empty-text="$t('暂无节点执行步骤记录')"
+		@expand-all="expandAllLogs"
+		@collapse-all="collapseAllLogs"
+	/>
 </template>
 
 <script lang="ts" setup>
@@ -175,9 +108,7 @@ import { useCool } from '/@/cool';
 import { ref, reactive, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
-import { ArrowDown, ArrowRight, CopyDocument } from '@element-plus/icons-vue';
-import { formatJson, copyToClipboard } from '../utils';
-import dayjs from 'dayjs';
+import LogDrawer from '../components/log-drawer.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -464,30 +395,4 @@ function collapseAllLogs() {
 		item.isExpanded = false;
 	});
 }
-
-function formatTime(value: string) {
-	return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-';
-}
 </script>
-
-<style lang="scss" scoped>
-.log-payload {
-	.section-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 4px;
-	}
-	pre {
-		background-color: var(--el-fill-color-light);
-		padding: 10px;
-		border-radius: 4px;
-		font-family: monospace;
-		font-size: 12px;
-		margin: 4px 0 0 0;
-		overflow-x: auto;
-		white-space: pre-wrap;
-		word-break: break-all;
-	}
-}
-</style>

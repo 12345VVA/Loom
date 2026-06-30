@@ -143,7 +143,6 @@ import {
 import { NODE_REGISTRY } from '../utils/node-type-registry';
 
 const props = defineProps<{
-	isDirty?: boolean;
 	hasIncompleteNodes?: boolean;
 	workflowName: string;
 	workflowCode: string;
@@ -209,10 +208,12 @@ const isSearchEmpty = computed(() => {
 	return filteredCategories.value.every(cat => cat.items.length === 0);
 });
 
-const isTestRunDisabled = computed(() => !!props.isDirty || !!props.hasIncompleteNodes);
+// 试运行不再被 isDirty 锁死：草稿态下点击会由 openTestDialog/openNodeTestDialog
+// 自动保存最新配置后再运行（见 useWorkflowTest/useNodeTest），避免打断"调整→测试→迭代"循环。
+// 仅保留"存在未完成配置节点"这一硬阻断（配置缺失确实无法执行）。
+const isTestRunDisabled = computed(() => !!props.hasIncompleteNodes);
 
 const runButtonTooltip = computed(() => {
-	if (props.isDirty) return t('请先保存工作流后再试运行');
 	if (props.hasIncompleteNodes) return t('存在未完成配置的节点，请补充后再试运行');
 	return '';
 });

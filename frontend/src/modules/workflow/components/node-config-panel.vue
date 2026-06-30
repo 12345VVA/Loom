@@ -51,6 +51,18 @@
 			</div>
 		</div>
 
+		<!-- 节点配置不完整内联提示（#18）：字段级缺失提示，比画布 Badge 更直观 -->
+		<el-alert
+			v-if="missingFields.length"
+			class="panel-incomplete-alert"
+			type="warning"
+			:closable="false"
+			show-icon
+			:title="$t('该节点配置不完整，请补充以下字段')"
+		>
+			{{ missingFields.join('、') }}
+		</el-alert>
+
 		<el-scrollbar class="panel-content" ref="scrollbarRef">
 			<el-form :model="selectedNode.data" label-position="top">
 				<!-- 统一的节点输入配置 (Strict Mode) -->
@@ -143,6 +155,7 @@ import {
 } from './constants';
 import type { ElScrollbar } from 'element-plus';
 import { getNodeMeta } from '../utils/node-type-registry';
+import { getMissingConfigFields } from '../utils';
 
 // 导入所有配置组件
 import StartConfig from './node-configs/start-config.vue';
@@ -203,6 +216,9 @@ const NODE_MODEL_TYPE_MAP: Record<string, string> = {
 };
 
 const nodeIcon = computed(() => getNodeMeta(props.selectedNode?.type).icon);
+
+// 当前选中节点缺失的必填字段（#18 内联校验提示，比画布 Badge 更直观）
+const missingFields = computed(() => getMissingConfigFields(props.selectedNode));
 
 const openNodeTestDialog = inject(OPEN_NODE_TEST_DIALOG_KEY);
 
@@ -522,5 +538,12 @@ function getVariableRefText(varName: string): string {
 	color: var(--el-text-color-placeholder);
 	margin-top: 4px;
 	line-height: 1.4;
+}
+
+.panel-incomplete-alert {
+	margin: 0;
+	border-radius: 0;
+	border-left: none;
+	border-right: none;
 }
 </style>
