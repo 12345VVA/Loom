@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -27,6 +28,8 @@ from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.notification.model.notification import AudienceRule
 from app.modules.notification.service.notification_service import NotificationService
+
+logger = logging.getLogger(__name__)
 
 
 class AiGovernanceRuleService(BaseAdminCrudService):
@@ -304,6 +307,10 @@ class AiGovernanceService:
                 continue
             key = self._concurrent_key(rule)
             current = cache_incr(key, ttl_seconds=_CONCURRENT_TTL)
+            if current is None:
+                # Redis 计数不可靠：fail-open 放行（保持可用性），记录告警便于追溯
+                logger.warning("并发计数不可靠（Redis 异常），治理规则 %s 本次放行", rule.name)
+                continue
             if current > limit:
                 cache_decr(key, ttl_seconds=_CONCURRENT_TTL)
                 window_start, window_end = _window_bounds(rule.period)

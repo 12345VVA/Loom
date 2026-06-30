@@ -153,10 +153,13 @@ def cache_set_json(key: str, value: Any, ttl_seconds: int | None = None) -> bool
     return cache_set(key, json.dumps(value, ensure_ascii=True), ttl_seconds)
 
 
-def cache_incr(key: str, ttl_seconds: int | None = None) -> int:
+def cache_incr(key: str, ttl_seconds: int | None = None) -> int | None:
     """
-    原子递增计数器。返回递增后的值。
-    Redis 不可用时降级为非原子的 get+set（单进程下可接受）。
+    原子递增计数器。返回递增后的值；Redis 异常时返回 None 表示计数不可靠。
+
+    调用方应对 None 做 fail-open 处理（放行并告警），避免 Redis 抖动时治理/限流
+    基于不可靠计数误判（多进程下内存降级计数分散，会超限放行）。
+    Redis 未配置（开发环境）仍降级为进程内内存计数。
     """
     client = get_redis_client()
     if client is not None:
@@ -168,7 +171,8 @@ def cache_incr(key: str, ttl_seconds: int | None = None) -> int:
             results = pipe.execute()
             return results[0]
         except RedisError as exc:
-            logger.warning("Redis INCR 失败 %s: %s", key, exc)
+            logger.error("Redis INCR 失败 %s: %s（计数不可靠，调用方应 fail-open 放行）", key, exc)
+            return None
 
     # 降级：内存缓存（单进程下无竞争）
     entry = _memory_cache.get(key)

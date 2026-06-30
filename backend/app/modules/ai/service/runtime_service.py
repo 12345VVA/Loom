@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import time
 import time as time_module
@@ -48,6 +49,13 @@ from app.modules.ai.service.utils import (
 from app.modules.base.model.auth import User
 
 logger = logging.getLogger(__name__)
+
+# 当前请求内 fallback 降级深度：跨 _fallback/_stream_fallback 递归累加，
+# 防止 fallback 链成环时 _invoke 失败→_fallback→_invoke 形成无限递归（最终 RecursionError 崩 worker）
+_fallback_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "ai_fallback_depth", default=0
+)
+MAX_FALLBACK_DEPTH = 5
 
 
 def _make_absolute_url(path: str) -> str:
@@ -612,27 +620,36 @@ class AiModelRuntimeService:
     ) -> Iterable[str] | None:
         if not profile.fallback_profile_id:
             return None
-        fallback = self.session.get(AiModelProfile, profile.fallback_profile_id)
-        if not fallback:
+        # 深度兜底：fallback 链过长或成环时停止降级，避免 _stream_invoke 失败再回调本方法形成无限递归
+        depth = _fallback_depth.get()
+        if depth >= MAX_FALLBACK_DEPTH:
+            logger.warning("AI 流式 fallback 链已达最大深度 %d，停止降级", MAX_FALLBACK_DEPTH)
             return None
-        model = self.session.get(AiModel, fallback.model_id)
-        provider = self.session.get(AiProvider, model.provider_id) if model else None
-        if not model or not provider or not model.is_active or not provider.is_active:
-            return None
-        options = {**AiModelRegistryService(self.session)._merge_options(model, fallback), **request_options}
-        if structured_response:
-            options["response_format"] = structured_response
-        elif response_format_overridden:
-            options.pop("response_format", None)
-        return self._stream_invoke(
-            {"provider": provider, "model": model, "profile": fallback, "options": options},
-            current_user=current_user,
-            messages=messages,
-            options=options,
-            request_options=request_options,
-            structured_response=structured_response or options.get("response_format"),
-            response_format_overridden=response_format_overridden,
-        )
+        token = _fallback_depth.set(depth + 1)
+        try:
+            fallback = self.session.get(AiModelProfile, profile.fallback_profile_id)
+            if not fallback:
+                return None
+            model = self.session.get(AiModel, fallback.model_id)
+            provider = self.session.get(AiProvider, model.provider_id) if model else None
+            if not model or not provider or not model.is_active or not provider.is_active:
+                return None
+            options = {**AiModelRegistryService(self.session)._merge_options(model, fallback), **request_options}
+            if structured_response:
+                options["response_format"] = structured_response
+            elif response_format_overridden:
+                options.pop("response_format", None)
+            return self._stream_invoke(
+                {"provider": provider, "model": model, "profile": fallback, "options": options},
+                current_user=current_user,
+                messages=messages,
+                options=options,
+                request_options=request_options,
+                structured_response=structured_response or options.get("response_format"),
+                response_format_overridden=response_format_overridden,
+            )
+        finally:
+            _fallback_depth.reset(token)
 
     def _fallback(
         self,
@@ -646,40 +663,49 @@ class AiModelRuntimeService:
     ) -> dict | None:
         if not profile.fallback_profile_id:
             return None
-        fallback = self.session.get(AiModelProfile, profile.fallback_profile_id)
-        if not fallback:
+        # 深度兜底：fallback 链过长或成环时停止降级，避免 _invoke 失败再回调本方法形成无限递归
+        depth = _fallback_depth.get()
+        if depth >= MAX_FALLBACK_DEPTH:
+            logger.warning("AI fallback 链已达最大深度 %d，停止降级", MAX_FALLBACK_DEPTH)
             return None
-        model = self.session.get(AiModel, fallback.model_id)
-        provider = self.session.get(AiProvider, model.provider_id) if model else None
-        if not model or not provider or not model.is_active or not provider.is_active:
-            return None
-        options = {**AiModelRegistryService(self.session)._merge_options(model, fallback), **request_options}
-        if structured_response:
-            options["response_format"] = structured_response
-        elif response_format_overridden:
-            options.pop("response_format", None)
-        if method == "image":
-            logger.warning(
-                "AI 生图触发兜底模型",
-                extra={
-                    "method": method,
-                    "from_profile": profile.code,
-                    "to_profile": fallback.code,
-                    "to_provider": provider.code,
-                    "to_model": model.code,
-                    "options": sanitize_options_for_log(options),
-                },
+        token = _fallback_depth.set(depth + 1)
+        try:
+            fallback = self.session.get(AiModelProfile, profile.fallback_profile_id)
+            if not fallback:
+                return None
+            model = self.session.get(AiModel, fallback.model_id)
+            provider = self.session.get(AiProvider, model.provider_id) if model else None
+            if not model or not provider or not model.is_active or not provider.is_active:
+                return None
+            options = {**AiModelRegistryService(self.session)._merge_options(model, fallback), **request_options}
+            if structured_response:
+                options["response_format"] = structured_response
+            elif response_format_overridden:
+                options.pop("response_format", None)
+            if method == "image":
+                logger.warning(
+                    "AI 生图触发兜底模型",
+                    extra={
+                        "method": method,
+                        "from_profile": profile.code,
+                        "to_profile": fallback.code,
+                        "to_provider": provider.code,
+                        "to_model": model.code,
+                        "options": sanitize_options_for_log(options),
+                    },
+                )
+            fallback_kwargs = {**kwargs, "options": options}
+            return self._invoke(
+                {"provider": provider, "model": model, "profile": fallback, "options": options},
+                method,
+                current_user=current_user,
+                request_options=request_options,
+                structured_response=structured_response or options.get("response_format"),
+                response_format_overridden=response_format_overridden,
+                **fallback_kwargs,
             )
-        fallback_kwargs = {**kwargs, "options": options}
-        return self._invoke(
-            {"provider": provider, "model": model, "profile": fallback, "options": options},
-            method,
-            current_user=current_user,
-            request_options=request_options,
-            structured_response=structured_response or options.get("response_format"),
-            response_format_overridden=response_format_overridden,
-            **fallback_kwargs,
-        )
+        finally:
+            _fallback_depth.reset(token)
 
     def _log_call(
         self,

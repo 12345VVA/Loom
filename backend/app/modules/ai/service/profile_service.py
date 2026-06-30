@@ -29,6 +29,7 @@ class AiModelProfileService(BaseAdminCrudService):
     def _before_add(self, data: dict) -> dict:
         self._ensure_model(data.get("model_id"))
         self._ensure_unique_code(data.get("code"))
+        self._ensure_fallback_acyclic(None, data.get("fallback_profile_id"))
         _validate_json_config(data.get("response_format"), "responseFormat")
         if "response_format" in data:
             data["response_format"] = _dump_response_format(data.get("response_format"))
@@ -38,8 +39,12 @@ class AiModelProfileService(BaseAdminCrudService):
         return data
 
     def _before_update(self, data: dict, entity: AiModelProfile) -> dict:
-        self._ensure_model(data.get("model_id"))
+        # 部分更新：仅当显式传了 model_id 才校验模型存在（_ensure_model 对 None 会报错）
+        if data.get("model_id") is not None:
+            self._ensure_model(data.get("model_id"))
         self._ensure_unique_code(data.get("code"), exclude_id=entity.id)
+        if "fallback_profile_id" in data:
+            self._ensure_fallback_acyclic(entity.id, data.get("fallback_profile_id"))
         _validate_json_config(data.get("response_format"), "responseFormat")
         if "response_format" in data:
             data["response_format"] = _dump_response_format(data.get("response_format"))
@@ -123,6 +128,27 @@ class AiModelProfileService(BaseAdminCrudService):
                 continue
             row.is_default = False
             self.session.add(row)
+
+    def _ensure_fallback_acyclic(self, profile_id: int | None, fallback_id: int | None) -> None:
+        """校验兜底 Profile 链：目标存在且启用，且不存在环（防止运行期 _fallback 无限递归）。"""
+        if not fallback_id:
+            return
+        target = self.session.get(AiModelProfile, fallback_id)
+        if not target:
+            raise HTTPException(status_code=400, detail="兜底模型 Profile 不存在")
+        if not target.is_active:
+            raise HTTPException(status_code=400, detail="兜底模型 Profile 已禁用，无法作为降级目标")
+        # 沿 fallback 链向下遍历，检测环与自指（visited 含自身 id 防止 A→A）
+        visited: set[int] = {profile_id} if profile_id is not None else set()
+        cursor = target
+        depth = 0
+        while cursor is not None and cursor.fallback_profile_id and depth < 16:
+            nxt = cursor.fallback_profile_id
+            if nxt == cursor.id or nxt in visited:
+                raise HTTPException(status_code=400, detail="兜底模型 Profile 链存在环，无法保存")
+            visited.add(cursor.id)
+            cursor = self.session.get(AiModelProfile, nxt)
+            depth += 1
 
     def _decorate(self, data: dict) -> dict:
         model = self.session.get(AiModel, data.get("modelId") or data.get("model_id"))

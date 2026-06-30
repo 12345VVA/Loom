@@ -8,6 +8,8 @@ import json
 import logging
 from datetime import datetime
 
+from sqlalchemy import update
+
 from app.celery_app import celery_app
 from app.core.database import Session, engine
 from app.modules.ai.model.ai import (
@@ -35,12 +37,21 @@ def execute_ai_generation_task(task_id: int) -> dict:
         if task.status == "cancelled":
             return {"success": False, "message": "AI task cancelled", "taskId": task_id}
 
-        task.status = "running"
-        task.progress = 10
-        task.started_at = datetime.utcnow()
-        task.error_message = None
-        session.add(task)
+        # CAS pending→running：并发重试或重复入队时，仅一个 worker 抢占成功，其余直接跳过，
+        # 避免同一任务被重复执行（重复调用 LLM / 重复扣费 / 重复转存媒体）
+        claimed = session.execute(
+            update(AiGenerationTask)
+            .where(AiGenerationTask.id == task_id, AiGenerationTask.status == "pending")
+            .values(status="running", progress=10, started_at=datetime.utcnow(), error_message=None)
+        )
+        if claimed.rowcount == 0:
+            logger.info(
+                "AI 任务已被其它 worker 接走或非 pending，跳过执行",
+                extra={"task_id": task_id, "status": task.status},
+            )
+            return {"success": False, "message": "AI task already taken", "taskId": task_id}
         session.commit()
+        task = session.get(AiGenerationTask, task_id)
         logger.info(
             "AI 异步生成任务开始执行",
             extra={
