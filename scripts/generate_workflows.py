@@ -55,7 +55,16 @@ def build_workflow_json(name, description, elements):
     # Serialize nodes for backend
     backend_nodes = []
     for n in nodes:
-        conf = n.get("data", {}).get("config", {})
+        # 拷贝一份 config，避免污染 elements 里保留的画布态原始字段
+        conf = {**n.get("data", {}).get("config", {})}
+        # 与 editor 导出(useGraphBuilder)保持一致：
+        # tool_executor 的 argumentsJson(字符串) → arguments(对象)，nodes 层只保留 arguments
+        if n["type"] == "tool_executor" and "argumentsJson" in conf:
+            try:
+                conf["arguments"] = json.loads(conf["argumentsJson"] or "{}")
+            except json.JSONDecodeError:
+                conf["arguments"] = {}
+            del conf["argumentsJson"]
         serialized = {
             "id": n["id"],
             "type": n["type"],
@@ -133,8 +142,8 @@ def generate_02():
             "inputs": [{"name": "user_input", "type": "string", "source": ["node_start", "user_input"]}],
             "modelProfileCode": "deepseek-default",
             "intents": [
-                {"name": "闲聊", "description": "日常打招呼、闲聊", "value": "chat", "targetRoute": "node_chat"},
-                {"name": "查询天气", "description": "询问天气状况", "value": "weather", "targetRoute": "node_weather"}
+                {"id": "chat", "name": "闲聊", "description": "日常打招呼、闲聊", "value": "chat", "targetRoute": "node_chat"},
+                {"id": "weather", "name": "查询天气", "description": "询问天气状况", "value": "weather", "targetRoute": "node_weather"}
             ],
             "inputVariable": "{user_input}",
             "outputVariable": "intent_result"
@@ -162,8 +171,8 @@ def generate_02():
             ]
         }),
         create_edge("node_start", "node_intent"),
-        create_edge("node_intent", "node_chat", source_handle="intent_0"),
-        create_edge("node_intent", "node_weather", source_handle="intent_1"),
+        create_edge("node_intent", "node_chat", source_handle="intent_chat"),
+        create_edge("node_intent", "node_weather", source_handle="intent_weather"),
         create_edge("node_chat", "node_end"),
         create_edge("node_weather", "node_end")
     ]
@@ -208,7 +217,7 @@ def generate_04():
             "itemVariable": "item",
             "concurrency": 2
         }),
-        create_node("loop_body_group", "loop_body_group", "循环体容器", 350, 400, {}, style={"width": "300px", "height": "200px"}),
+        create_node("loop_body_group", "loop_body_group", "循环体容器", 350, 400, {"controllerNodeId": "node_loop_ctrl"}, style={"width": "300px", "height": "200px"}),
         create_node("node_loop_llm", "llm", "处理每一项", 50, 50, {
             "inputs": [{"name": "item", "type": "string", "source": ["node_loop_ctrl", "item"]}],
             "modelProfileCode": "deepseek-default",
@@ -234,14 +243,14 @@ def generate_05():
         
         create_node("node_human", "human_input", "人工确认主题", 100, 300, {
             "inputs": [{"name": "theme", "type": "string", "source": ["node_start", "theme"]}],
-            "approvalMessage": "是否允许开始创作关于：{theme} 的内容？"
+            "message": "是否允许开始创作关于：{theme} 的内容？"
         }),
         
         create_node("node_switch", "switch", "路由分发", 400, 300, {
             "variable": "difficulty",
             "cases": [
-                {"value": "easy", "targetRoute": "node_llm_easy"},
-                {"value": "hard", "targetRoute": "node_llm_hard"}
+                {"id": "easy", "value": "easy", "targetRoute": "node_llm_easy"},
+                {"id": "hard", "value": "hard", "targetRoute": "node_llm_hard"}
             ]
         }),
         
@@ -275,8 +284,8 @@ def generate_05():
         
         create_edge("node_start", "node_human"),
         create_edge("node_human", "node_switch"),
-        create_edge("node_switch", "node_llm_easy", source_handle="case_0"),
-        create_edge("node_switch", "node_llm_hard", source_handle="case_1"),
+        create_edge("node_switch", "node_llm_easy", source_handle="case_easy"),
+        create_edge("node_switch", "node_llm_hard", source_handle="case_hard"),
         create_edge("node_llm_easy", "node_image"),
         create_edge("node_image", "node_end"),
         create_edge("node_llm_hard", "node_end")
@@ -284,6 +293,10 @@ def generate_05():
     save_workflow("05_终极大乱斗综合测试", "05_Comprehensive_Test_Workflow.json", "涵盖人工审批、生图、条件路由等高级节点的全链路压测模板", elements)
 
 def generate_06():
+    # 本示例演示「二元条件分支 + Mock 固定文案返回」。tool 节点在前端虽标记为
+    # deprecated（新建菜单已禁用），但其 mock_data 语义（直接返回固定文本）在
+    # tool_executor 中无法表达（tool_executor 按 toolCode 分发到具体工具）。
+    # 故此处保留 tool 节点用于 mock 占位；正式工具调用请使用 tool_executor 节点。
     elements = [
         create_node("node_start", "start", "开始", 100, 200, {"inputVariables": ["score"]}),
         create_node("node_condition", "condition", "分数判断", 350, 200, {
@@ -322,7 +335,7 @@ def generate_07():
             "itemVariable": "url",
             "concurrency": 5
         }),
-        create_node("loop_body_group", "loop_body_group", "批处理内部容器", 350, 400, {}, style={"width": "300px", "height": "200px"}),
+        create_node("loop_body_group", "loop_body_group", "批处理内部容器", 350, 400, {"controllerNodeId": "node_batch"}, style={"width": "300px", "height": "200px"}),
         create_node("node_scrape", "tool_executor", "抓取网页", 50, 50, {
             "inputs": [{"name": "url", "type": "string", "source": ["node_batch", "url"]}],
             "toolCode": "serp_api_search",
@@ -384,8 +397,8 @@ def generate_09():
             "inputs": [{"name": "user_input", "type": "string", "source": ["node_start", "user_input"]}],
             "modelProfileCode": "deepseek-default",
             "intents": [
-                {"name": "询问天气", "value": "weather", "targetRoute": "node_tool_weather"},
-                {"name": "复杂任务", "value": "task", "targetRoute": "node_human"}
+                {"id": "weather", "name": "询问天气", "value": "weather", "targetRoute": "node_tool_weather"},
+                {"id": "task", "name": "复杂任务", "value": "task", "targetRoute": "node_human"}
             ],
             "inputVariable": "{user_input}",
             "outputVariable": "intent"
@@ -396,7 +409,7 @@ def generate_09():
             "outputVariable": "weather_res"
         }),
         create_node("node_human", "human_input", "人工审批", 900, 600, {
-            "approvalMessage": "是否允许执行复杂任务？",
+            "message": "是否允许执行复杂任务？",
             "outputVariable": "approval_res"
         }),
         create_node("node_cond", "condition", "审批判断", 1200, 600, {
@@ -409,7 +422,7 @@ def generate_09():
             "itemVariable": "task",
             "concurrency": 3
         }),
-        create_node("loop_body_group", "loop_body_group", "处理组", 1500, 600, {}, style={"width": "300px", "height": "200px"}),
+        create_node("loop_body_group", "loop_body_group", "处理组", 1500, 600, {"controllerNodeId": "node_batch"}, style={"width": "300px", "height": "200px"}),
         create_node("node_loop_tool", "tool_executor", "执行任务", 50, 50, {
             "inputs": [{"name": "task", "type": "string", "source": ["node_batch", "task"]}],
             "toolCode": "mock_tool",
@@ -422,8 +435,8 @@ def generate_09():
         }),
         create_edge("node_start", "node_assign"),
         create_edge("node_assign", "node_intent"),
-        create_edge("node_intent", "node_tool_weather", source_handle="intent_0"),
-        create_edge("node_intent", "node_human", source_handle="intent_1"),
+        create_edge("node_intent", "node_tool_weather", source_handle="intent_weather"),
+        create_edge("node_intent", "node_human", source_handle="intent_task"),
         create_edge("node_intent", "node_end", source_handle="default"),
         create_edge("node_tool_weather", "node_end"),
         create_edge("node_human", "node_cond"),
@@ -528,7 +541,7 @@ def generate_10():
             "itemVariable": "paragraph",
             "concurrency": 2
         }),
-        create_node("loop_body_group", "loop_body_group", "插图生成容器", 900, 400, {}, style={"width": "350px", "height": "200px"}),
+        create_node("loop_body_group", "loop_body_group", "插图生成容器", 900, 400, {"controllerNodeId": "node_loop"}, style={"width": "350px", "height": "200px"}),
         create_node("node_image", "image_generator", "生图节点", 50, 50, {
             "inputs": [{"name": "paragraph", "type": "string", "source": ["node_loop", "paragraph"]}],
             "modelProfileCode": "dall-e-3",
