@@ -126,4 +126,61 @@ describe('useNodeFactory', () => {
 			expect(snapped).toBe(0);
 		});
 	});
+
+	describe('duplicateNode', () => {
+		it('成功复制 llm 节点：生成新 id/label、输出变量去重、记录快照', () => {
+			const elements = ref<any[]>([
+				{
+					id: 'src',
+					type: 'llm',
+					label: llmLabel,
+					position: { x: 100, y: 100 },
+					data: { config: { outputVariable: 'out', modelProfileCode: 'p1' } }
+				}
+			]);
+			let snapped = 0;
+			const { duplicateNode } = useNodeFactory(elements, t, () => snapped++);
+			const ok = duplicateNode('src');
+			expect(ok).toBe(true);
+			expect(elements.value).toHaveLength(2);
+			const copy = elements.value[1];
+			expect(copy.id).not.toBe('src');
+			expect(copy.label).toBe(`${llmLabel} 2`);
+			// 副本输出变量名经去重，不与源节点冲突
+			expect(copy.data.config.outputVariable).not.toBe('out');
+			expect(snapped).toBe(1);
+		});
+
+		it('复制 switch 节点时重分配 case 稳定 id', () => {
+			const elements = ref<any[]>([
+				{
+					id: 'src',
+					type: 'switch',
+					label: 'Switch',
+					position: { x: 0, y: 0 },
+					data: { config: { cases: [{ id: 'case_a', value: 'x' }] } }
+				}
+			]);
+			const { duplicateNode } = useNodeFactory(elements, t, noopSnapshot);
+			duplicateNode('src');
+			const copy = elements.value[1];
+			expect(copy.data.config.cases[0].id).not.toBe('case_a');
+			expect(copy.data.config.cases[0].id).toBeTruthy();
+		});
+
+		it('拒绝复制 start / end 节点（返回 false、不 push）', () => {
+			const elements = ref<any[]>([{ id: 's', type: 'start', data: { config: {} } }]);
+			let snapped = 0;
+			const { duplicateNode } = useNodeFactory(elements, t, () => snapped++);
+			expect(duplicateNode('s')).toBe(false);
+			expect(elements.value).toHaveLength(1);
+			expect(snapped).toBe(0);
+		});
+
+		it('目标节点不存在时返回 false', () => {
+			const elements = ref<any[]>([]);
+			const { duplicateNode } = useNodeFactory(elements, t, noopSnapshot);
+			expect(duplicateNode('nope')).toBe(false);
+		});
+	});
 });

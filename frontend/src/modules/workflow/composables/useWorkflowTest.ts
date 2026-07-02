@@ -4,18 +4,7 @@ import { findInvalidNodeInput } from '../utils';
 import { useStream } from '/@/cool/service/stream';
 import dayjs from 'dayjs';
 
-interface FlowNode {
-	id: string;
-	type: string;
-	label: string;
-	position: { x: number; y: number };
-	data: {
-		config: Record<string, any>;
-		runLog?: any;
-	};
-	style?: Record<string, any>;
-	parentNode?: string;
-}
+import type { FlowNode } from '../types/editor';
 
 // 实例终态：收到这些状态后停止 SSE 流
 const TERMINAL_STATUSES = new Set(['success', 'failed', 'paused', 'cancelled']);

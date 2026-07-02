@@ -1,6 +1,7 @@
 import { reactive, computed, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { findInvalidNodeInput } from '../utils';
+import type { FlowNode } from '../types/editor';
 
 /** 单节点测试结果 */
 interface NodeTestResult {
@@ -20,19 +21,6 @@ interface NodeTestDialogState {
 	nodeType: string;
 	form: { inputsJson: string };
 	result: NodeTestResult | null;
-}
-
-interface FlowNode {
-	id: string;
-	type: string;
-	label: string;
-	position: { x: number; y: number };
-	data: {
-		config: Record<string, any>;
-		runLog?: any;
-	};
-	style?: Record<string, any>;
-	parentNode?: string;
 }
 
 export function useNodeTest(

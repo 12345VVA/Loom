@@ -1,20 +1,6 @@
 import { type Ref } from 'vue';
 
-interface FlowNode {
-	id: string;
-	type: string;
-	label: string;
-	position: { x: number; y: number };
-	data: {
-		config: Record<string, any>;
-	};
-	parentNode?: string;
-}
-
-interface FlowEdge {
-	source: string;
-	target: string;
-}
+import type { FlowNode, FlowEdge } from '../types/editor';
 
 export interface UpstreamVariable {
 	nodeId: string;

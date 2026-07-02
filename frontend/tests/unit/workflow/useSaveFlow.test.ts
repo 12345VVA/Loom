@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateGraph } from '/$/workflow/composables/useSaveFlow';
+import { validateGraph } from '/$/workflow/utils/graph-validator';
 
 // 本项目 i18n key 即中文，identity t 直接回传 key 便于断言
 const t = (k: string) => k;

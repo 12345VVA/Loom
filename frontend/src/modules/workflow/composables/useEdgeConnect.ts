@@ -2,13 +2,7 @@ import { type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { Connection } from '@vue-flow/core';
 import { getEdgeLabel } from '../utils/edge-label';
-
-interface FlowNode {
-	id: string;
-	type: string;
-	data: { config: Record<string, any> };
-	parentNode?: string;
-}
+import type { FlowNode } from '../types/editor';
 
 /**
  * 画布连线 composable（从 editor.vue 抽出）。

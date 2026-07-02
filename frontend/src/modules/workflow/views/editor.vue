@@ -264,7 +264,8 @@ import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
 
-import { formatJson, genId, isRequiredConfigMissing } from '../utils';
+import { formatJson, isRequiredConfigMissing } from '../utils';
+import type { FlowNode, FlowEdge } from '../types/editor';
 import { migrateLoadedElements } from '../utils/graph-migration';
 import { hitTestGroup } from '../utils/group-hit-test';
 import LogDrawer from '../components/log-drawer.vue';
@@ -361,40 +362,6 @@ onBeforeUnmount(() => {
 	window.removeEventListener('keydown', handleKeyDown);
 });
 
-interface WorkflowNodeData {
-	config: Record<string, any>;
-	runLog?: {
-		status: 'success' | 'error' | 'running' | string;
-		inputData?: any;
-		outputData?: any;
-		timeCost?: number;
-	};
-}
-
-interface FlowNode {
-	id: string;
-	type: string;
-	label: string;
-	position: { x: number; y: number };
-	data: WorkflowNodeData;
-	style?: Record<string, any>;
-	parentNode?: string;
-}
-
-interface FlowEdge {
-	id: string;
-	source: string;
-	target: string;
-	type?: string;
-	animated?: boolean;
-	style?: Record<string, any>;
-	data?: {
-		condition?: string;
-		label?: string;
-	};
-	sourceHandle?: string;
-}
-
 // 可配置大模型配置列表
 const aiProfiles = ref<Eps.profile[]>([]);
 
@@ -410,7 +377,7 @@ const { contextMenu, canTestContextNode, canDistribute, openContextMenu, closeCo
 const { canUndo, canRedo, pushSnapshot, undo, redo, init: initUndoRedo } = useUndoRedo(elements);
 
 // 节点添加 / 标签 / 输出变量名生成（默认 config 数据表见 utils/node-default-configs.ts）
-const { handleAddNode, getNextLabel, getUniqueOutputVar } = useNodeFactory(
+const { handleAddNode, duplicateNode: duplicateNodeImpl } = useNodeFactory(
 	elements,
 	t,
 	pushSnapshot
@@ -655,25 +622,27 @@ function handleKeyDown(event: KeyboardEvent) {
 	}
 }
 
+// 统一删除入口：级联清理关联 group + 子节点坐标转换、清理测试缓存、选中态复位、记录撤销快照。
+// 供多选删除 / 右键删除 / 配置面板删除复用，确保所有删除路径都进入撤销栈。
+function removeNodes(nodeIds: string[], edgeIds: string[] = []): boolean {
+	if (nodeIds.length === 0 && edgeIds.length === 0) return false;
+	// 级联清理关联 group + 子节点坐标转换（planNodeRemoval）
+	elements.value = planNodeRemoval(elements.value, { nodeIds, edgeIds });
+	clearMockCache(nodeIds);
+	if (selectedNodeId.value && nodeIds.includes(selectedNodeId.value)) {
+		selectedNodeId.value = null;
+	}
+	pushSnapshot();
+	return true;
+}
+
 // 删除画布上当前选中的节点与边（含关联 group 的级联清理）
 function deleteSelectedElements() {
 	const nodesToRemove = elements.value.filter(el => !('source' in el) && (el as any).selected);
 	const edgesToRemove = elements.value.filter(el => 'source' in el && (el as any).selected);
 
-	if (nodesToRemove.length > 0 || edgesToRemove.length > 0) {
-		// 级联清理关联 group + 子节点坐标转换（planNodeRemoval）
-		elements.value = planNodeRemoval(elements.value, {
-			nodeIds: nodesToRemove.map(n => n.id),
-			edgeIds: edgesToRemove.map(e => e.id)
-		});
-		clearMockCache(nodesToRemove.map(n => n.id));
-
-		if (selectedNodeId.value && nodesToRemove.some(n => n.id === selectedNodeId.value)) {
-			selectedNodeId.value = null;
-		}
-
+	if (removeNodes(nodesToRemove.map(n => n.id), edgesToRemove.map(e => e.id))) {
 		ElMessage.success(t('已删除所选元素'));
-		pushSnapshot();
 	}
 }
 
@@ -932,112 +901,24 @@ async function testContextNode() {
 	await openNodeTestDialog(contextMenu.nodeId);
 }
 
-// 复制右键节点：深拷贝配置、重置运行态、重分配 case/intent 稳定 id 与输出变量名，副本落到主画布
+// 复制右键节点（复制逻辑见 useNodeFactory.duplicateNode，此处仅负责关闭菜单）
 function duplicateNode() {
-	const srcNode = elements.value.find(
-		(el: any) => !('source' in el) && el.id === contextMenu.nodeId
-	) as FlowNode | undefined;
-	if (!srcNode) return;
-
-	if (srcNode.type === 'start' || srcNode.type === 'end') {
-		ElMessage.warning(
-			t(
-				srcNode.type === 'start'
-					? '开始节点已存在，画布中仅允许一个'
-					: '结束节点已存在，画布中仅允许一个'
-			)
-		);
-		closeContextMenu();
-		return;
-	}
-
-	const newId = `node_${srcNode.type}_${Date.now()}`;
-	const newLabel = getNextLabel(srcNode.type);
-	const srcCopy = JSON.parse(JSON.stringify(srcNode));
-	delete srcCopy.class;
-	if (srcCopy.data) {
-		delete srcCopy.data.runLog;
-		delete srcCopy.data.runData;
-		// 复制节点的 case/intent 重新分配稳定 id，避免与源节点端口 id 重复
-		if (srcCopy.data.config?.cases) {
-			srcCopy.data.config.cases.forEach((c: any) => {
-				c.id = genId();
-			});
-		}
-		if (srcCopy.data.config?.intents) {
-			srcCopy.data.config.intents.forEach((i: any) => {
-				i.id = genId();
-			});
-		}
-	}
-
-	// 基准坐标：源节点位于 group 内时其 position 是相对父节点的局部坐标，
-	// 复制后放主画布需累加 group 绝对偏移，否则副本会漂移到错误位置
-	let baseX = srcNode.position.x;
-	let baseY = srcNode.position.y;
-	if (srcNode.parentNode) {
-		const group = elements.value.find((el: any) => el.id === srcNode.parentNode) as any;
-		if (group?.position) {
-			baseX += group.position.x;
-			baseY += group.position.y;
-		}
-	}
-	let newX = baseX + 40;
-	let newY = baseY + 40;
-	while (
-		elements.value.some(
-			(el: any) => el.position && el.position.x === newX && el.position.y === newY
-		)
-	) {
-		newX += 40;
-		newY += 40;
-	}
-
-	const newNode: any = {
-		...srcCopy,
-		id: newId,
-		label: newLabel,
-		position: { x: newX, y: newY }
-	};
-
-	// 处理变量名去重
-	if (newNode.data?.config?.outputVariable) {
-		const baseVarName = newNode.data.config.outputVariable.replace(/_\d+$/, '');
-		newNode.data.config.outputVariable = getUniqueOutputVar(newLabel, baseVarName);
-	}
-
-	// 复制出的节点不保留 parentNode（放在主画布）
-	delete newNode.parentNode;
-	delete newNode.extent;
-	delete newNode.expandParent;
-	elements.value.push(newNode);
+	duplicateNodeImpl(contextMenu.nodeId);
 	closeContextMenu();
-	pushSnapshot();
-	ElMessage.success(t('已复制节点'));
 }
 
-// 右键菜单“删除节点”：级联清理关联 group 并转换子节点坐标
+// 右键菜单“删除节点”：走统一删除入口
 function deleteContextNode() {
-	const nodeId = contextMenu.nodeId;
-	// 级联清理关联 group + 子节点坐标转换（planNodeRemoval）
-	elements.value = planNodeRemoval(elements.value, { nodeIds: [nodeId] });
-	clearMockCache([nodeId]);
-	if (selectedNodeId.value === nodeId) {
-		selectedNodeId.value = null;
+	if (removeNodes([contextMenu.nodeId])) {
+		ElMessage.success(t('已删除节点'));
 	}
 	closeContextMenu();
-	ElMessage.success(t('已删除节点'));
-	pushSnapshot();
 }
 
-// 配置面板“删除”按钮：删除当前选中节点（级联清理关联 group）
+// 配置面板“删除”按钮：走统一删除入口（含撤销快照，修复此前配置面板删除无法 Ctrl+Z 撤销）
 function deleteSelectedNode() {
 	if (!selectedNodeId.value) return;
-	const nodeId = selectedNodeId.value;
-	// 级联清理关联 group + 子节点坐标转换（planNodeRemoval）
-	elements.value = planNodeRemoval(elements.value, { nodeIds: [nodeId] });
-	clearMockCache([nodeId]);
-	selectedNodeId.value = null;
+	removeNodes([selectedNodeId.value]);
 }
 
 // saveWorkflow + 拓扑校验（validateGraph）已抽离至 composables/useSaveFlow.ts

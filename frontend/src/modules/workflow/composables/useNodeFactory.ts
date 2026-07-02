@@ -3,21 +3,15 @@ import { ElMessage } from 'element-plus';
 import { getNodeMeta } from '../utils/node-type-registry';
 import { buildDefaultConfig } from '../utils/node-default-configs';
 import { hitTestGroup } from '../utils/group-hit-test';
-
-interface FlowNode {
-	id: string;
-	type: string;
-	label: string;
-	position: { x: number; y: number };
-	data: { config: Record<string, any> };
-	parentNode?: string;
-}
+import { genId } from '../utils';
+import type { FlowNode } from '../types/editor';
 
 /**
  * 节点工厂 composable（从 editor.vue 抽出）。
  *
- * 收纳节点添加（含 start/end 唯一性、默认 config 构建、loop_body_group 命中归属与自动创建）
- * 及标签、输出变量名的生成工具。默认 config 的数据表见 utils/node-default-configs.ts，
+ * 收纳节点添加（含 start/end 唯一性、默认 config 构建、loop_body_group 命中归属与自动创建）、
+ * 节点复制（深拷贝 + 运行态重置 + case/intent 稳定 id 重分配 + 输出变量名去重），以及标签、
+ * 输出变量名的生成工具。默认 config 的数据表见 utils/node-default-configs.ts，
  * 命中判定见 utils/group-hit-test.ts。
  *
  * @param elements 画布元素 ref
@@ -143,5 +137,93 @@ export function useNodeFactory(
 		pushSnapshot();
 	}
 
-	return { handleAddNode, getNextLabel, getUniqueOutputVar, getTypeName };
+	/**
+	 * 复制指定节点：深拷贝配置、重置运行态、重分配 case/intent 稳定 id 与输出变量名，
+	 * 副本落到主画布（脱离原 group 的 parentNode）。
+	 *
+	 * @returns true 表示复制成功；false 表示节点不存在或为受限的 start/end 类型（已弹提示）
+	 */
+	function duplicateNode(nodeId: string): boolean {
+		const srcNode = elements.value.find(
+			(el: any) => !('source' in el) && el.id === nodeId
+		) as FlowNode | undefined;
+		if (!srcNode) return false;
+
+		if (srcNode.type === 'start' || srcNode.type === 'end') {
+			ElMessage.warning(
+				t(
+					srcNode.type === 'start'
+						? '开始节点已存在，画布中仅允许一个'
+						: '结束节点已存在，画布中仅允许一个'
+				)
+			);
+			return false;
+		}
+
+		const newId = `node_${srcNode.type}_${Date.now()}`;
+		const newLabel = getNextLabel(srcNode.type);
+		const srcCopy = JSON.parse(JSON.stringify(srcNode));
+		delete srcCopy.class;
+		if (srcCopy.data) {
+			delete srcCopy.data.runLog;
+			delete srcCopy.data.runData;
+			// 复制节点的 case/intent 重新分配稳定 id，避免与源节点端口 id 重复
+			if (srcCopy.data.config?.cases) {
+				srcCopy.data.config.cases.forEach((c: any) => {
+					c.id = genId();
+				});
+			}
+			if (srcCopy.data.config?.intents) {
+				srcCopy.data.config.intents.forEach((i: any) => {
+					i.id = genId();
+				});
+			}
+		}
+
+		// 基准坐标：源节点位于 group 内时其 position 是相对父节点的局部坐标，
+		// 复制后放主画布需累加 group 绝对偏移，否则副本会漂移到错误位置
+		let baseX = srcNode.position.x;
+		let baseY = srcNode.position.y;
+		if (srcNode.parentNode) {
+			const group = elements.value.find((el: any) => el.id === srcNode.parentNode) as any;
+			if (group?.position) {
+				baseX += group.position.x;
+				baseY += group.position.y;
+			}
+		}
+		let newX = baseX + 40;
+		let newY = baseY + 40;
+		while (
+			elements.value.some(
+				(el: any) => el.position && el.position.x === newX && el.position.y === newY
+			)
+		) {
+			newX += 40;
+			newY += 40;
+		}
+
+		const newNode: any = {
+			...srcCopy,
+			id: newId,
+			label: newLabel,
+			position: { x: newX, y: newY }
+		};
+
+		// 处理变量名去重
+		if (newNode.data?.config?.outputVariable) {
+			const baseVarName = newNode.data.config.outputVariable.replace(/_\d+$/, '');
+			newNode.data.config.outputVariable = getUniqueOutputVar(newLabel, baseVarName);
+		}
+
+		// 复制出的节点不保留 parentNode（放在主画布）
+		delete newNode.parentNode;
+		delete newNode.extent;
+		delete newNode.expandParent;
+		elements.value.push(newNode);
+		pushSnapshot();
+		ElMessage.success(t('已复制节点'));
+		return true;
+	}
+
+	return { handleAddNode, getNextLabel, getUniqueOutputVar, getTypeName, duplicateNode };
 }
