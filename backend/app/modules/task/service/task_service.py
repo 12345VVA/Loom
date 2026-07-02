@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -147,7 +147,7 @@ def compute_next_run_time(task: TaskInfo, now: datetime | None = None) -> dateti
     """计算保守调度器的下次运行时间。"""
     if task.status != 1:
         return None
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     if task.start_date and task.start_date > now:
         return task.start_date
     if task.task_type == 1 and task.every:
@@ -161,7 +161,7 @@ def compute_next_cron_run_time(cron_expression: str | None, now: datetime | None
     """根据五段 cron 表达式计算下一次运行时间。"""
     if not cron_expression:
         return None
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     parts = cron_expression.split()
     if len(parts) != 5:
         return None

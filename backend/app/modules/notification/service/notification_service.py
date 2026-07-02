@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from string import Formatter
 from typing import Any
 
@@ -52,7 +52,7 @@ class NotificationMessageService(BaseAdminCrudService):
             )
             .order_by(NotificationMessage.created_at.desc())
         )
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         statement = statement.where((NotificationMessage.expired_at.is_(None)) | (NotificationMessage.expired_at > now))
         if message_type:
             statement = statement.where(NotificationMessage.message_type == message_type)
@@ -104,7 +104,7 @@ class NotificationMessageService(BaseAdminCrudService):
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="通知不存在")
         message, recipient = row
-        if message.expired_at and message.expired_at <= datetime.utcnow():
+        if message.expired_at and message.expired_at <= datetime.now(timezone.utc):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="通知已过期")
         item = self._finalize_data(message.model_dump())
         item["recipientId"] = recipient.id
@@ -114,7 +114,7 @@ class NotificationMessageService(BaseAdminCrudService):
         return item
 
     def mark_read(self, user_id: int, ids: list[int]) -> dict:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         rows = self.session.exec(
             select(NotificationRecipient).where(
                 NotificationRecipient.user_id == user_id,
@@ -223,7 +223,7 @@ class NotificationMessageService(BaseAdminCrudService):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="通知不存在")
         with transaction(self.session):
             message.is_recalled = True
-            message.recalled_at = datetime.utcnow()
+            message.recalled_at = datetime.now(timezone.utc)
             message.recalled_by = operator_id
             self.session.add(message)
         return {"success": True}
@@ -342,7 +342,7 @@ class NotificationService:
             "status": "成功" if status_value == 1 else "失败",
             "consumeTime": consume_time,
             "detail": detail or "",
-            "executedAt": datetime.utcnow().isoformat(),
+            "executedAt": datetime.now(timezone.utc).isoformat(),
         }
         if template_code:
             title, content, level, link_url = self.render_template(template_code, context)

@@ -131,17 +131,20 @@ function clear() {
 		type: 'warning'
 	})
 		.then(() => {
-			service.base.sys.log
-				.clear()
-				.then(() => {
-					ElMessage.success(t('清空成功'));
-					Crud.value?.refresh();
-				})
-				.catch(err => {
-					ElMessage.error(err.message);
-				});
-		})
-		.catch(() => null);
+				service.base.sys.log
+					.clear()
+					.then(() => {
+						ElMessage.success(t('清空成功'));
+						Crud.value?.refresh();
+					})
+					.catch(err => {
+						ElMessage.error(err.message);
+					});
+			})
+			.catch(error => {
+				console.warn('[base/log] 用户取消清空日志', error);
+				return null;
+			});
 }
 
 onMounted(() => {

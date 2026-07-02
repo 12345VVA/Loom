@@ -117,8 +117,10 @@ export default defineComponent({
 				list.forEach(e => {
 					if (e.type == 0) {
 						try {
-							refs.menu?.open(String(e.id));
-						} catch (err) {}
+						refs.menu?.open(String(e.id));
+					} catch (err) {
+						console.warn('[base/bmenu] 菜单展开兜底失败', err);
+					}
 
 						if (e.children) {
 							deep(e.children);

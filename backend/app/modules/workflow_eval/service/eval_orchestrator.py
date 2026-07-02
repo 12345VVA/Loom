@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from sqlalchemy import func, update
@@ -99,7 +99,7 @@ def mark_running(eval_run_id: int, celery_task_id: str | None) -> bool:
             )
             .values(
                 status=EvalRunStatus.RUNNING,
-                started_at=datetime.utcnow(),
+                started_at=datetime.now(timezone.utc),
                 celery_task_id=celery_task_id,
             )
         )
@@ -123,7 +123,7 @@ def mark_failed(eval_run_id: int, error_msg: str) -> bool:
             .values(
                 status=EvalRunStatus.FAILED,
                 error_message=(error_msg or "")[:1000] or None,
-                finished_at=datetime.utcnow(),
+                finished_at=datetime.now(timezone.utc),
             )
         )
         session.commit()
@@ -357,7 +357,7 @@ def finalize_eval_run(eval_run_id: int) -> None:
         # token/cost 精确聚合：按本次 run 关联的所有 workflow_instance_id 求和
         # （case 节点执行 + judge 的 LLM 调用均经 contextvar 打标到对应 instance，
         #   替代旧版按 user_id + 时间窗的近似聚合）
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         instance_ids = [r.workflow_instance_id for r in results if r.workflow_instance_id]
         token_total = 0
         cost_total = 0
@@ -509,7 +509,7 @@ def sweep_timed_out_runs(timeout_seconds: int) -> int:
     兜底 worker 进程级死亡（OOM kill）——run_eval_task 的 try/except 与 on_failure
     均无法捕获进程级死亡，run 会永久停在 running。由 Celery beat 周期调用。
     """
-    threshold = datetime.utcnow() - timedelta(seconds=timeout_seconds)
+    threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
     with Session(engine) as session:
         stale_ids = list(
             session.exec(

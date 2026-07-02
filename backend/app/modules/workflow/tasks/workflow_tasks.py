@@ -171,9 +171,48 @@ def _mark_instance_failed(instance_id: int, message: str, expected: str = "runni
             )
             session.commit()
             if result.rowcount:
-                publish_event(instance_id, "failed", {"status": "failed", "error": message})
+                publish_event(instance_id, "failed", {"status": "failed", "error": message, "node_id": None})
+                _notify_workflow_failure(instance_id)
     except Exception as se:
         logger.error("记录工作流实例 %d failed 终态失败: %s", instance_id, se, exc_info=True)
+
+
+def _notify_workflow_failure(instance_id: int) -> None:
+    """T6：工作流失败通知（best-effort，异常仅记 warning，不影响终态写入与 SSE 推送）。
+
+    读取实例终态（failed_node_id/error_message/user_id）+ 定义名称，渲染 workflow.failed 模板后投递。
+    独立开 session，避免与调用方的 session 生命周期耦合。
+    """
+    try:
+        with Session(engine) as session:
+            inst = session.get(WorkflowInstance, instance_id)
+            if not inst or not inst.user_id:
+                return
+            definition = session.get(WorkflowDefinition, inst.definition_id)
+            workflow_name = definition.name if definition else None
+            from app.modules.notification.service.notification_service import NotificationService
+
+            notification_service = NotificationService(session)
+            title, content, level, link_url = notification_service.render_template(
+                "workflow.failed",
+                {
+                    "workflow_name": workflow_name or "未知",
+                    "instance_id": inst.id,
+                    "node_id": inst.failed_node_id or "未知",
+                    "error_message": inst.error_message or "未知错误",
+                },
+            )
+            notification_service.send_business(
+                title=title,
+                content=content,
+                audience={"users": [inst.user_id]},
+                source_module="workflow",
+                business_key=str(inst.id),
+                level=level,
+                link_url=link_url,
+            )
+    except Exception as notify_err:
+        logger.warning("工作流失败通知发送异常: %s", notify_err)
 
 
 @celery_app.task(
@@ -182,7 +221,7 @@ def _mark_instance_failed(instance_id: int, message: str, expected: str = "runni
     max_retries=0,
     task_time_limit=30 * 60,
 )
-def execute_workflow(self, instance_id: int, definition_id: int, initial_vars_json: str, resume_val_json: str = None):
+def execute_workflow(self, instance_id: int, definition_id: int, initial_vars_json: str, resume_val_json: str | None = None):
     """
     在 Celery Worker 中执行或恢复一个工作流实例。
     """
@@ -330,11 +369,26 @@ async def _async_execute(
                         break
                     except TimeoutError:
                         await _drain_flush(flush_queue, flush_task)
+                        timeout_node_id = None
                         with Session(engine) as session:
-                            _cas(session, "running", status="failed", error_message=f"节点执行超时（{node_timeout}秒）")
+                            inst = session.get(WorkflowInstance, instance_id)
+                            if inst:
+                                timeout_node_id = inst.current_node
+                            _cas(
+                                session,
+                                "running",
+                                status="failed",
+                                error_message=f"节点执行超时（{node_timeout}秒）",
+                                failed_node_id=timeout_node_id,
+                            )
                             session.commit()
                         logger.warning("[Workflow] 节点执行超时 instance=%d (%ds)", instance_id, node_timeout)
-                        publish_event(instance_id, "failed", {"status": "failed", "error": "节点执行超时"})
+                        publish_event(
+                            instance_id,
+                            "failed",
+                            {"status": "failed", "error": "节点执行超时", "node_id": timeout_node_id},
+                        )
+                        _notify_workflow_failure(instance_id)
                         return
 
                     for node_id, node_output in event.items():
@@ -458,17 +512,23 @@ async def _async_execute(
         # 预置默认值：若下方 DB 写入失败走到 except se，error_msg_safe 仍已被赋值，
         # 否则 publish_event 会触发 UnboundLocalError
         error_msg_safe = "执行失败，发生内部错误。"
+        # failed_node_id 来自 NodeExecutionError（业务异常精确到节点）；超时等无则留空。
+        # 提到 try 外赋值，确保下方 publish_event 始终能引用（DB 写入失败时也安全）。
+        failed_node_id = getattr(e, "node_id", None)
         try:
             with Session(engine) as session:
                 error_msg_safe = str(e) if isinstance(e, ValueError) else "执行失败，发生内部错误。"
                 # 仅 running→failed，不覆盖 cancelled（用户在异常发生时取消的情况）
-                # failed_node_id 来自 NodeExecutionError（业务异常精确到节点）；超时等无则留空
-                failed_node_id = getattr(e, "node_id", None)
                 _cas(session, "running", status="failed", error_message=error_msg_safe, failed_node_id=failed_node_id)
                 session.commit()
         except Exception as se:
             logger.error("记录工作流异常失败: %s", se, exc_info=True)
 
-        publish_event(instance_id, "failed", {"status": "failed", "error": error_msg_safe})
+        publish_event(
+            instance_id,
+            "failed",
+            {"status": "failed", "error": error_msg_safe, "node_id": failed_node_id},
+        )
+        _notify_workflow_failure(instance_id)
     finally:
         workflow_instance_id_ctx.reset(_inst_ctx_token)

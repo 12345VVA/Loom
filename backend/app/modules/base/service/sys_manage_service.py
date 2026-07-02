@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -81,7 +81,7 @@ class SysParamService(BaseAdminCrudService):
             data=payload.data,
             data_type=payload.data_type,
             remark=payload.remark,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )
         self.session.add(row)
         self.session.commit()
@@ -102,7 +102,7 @@ class SysParamService(BaseAdminCrudService):
         row.data = payload.data
         row.data_type = payload.data_type
         row.remark = payload.remark
-        row.updated_at = datetime.utcnow()
+        row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)
         self.session.commit()
         self.session.refresh(row)
@@ -126,13 +126,13 @@ class SysParamService(BaseAdminCrudService):
                 key_name=key,
                 data=value,
                 data_type=data_type,
-                updated_at=datetime.utcnow(),
+                updated_at=datetime.now(timezone.utc),
             )
         else:
             row.name = name or row.name
             row.data = value
             row.data_type = data_type
-            row.updated_at = datetime.utcnow()
+            row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)
         self.session.commit()
         self.session.refresh(row)
@@ -264,7 +264,7 @@ class SysLoginLogService(BaseAdminCrudService):
             device_id=data.device_id,
             source_system=data.source_system,
             user_agent=data.user_agent,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )
         self.session.add(row)
         self.session.commit()
@@ -288,7 +288,7 @@ class SysLoginLogService(BaseAdminCrudService):
         row.device_id = data.device_id
         row.source_system = data.source_system
         row.user_agent = data.user_agent
-        row.updated_at = datetime.utcnow()
+        row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)
         self.session.commit()
         self.session.refresh(row)
@@ -327,7 +327,7 @@ class SysLoginLogService(BaseAdminCrudService):
             device_id=device_id,
             source_system=source_system,
             user_agent=user_agent,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )
         self.session.add(row)
         self.session.commit()
@@ -440,7 +440,7 @@ class SysSecurityLogService(BaseAdminCrudService):
             status=status,
             error_message=error_message,
             remark=remark,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )
         self.session.add(row)
         self.session.commit()

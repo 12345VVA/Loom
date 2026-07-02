@@ -6,7 +6,7 @@ import json
 import re
 from collections.abc import Iterable
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -118,7 +118,7 @@ def _loads(value: str | None) -> Any:
 
 
 def _window_bounds(period: str) -> tuple[datetime, datetime]:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if period == "minute":
         start = now.replace(second=0, microsecond=0)
         return start, start + timedelta(minutes=1)

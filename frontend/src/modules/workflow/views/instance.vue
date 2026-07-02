@@ -10,7 +10,16 @@
 		</cl-row>
 
 		<cl-row>
-			<cl-table ref="Table" />
+			<cl-table ref="Table">
+				<template #column-failedNodeId="{ scope }">
+					<el-tag
+						v-if="scope.row.status === 'failed' && scope.row.failedNodeId"
+						type="danger"
+						>{{ scope.row.failedNodeId }}</el-tag
+					>
+					<span v-else>-</span>
+				</template>
+			</cl-table>
 		</cl-row>
 
 		<cl-row>
@@ -131,6 +140,7 @@ interface WorkflowInstance {
 	threadId: string;
 	status: 'pending' | 'running' | 'paused' | 'success' | 'failed';
 	currentNode?: string;
+	failedNodeId?: string;
 	stateData: string;
 	errorMessage?: string;
 	createTime: string;
@@ -209,6 +219,7 @@ const Table = useTable({
 			]
 		},
 		{ label: t('当前激活节点'), prop: 'currentNode', minWidth: 140 },
+		{ label: t('失败节点'), prop: 'failedNodeId', minWidth: 140 },
 		{ label: t('错误信息'), prop: 'errorMessage', minWidth: 180, showOverflowTooltip: true },
 		{ label: t('累计 Tokens'), prop: 'totalTokens', minWidth: 110 },
 		{

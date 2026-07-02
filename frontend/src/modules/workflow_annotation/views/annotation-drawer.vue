@@ -6,27 +6,34 @@
 		:close-on-click-modal="false"
 		@update:model-value="emit('update:visible', $event)"
 	>
+		<!-- 队列模式快捷键提示 -->
+		<div v-if="isQueueMode" class="ann-shortcut">
+			<el-text type="info" size="small">
+				{{ $t('快捷键：P=Pass  F=Fail  J/→=下一条  K/←=上一条  Enter=提交并下一条') }}
+			</el-text>
+		</div>
+
 		<!-- 上下文（只读）：输入 / 输出 / 期望 / Judge 评分 -->
 		<div class="ann-context">
 			<div class="ann-section-title">{{ $t('上下文') }}</div>
-			<div v-if="pretty(context.inputData)" class="ann-field">
+			<div v-if="pretty(currentContext.inputData)" class="ann-field">
 				<div class="ann-label">{{ $t('输入') }}</div>
-				<pre class="ann-pre">{{ pretty(context.inputData) }}</pre>
+				<pre class="ann-pre">{{ pretty(currentContext.inputData) }}</pre>
 			</div>
-			<div v-if="pretty(context.actualOutput)" class="ann-field">
+			<div v-if="pretty(currentContext.actualOutput)" class="ann-field">
 				<div class="ann-label">{{ $t('实际输出') }}</div>
-				<pre class="ann-pre">{{ pretty(context.actualOutput) }}</pre>
+				<pre class="ann-pre">{{ pretty(currentContext.actualOutput) }}</pre>
 			</div>
-			<div v-if="pretty(context.expectedOutput)" class="ann-field">
+			<div v-if="pretty(currentContext.expectedOutput)" class="ann-field">
 				<div class="ann-label">{{ $t('期望输出') }}</div>
-				<pre class="ann-pre">{{ pretty(context.expectedOutput) }}</pre>
+				<pre class="ann-pre">{{ pretty(currentContext.expectedOutput) }}</pre>
 			</div>
 			<div class="ann-field">
 				<div class="ann-label">{{ $t('Judge 评分') }}</div>
 				<div class="ann-judge">
-					<b>{{ Number(context.score ?? 0).toFixed(2) }}</b>
-					<el-tag :type="context.passed ? 'success' : 'danger'" size="small">
-						{{ context.passed ? $t('通过') : $t('失败') }}
+					<b>{{ Number(currentContext.score ?? 0).toFixed(2) }}</b>
+					<el-tag :type="currentContext.passed ? 'success' : 'danger'" size="small">
+						{{ currentContext.passed ? $t('通过') : $t('失败') }}
 					</el-tag>
 					<span v-if="judgeDetail?.reason" class="ann-judge-reason">{{ judgeDetail.reason }}</span>
 				</div>
@@ -75,26 +82,33 @@
 		</el-form>
 
 		<template #footer>
-			<div class="ann-footer">
-				<span v-if="existingInfo" class="ann-existing">
-					{{ $t('已有标注') }}（ID {{ existingInfo.id }}{{ existingInfo.annotatorUserId ? `，${$t('标注人')} ${existingInfo.annotatorUserId}` : '' }}）
-				</span>
-				<cl-flex1 />
-				<el-button @click="emit('update:visible', false)">{{ $t('取消') }}</el-button>
-				<el-button type="primary" :loading="submitting" @click="submit">{{ $t('提交') }}</el-button>
-			</div>
-		</template>
+		<div class="ann-footer">
+			<span v-if="existingInfo" class="ann-existing">
+				{{ $t('已有标注') }}（ID {{ existingInfo.id }}{{ existingInfo.annotatorUserId ? `，${$t('标注人')} ${existingInfo.annotatorUserId}` : '' }}）
+			</span>
+			<template v-if="isQueueMode">
+				<el-button :disabled="currentIndex <= 0" @click="goPrev">{{ $t('上一条') }}</el-button>
+				<span class="ann-pager">{{ currentIndex + 1 }} / {{ total }}</span>
+				<el-button :disabled="currentIndex >= total - 1" @click="goNext">{{ $t('下一条') }}</el-button>
+			</template>
+			<cl-flex1 />
+			<el-button @click="emit('update:visible', false)">{{ $t('取消') }}</el-button>
+			<el-button v-if="isQueueMode" type="primary" :loading="submitting" @click="submitAndNext">{{ $t('提交并下一条') }}</el-button>
+			<el-button v-else type="primary" :loading="submitting" @click="submit()">{{ $t('提交') }}</el-button>
+		</div>
+	</template>
 	</el-drawer>
 </template>
 
 <script lang="ts" setup>
 defineOptions({ name: 'workflow-annotation-drawer' });
 
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { InfoFilled } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import { pretty, parseJudgeDetail } from '../utils/format';
 
 interface CaseContext {
 	inputData?: string | null;
@@ -105,10 +119,27 @@ interface CaseContext {
 	evaluatorDetail?: string | null;
 }
 
+// 队列模式传入的用例结果行（结构对齐 run.vue 中 detail.cases 的行）
+interface WorkflowEvalCaseResult {
+	id?: number;
+	caseResultId?: number;
+	inputData?: string | null;
+	actualOutput?: string | null;
+	expectedOutput?: string | null;
+	score?: number | null;
+	passed?: boolean;
+	evaluatorDetail?: string | null;
+	[key: string]: any;
+}
+
 const props = defineProps<{
 	visible: boolean;
-	caseResultId: number;
-	context: CaseContext;
+	// 单条模式（向后兼容）
+	caseResultId?: number;
+	context?: CaseContext;
+	// 队列模式
+	caseResults?: WorkflowEvalCaseResult[];
+	initialIndex?: number;
 }>();
 
 const emit = defineEmits<{
@@ -131,27 +162,40 @@ const annotationId = ref<number | null>(null);
 const existingInfo = ref<any>(null);
 const mode = ref<'add' | 'update'>('add');
 
-const judgeDetail = computed(() => parseJudgeDetail(props.context?.evaluatorDetail));
+// 队列模式状态
+const isQueueMode = computed(() => Array.isArray(props.caseResults) && props.caseResults.length > 0);
+const total = computed(() => props.caseResults?.length || 0);
+const currentIndex = ref<number>(props.initialIndex || 0);
 
-// JSON 字段美化展示（inputData / actualOutput 等都是 JSON 字符串快照）
-function pretty(s: any): string {
-	if (s === null || s === undefined || s === '') return '';
-	try {
-		const obj = typeof s === 'string' ? JSON.parse(s) : s;
-		return typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
-	} catch {
-		return String(s);
-	}
-}
+const currentCase = computed<WorkflowEvalCaseResult | null>(() => {
+	if (!isQueueMode.value) return null;
+	return props.caseResults![currentIndex.value] || null;
+});
 
-function parseJudgeDetail(s: any): any {
-	if (!s) return null;
-	try {
-		return typeof s === 'string' ? JSON.parse(s) : s;
-	} catch {
-		return null;
+// 当前用例的 caseResultId：队列模式从 currentCase 取，否则回退原 prop
+const currentCaseResultId = computed<number>(() => {
+	if (isQueueMode.value && currentCase.value) {
+		return Number(currentCase.value.caseResultId || currentCase.value.id || 0);
 	}
-}
+	return Number(props.caseResultId || 0);
+});
+
+// 当前用例上下文：队列模式从 currentCase 提取，否则用原 prop
+const currentContext = computed<CaseContext>(() => {
+	if (isQueueMode.value && currentCase.value) {
+		return {
+			inputData: currentCase.value.inputData,
+			actualOutput: currentCase.value.actualOutput,
+			expectedOutput: currentCase.value.expectedOutput,
+			score: currentCase.value.score,
+			passed: currentCase.value.passed,
+			evaluatorDetail: currentCase.value.evaluatorDetail
+		};
+	}
+	return props.context || {};
+});
+
+const judgeDetail = computed(() => parseJudgeDetail(currentContext.value?.evaluatorDetail));
 
 function resetForm() {
 	form.label = 'pass';
@@ -170,9 +214,10 @@ function onLabelChange(v: string | number | boolean | undefined) {
 // 打开抽屉时按 caseResultId 回显已有标注（gold 优先已在后端 page 排序外，这里取最新一条）
 async function loadExisting() {
 	resetForm();
-	if (!props.caseResultId) return;
+	const caseResultId = currentCaseResultId.value;
+	if (!caseResultId) return;
 	try {
-		const res = await annService.page({ caseResultId: props.caseResultId, size: 1 });
+		const res = await annService.page({ caseResultId, size: 1 });
 		const existing = res?.list?.[0];
 		if (existing) {
 			form.label = existing.label || 'pass';
@@ -193,13 +238,53 @@ async function loadExisting() {
 watch(
 	() => props.visible,
 	(v) => {
-		if (v) loadExisting();
+		if (v) {
+			// 打开时按 initialIndex 对齐索引，再加载已有标注
+			if (isQueueMode.value) {
+				currentIndex.value = Math.min(props.initialIndex || 0, total.value - 1);
+			}
+			loadExisting();
+			window.addEventListener('keydown', onKeyDown);
+		} else {
+			window.removeEventListener('keydown', onKeyDown);
+		}
 	}
 );
 
-async function submit() {
+// 队列模式切换索引：重新加载该用例的已有标注
+watch(currentIndex, () => {
+	if (isQueueMode.value && props.visible) {
+		loadExisting();
+	}
+});
+
+// 队列数据变化时重置索引（避免越界）
+watch(
+	() => props.caseResults,
+	() => {
+		if (isQueueMode.value) {
+			currentIndex.value = Math.min(props.initialIndex || 0, total.value - 1);
+		}
+	}
+);
+
+// 队列导航
+function goNext() {
+	if (currentIndex.value < total.value - 1) {
+		currentIndex.value++;
+	}
+}
+function goPrev() {
+	if (currentIndex.value > 0) {
+		currentIndex.value--;
+	}
+}
+
+// 提交：closeAfter 控制是否关闭抽屉；队列模式下始终由调用方决定
+async function submit(closeAfter = true): Promise<boolean> {
 	submitting.value = true;
 	try {
+		const caseResultId = currentCaseResultId.value;
 		const fields = {
 			label: form.label,
 			score: form.score,
@@ -209,17 +294,76 @@ async function submit() {
 		if (mode.value === 'update' && annotationId.value) {
 			await annService.update({ id: annotationId.value, ...fields });
 		} else {
-			await annService.add({ caseResultId: props.caseResultId, ...fields });
+			await annService.add({ caseResultId, ...fields });
 		}
 		ElMessage.success(t('已保存'));
 		emit('saved');
-		emit('update:visible', false);
+		if (closeAfter && !isQueueMode.value) {
+			emit('update:visible', false);
+		}
+		return true;
 	} catch (e: any) {
 		ElMessage.error(e?.message || t('保存失败'));
+		return false;
 	} finally {
 		submitting.value = false;
 	}
 }
+
+// 提交并跳下一条；已是最后一条则提示并关闭
+async function submitAndNext() {
+	const ok = await submit(false);
+	if (!ok) return;
+	if (currentIndex.value < total.value - 1) {
+		goNext();
+	} else {
+		ElMessage.success(t('已完成全部标注'));
+		emit('update:visible', false);
+	}
+}
+
+// 键盘快捷键（仅队列模式生效）：P/F 切换标注，J/→ 下一条，K/← 上一条，Enter 提交并下一条
+function onKeyDown(e: KeyboardEvent) {
+	if (!props.visible || !isQueueMode.value) return;
+	const tag = (document.activeElement?.tagName || '').toLowerCase();
+	const isInput = tag === 'input' || tag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable;
+
+	if (e.key === 'Enter' && !isInput) {
+		e.preventDefault();
+		submitAndNext();
+		return;
+	}
+	if (e.key === 'Enter' && tag === 'textarea') {
+		// textarea 中 Enter 换行，不拦截
+		return;
+	}
+	if (isInput) return; // 输入框中单字母快捷键不触发
+
+	switch (e.key.toLowerCase()) {
+		case 'p':
+			form.label = 'pass';
+			onLabelChange('pass');
+			break;
+		case 'f':
+			form.label = 'fail';
+			onLabelChange('fail');
+			break;
+		case 'j':
+		case 'arrowright':
+			e.preventDefault();
+			goNext();
+			break;
+		case 'k':
+		case 'arrowleft':
+			e.preventDefault();
+			goPrev();
+			break;
+	}
+}
+
+onBeforeUnmount(() => {
+	window.removeEventListener('keydown', onKeyDown);
+});
 </script>
 
 <style lang="scss" scoped>
@@ -277,5 +421,17 @@ async function submit() {
 .ann-existing {
 	color: var(--el-text-color-secondary);
 	font-size: 12px;
+}
+.ann-shortcut {
+	margin-bottom: 8px;
+	padding: 4px 8px;
+	background: var(--el-fill-color-light);
+	border-radius: 4px;
+}
+.ann-pager {
+	margin: 0 8px;
+	font-size: 13px;
+	color: var(--el-text-color-regular);
+	white-space: nowrap;
 }
 </style>

@@ -138,6 +138,7 @@ class WorkflowInstanceRead(BaseModel):
     current_node: str | None = None
     state_data: str
     error_message: str | None = None
+    failed_node_id: str | None = None  # 失败节点ID（透传给前端定位失败节点）
     user_id: int | None = None
     created_at: datetime
     updated_at: datetime

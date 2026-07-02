@@ -184,7 +184,9 @@ const availableSizeOptions = computed(() => {
 		try {
 			const mc = JSON.parse(profile.modelDefaultConfig);
 			if (mc && Array.isArray(mc._sizes)) return mc._sizes;
-		} catch (e) {}
+		} catch (e) {
+			console.warn('[workflow/image-generator-config] 解析 _sizes 失败', e);
+		}
 	}
 	if (providerKind.value === 'openai') {
 		return [{ label: '自动比例', value: 'auto' }, ...sizeOptions];
@@ -214,7 +216,9 @@ watch(selectedProfile, profile => {
 					const opts = JSON.parse(config.optionsJson || '{}');
 					if (!opts.response_format) opts.response_format = mc.response_format;
 					config.optionsJson = JSON.stringify(opts);
-				} catch (e) {}
+				} catch (e) {
+					console.warn('[workflow/image-generator-config] 写入 response_format 到 optionsJson 失败', e);
+				}
 			}
 		}
 	} catch (e) {

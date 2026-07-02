@@ -208,11 +208,13 @@
 	</el-drawer>
 
 	<annotation-drawer
-		v-model:visible="annotation.visible"
-		:case-result-id="annotation.caseResultId"
-		:context="annotation.context"
-		@saved="loadCases"
-	/>
+	v-model:visible="annotation.visible"
+	:case-result-id="annotation.caseResultId"
+	:context="annotation.context"
+	:case-results="annotationQueue"
+	:initial-index="annotationInitialIndex"
+	@saved="loadCases"
+/>
 </template>
 
 <script lang="ts" setup>
@@ -226,6 +228,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import AnnotationDrawer from '/$/workflow_annotation/views/annotation-drawer.vue';
 import { formatVersionNo } from '/$/workflow/utils';
+import { statusTagType, caseStatusType, kappaLevelType, parseJudgeDetail } from '../utils/format';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -244,6 +247,7 @@ const definitionOptions = ref<any[]>([]);
 		definitionOptions.value = defs || [];
 	} catch (e) {
 		// ignore
+		console.warn('[workflow_eval/run] 拉取 test_set + definition 失败', e);
 	}
 })();
 
@@ -291,21 +295,6 @@ const Table = useTable({
 function statusLabel(s: string) {
 	return { pending: t('等待'), running: t('运行中'), succeeded: t('成功'), failed: t('失败'), partial: t('部分成功'), cancelled: t('已取消') }[s] || s;
 }
-function statusTagType(s: string): any {
-	return { succeeded: 'success', failed: 'danger', running: 'warning', cancelled: 'info', partial: 'warning', pending: 'info' }[s] || '';
-}
-function caseStatusType(s: string): any {
-	return { success: 'success', fail: 'danger', error: 'danger', timeout: 'warning', blocked: 'info' }[s] || '';
-}
-// 解析 evaluator_detail JSON（多维 rubric：{reason, dimensions}），供展开行展示
-function parseJudgeDetail(s: any): any {
-	if (!s) return null;
-	try {
-		return typeof s === 'string' ? JSON.parse(s) : s;
-	} catch {
-		return null;
-	}
-}
 
 // judge 校准 κ：调标注模块计算 judge 与人工标注的 Cohen's κ
 const kappaLoading = ref(false);
@@ -328,9 +317,6 @@ function kappaLevelLabel(level: string) {
 		unreliable: t('不可信(<0.4)'),
 		no_annotation: t('无标注')
 	}[level] || level;
-}
-function kappaLevelType(level: string): any {
-	return { reliable: 'success', moderate: 'warning', unreliable: 'danger', no_annotation: 'info' }[level] || 'info';
 }
 
 // 发起评估
@@ -420,8 +406,9 @@ async function openDetail(row: any) {
 	// 拉取最新完整 run 数据，避免列表快照过时（运行中状态/汇总可能已变化）
 	try {
 		detail.run = await evalService.eval_run.info({ id: row.id });
-	} catch {
+	} catch (e) {
 		// 拉取失败保留列表行兜底
+		console.warn('[workflow_eval/run] 拉取 eval_run.info 失败，保留列表行兜底', e);
 	}
 }
 async function loadCases() {
@@ -441,7 +428,15 @@ const annotation = reactive<{ visible: boolean; caseResultId: number; context: a
 	caseResultId: 0,
 	context: {}
 });
+const annotationQueue = ref<any[]>([]);
+const annotationInitialIndex = ref(0);
 function openAnnotation(row: any) {
+	// 当前页用例结果作为队列，启用沉浸式标注
+	annotationQueue.value = detail.cases;
+	annotationInitialIndex.value = detail.cases.findIndex((r: any) => r.id === row.id);
+	if (annotationInitialIndex.value < 0) annotationInitialIndex.value = 0;
+
+	// 兼容原单条模式（抽屉会优先用队列）
 	annotation.caseResultId = row.id;
 	annotation.context = {
 		inputData: row.inputData,

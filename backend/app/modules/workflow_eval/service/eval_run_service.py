@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -178,7 +178,7 @@ class WorkflowEvalRunService(BaseAdminCrudService):
                 WorkflowEvalRun.id == eval_run_id,
                 WorkflowEvalRun.status.in_([EvalRunStatus.PENDING, EvalRunStatus.RUNNING]),
             )
-            .values(status=EvalRunStatus.CANCELLED, finished_at=datetime.utcnow())
+            .values(status=EvalRunStatus.CANCELLED, finished_at=datetime.now(timezone.utc))
         )
         cancelled = result.rowcount > 0
         if cancelled:
@@ -210,16 +210,16 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         sync sleep 在 FastAPI threadpool 跑（不阻塞事件循环）；CI 脚本编排：start → poll → 判 pass_rate。
         """
         import time as _time
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        deadline = datetime.utcnow() + timedelta(seconds=max(1, timeout))
+        deadline = datetime.now(timezone.utc) + timedelta(seconds=max(1, timeout))
         while True:
             run = self.session.get(WorkflowEvalRun, eval_run_id)
             if not run:
                 raise HTTPException(status_code=404, detail="评估运行不存在")
             if run.status in EvalRunStatus.TERMINAL:
                 return WorkflowEvalRunRead.model_validate(run).model_dump(by_alias=True)
-            if datetime.utcnow() >= deadline:
+            if datetime.now(timezone.utc) >= deadline:
                 return {"id": run.id, "status": run.status, "timeout": True}
             _time.sleep(min(max(1, interval), 30))
 
@@ -231,7 +231,7 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         在线评测：定期把生产流量转为黄金测试集，回放监控质量漂移。
         生产 input 可能含 PII，用 AiSecurityService.mask_sensitive_dict 脱敏。
         """
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         from sqlalchemy import update as sa_update
 
@@ -240,7 +240,7 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         test_set = self.session.get(WorkflowTestSet, test_set_id)
         if not test_set:
             raise HTTPException(status_code=404, detail="测试集不存在")
-        cutoff = datetime.utcnow() - timedelta(days=max(1, days))
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, days))
         instances = list(
             self.session.exec(
                 select(WorkflowInstance)

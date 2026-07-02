@@ -341,13 +341,16 @@ function remove(item: ClViewGroup.Item) {
 			}
 
 			// 删除事件
-			if (config.onDelete) {
-				config.onDelete(item, { next });
-			} else {
-				next({ ids: [item.id] });
-			}
-		})
-		.catch(() => null);
+		if (config.onDelete) {
+			config.onDelete(item, { next });
+		} else {
+			next({ ids: [item.id] });
+		}
+	})
+		.catch(error => {
+			console.warn('[view/group] 用户取消删除分组', error);
+			return null;
+		});
 }
 
 // 请求参数

@@ -315,16 +315,19 @@ function treeOrder(f: boolean) {
 						})
 					)
 					.then(() => {
-						ElMessage.success(t('更新排序成功'));
-					})
-					.catch(err => {
-						ElMessage.error(err.message);
-					});
+					ElMessage.success(t('更新排序成功'));
+				})
+				.catch(err => {
+					ElMessage.error(err.message);
+				});
 
-				refresh();
-				isDrag.value = false;
-			})
-			.catch(() => null);
+			refresh();
+			isDrag.value = false;
+		})
+		.catch(error => {
+			console.warn('[base/dept-list] 用户取消排序更新', error);
+			return null;
+		});
 	} else {
 		refresh();
 	}

@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -390,7 +390,7 @@ class BaseAdminCrudService:
                 update(self.model)
                 .where(self.model.id.in_(list(target_ids)))
                 .where(self.model.delete_time == None)  # noqa: E711  避免重复软删除
-                .values(delete_time=datetime.utcnow())
+                .values(delete_time=datetime.now(timezone.utc))
             )
             self.session.execute(statement)
         else:
@@ -607,7 +607,7 @@ class UserAdminService(BaseAdminCrudService):
             validate_password_strength(data["password"])
             data["password_hash"] = hash_password(data.pop("password"))
             entity.password_version += 1
-            entity.password_changed_at = datetime.utcnow()  # 记录密码修改时间
+            entity.password_changed_at = datetime.now(timezone.utc)  # 记录密码修改时间
         else:
             data.pop("password", None)
         data["nick_name"] = data.get("nick_name", "") or data.get("full_name", entity.full_name)
@@ -1367,7 +1367,7 @@ class MenuAdminService(BaseAdminCrudService):
         menu.is_show = True
         menu.sort_order = item.sort_order
         menu.is_active = True
-        menu.updated_at = datetime.utcnow()
+        menu.updated_at = datetime.now(timezone.utc)
         self.session.add(menu)
         self.session.commit()
         self.session.refresh(menu)
@@ -1393,7 +1393,7 @@ class MenuAdminService(BaseAdminCrudService):
             button.permission = perms
             button.sort_order = index
             button.is_active = True
-            button.updated_at = datetime.utcnow()
+            button.updated_at = datetime.now(timezone.utc)
             self.session.add(button)
         self.session.commit()
         self._clear_menu_related_caches([menu.id])

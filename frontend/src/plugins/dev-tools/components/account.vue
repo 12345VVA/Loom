@@ -58,7 +58,10 @@ function remove(index: number) {
 			list.value.splice(index, 1);
 			update();
 		})
-		.catch(() => null);
+		.catch(error => {
+			console.warn('[dev-tools/account] 用户取消删除账号', error);
+			return null;
+		});
 }
 
 // 添加、更新

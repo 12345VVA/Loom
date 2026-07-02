@@ -83,7 +83,17 @@
 			</div>
 
 			<div v-show="isLogExpanded" class="log-body">
-				<div v-if="runLog.inputData" class="log-section">
+			<div
+				v-if="runLog.status === 'error' && runLog.errorMessage"
+				class="log-section log-error-section"
+			>
+				<div class="log-title">
+					<el-icon color="#f56c6c"><warning-filled /></el-icon>
+					<span>{{ $t('错误信息') }}</span>
+				</div>
+				<div class="log-content log-error-content">{{ runLog.errorMessage }}</div>
+			</div>
+			<div v-if="runLog.inputData" class="log-section">
 					<div class="log-title">
 						<span>{{ $t('输入') }}</span>
 						<el-icon
@@ -122,12 +132,14 @@ import {
 	CircleCloseFilled,
 	Loading,
 	InfoFilled,
+	WarningFilled,
 	ArrowDown,
 	ArrowRight,
 	CopyDocument,
 	VideoPlay
 } from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
+import DOMPurify from 'dompurify';
 import { formatJson, copyToClipboard } from '../../utils';
 import { getNodeMeta } from '../../utils/node-type-registry';
 import { UNTESTABLE_NODE_TYPES, OPEN_NODE_TEST_DIALOG_KEY } from '../constants';
@@ -217,7 +229,7 @@ function highlightJson(data: any): string {
 			return '<span class="' + cls + '">' + match + '</span>';
 		}
 	);
-	return html;
+	return DOMPurify.sanitize(html);
 }
 </script>
 
@@ -647,6 +659,20 @@ function highlightJson(data: any): string {
 				color: #a31515;
 				font-weight: bold;
 			}
+		}
+	}
+
+	/* 错误信息块：失败节点浮层顶部醒目展示 */
+	.log-error-section {
+		.log-title {
+			color: var(--el-color-danger);
+		}
+
+		.log-error-content {
+			background: #fef0f0;
+			color: var(--el-color-danger);
+			border-color: #fbc4c4;
+			font-family: inherit;
 		}
 	}
 

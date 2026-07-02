@@ -8,7 +8,7 @@ import hashlib
 import json
 import secrets
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import HTTPException, Request, status
@@ -142,7 +142,7 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前用户未分配角色")
         user._token_role_ids = [role.id for role in roles if role.id is not None]
 
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = datetime.now(timezone.utc)
         self.session.add(user)
         self.session.commit()
         self.session.refresh(user)
@@ -399,7 +399,7 @@ class AuthService:
             validate_password_strength(payload.password)
             target.password_hash = hash_password(payload.password)
             target.password_version += 1
-            target.password_changed_at = datetime.utcnow()  # 记录密码修改时间
+            target.password_changed_at = datetime.now(timezone.utc)  # 记录密码修改时间
 
         if payload.nick_name is not None:
             target.nick_name = payload.nick_name
@@ -412,7 +412,7 @@ class AuthService:
         if payload.remark is not None:
             target.remark = payload.remark
 
-        target.updated_at = datetime.utcnow()
+        target.updated_at = datetime.now(timezone.utc)
         self.session.add(target)
         self.session.commit()
         self.session.refresh(target)

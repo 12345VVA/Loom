@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import case, func, select
@@ -50,7 +50,7 @@ class AiModelCallStatsService:
     def _aggregate(self, days: int | None, group_by: str) -> dict:
         base_filters: list = []
         if days:
-            since = datetime.utcnow() - timedelta(days=max(1, min(days, 365)))
+            since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
             base_filters.append(AiModelCallLog.created_at >= since)
 
         # 全局总量与指标：单次 SQL 聚合（替代原全表 load + Python 求和）

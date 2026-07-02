@@ -52,6 +52,7 @@ const definitionOptions = ref<{ label: string; value: number }[]>([]);
 		}));
 	} catch (e) {
 		// ignore
+		console.warn('[workflow_eval/suite] 拉取 workflow.definition.list 失败', e);
 	}
 })();
 

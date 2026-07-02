@@ -48,9 +48,12 @@ function refresh() {
 			type: 'warning'
 		})
 			.then(() => {
-				update(list.value[0]?.name);
-			})
-			.catch(() => null);
+			update(list.value[0]?.name);
+		})
+		.catch(error => {
+			console.warn('[dev-tools/proxy] 用户取消切换默认环境', error);
+			return null;
+		});
 	}
 }
 

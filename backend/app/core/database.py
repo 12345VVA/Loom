@@ -4,7 +4,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import event, inspect, text
@@ -28,7 +28,7 @@ from app.modules.workflow_eval.model import test_set as _workflow_eval_test_set_
 @event.listens_for(BaseEntity, "before_update", propagate=True)
 def timestamp_before_update(mapper, connection, target):
     """在更新前自动刷新 updated_at 字段"""
-    target.updated_at = datetime.utcnow()
+    target.updated_at = datetime.now(timezone.utc)
 
 
 BASE_DIR = Path(__file__).resolve().parents[3]

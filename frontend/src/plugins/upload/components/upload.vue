@@ -361,7 +361,10 @@ async function onBeforeUpload(file: any, item?: Upload.Item) {
 		let r = props.beforeUpload(file, item, { next });
 
 		if (isPromise(r)) {
-			r.then(next).catch(() => null);
+			r.then(next).catch(error => {
+				console.warn('[upload] beforeUpload 钩子被拒绝', error);
+				return null;
+			});
 		} else {
 			if (r) {
 				r = next();

@@ -85,6 +85,7 @@ import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import { verdictType } from '../utils/format';
 
 const route = useRoute();
 const { service } = useCool();
@@ -102,9 +103,6 @@ function verdictLabel(v: string) {
 		insignificant: t('无显著变化（差异在统计噪声范围内）'),
 		insufficient_sample: t('样本量不足，无法判定显著性')
 	}[v] || v;
-}
-function verdictType(v: string): any {
-	return { regression: 'error', improvement: 'success', insignificant: 'info', insufficient_sample: 'warning' }[v] || 'info';
 }
 
 onMounted(async () => {

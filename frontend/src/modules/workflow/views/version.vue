@@ -153,6 +153,7 @@ async function initPage(defId: number) {
 		defName.value = def.name;
 	} catch (e) {
 		// ignore
+		console.warn('[workflow/version] 拉取 definition.info 用于标题失败', e);
 	}
 	page.value = 1;
 	await loadVersions();

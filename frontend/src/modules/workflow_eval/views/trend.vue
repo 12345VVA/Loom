@@ -71,7 +71,12 @@ async function loadRuns() {
 	loading.value = true;
 	try {
 		const results = await Promise.all(
-			ids.map(id => evalService.eval_run.info({ id }).catch(() => null))
+			ids.map(id =>
+				evalService.eval_run.info({ id }).catch(error => {
+					console.warn('[workflow_eval/trend] 拉取 eval_run.info 失败', error);
+					return null;
+				})
+			)
 		);
 		runs.value = results
 			.filter(Boolean)

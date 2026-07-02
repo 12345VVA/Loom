@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -139,7 +139,7 @@ class AiGovernanceEventService(BaseAdminCrudService):
         return self._batch_decorate([super().info(id, current_user, relations)])[0]
 
     def stats(self, days: int = 14) -> dict:
-        since = datetime.utcnow() - timedelta(days=max(1, min(days, 365)))
+        since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
         base_filter = AiGovernanceEvent.created_at >= since
         total = int(self.session.exec(select(func.count()).where(base_filter)).one() or 0)
         type_rows = self.session.exec(
@@ -252,7 +252,7 @@ class AiGovernanceService:
             model_id=model.id,
             profile_id=profile.id,
             status="running",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
         )
         invocation._cc_keys = concurrent_keys
         self.session.add(invocation)
@@ -274,7 +274,7 @@ class AiGovernanceService:
         self._release_concurrent(invocation)
         if invocation:
             invocation.status = "success" if status_value == "success" else "error"
-            invocation.finished_at = datetime.utcnow()
+            invocation.finished_at = datetime.now(timezone.utc)
             self.session.add(invocation)
         if status_value == "success":
             self._record_post_events(
@@ -287,7 +287,7 @@ class AiGovernanceService:
         if not invocation:
             return
         invocation.status = "blocked"
-        invocation.finished_at = datetime.utcnow()
+        invocation.finished_at = datetime.now(timezone.utc)
         self.session.add(invocation)
         self.session.commit()
 

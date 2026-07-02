@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import func, update
@@ -81,7 +81,7 @@ class WorkflowVersionService(BaseAdminCrudService):
         if description is not None:
             definition.description = description
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         draft_vid = definition.draft_version_id
         if draft_vid is not None:
             # 覆盖现有草稿 graph（CAS draft→draft，状态异常则 fallback 建新草稿）
@@ -124,7 +124,7 @@ class WorkflowVersionService(BaseAdminCrudService):
         # 仍由运行期 compile_graph 负责，以免影响测试用简化拓扑。
         validate_graph_json(draft.graph_json)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         publisher_id = current_user.id if current_user else None
         draft_graph = draft.graph_json  # 建新草稿用（CAS 后状态会变）
 
@@ -206,7 +206,7 @@ class WorkflowVersionService(BaseAdminCrudService):
         if not target or target.definition_id != definition_id:
             raise HTTPException(status_code=404, detail="目标版本不存在")
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         note = change_note or f"回滚自 v{target.version_no}"
         draft_vid = definition.draft_version_id
         if draft_vid is not None:
@@ -293,12 +293,12 @@ class WorkflowVersionService(BaseAdminCrudService):
         由 Celery beat 周期调用，兜底版本表无限增长。draft/published 不动（draft 是当前编辑，
         published 靠 publish 自动转 archived）。
         """
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         from app.modules.workflow.model.workflow import WorkflowInstance
         from app.modules.workflow_eval.model.eval_run import WorkflowEvalRun
 
-        threshold = datetime.utcnow() - timedelta(days=keep_days)
+        threshold = datetime.now(timezone.utc) - timedelta(days=keep_days)
         # 被引用的 version_id（不可删，否则历史实例/run 无法溯源）
         referenced = set(
             self.session.exec(
@@ -322,7 +322,7 @@ class WorkflowVersionService(BaseAdminCrudService):
                 )
             ).all()
         )
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         swept = 0
         for v in stale:
             if v.id in referenced:

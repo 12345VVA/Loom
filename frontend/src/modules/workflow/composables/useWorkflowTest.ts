@@ -196,6 +196,10 @@ export function useWorkflowTest(
 		if (currentNode && status === 'running') {
 			highlightRunningNode(currentNode);
 		}
+		// 失败时立即根据 payload 标记失败节点 + 写入错误信息（不等 logs 异步刷新，保证视觉即时反馈）
+		if (currentNode && status === 'failed') {
+			markFailedNode(currentNode, data.error);
+		}
 		// 节点完成/状态变化 → 防抖拉 logs 刷新画布与抽屉的详细 runLog
 		scheduleLogRefresh(currentNode);
 
@@ -213,6 +217,21 @@ export function useWorkflowTest(
 				(el as any).class = 'node-status-running';
 				if (!el.data) el.data = { config: {} };
 				if (!el.data.runLog) el.data.runLog = { status: 'running' };
+			}
+		});
+	}
+
+	function markFailedNode(nodeId: string, errorMessage?: string) {
+		elements.value.forEach(el => {
+			if (!('source' in el) && el.id === nodeId) {
+				(el as any).class = 'node-status-error';
+				if (!el.data) el.data = { config: {} };
+				const prevLog = el.data.runLog || {};
+				el.data.runLog = {
+					...prevLog,
+					status: 'error',
+					errorMessage: errorMessage || ''
+				};
 			}
 		});
 	}
@@ -276,6 +295,14 @@ export function useWorkflowTest(
 	}
 
 	function updateNodeStatus(logs: any[], instanceStatus: string, currentNode: string | null) {
+		// 先收集 SSE failed 事件写入的 errorMessage：clearNodeStatus 会清空 runLog，
+		// 重建时若 logs 未带 error 字段需把 errorMessage 合并回去（SSE 先到、logs 后到的时序保护）
+		const prevErrorMessages = new Map<string, string>();
+		elements.value.forEach(el => {
+			if (!('source' in el) && el.data?.runLog?.errorMessage) {
+				prevErrorMessages.set(el.id, el.data.runLog.errorMessage);
+			}
+		});
 		clearNodeStatus();
 		const logMap = new Map(logs.map(log => [log.nodeId, log]));
 		elements.value.forEach(el => {
@@ -289,7 +316,11 @@ export function useWorkflowTest(
 						customClass = 'node-status-error';
 					}
 					if (!el.data) el.data = { config: {} };
-					el.data.runLog = nodeLog;
+					const prevErr = prevErrorMessages.get(el.id);
+					el.data.runLog =
+						prevErr && !nodeLog.errorMessage
+							? { ...nodeLog, errorMessage: prevErr }
+							: nodeLog;
 				}
 
 				if (instanceStatus === 'running' && currentNode && el.id === currentNode) {

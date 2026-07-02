@@ -103,7 +103,10 @@ export default defineComponent({
 					.then(() => {
 						next();
 					})
-					.catch(() => null);
+					.catch(error => {
+						console.warn('[crud/switch] 用户取消切换', error);
+						return null;
+					});
 			} else {
 				next();
 			}

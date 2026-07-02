@@ -542,7 +542,9 @@ const activeLimits = computed(() => {
 					max_prompt_length: config._limits.max_prompt_length
 				};
 			}
-		} catch (e) {}
+		} catch (e) {
+			console.warn('[ai/image] 解析 modelDefaultConfig 失败', e);
+		}
 	}
 	return { max_n: 8 };
 });

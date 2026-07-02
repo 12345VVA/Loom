@@ -4,7 +4,7 @@
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlmodel import select
 
@@ -38,7 +38,7 @@ def execute_system_task(task_id: int):
 
         try:
             # 更新最后执行时间
-            task.last_execute_time = datetime.utcnow()
+            task.last_execute_time = datetime.now(timezone.utc)
 
             # 执行逻辑
             result = TaskInvoker.invoke(task.service, task.data)
@@ -66,7 +66,7 @@ def execute_system_task(task_id: int):
 @celery_app.task(name="task.dispatch_due_tasks")
 def dispatch_due_tasks():
     """保守调度器：周期扫描已启用且到期的任务并分发执行。"""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     dispatched: list[int] = []
     with Session(engine) as session:
         tasks = session.exec(
@@ -154,7 +154,7 @@ def clean_expired_logs():
                 keep_days = int(DEFAULT_LOG_KEEP_DAYS)
 
             # 计算删除截止时间
-            cutoff_time = datetime.utcnow() - timedelta(days=keep_days)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(days=keep_days)
 
             # 删除过期的操作日志
             stmt_sys_log = delete(SysLog).where(SysLog.created_at < cutoff_time)

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import update
 
@@ -42,7 +42,7 @@ def execute_ai_generation_task(task_id: int) -> dict:
         claimed = session.execute(
             update(AiGenerationTask)
             .where(AiGenerationTask.id == task_id, AiGenerationTask.status == "pending")
-            .values(status="running", progress=10, started_at=datetime.utcnow(), error_message=None)
+            .values(status="running", progress=10, started_at=datetime.now(timezone.utc), error_message=None)
         )
         if claimed.rowcount == 0:
             logger.info(
@@ -88,14 +88,14 @@ def execute_ai_generation_task(task_id: int) -> dict:
             session.refresh(task)
             if task.status == "cancelled":
                 task.progress = 100
-                task.finished_at = task.finished_at or datetime.utcnow()
+                task.finished_at = task.finished_at or datetime.now(timezone.utc)
                 session.add(task)
                 session.commit()
                 return {"success": False, "message": "AI task cancelled", "taskId": task.id}
             task.status = "success"
             task.progress = 100
             task.result_payload = json.dumps(result, ensure_ascii=False, default=str)
-            task.finished_at = datetime.utcnow()
+            task.finished_at = datetime.now(timezone.utc)
             session.add(task)
             session.commit()
             logger.info("AI 异步生成任务结果已持久化", extra={"task_id": task.id, "task_type": task.task_type})
@@ -106,7 +106,7 @@ def execute_ai_generation_task(task_id: int) -> dict:
             task.status = "failed"
             task.progress = 100
             task.error_message = str(exc)[:1000]
-            task.finished_at = datetime.utcnow()
+            task.finished_at = datetime.now(timezone.utc)
             session.add(task)
             session.commit()
             logger.error(

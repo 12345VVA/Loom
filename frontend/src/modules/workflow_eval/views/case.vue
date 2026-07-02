@@ -57,6 +57,7 @@ const testSetId = ref<any>(null);
 		testSetOptions.value = res || [];
 	} catch (e) {
 		// ignore
+		console.warn('[workflow_eval/case] 拉取 test_set.list 失败', e);
 	}
 })();
 

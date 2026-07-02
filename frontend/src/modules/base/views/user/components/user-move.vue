@@ -57,10 +57,13 @@ async function open(ids: any[]) {
 								close();
 							})
 							.catch(err => {
-								ElMessage.error(err.message);
-							});
-					})
-					.catch(() => null);
+							ElMessage.error(err.message);
+						});
+				})
+				.catch(error => {
+					console.warn('[base/user-move] 用户取消转移用户', error);
+					return null;
+				});
 
 				done();
 			}

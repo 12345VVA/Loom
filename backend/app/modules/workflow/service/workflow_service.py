@@ -8,7 +8,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -987,7 +987,7 @@ class WorkflowService(BaseAdminCrudService):
 
         取当天同前缀已有编码的最大数字序列 +1；DB code 字段 unique 约束兜底并发冲突。
         """
-        prefix = "WF" + datetime.utcnow().strftime("%Y%m%d")
+        prefix = "WF" + datetime.now(timezone.utc).strftime("%Y%m%d")
         rows = self.session.exec(
             select(WorkflowDefinition.code).where(WorkflowDefinition.code.like(f"{prefix}%"))
         ).all()
@@ -1271,7 +1271,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
             except Exception:
                 # Redis 不可用：降级为 DB 2 秒窗口查询兜底，保持与原行为一致，不阻断正常启动
                 logger.warning("工作流启动去重锁 Redis 不可用，降级为 DB 查询兜底", exc_info=True)
-                two_seconds_ago = datetime.utcnow() - timedelta(seconds=2)
+                two_seconds_ago = datetime.now(timezone.utc) - timedelta(seconds=2)
                 stmt = select(WorkflowInstance).where(
                     WorkflowInstance.definition_id == definition_id,
                     WorkflowInstance.status == "running",
@@ -1501,7 +1501,7 @@ def recover_orphaned_instances(session: Session):
     启动时将长时间卡在 running/pending 状态的实例标记为 failed。
     30 分钟宽限期避免误杀刚启动的正常实例。paused 状态不处理。
     """
-    cutoff = datetime.utcnow() - timedelta(minutes=30)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
     stmt = select(WorkflowInstance).where(
         WorkflowInstance.status.in_(["running", "pending"]),
         WorkflowInstance.updated_at < cutoff,

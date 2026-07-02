@@ -97,10 +97,13 @@ async function onCommand(name: string) {
 				type: 'warning'
 			})
 				.then(async () => {
-					await service.base.comm.logout();
-					user.logout();
-				})
-				.catch(() => null);
+				await service.base.comm.logout();
+				user.logout();
+			})
+			.catch(error => {
+				console.warn('[base/topbar] 用户取消退出登录', error);
+				return null;
+			});
 			break;
 	}
 }
