@@ -85,7 +85,7 @@
 					<el-option
 						v-for="v in versionOptions"
 						:key="v.id"
-						:label="`v${v.versionNo} (${versionStatusLabel(v.status)})`"
+						:label="`${formatVersionNo(v.versionNo)} (${versionStatusLabel(v.status)})`"
 						:value="v.id"
 					/>
 				</el-select>
@@ -225,6 +225,7 @@ import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import AnnotationDrawer from '/$/workflow_annotation/views/annotation-drawer.vue';
+import { formatVersionNo } from '/$/workflow/utils';
 
 const { service } = useCool();
 const { t } = useI18n();

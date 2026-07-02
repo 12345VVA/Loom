@@ -970,15 +970,33 @@ class WorkflowService(BaseAdminCrudService):
         """
         新增前的校验与逻辑
         """
-        # 1. 唯一性校验
+        # 1. 编码：未提供则自动生成（WF+日期+序列）；显式提供则校验唯一
         code = data.get("code")
-        if code:
+        if not code:
+            data["code"] = self._generate_code()
+        else:
             existing = self.session.exec(select(WorkflowDefinition).where(WorkflowDefinition.code == code)).first()
             if existing:
                 raise HTTPException(status_code=400, detail=f"工作流编码 '{code}' 已存在。")
 
         # 注：graph_json 已移至版本表，拓扑校验改由 WorkflowVersionService.save_draft 承担
         return data
+
+    def _generate_code(self) -> str:
+        """生成唯一工作流编码：WF + YYYYMMDD + 3位当日序列（如 WF20260630001）。
+
+        取当天同前缀已有编码的最大数字序列 +1；DB code 字段 unique 约束兜底并发冲突。
+        """
+        prefix = "WF" + datetime.utcnow().strftime("%Y%m%d")
+        rows = self.session.exec(
+            select(WorkflowDefinition.code).where(WorkflowDefinition.code.like(f"{prefix}%"))
+        ).all()
+        max_seq = 0
+        for c in rows:
+            suffix = c[len(prefix):]
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+        return f"{prefix}{max_seq + 1:03d}"
 
     def _before_update(self, data: dict, entity: Any) -> dict:
         """

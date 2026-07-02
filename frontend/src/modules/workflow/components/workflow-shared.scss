@@ -16,6 +16,15 @@
 	--wf-color-variable-transform: #67c23a;
 }
 
+// 工作流间距 token（全局 CSS 变量，供 editor 及组件复用，统一 spacing 规范）
+:root {
+	--wf-space-xs: 4px;
+	--wf-space-sm: 8px;
+	--wf-space-md: 12px;
+	--wf-space-lg: 16px;
+	--wf-space-xl: 20px;
+}
+
 // 节点入场动画
 @keyframes wf-pop-in {
 	0% {

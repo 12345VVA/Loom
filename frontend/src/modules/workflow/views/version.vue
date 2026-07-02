@@ -16,8 +16,8 @@
 
 		<el-table :data="versions" border @selection-change="(r: any[]) => (selected = r)">
 			<el-table-column type="selection" width="45" />
-			<el-table-column prop="versionNo" :label="$t('版本号')" width="100">
-				<template #default="{ row }"><b>v{{ row.versionNo }}</b></template>
+			<el-table-column prop="versionNo" :label="$t('版本号')" width="120">
+				<template #default="{ row }"><b>{{ formatVersionNo(row.versionNo) }}</b></template>
 			</el-table-column>
 			<el-table-column prop="status" :label="$t('状态')" width="110">
 				<template #default="{ row }">
@@ -52,7 +52,7 @@
 		<!-- diff 结果 -->
 		<el-card v-if="diff" class="diff-card">
 			<template #header>
-				{{ $t('版本对比') }}：v{{ diff.versionA.versionNo }} → v{{ diff.versionB.versionNo }}
+				{{ $t('版本对比') }}：{{ formatVersionNo(diff.versionA.versionNo) }} → {{ formatVersionNo(diff.versionB.versionNo) }}
 			</template>
 			<el-tabs>
 				<el-tab-pane :label="$t('新增节点') + `(${diff.nodesAdded.length})`">
@@ -92,7 +92,7 @@
 		</el-card>
 
 		<!-- 预览抽屉 -->
-		<el-drawer v-model="previewVisible" :title="`v${previewRow?.versionNo} ${$t('拓扑预览')}`" size="680px">
+		<el-drawer v-model="previewVisible" :title="`${formatVersionNo(previewRow?.versionNo)} ${$t('拓扑预览')}`" size="680px">
 			<div v-if="previewGraph">
 				<h4>{{ $t('节点') }}（{{ previewGraph.nodes?.length || 0 }}）</h4>
 				<el-table :data="previewGraph.nodes" border size="small">
@@ -119,6 +119,7 @@ import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import { formatVersionNo } from '../utils';
 
 const route = useRoute();
 const { service } = useCool();
@@ -215,7 +216,7 @@ async function preview(row: any) {
 async function rollback(row: any) {
 	try {
 		await ElMessageBox.confirm(
-			t('将基于 v' + row.versionNo + ' 生成新草稿（线上版本不变），需在编辑器确认后发布。立即上线请勾选。'),
+			t('将基于 ' + formatVersionNo(row.versionNo) + ' 生成新草稿（线上版本不变），需在编辑器确认后发布。立即上线请勾选。'),
 			t('回滚确认'),
 			{ type: 'warning', distinguishCancelAndClose: true }
 		);

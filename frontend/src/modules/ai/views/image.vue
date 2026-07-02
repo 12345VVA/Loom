@@ -371,6 +371,7 @@ import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { Bell, Close, InfoFilled } from '@element-plus/icons-vue';
+import { findImageData } from './image-utils';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -923,46 +924,7 @@ function extractImageItems(value: any): { src: string; value: string; url?: stri
 		.filter(Boolean) as { src: string; value: string; url?: string }[];
 }
 
-function findImageData(value: any): any[] {
-	if (!value) {
-		return [];
-	}
-	if (typeof value === 'string') {
-		try {
-			return findImageData(JSON.parse(value));
-		} catch {
-			return [];
-		}
-	}
-	if (Array.isArray(value)) {
-		return value;
-	}
-	if (Array.isArray(value.data)) {
-		return value.data;
-	}
-	if (value.resultPayload) {
-		return findImageData(value.resultPayload);
-	}
-	if (value.raw) {
-		const rawItems = findImageData(value.raw);
-		if (rawItems.length) {
-			return rawItems;
-		}
-	}
-	if (value.output) {
-		const outputItems = findImageData(value.output);
-		if (outputItems.length) {
-			return outputItems;
-		}
-	}
-	if (value.result) {
-		return findImageData(value.result);
-	}
-	if (Array.isArray(value.images)) {
-		return value.images;
-	}
-	return [];
-}
+// findImageData 已抽离至 ./image-utils，便于单元测试（含递归深度保护）
 </script>
 
 <style lang="scss" scoped>

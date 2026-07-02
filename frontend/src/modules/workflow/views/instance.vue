@@ -109,6 +109,7 @@ import { ref, reactive, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
 import LogDrawer from '../components/log-drawer.vue';
+import { formatVersionNo } from '../utils';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -183,7 +184,12 @@ const Table = useTable({
 	columns: [
 		{ label: t('实例ID'), prop: 'id', width: 90 },
 		{ label: t('关联工作流ID'), prop: 'definitionId', width: 130 },
-		{ label: t('版本'), prop: 'versionNo', width: 90 },
+		{
+			label: t('版本'),
+			prop: 'versionNo',
+			width: 100,
+			formatter: (_row: any, _col: any, val: any) => formatVersionNo(val)
+		},
 		{
 			label: t('运行时 Thread ID'),
 			prop: 'threadId',

@@ -352,6 +352,14 @@ function highlightJson(data: any): string {
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+
+	&--intent {
+		color: var(--wf-color-intent-classifier);
+		max-width: 60px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 }
 
 .custom-handle {
@@ -376,6 +384,12 @@ function highlightJson(data: any): string {
 	&.handle-case {
 		:deep(.vue-flow__handle) {
 			background-color: #e6a23c !important;
+		}
+	}
+
+	&.handle-intent {
+		:deep(.vue-flow__handle) {
+			background-color: var(--wf-color-intent-classifier) !important;
 		}
 	}
 }

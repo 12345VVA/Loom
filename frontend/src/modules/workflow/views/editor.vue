@@ -91,68 +91,21 @@
 					<el-button class="minimap-toggle" circle :icon="Grid" @click="toggleMiniMap" />
 				</el-tooltip>
 
-				<!-- 右键上下文菜单（#23 键盘 a11y：方向键导航 + Enter 触发 + Escape 关闭） -->
-				<div
-					ref="contextMenuRef"
-					v-if="contextMenu.visible"
-					class="context-menu"
-					role="menu"
-					tabindex="-1"
-					:style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-					@keydown="onMenuKeydown"
-				>
-					<div class="context-menu-item" role="menuitem" tabindex="-1" @click="editContextNode">
-						<el-icon><edit /></el-icon>
-						<span>{{ $t('配置节点') }}</span>
-					</div>
-					<div
-						class="context-menu-item"
-						role="menuitem"
-						tabindex="-1"
-						:aria-disabled="!canTestContextNode"
-						@click="testContextNode"
-						:class="{ 'is-disabled': !canTestContextNode }"
-					>
-						<el-icon><caret-right /></el-icon>
-						<span>{{ $t('测试节点') }}</span>
-					</div>
-					<div class="context-menu-item" role="menuitem" tabindex="-1" @click="duplicateNode">
-						<el-icon><copy-document /></el-icon>
-						<span>{{ $t('复制节点') }}</span>
-					</div>
-					<div
-						class="context-menu-item"
-						role="menuitem"
-						tabindex="-1"
-						:aria-disabled="!canDistribute"
-						@click="distributeHorizontal"
-						:class="{ 'is-disabled': !canDistribute }"
-					>
-						<el-icon><grid /></el-icon>
-						<span>{{ $t('水平等距分布') }}</span>
-					</div>
-					<div
-						class="context-menu-item"
-						role="menuitem"
-						tabindex="-1"
-						:aria-disabled="!canDistribute"
-						@click="distributeVertical"
-						:class="{ 'is-disabled': !canDistribute }"
-					>
-						<el-icon><operation /></el-icon>
-						<span>{{ $t('垂直等距分布') }}</span>
-					</div>
-					<div class="context-menu-divider" role="separator" />
-					<div
-						class="context-menu-item context-menu-item--danger"
-						role="menuitem"
-						tabindex="-1"
-						@click="deleteContextNode"
-					>
-						<el-icon><delete /></el-icon>
-						<span>{{ $t('删除节点') }}</span>
-					</div>
-				</div>
+				<!-- 右键上下文菜单（组件化，键盘 a11y 在组件内） -->
+				<context-menu
+					:visible="contextMenu.visible"
+					:x="contextMenu.x"
+					:y="contextMenu.y"
+					:can-test="canTestContextNode"
+					:can-distribute="canDistribute"
+					@close="closeContextMenu"
+					@edit="editContextNode"
+					@test="testContextNode"
+					@duplicate="duplicateNode"
+					@distribute-h="distributeHorizontal"
+					@distribute-v="distributeVertical"
+					@delete="deleteContextNode"
+				/>
 
 				<!-- 半透明遮罩 -->
 				<transition name="panel-backdrop">
@@ -281,63 +234,41 @@ defineOptions({
 	name: 'workflow-editor'
 });
 
-import { ref, reactive, onMounted, onActivated, onDeactivated, onBeforeUnmount, computed, watch, provide, nextTick } from 'vue';
-import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
+import {
+	ref,
+	onMounted,
+	onActivated,
+	onDeactivated,
+	onBeforeUnmount,
+	computed,
+	watch,
+	provide
+} from 'vue';
+import { useRoute, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { useCool } from '/@/cool';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 
 // 导入 Vue Flow
 import { VueFlow, useVueFlow } from '@vue-flow/core';
-import type { Connection } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
 import '@vue-flow/minimap/dist/style.css';
 
 // 导入 Element Plus 图标
-import {
-	VideoPlay,
-	Cpu,
-	Setting,
-	Operation,
-	UserFilled,
-	CircleCheck,
-	MagicStick,
-	Refresh,
-	Files,
-	Picture,
-	ArrowLeft,
-	FolderChecked,
-	Plus,
-	Search,
-	Edit,
-	CopyDocument,
-	ArrowDown,
-	CaretRight,
-	Delete,
-	Download,
-	Collection,
-	Filter,
-	Document,
-	Brush,
-	Grid
-} from '@element-plus/icons-vue';
+import { ArrowDown, Grid } from '@element-plus/icons-vue';
 
 // Vue Flow 样式文件
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
 
-import {
-	formatJson,
-	genId,
-	findInvalidNodeInput,
-	isRequiredConfigMissing
-} from '../utils';
-import { getNodeMeta } from '../utils/node-type-registry';
+import { formatJson, genId, isRequiredConfigMissing } from '../utils';
+import { migrateLoadedElements } from '../utils/graph-migration';
+import { hitTestGroup } from '../utils/group-hit-test';
 import LogDrawer from '../components/log-drawer.vue';
-import { UNTESTABLE_NODE_TYPES, OPEN_NODE_TEST_DIALOG_KEY } from '../components/constants';
+import { OPEN_NODE_TEST_DIALOG_KEY } from '../components/constants';
 import dayjs from 'dayjs';
 
 import { useWorkflowTest } from '../composables/useWorkflowTest';
@@ -345,6 +276,11 @@ import { useAlignmentGuides } from '../composables/useAlignmentGuides';
 import { useUndoRedo } from '../composables/useUndoRedo';
 import { useNodeTest } from '../composables/useNodeTest';
 import { useGraphBuilder } from '../composables/useGraphBuilder';
+import { useSaveFlow } from '../composables/useSaveFlow';
+import { useUpstreamVariables } from '../composables/useUpstreamVariables';
+import { useContextMenu } from '../composables/useContextMenu';
+import { useNodeFactory } from '../composables/useNodeFactory';
+import { useEdgeConnect } from '../composables/useEdgeConnect';
 import { planNodeRemoval } from '../composables/useNodeOps';
 
 // 导入重构的子组件
@@ -366,13 +302,13 @@ import LoopBodyGroupNode from '../components/custom-nodes/loop-body-group-node.v
 import VariableAssignmentNode from '../components/custom-nodes/variable-assignment-node.vue';
 import VariableTransformNode from '../components/custom-nodes/variable-transform-node.vue';
 import LabelEdge from '../components/custom-edges/label-edge.vue';
+import ContextMenu from '../components/context-menu.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
 const route = useRoute();
-const router = useRouter();
 
-const { toObject, project, viewport, getSelectedNodes } = useVueFlow();
+const { project, getSelectedNodes } = useVueFlow();
 
 const { guides, computeGuides, clearGuides } = useAlignmentGuides();
 
@@ -411,16 +347,6 @@ const isDirty = ref(false);
 const configPanelWidth = ref(420);
 const loaded = ref(false);
 
-// 右键菜单状态
-const contextMenu = reactive({
-	visible: false,
-	x: 0,
-	y: 0,
-	nodeId: ''
-});
-
-const contextMenuRef = ref<HTMLElement>();
-
 // MiniMap 显隐（#28）：localStorage 持久化，默认显示
 const miniMapVisible = ref(localStorage.getItem('loom_editor_minimap_visible') !== 'false');
 function toggleMiniMap() {
@@ -428,46 +354,7 @@ function toggleMiniMap() {
 	localStorage.setItem('loom_editor_minimap_visible', String(miniMapVisible.value));
 }
 
-// 右键菜单键盘导航（#23 a11y）：方向键在可选项间循环、Enter/Space 触发、Escape 关闭
-function onMenuKeydown(event: KeyboardEvent) {
-	const root = contextMenuRef.value;
-	if (!root) return;
-	const items = Array.from(
-		root.querySelectorAll<HTMLElement>('.context-menu-item:not(.is-disabled)')
-	);
-	if (items.length === 0) return;
-	const currentIndex = items.findIndex(el => el === document.activeElement);
-	if (event.key === 'ArrowDown') {
-		event.preventDefault();
-		items[(currentIndex + 1) % items.length]?.focus();
-	} else if (event.key === 'ArrowUp') {
-		event.preventDefault();
-		items[(currentIndex - 1 + items.length) % items.length]?.focus();
-	} else if (event.key === 'Enter' || event.key === ' ') {
-		if (currentIndex >= 0) {
-			event.preventDefault();
-			items[currentIndex]?.click();
-		}
-	} else if (event.key === 'Escape') {
-		contextMenu.visible = false;
-	}
-}
-
-watch(
-	() => contextMenu.visible,
-	newVal => {
-		if (!newVal) {
-			contextMenu.nodeId = '';
-		} else {
-			// 打开时聚焦首个可选项，使方向键/Enter 可达（#23 a11y）
-			nextTick(() => {
-				contextMenuRef.value
-					?.querySelector<HTMLElement>('.context-menu-item:not(.is-disabled)')
-					?.focus();
-			});
-		}
-	}
-);
+// 右键菜单的键盘导航（a11y）与打开聚焦已随 context-menu.vue 组件化迁移
 
 onBeforeUnmount(() => {
 	stopLogPolling();
@@ -513,15 +400,45 @@ const aiProfiles = ref<Eps.profile[]>([]);
 
 // 节点元素集合，包括 Nodes 和 Edges
 const elements = ref<(FlowNode | FlowEdge)[]>([]);
-const _upstreamCache = new Map<string, { result: any[]; version: number }>();
-let _elementsVersion = 0;
 
 let _persistSig = '';
 
+// 右键菜单状态与开/关（键盘 a11y 在 context-menu.vue 组件内）
+const { contextMenu, canTestContextNode, canDistribute, openContextMenu, closeContextMenu } =
+	useContextMenu(elements, getSelectedNodes);
+
 const { canUndo, canRedo, pushSnapshot, undo, redo, init: initUndoRedo } = useUndoRedo(elements);
+
+// 节点添加 / 标签 / 输出变量名生成（默认 config 数据表见 utils/node-default-configs.ts）
+const { handleAddNode, getNextLabel, getUniqueOutputVar } = useNodeFactory(
+	elements,
+	t,
+	pushSnapshot
+);
+
+// 画布连线校验与边生成（标签推导见 utils/edge-label.ts）
+const { onConnect } = useEdgeConnect(elements, t, pushSnapshot);
 
 // 图构建（buildGraphPayload / persistSignature）抽离为 composable，便于单元测试
 const { persistSignature, buildGraphPayload } = useGraphBuilder(elements);
+
+// 保存逻辑（saveWorkflow + 拓扑校验 validateGraph）抽离为 composable，便于单元测试
+const { saveWorkflow } = useSaveFlow({
+	elements,
+	saving,
+	isDirty,
+	workflowId,
+	workflowCode,
+	workflowName,
+	workflowDescription,
+	service,
+	buildGraphPayload,
+	persistSignature,
+	// 保存成功后重置 isDirty 基线签名（_persistSig 与 watch 共享）
+	onSaved: sig => {
+		_persistSig = sig;
+	}
+});
 
 // 测试运行相关方法使用 composable
 const {
@@ -536,108 +453,22 @@ const {
 	collapseAllTestLogs
 } = useWorkflowTest(service, t, workflowId, isDirty, elements, saveWorkflow);
 
-// getUpstreamVariablesForNode moved here to fix hoisting issue
-function getUpstreamVariablesForNode(nodeId: string) {
-	const result: {
-		nodeId: string;
-		nodeLabel: string;
-		variableName: string;
-		nodeType: string;
-		jsonFields?: any[];
-		_isLoopContext?: boolean;
-	}[] = [];
-	const visited = new Set<string>();
-
-	const targetNode = elements.value.find(el => !('source' in el) && el.id === nodeId) as
-		| FlowNode
-		| undefined;
-	if (!targetNode) return result;
-
-	function traceUpstream(currentId: string) {
-		if (visited.has(currentId)) return;
-		visited.add(currentId);
-		const incomingEdges = elements.value.filter(
-			(el: any) => 'source' in el && el.target === currentId
-		) as FlowEdge[];
-		for (const edge of incomingEdges) {
-			const src = elements.value.find(
-				(el: any) => !('source' in el) && el.id === edge.source
-			) as FlowNode | undefined;
-			if (!src) continue;
-			if (src.type === 'start') {
-				if (visited.has(src.id)) continue;
-				visited.add(src.id);
-				const inputVars: string[] = (src.data?.config as any)?.inputVariables || [];
-				for (const varName of inputVars) {
-					if (varName && varName.trim()) {
-						result.push({
-							nodeId: src.id,
-							nodeLabel: src.label,
-							variableName: varName.trim(),
-							nodeType: src.type
-						});
-					}
-				}
-			} else {
-				const cfg = src.data?.config || {};
-				const outputVar = (cfg as any).outputVariable || '';
-				if (outputVar) {
-					const entry: any = {
-						nodeId: src.id,
-						nodeLabel: src.label,
-						variableName: outputVar,
-						nodeType: src.type
-					};
-					if (src.type === 'llm' && (cfg as any).outputFormat === 'json') {
-						entry.jsonFields = (cfg as any).jsonFields || [];
-					}
-					result.push(entry);
-				}
-				traceUpstream(src.id);
-			}
-		}
-	}
-	traceUpstream(nodeId);
-
-	// 循环上下文变量注入
-	const parentId = (targetNode as any).parentNode;
-	if (parentId) {
-		const groupNode = elements.value.find(el => !('source' in el) && el.id === parentId) as
-			| FlowNode
-			| undefined;
-		if (groupNode?.type === 'loop_body_group') {
-			const ctrlId = groupNode.data?.config?.controllerNodeId;
-			if (ctrlId) {
-				const ctrlNode = elements.value.find(
-					el => !('source' in el) && el.id === ctrlId
-				) as FlowNode | undefined;
-				if (ctrlNode) {
-					const itemVar = ctrlNode.data?.config?.itemVariable || 'loop_item';
-					result.unshift({
-						nodeId: ctrlNode.id,
-						nodeLabel: ctrlNode.label,
-						variableName: itemVar,
-						nodeType: ctrlNode.type,
-						_isLoopContext: true
-					});
-				}
-			}
-		}
-	}
-
-	return result;
-}
+// 上游变量收集（start 输入变量、节点 outputVariable、循环上下文变量）+ 版本缓存
+// 已抽离至 composables/useUpstreamVariables.ts，便于单元测试。
+const { getUpstreamVariablesForNode, upstreamVariablesOf, invalidateUpstreamCache } =
+	useUpstreamVariables(elements);
 
 // 单节点测试 composable
-const { nodeTestDialog, openNodeTestDialog, startNodeTest, closeNodeTestDialog, clearMockCache } = useNodeTest(
-	service,
-	t,
-	workflowId,
-	isDirty,
-	elements,
-	saveWorkflow,
-	getUpstreamVariablesForNode
-);
+const { nodeTestDialog, openNodeTestDialog, startNodeTest, closeNodeTestDialog, clearMockCache } =
+	useNodeTest(
+		service,
+		t,
+		workflowId,
+		isDirty,
+		elements,
+		saveWorkflow,
+		getUpstreamVariablesForNode
+	);
 
 // 监听测试抽屉打开，如果打开则关闭配置面板
 watch(
@@ -670,22 +501,13 @@ const availableTargetNodes = computed(() => {
 	) as FlowNode[];
 });
 
+// 是否存在必填配置缺失的节点（驱动工具栏“未完成节点”提示）
 const hasIncompleteNodes = computed(() => {
 	return elements.value.some((el: any) => !('source' in el) && isRequiredConfigMissing(el));
 });
 
-// 收集当前节点的上游可达变量
-const upstreamVariables = computed(() => {
-	if (!selectedNode.value) return [];
-	const nodeId = selectedNode.value.id;
-	const cached = _upstreamCache.get(nodeId);
-	if (cached && cached.version === _elementsVersion) {
-		return cached.result;
-	}
-	const result = getUpstreamVariablesForNode(nodeId);
-	_upstreamCache.set(nodeId, { result, version: _elementsVersion });
-	return result;
-});
+// 收集当前选中节点的上游可达变量（带版本缓存，逻辑见 useUpstreamVariables）
+const upstreamVariables = computed(() => upstreamVariablesOf(selectedNode.value?.id));
 
 // 变量引用格式提示
 const variableSyntaxHints = computed(() => {
@@ -712,6 +534,7 @@ const emptyHintTitle = computed(() => {
 	}
 	return t('点击节点以编辑配置');
 });
+// 空状态引导副标题（根据当前节点数量动态调整）
 const emptyHintSub = computed(() => {
 	if (elements.value.length === 0) {
 		return t('将节点拖拽到画布，拖拽连线构建工作流');
@@ -795,6 +618,7 @@ onBeforeRouteUpdate(async to => {
 	}
 });
 
+// 全局键盘快捷键：Esc 关闭面板/菜单、Ctrl+S 保存、Ctrl+Z/Shift+Z 撤销/重做、Delete/Backspace 删除选中元素
 function handleKeyDown(event: KeyboardEvent) {
 	// 如果用户正在输入框/文本域中打字，则忽略快捷键删除
 	const activeEl = document.activeElement;
@@ -809,7 +633,7 @@ function handleKeyDown(event: KeyboardEvent) {
 
 	if (event.key === 'Escape') {
 		selectedNodeId.value = null;
-		contextMenu.visible = false;
+		closeContextMenu();
 	}
 
 	if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
@@ -831,6 +655,7 @@ function handleKeyDown(event: KeyboardEvent) {
 	}
 }
 
+// 删除画布上当前选中的节点与边（含关联 group 的级联清理）
 function deleteSelectedElements() {
 	const nodesToRemove = elements.value.filter(el => !('source' in el) && (el as any).selected);
 	const edgesToRemove = elements.value.filter(el => 'source' in el && (el as any).selected);
@@ -860,8 +685,7 @@ watch(
 		const sig = persistSignature(elements.value);
 		if (sig === _persistSig) return;
 		_persistSig = sig;
-		_elementsVersion++;
-		_upstreamCache.clear();
+		invalidateUpstreamCache();
 		if (loaded.value) {
 			isDirty.value = true;
 		}
@@ -869,6 +693,7 @@ watch(
 	{ deep: true, flush: 'post' }
 );
 
+// 拉取工作流详情并还原画布拓扑：解析草稿 JSON、兼容旧版字段/handle 格式迁移；无草稿时初始化默认开始-结束节点
 async function fetchWorkflowData() {
 	try {
 		const res = await (service as any).workflow.definition.info({ id: workflowId.value });
@@ -880,105 +705,10 @@ async function fetchWorkflowData() {
 		if (res.draftGraphJson && res.draftGraphJson !== '{}') {
 			const graph = JSON.parse(res.draftGraphJson);
 
-			// 转换 JSON 到 Vue Flow 的 elements
-			const loadedElements = graph.elements || [];
-			// 转换 tool_executor 的 arguments
-			loadedElements.forEach((el: any) => {
-				if (el.type === 'tool_executor' && el.data?.config) {
-					if (el.data.config.arguments && !el.data.config.argumentsJson) {
-						el.data.config.argumentsJson = JSON.stringify(
-							el.data.config.arguments,
-							null,
-							2
-						);
-					}
-				}
-				// 兼容旧数据
-				if (el.type === 'start' && el.data?.config && !el.data.config.inputVariables) {
-					el.data.config.inputVariables = ['query'];
-				}
-				if (el.type === 'end' && el.data?.config) {
-					if (!el.data.config.outputFormat) {
-						el.data.config.outputFormat = el.data.config.outputTemplate
-							? 'text'
-							: 'json';
-					}
-					if (!el.data.config.outputFields) {
-						el.data.config.outputFields = [];
-					}
-				}
-				if (el.type === 'llm' && el.data?.config && !el.data.config.jsonFields) {
-					el.data.config.jsonFields = [];
-				}
-				// 稳定 handle 迁移：为 switch/intent 分支补稳定 id（缺失时生成）
-				if (el.type === 'switch' && el.data?.config?.cases) {
-					el.data.config.cases.forEach((c: any) => {
-						if (!c.id) c.id = genId();
-					});
-				}
-				if (el.type === 'intent_classifier' && el.data?.config?.intents) {
-					el.data.config.intents.forEach((i: any) => {
-						if (!i.id) i.id = genId();
-					});
-				}
-			});
-
-			// 旧工作流兼容：从 condition/switch/intent_classifier 节点的 config 反向重建边的 sourceHandle
-			const nodesMap = new Map<string, any>();
-			for (const el of loadedElements) {
-				if (!('source' in el)) nodesMap.set(el.id, el);
-			}
-			// 稳定 handle 迁移：把旧下标格式（case_N / intent_N）升级为稳定 id 格式。
-			// 仅纯数字下标才迁移，已是 case_<id> 的不动，保证幂等。
-			for (const el of loadedElements) {
-				if (!('source' in el) || !el.sourceHandle) continue;
-				const srcNode = nodesMap.get(el.source);
-				if (!srcNode) continue;
-				if (/^case_\d+$/.test(el.sourceHandle) && srcNode.type === 'switch') {
-					const idx = parseInt(el.sourceHandle.split('_')[1]);
-					const c = srcNode.data?.config?.cases?.[idx];
-					if (c?.id) el.sourceHandle = 'case_' + c.id;
-				} else if (/^intent_\d+$/.test(el.sourceHandle) && srcNode.type === 'intent_classifier') {
-					const idx = parseInt(el.sourceHandle.split('_')[1]);
-					const it = srcNode.data?.config?.intents?.[idx];
-					if (it?.id) el.sourceHandle = 'intent_' + it.id;
-				}
-			}
-			for (const el of loadedElements) {
-				if (!('source' in el) || el.sourceHandle) continue;
-				const srcNode = nodesMap.get(el.source);
-				if (!srcNode) continue;
-				if (srcNode.type === 'condition') {
-					const cfg = srcNode.data?.config || {};
-					if (el.target === cfg.trueRoute) el.sourceHandle = 'true';
-					else if (el.target === cfg.falseRoute) el.sourceHandle = 'false';
-				} else if (srcNode.type === 'switch') {
-					const cfg = srcNode.data?.config || {};
-					const cases = cfg.cases || [];
-					if (el.target === cfg.defaultRoute) el.sourceHandle = 'default';
-					else {
-						for (let i = 0; i < cases.length; i++) {
-							if (el.target === cases[i].targetRoute) {
-								el.sourceHandle = 'case_' + (cases[i].id ?? i);
-								break;
-							}
-						}
-					}
-				} else if (srcNode.type === 'intent_classifier') {
-					const cfg = srcNode.data?.config || {};
-					const intents = cfg.intents || [];
-					if (el.target === cfg.defaultRoute) {
-						el.sourceHandle = 'default';
-					} else {
-						for (let i = 0; i < intents.length; i++) {
-							if (el.target === intents[i].targetRoute) {
-								el.sourceHandle = 'intent_' + (intents[i].id ?? i);
-								break;
-							}
-						}
-					}
-				}
-			}
+			// 加载后字段迁移/适配（纯函数，见 utils/graph-migration.ts）：
+			// 仅保留 tool_executor arguments→argumentsJson 编辑态适配、switch/intent 稳定 id 补全。
+			// 旧版本兼容（默认值补全、sourceHandle 下标/反向重建）已激进清理。
+			const loadedElements = migrateLoadedElements(graph.elements || []);
 
 			elements.value = loadedElements;
 		} else {
@@ -1009,6 +739,7 @@ async function fetchWorkflowData() {
 	}
 }
 
+// 拉取可配置的大模型列表，供 LLM/图像生成等节点选择模型
 async function fetchAiProfiles() {
 	try {
 		const list = await (service as any).ai.profile.list({});
@@ -1026,151 +757,7 @@ function onDragStart(event: DragEvent, type: string) {
 	}
 }
 
-// 提取的公共添加节点逻辑
-function handleAddNode(type: string, x: number, y: number) {
-	// 开始/结束节点全局唯一，已存在时阻止添加
-	if (type === 'start' || type === 'end') {
-		const exists = elements.value.some(el => !('source' in el) && el.type === type);
-		if (exists) {
-			ElMessage.warning(
-				t(
-					type === 'start'
-						? '开始节点已存在，画布中仅允许一个'
-						: '结束节点已存在，画布中仅允许一个'
-				)
-			);
-			return;
-		}
-	}
-
-	const id = `node_${type}_${Date.now()}`;
-	const label = getNextLabel(type);
-
-	// 初始化节点特定 config
-	let config: Record<string, any> = {};
-	if (type === 'llm') {
-		config = {
-			modelProfileCode: '',
-			systemPromptTemplate: '',
-			promptTemplate: '',
-			outputFormat: 'text',
-			jsonFields: [],
-			outputVariable: getUniqueOutputVar(label, 'output')
-		};
-	} else if (type === 'condition') {
-		config = { expression: '', trueRoute: '', falseRoute: '' };
-	} else if (type === 'switch') {
-		config = { variable: '', cases: [], defaultRoute: '' };
-	} else if (type === 'human_input') {
-		config = { message: '', outputVariable: getUniqueOutputVar(label, 'approval_status') };
-	} else if (type === 'intent_classifier') {
-		config = { modelProfileCode: '', intents: [], defaultRoute: '' };
-	} else if (type === 'loop_controller') {
-		config = {
-			listVariable: 'list_variable',
-			itemVariable: 'loop_item',
-			outputVariable: getUniqueOutputVar(label, 'loop_results'),
-			loopBodyRoute: '',
-			exitRoute: ''
-		};
-	} else if (type === 'batch_processor') {
-		config = {
-			batchListVariable: 'batch_list_variable',
-			itemVariable: 'batch_item',
-			concurrencyLimit: 5,
-			outputVariable: getUniqueOutputVar(label, 'batch_results'),
-			loopBodyRoute: '',
-			exitRoute: ''
-		};
-	} else if (type === 'image_generator') {
-		config = {
-			modelProfileCode: '',
-			promptTemplate: '',
-			size: '',
-			imageVariable: '',
-			imageTemplate: '',
-			optionsJson: '{}',
-			outputVariable: getUniqueOutputVar(label, 'image_url')
-		};
-	} else if (type === 'tool_executor') {
-		config = {
-			toolCode: '',
-			argumentsJson: '{}',
-			outputVariable: getUniqueOutputVar(label, 'tool_result')
-		};
-	} else if (type === 'variable_assignment') {
-		config = { assignments: [] };
-	} else if (type === 'variable_transform') {
-		config = {
-			input_variable: '',
-			transform_type: 'join_array',
-			transform_args: {},
-			output_variable: getUniqueOutputVar(label, 'transformed_value')
-		};
-	} else if (type === 'end') {
-		config = { outputFormat: 'json', outputFields: [] };
-	}
-
-	const newNode: any = {
-		id,
-		type,
-		label,
-		position: { x, y },
-		data: { config }
-	};
-
-	// 检查是否落入 group 中
-	const groups = elements.value.filter(
-		(el: any) => !('source' in el) && el.type === 'loop_body_group'
-	) as FlowNode[];
-
-	let targetGroupId: string | undefined;
-	for (const g of groups) {
-		const gW = parseFloat((g as any).style?.width || '400');
-		const gH = parseFloat((g as any).style?.height || '250');
-		const pos = g.position;
-		if (x + 50 >= pos.x && x + 50 <= pos.x + gW && y + 20 >= pos.y && y + 20 <= pos.y + gH) {
-			targetGroupId = g.id;
-			// 坐标相对于 parent
-			const innerX = x - pos.x;
-			let innerY = y - pos.y;
-
-			// 防止掉落时节点下边缘和上边缘溢出（节点默认高约 56px）
-			if (innerY + 60 > gH) {
-				innerY = gH - 70;
-			}
-			if (innerY < 40) {
-				innerY = 40; // 避开 group-header
-			}
-
-			newNode.position.x = innerX;
-			newNode.position.y = innerY;
-			newNode.parentNode = targetGroupId;
-			newNode.expandParent = true;
-			break;
-		}
-	}
-
-	elements.value.push(newNode);
-
-	// 自动创建组容器（不连线，由用户自行从容器 handle 连出）
-	if (type === 'loop_controller' || type === 'batch_processor') {
-		const groupId = `node_loop_body_group_${Date.now()}`;
-		const groupNode = {
-			id: groupId,
-			type: 'loop_body_group',
-			label: type === 'loop_controller' ? `${label} - 循环体` : `${label} - 批处理体`,
-			position: { x: x + 250, y: y - 50 },
-			style: { width: '400px', height: '250px' },
-			data: { config: { controllerNodeId: id } }
-		};
-		elements.value.push(groupNode);
-	}
-
-	// [P0 修复] 快照在 group 加入后拍摄，保证 undo 时主节点 + group 原子撤销
-	// （原快照在加 group 前拍摄，undo 后 group 残留）
-	pushSnapshot();
-}
+// handleAddNode 与默认 config 构建已迁移至 useNodeFactory composable
 
 // 通过点击面板添加节点
 function onAddNodeClick(type: string) {
@@ -1206,200 +793,22 @@ function onDrop(event: DragEvent) {
 	handleAddNode(type, projected.x - 50, projected.y - 20);
 }
 
-function getTypeName(type: string) {
-	const meta = getNodeMeta(type);
-	return t(meta.labelKey || '未知节点');
-}
+// getTypeName / getNextLabel / sanitizeLabel / getUniqueOutputVar 已迁移至 useNodeFactory composable
 
-function getNextLabel(type: string): string {
-	const baseName = getTypeName(type);
-	const sameTypeNodes = elements.value.filter(
-		(el: any) => !('source' in el) && el.type === type
-	) as FlowNode[];
-	if (sameTypeNodes.length === 0) return baseName;
+// onConnect / getEdgeLabel 已迁移至 useEdgeConnect composable 与 utils/edge-label.ts
 
-	let maxNum = 0;
-	for (const n of sameTypeNodes) {
-		if (n.label === baseName) {
-			maxNum = Math.max(maxNum, 1);
-		} else {
-			const match = n.label.match(new RegExp(`${baseName} (\\d+)$`));
-			if (match) {
-				maxNum = Math.max(maxNum, parseInt(match[1]));
-			}
-		}
-	}
-	return `${baseName} ${maxNum + 1}`;
-}
-
-function sanitizeLabel(label: string): string {
-	return label.replace(/\s+/g, '').replace(/[^a-zA-Z0-9_一-鿿]/g, '');
-}
-
-function getUniqueOutputVar(label: string, defaultVar: string): string {
-	const prefix = sanitizeLabel(label);
-	const candidate = `${prefix}_${defaultVar}`;
-	const existingVars = new Set<string>();
-	for (const el of elements.value) {
-		if ('source' in el) continue;
-		const outVar = (el as FlowNode).data?.config?.outputVariable;
-		if (outVar) existingVars.add(outVar);
-	}
-	if (!existingVars.has(candidate)) return candidate;
-	let i = 2;
-	while (existingVars.has(`${candidate}_${i}`)) i++;
-	return `${candidate}_${i}`;
-}
-
-// 画布内连线
-function onConnect(params: Connection) {
-	const source = params.source || '';
-	const target = params.target || '';
-	const sourceHandle = params.sourceHandle;
-
-	// 查找源节点
-	const srcNode = elements.value.find((el: any) => !('source' in el) && el.id === source) as
-		| FlowNode
-		| undefined;
-	if (!srcNode) return;
-
-	// 连线验证
-	if (source === target) {
-		ElMessage.warning(t('不能连接自身'));
-		return;
-	}
-	if (srcNode.type === 'end') {
-		ElMessage.warning(t('结束节点不能有出边'));
-		return;
-	}
-
-	const tgtNode = elements.value.find((el: any) => !('source' in el) && el.id === target) as
-		| FlowNode
-		| undefined;
-	if (tgtNode?.type === 'start') {
-		ElMessage.warning(t('开始节点不能有入边'));
-		return;
-	}
-
-	// condition 每个 Handle 只能连一个目标
-	if (srcNode.type === 'condition' && sourceHandle) {
-		const existing = elements.value.some(
-			(el: any) =>
-				'source' in el && el.source === source && (el as any).sourceHandle === sourceHandle
-		);
-		if (existing) {
-			ElMessage.warning(t(sourceHandle === 'true' ? 'True 分支已连线' : 'False 分支已连线'));
-			return;
-		}
-	}
-
-	// intent_classifier / switch 每个 Handle 只能连一个目标
-	if ((srcNode.type === 'intent_classifier' || srcNode.type === 'switch') && sourceHandle) {
-		const existing = elements.value.some(
-			(el: any) =>
-				'source' in el && el.source === source && (el as any).sourceHandle === sourceHandle
-		);
-		if (existing) {
-			ElMessage.warning(t('该端口已连线'));
-			return;
-		}
-	}
-
-	// 禁止跨组连线（外部节点不能直连内部节点，内部节点也不能直连外部节点）
-	if ((srcNode as any).parentNode !== (tgtNode as any).parentNode) {
-		ElMessage.warning(t('禁止跨容器连线，内部节点与外部节点须相互独立'));
-		return;
-	}
-
-	// 去重：同 source + target + sourceHandle 视为重复。
-	// [P0 修复] 加入 sourceHandle 比较，避免 condition/switch 多分支连同一目标被误拒
-	const exists = elements.value.some(
-		(el: any) =>
-			'source' in el &&
-			el.source === source &&
-			el.target === target &&
-			(el as any).sourceHandle === sourceHandle
-	);
-	if (exists) return;
-
-	// 写回 config 路由（兼容旧逻辑）
-	if (srcNode.type === 'condition') {
-		const cfg = srcNode.data?.config;
-		if (cfg) {
-			if (sourceHandle === 'true') cfg.trueRoute = target;
-			if (sourceHandle === 'false') cfg.falseRoute = target;
-		}
-	}
-
-	// 推导边标签
-	const label = getEdgeLabel(source, sourceHandle ?? undefined, srcNode);
-	const isConditional =
-		srcNode.type === 'condition' ||
-		srcNode.type === 'switch' ||
-		srcNode.type === 'intent_classifier';
-
-	const newEdge: any = {
-		id: 'edge_' + source + '_' + target,
-		source,
-		target,
-		sourceHandle,
-		animated: !isConditional,
-		type: label ? 'label' : 'default',
-		data: { label },
-		style: { strokeWidth: 2 }
-	};
-	elements.value.push(newEdge);
-	pushSnapshot();
-}
-
-function getEdgeLabel(
-	source: string,
-	sourceHandle?: string,
-	srcNode?: FlowNode
-): string | undefined {
-	if (!srcNode) return undefined;
-	if (srcNode.type === 'condition') {
-		if (sourceHandle === 'true') return 'True';
-		if (sourceHandle === 'false') return 'False';
-	}
-	if (srcNode.type === 'switch') {
-		if (sourceHandle === 'default') return '默认';
-		if (sourceHandle?.startsWith('case_')) {
-			const rest = sourceHandle.slice(5);
-			const byId = srcNode.data?.config?.cases?.find((c: any) => c.id === rest);
-			if (byId) return byId.value || 'Case';
-			if (/^\d+$/.test(rest)) {
-				const idx = parseInt(rest);
-				return srcNode.data?.config?.cases?.[idx]?.value || 'Case ' + (idx + 1);
-			}
-			return 'Case';
-		}
-	}
-	if (srcNode.type === 'intent_classifier') {
-		if (sourceHandle === 'default') return '默认';
-		if (sourceHandle?.startsWith('intent_')) {
-			const rest = sourceHandle.slice(7);
-			const byId = srcNode.data?.config?.intents?.find((i: any) => i.id === rest);
-			if (byId) return byId.name || 'Intent';
-			if (/^\d+$/.test(rest)) {
-				const idx = parseInt(rest);
-				return srcNode.data?.config?.intents?.[idx]?.name || 'Intent ' + (idx + 1);
-			}
-			return 'Intent';
-		}
-	}
-	return undefined;
-}
-
+// 画布就绪：自适应缩放使全部节点可见
 function onPaneReady(instance: any) {
 	instance.fitView();
 }
 
+// 点击节点：选中该节点并打开配置面板，同时关闭右键菜单
 function onNodeClick(event: { node: any }) {
 	selectedNodeId.value = event.node.id;
 	contextMenu.visible = false;
 }
 
+// 点击画布空白：取消选中节点并关闭右键菜单
 function onPaneClick() {
 	selectedNodeId.value = null;
 	contextMenu.visible = false;
@@ -1419,21 +828,15 @@ function onCanvasDragOver(event: DragEvent) {
 	const flowX = event.clientX - bounds.left;
 	const flowY = event.clientY - bounds.top;
 
-	const groups = elements.value.filter(
-		(el: any) => !('source' in el) && el.type === 'loop_body_group'
-	) as FlowNode[];
-	for (const g of groups) {
-		const gW = parseFloat((g as any).style?.width || '400');
-		const gH = parseFloat((g as any).style?.height || '250');
-		const pos = g.position;
-		if (flowX >= pos.x && flowX <= pos.x + gW && flowY >= pos.y && flowY <= pos.y + gH) {
-			const domNode = document.querySelector(`[data-id="${g.id}"] .loop-body-group-node`);
-			if (domNode) domNode.classList.add('is-drag-over');
-			break;
-		}
+	// 命中判定见 utils/group-hit-test.ts
+	const hit = hitTestGroup(elements.value, flowX, flowY);
+	if (hit) {
+		const domNode = document.querySelector(`[data-id="${hit.id}"] .loop-body-group-node`);
+		if (domNode) domNode.classList.add('is-drag-over');
 	}
 }
 
+// 拖拽离开画布：清除所有 group 容器的高亮态
 function onCanvasDragLeave() {
 	document
 		.querySelectorAll('.loop-body-group-node.is-drag-over')
@@ -1448,66 +851,41 @@ function onNodeDrag(event: any) {
 	computeGuides(dragNode.id, dragNode.position, allNodes);
 }
 
+// 节点拖拽结束：清除对齐辅助线并记录撤销快照
 function onNodeDragStop() {
 	clearGuides();
 	pushSnapshot();
 }
 
-// 右键上下文菜单边界检测
-function clampMenuPosition(x: number, y: number) {
-	const menuW = 180;
-	const menuH = 180;
-	const vw = window.innerWidth;
-	const vh = window.innerHeight;
-	return {
-		x: x + menuW > vw ? x - menuW : x,
-		y: y + menuH > vh ? y - menuH : y
-	};
-}
-
-// 右键上下文菜单
+// 右键节点：打开上下文菜单（边界回弹逻辑在 useContextMenu 内）
 function onNodeContextMenu(event: any) {
 	event.event?.preventDefault();
 	const node = event.node;
 	if (!node) return;
-	const rawX = event.event?.clientX || 0;
-	const rawY = event.event?.clientY || 0;
-	const pos = clampMenuPosition(rawX, rawY);
-	contextMenu.visible = true;
-	contextMenu.x = pos.x;
-	contextMenu.y = pos.y;
-	contextMenu.nodeId = node.id;
+	openContextMenu(node.id, event.event?.clientX || 0, event.event?.clientY || 0);
 }
 
+// 画布空白右键：阻止浏览器默认菜单并关闭已有右键菜单
 function onPaneContextMenu(event: any) {
 	(event?.event ?? event)?.preventDefault?.();
-	contextMenu.visible = false;
+	closeContextMenu();
 }
 
+// 连线右键：阻止浏览器默认菜单并关闭已有右键菜单
 function onEdgeContextMenu(event: any) {
 	(event?.event ?? event)?.preventDefault?.();
-	contextMenu.visible = false;
+	closeContextMenu();
 }
 
+// 右键菜单“配置节点”：选中目标节点并打开配置面板
 function editContextNode() {
 	selectedNodeId.value = contextMenu.nodeId;
-	contextMenu.visible = false;
+	closeContextMenu();
 }
 
-const canTestContextNode = computed(() => {
-	if (!contextMenu.nodeId) return false;
-	const node = elements.value.find(el => !('source' in el) && el.id === contextMenu.nodeId) as
-		| FlowNode
-		| undefined;
-	if (!node) return false;
-	return !UNTESTABLE_NODE_TYPES.includes(node.type);
-});
+// canTestContextNode / canDistribute 已迁移至 useContextMenu composable
 
-const canDistribute = computed(() => {
-	const selectedNodes = getSelectedNodes.value;
-	return selectedNodes.length >= 3;
-});
-
+// 水平等距分布：以最左/最右节点为界，等间距重排中间节点的 x 坐标
 function distributeHorizontal() {
 	const selected = getSelectedNodes.value as FlowNode[];
 	if (selected.length < 3) return;
@@ -1521,9 +899,10 @@ function distributeHorizontal() {
 		}
 	});
 	pushSnapshot();
-	contextMenu.visible = false;
+	closeContextMenu();
 }
 
+// 垂直等距分布：以最上/最下节点为界，等间距重排中间节点的 y 坐标
 function distributeVertical() {
 	const selected = getSelectedNodes.value as FlowNode[];
 	if (selected.length < 3) return;
@@ -1537,10 +916,10 @@ function distributeVertical() {
 		}
 	});
 	pushSnapshot();
-	contextMenu.visible = false;
+	closeContextMenu();
 }
 
-// Provide node test dialog opener to sub-components (like base-node, node-config-panel)
+// 向子组件（base-node、node-config-panel 等）提供单节点测试弹窗的打开方法
 provide(OPEN_NODE_TEST_DIALOG_KEY, openNodeTestDialog);
 
 // 单节点测试：右键菜单适配层（状态管理已迁移至 useNodeTest composable）
@@ -1549,10 +928,11 @@ async function testContextNode() {
 		ElMessage.warning(t('该类型节点不支持单独测试'));
 		return;
 	}
-	contextMenu.visible = false;
+	closeContextMenu();
 	await openNodeTestDialog(contextMenu.nodeId);
 }
 
+// 复制右键节点：深拷贝配置、重置运行态、重分配 case/intent 稳定 id 与输出变量名，副本落到主画布
 function duplicateNode() {
 	const srcNode = elements.value.find(
 		(el: any) => !('source' in el) && el.id === contextMenu.nodeId
@@ -1567,7 +947,7 @@ function duplicateNode() {
 					: '结束节点已存在，画布中仅允许一个'
 			)
 		);
-		contextMenu.visible = false;
+		closeContextMenu();
 		return;
 	}
 
@@ -1590,7 +970,7 @@ function duplicateNode() {
 			});
 		}
 	}
-	
+
 	// 基准坐标：源节点位于 group 内时其 position 是相对父节点的局部坐标，
 	// 复制后放主画布需累加 group 绝对偏移，否则副本会漂移到错误位置
 	let baseX = srcNode.position.x;
@@ -1604,7 +984,11 @@ function duplicateNode() {
 	}
 	let newX = baseX + 40;
 	let newY = baseY + 40;
-	while (elements.value.some((el: any) => el.position && el.position.x === newX && el.position.y === newY)) {
+	while (
+		elements.value.some(
+			(el: any) => el.position && el.position.x === newX && el.position.y === newY
+		)
+	) {
 		newX += 40;
 		newY += 40;
 	}
@@ -1627,11 +1011,12 @@ function duplicateNode() {
 	delete newNode.extent;
 	delete newNode.expandParent;
 	elements.value.push(newNode);
-	contextMenu.visible = false;
+	closeContextMenu();
 	pushSnapshot();
 	ElMessage.success(t('已复制节点'));
 }
 
+// 右键菜单“删除节点”：级联清理关联 group 并转换子节点坐标
 function deleteContextNode() {
 	const nodeId = contextMenu.nodeId;
 	// 级联清理关联 group + 子节点坐标转换（planNodeRemoval）
@@ -1640,11 +1025,12 @@ function deleteContextNode() {
 	if (selectedNodeId.value === nodeId) {
 		selectedNodeId.value = null;
 	}
-	contextMenu.visible = false;
+	closeContextMenu();
 	ElMessage.success(t('已删除节点'));
 	pushSnapshot();
 }
 
+// 配置面板“删除”按钮：删除当前选中节点（级联清理关联 group）
 function deleteSelectedNode() {
 	if (!selectedNodeId.value) return;
 	const nodeId = selectedNodeId.value;
@@ -1654,238 +1040,16 @@ function deleteSelectedNode() {
 	selectedNodeId.value = null;
 }
 
-// buildGraphPayload / persistSignature 已抽离至 useGraphBuilder composable
-
-// 将 Vue Flow 画布信息转换打包为后端标准工作流 JSON 格式并存储
-async function saveWorkflow() {
-	if (!workflowId.value) return;
-	// [P0 修复] 并发互斥：快速双击保存时阻止重入，避免竞态写入
-	if (saving.value) return;
-	// 阻断：节点 inputs 变量名非法（空/格式错/重名）时不允许保存
-	const invalidInput = findInvalidNodeInput(elements.value);
-	if (invalidInput) {
-		ElMessage.warning(invalidInput.error);
-		return;
-	}
-	saving.value = true;
-	try {
-		// 1. 拆分连线与节点 (TS-safe 属性检查)
-		const nodes = elements.value.filter(el => !('source' in el)) as FlowNode[];
-		const edges = elements.value.filter(el => 'source' in el) as FlowEdge[];
-
-		// 2. 检查图结构完整性并给以提示
-		const warnings: string[] = [];
-		const startNodes = nodes.filter(n => n.type === 'start');
-		if (startNodes.length === 0) {
-			warnings.push(t('工作流缺失"开始节点"，请在画布中添加唯一入口！'));
-		} else if (startNodes.length > 1) {
-			warnings.push(t('工作流存在多个"开始节点"，请在画布中保留唯一入口！'));
-		}
-
-		// 检查循环/批处理容器内部是否合法（多个起点或死循环）
-		const groups = nodes.filter(n => n.type === 'loop_body_group');
-		for (const g of groups) {
-			const bodyNodeIds = nodes.filter(n => (n as any).parentNode === g.id).map(n => n.id);
-			if (bodyNodeIds.length > 0) {
-				const entries = bodyNodeIds.filter(
-					nid => !edges.some(e => e.target === nid && bodyNodeIds.includes(e.source))
-				);
-				if (entries.length > 1) {
-					const names = entries
-						.map(eid => nodes.find(n => n.id === eid)?.label || eid)
-						.join(', ');
-					warnings.push(
-						t('容器 "') +
-							(g.label || g.id) +
-							t('" 内存在多个没有输入的起点节点: ') +
-							names +
-							t('。请用内部连线明确它们的执行顺序！')
-					);
-				} else if (entries.length === 0) {
-					warnings.push(
-						t('容器 "') +
-							(g.label || g.id) +
-							t('" 内部形成了死循环闭环，无法确定起始节点！')
-					);
-				}
-			}
-		}
-
-		// 检查 Switch 分支节点是否配置完整
-		const switchNodes = nodes.filter(n => n.type === 'switch');
-		for (const n of switchNodes) {
-			const conf = n.data?.config || {};
-			if (!conf.variable || !conf.variable.trim()) {
-				warnings.push(t('节点"') + (n.label || n.id) + t('"未指定匹配变量名！'));
-			}
-			const cases = conf.cases || [];
-			const seenCaseVals = new Set<string>();
-			for (const c of cases) {
-				if (!c.value || !c.value.trim()) {
-					warnings.push(t('节点"') + (n.label || n.id) + t('"存在空白的 Case 匹配值！'));
-				}
-				if (c.value) {
-					if (seenCaseVals.has(c.value.trim())) {
-						warnings.push(
-							t('节点"') +
-								(n.label || n.id) +
-								t('"中存在重复的 Case 匹配值：') +
-								c.value.trim()
-						);
-					}
-					seenCaseVals.add(c.value.trim());
-				}
-			}
-		}
-
-		// 检查结束节点是否配置完整
-		const endNode = nodes.find(n => n.type === 'end');
-		if (endNode) {
-			const conf = endNode.data?.config || {};
-			if (conf.outputFormat === 'json') {
-				const fields = conf.outputFields || [];
-				const seenFieldNames = new Set<string>();
-				for (const f of fields) {
-					if (!f.name || !f.name.trim()) {
-						warnings.push(t('结束节点中存在未命名的输出字段！'));
-					}
-					if (f.name) {
-						if (seenFieldNames.has(f.name.trim())) {
-							warnings.push(t('结束节点中存在重复的输出字段名：') + f.name.trim());
-						}
-						seenFieldNames.add(f.name.trim());
-					}
-				}
-			} else {
-				if (!conf.outputTemplate || !conf.outputTemplate.trim()) {
-					warnings.push(t('结束节点未配置输出结构模板！'));
-				}
-			}
-		}
-
-		// 检查孤立节点
-		const connectedNodeIds = new Set<string>();
-		edges.forEach(e => {
-			if (e.source) connectedNodeIds.add(e.source);
-			if (e.target) connectedNodeIds.add(e.target);
-		});
-		const isolatedNodes = nodes.filter(
-			n =>
-				n.type !== 'start' &&
-				n.type !== 'end' &&
-				!n.parentNode &&
-				!connectedNodeIds.has(n.id)
-		);
-		if (isolatedNodes.length > 0) {
-			warnings.push(
-				t('发现孤立的工作节点：') +
-					isolatedNodes.map(n => n.label || n.id).join(', ') +
-					t('，请建立输入和输出连线！')
-			);
-		}
-
-		// 检查模型节点是否已选择 Profile
-		const modelRequiredTypes = ['llm', 'intent_classifier', 'image_generator'];
-		const missingProfileNodes = nodes.filter(
-			n =>
-				modelRequiredTypes.includes(n.type) &&
-				!(n.data?.config as any)?.modelProfileCode?.trim()
-		);
-		if (missingProfileNodes.length > 0) {
-			warnings.push(
-				t('以下节点未选择模型 Profile：') +
-					missingProfileNodes.map(n => n.label || n.id).join(', ') +
-					t('，请先在配置面板中选择模型！')
-			);
-		}
-
-		// 检查是否存在重复的输出变量名（排除互斥条件分支）
-		// 构建条件节点的互斥分组：同一条件节点不同分支上的节点互斥，不会同时执行
-		const exclusiveGroups: Map<string, Set<string>> = new Map();
-		const conditionalTypes = ['condition', 'intent_classifier', 'switch'];
-		for (const n of nodes) {
-			if (conditionalTypes.includes(n.type)) {
-				const downstreamIds = edges.filter(e => e.source === n.id).map(e => e.target);
-				if (downstreamIds.length > 1) {
-					const group = new Set(downstreamIds);
-					for (const id of downstreamIds) {
-						exclusiveGroups.set(id, group);
-					}
-				}
-			}
-		}
-		const varNameToNodes = new Map<string, string[]>();
-		for (const n of nodes) {
-			const outVar = (n.data?.config as any)?.outputVariable?.trim();
-			if (outVar) {
-				const list = varNameToNodes.get(outVar) || [];
-				// 检查已有的同名节点是否与当前节点互斥
-				const isExclusive = list.every(existingLabel => {
-					const existingNode = nodes.find(nn => (nn.label || nn.id) === existingLabel);
-					if (!existingNode) return false;
-					const groupA = exclusiveGroups.get(n.id);
-					const groupB = exclusiveGroups.get(existingNode.id);
-					return groupA && groupB && groupA === groupB;
-				});
-				if (isExclusive) continue;
-				list.push(n.label || n.id);
-				varNameToNodes.set(outVar, list);
-			}
-		}
-		const duplicates = [...varNameToNodes.entries()].filter(([, ns]) => ns.length > 1);
-		if (duplicates.length > 0) {
-			const detail = duplicates
-				.map(([varName, nodeNames]) => `${varName} (${nodeNames.join(', ')})`)
-				.join('; ');
-			warnings.push(t('输出变量名重复，后执行节点会覆盖先前结果：') + detail);
-		}
-
-		// 如果存在校验警告，拦截保存并弹窗提醒
-		if (warnings.length > 0) {
-			ElMessageBox.alert(
-				warnings.map((w, idx) => `${idx + 1}. ${w}`).join('<br>'),
-				t('保存失败 (检测到拓扑问题)'),
-				{
-					confirmButtonText: t('确定'),
-					type: 'error',
-					dangerouslyUseHTMLString: true
-				}
-			);
-			saving.value = false;
-			return;
-		}
-
-		// 3. 验证并构造后端标准解析结构
-		const graphPayload = buildGraphPayload();
-
-		// 4. 保存草稿（纯版本表模型：graph 存版本表草稿，未发布不上线）
-		await (service as any).workflow.definition.saveDraft({
-			definitionId: Number(workflowId.value),
-			code: workflowCode.value,
-			name: workflowName.value,
-			description: workflowDescription.value,
-			graphJson: JSON.stringify(graphPayload)
-		});
-
-		ElMessage.success(t('草稿保存成功（发布后生效）'));
-		isDirty.value = false;
-		// 保存成功：以当前拓扑签名重置 isDirty 比较基线
-		_persistSig = persistSignature(elements.value);
-		return true;
-	} catch (err: any) {
-		ElMessage.error(t('保存失败: ') + (err.message || err));
-		return false;
-	} finally {
-		saving.value = false;
-	}
-}
+// saveWorkflow + 拓扑校验（validateGraph）已抽离至 composables/useSaveFlow.ts
 
 // 发布草稿：先保存最新草稿，再 publish（一步上线；运行中实例按其版本继续跑、不受影响）
 async function publishWorkflow() {
 	if (!workflowId.value) return;
 	try {
 		await ElMessageBox.confirm(
-			t('发布后新启动的实例将使用此版本，正在运行的实例按其版本继续跑、不受影响。是否先保存并发布？'),
+			t(
+				'发布后新启动的实例将使用此版本，正在运行的实例按其版本继续跑、不受影响。是否先保存并发布？'
+			),
 			t('发布'),
 			{ type: 'warning' }
 		);
@@ -2002,7 +1166,7 @@ function exportWorkflow() {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 8px;
+	gap: var(--wf-space-sm);
 	pointer-events: none;
 	user-select: none;
 	z-index: 3;
@@ -2049,8 +1213,8 @@ function exportWorkflow() {
 	&__header {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		padding: 8px 12px;
+		gap: var(--wf-space-sm);
+		padding: var(--wf-space-sm) var(--wf-space-md);
 		background: var(--el-fill-color-lighter);
 	}
 
@@ -2063,7 +1227,7 @@ function exportWorkflow() {
 	}
 
 	&__error {
-		padding: 8px 12px;
+		padding: var(--wf-space-sm) var(--wf-space-md);
 		background: #fef0f0;
 		color: var(--el-color-danger);
 		font-size: 12px;
@@ -2084,7 +1248,7 @@ function exportWorkflow() {
 
 	&__output {
 		background: #f7f8fa;
-		padding: 8px;
+		padding: var(--wf-space-sm);
 		border-radius: 6px;
 		font-family: monospace;
 		white-space: pre-wrap;
@@ -2103,45 +1267,6 @@ function exportWorkflow() {
 			background: #dcdfe6;
 			border-radius: 2px;
 		}
-	}
-}
-
-.context-menu {
-	position: fixed;
-	z-index: 1000;
-	background: #fff;
-	border: 1px solid var(--el-border-color-light);
-	border-radius: 8px;
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-	padding: 4px 0;
-	min-width: 160px;
-
-	.context-menu-item {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 8px 16px;
-		font-size: 13px;
-		cursor: pointer;
-		transition: background 0.15s;
-
-		&:hover {
-			background: var(--el-fill-color-light);
-		}
-
-		.el-icon {
-			font-size: 14px;
-		}
-
-		&--danger {
-			color: var(--el-color-danger);
-		}
-	}
-
-	.context-menu-divider {
-		height: 1px;
-		background: var(--el-border-color-lighter);
-		margin: 4px 0;
 	}
 }
 
