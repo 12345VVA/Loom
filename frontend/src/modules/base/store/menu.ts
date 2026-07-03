@@ -25,22 +25,6 @@ export const useMenuStore = defineStore('menu', function () {
 	// 权限列表
 	const perms = ref<any[]>(data['base.menuPerms'] || []);
 
-	// 根据路由路径推导路由级权限标识（用于 beforeEach 越权校验）
-	// /base/sys/role -> base:sys:role，仅对含 2 段及以上路径推导，避免短路径误匹配
-	function deriveRoutePermission(path: string): string | undefined {
-		if (!path || path === '/') {
-			return undefined;
-		}
-
-		const segments = path.replace(/^\//, '').split('/').filter(Boolean);
-
-		if (segments.length < 2) {
-			return undefined;
-		}
-
-		return segments.join(':');
-	}
-
 	// 设置左侧菜单
 	function setMenu(i: number = 0) {
 		// 显示分组显示菜单
@@ -123,11 +107,6 @@ export const useMenuStore = defineStore('menu', function () {
 			// 设置为首页
 			route.path = '/';
 			route.name = 'home';
-
-			// 首页作为默认落地页，不校验路由级权限（P0-4）
-			if (route.meta) {
-				delete route.meta.permission;
-			}
 		}
 	}
 
@@ -157,10 +136,7 @@ export const useMenuStore = defineStore('menu', function () {
 						meta: {
 							...e.meta,
 							label: e.name, // 菜单名称的唯一标识
-							keepAlive: e.keepAlive || 0,
-							// 路由级权限标识，用于 beforeEach 越权校验（P0-4）
-							// 优先使用菜单显式声明的 permission，否则按路径推导
-							permission: e.permission || deriveRoutePermission(path)
+							keepAlive: e.keepAlive || 0
 						},
 						name: `${e.name}-${e.id}`, // 避免重复命名之前的冲突
 						children: []

@@ -9,7 +9,6 @@ import {
 import { type Router, storage, module } from '/@/cool';
 import { isArray } from 'lodash-es';
 import { useBase } from '/$/base';
-import { permMatches } from '/$/base/utils/permission';
 import { Loading } from '../utils';
 import { config, isDev } from '/@/config';
 
@@ -259,7 +258,7 @@ router.beforeEach(async (to, from, next) => {
 	await Loading.wait();
 
 	// 获取用户和进程数据
-	const { user, process, menu } = useBase();
+	const { user, process } = useBase();
 
 	// 查找路由信息
 	const { isReg, route } = router.find(to.path);
@@ -329,29 +328,6 @@ router.beforeEach(async (to, from, next) => {
 				to: to.fullPath
 			});
 			next('/login');
-			return;
-		}
-	}
-
-	// 菜单权限校验（P0-4）：动态路由校验 to.meta.permission，防止垂直越权
-	// 静态白名单路由（/login、/403、/404 等）跳过校验
-	if (
-		to.meta?.permission &&
-		!config.ignore.token.some(ignorePath => to.path === ignorePath)
-	) {
-		const perms = menu.perms || [];
-		const requiredPerm = to.meta.permission as string;
-		// 与 v-permission 指令保持一致的段前缀匹配（避免 role/roles 子串误命中）
-		const hasPerm = perms.some((p: any) =>
-			typeof p === 'string' && permMatches(p, requiredPerm)
-		);
-
-		if (!hasPerm) {
-			debugRoute('beforeEach.permissionDenied', {
-				to: to.fullPath,
-				permission: requiredPerm
-			});
-			next('/403');
 			return;
 		}
 	}
