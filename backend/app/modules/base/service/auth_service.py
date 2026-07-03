@@ -5,7 +5,9 @@ Base 模块认证与权限服务
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import re
 import secrets
 import time
 from datetime import datetime, timezone
@@ -23,6 +25,7 @@ from app.core.security import (
     validate_password_strength,
     verify_password,
 )
+from app.framework.request_utils import get_client_ip
 from app.modules.base.compat import SYSTEM_MANAGED_CODE_PREFIXES
 from app.modules.base.model.auth import (
     CaptchaResponse,
@@ -59,6 +62,13 @@ from app.modules.base.service.security_service import (
 )
 from app.modules.base.service.sys_manage_service import SysLoginLogService
 from app.modules.loader import load_menu_manifest_items
+
+# captcha 参数校验范围
+CAPTCHA_WIDTH_MIN = 80
+CAPTCHA_WIDTH_MAX = 300
+CAPTCHA_HEIGHT_MIN = 80
+CAPTCHA_HEIGHT_MAX = 300
+_CAPTCHA_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class AuthService:
@@ -197,7 +207,16 @@ class AuthService:
         return response
 
     def refresh_token(self, payload: RefreshTokenRequest) -> CoolLoginResponse:
-        refresh_token_value = payload.token_value
+        return self.refresh_token_by_value(payload.token_value)
+
+    def refresh_token_by_value(self, refresh_token_value: str | None) -> CoolLoginResponse:
+        """
+        根据 refresh_token 字符串换发新的访问令牌。
+
+        支持从 HttpOnly cookie 或请求 body 传入 refresh_token：
+        - 主路径：HttpOnly cookie（前端不再存储 refreshToken）
+        - 兼容路径：请求 body（旧客户端/测试用例）
+        """
         if not refresh_token_value:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌不能为空")
         token_payload = get_refresh_token_payload(refresh_token_value)
@@ -212,6 +231,15 @@ class AuthService:
         token_password_version = token_payload.get("password_version")
         if user.password_version != token_password_version:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效")
+
+        # 服务端缓存校验：refresh_token 必须等于登录时缓存值
+        # 防止 logout 后旧 refresh_token 仍可换新 access token
+        cached_refresh_token = cache_get(build_refresh_token_cache_key(user.id))
+        if cached_refresh_token is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
+        # 恒定时间比较，避免按字节前缀差异的定时侧信道泄露 refresh_token
+        if not hmac.compare_digest(cached_refresh_token, refresh_token_value):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
 
         roles = get_user_roles(self.session, user.id)
         user._token_role_ids = [role.id for role in roles if role.id is not None]
@@ -253,8 +281,30 @@ class AuthService:
         )
         clear_login_caches(user.id)
 
-    def captcha(self, width: int = 150, height: int = 50, color: str = "#333") -> CaptchaResponse:
-        track_width = max(240, min(int(width or 300), 360))
+    def captcha(self, width: int = 150, height: int = 80, color: str = "#333333") -> CaptchaResponse:
+        # 参数范围校验，防止恶意输入
+        try:
+            width_int = int(width)
+            height_int = int(height)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="width/height 必须为整数")
+        if not (CAPTCHA_WIDTH_MIN <= width_int <= CAPTCHA_WIDTH_MAX):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"width 必须在 {CAPTCHA_WIDTH_MIN}-{CAPTCHA_WIDTH_MAX} 之间",
+            )
+        if not (CAPTCHA_HEIGHT_MIN <= height_int <= CAPTCHA_HEIGHT_MAX):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"height 必须在 {CAPTCHA_HEIGHT_MIN}-{CAPTCHA_HEIGHT_MAX} 之间",
+            )
+        if not _CAPTCHA_COLOR_PATTERN.match(color or ""):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color 必须为 #RRGGBB 格式的十六进制颜色",
+            )
+
+        track_width = max(240, min(width_int, 360))
         handle_width = 42
         tolerance = settings.CAPTCHA_SLIDER_TOLERANCE
         min_target = 56
@@ -802,12 +852,21 @@ class AuthService:
 
 
 def _get_request_ip(request: Request | None) -> str | None:
+    """
+    解析真实客户端 IP。
+
+    薄包装：委托给共享实现 `app.framework.request_utils.get_client_ip`，
+    保留原 `_get_request_ip` 的 None 语义（request 为 None 或 socket 不可用时返回 None，
+    用于登录日志场景，未知 IP 用 None 表示更合适）。
+
+    安全策略见 `get_client_ip` 文档。
+    """
     if request is None:
         return None
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else None
+    ip = get_client_ip(request)
+    # get_client_ip 在 X-Forwarded-For 未命中且 socket 不可用时返回 "unknown"，
+    # 等价于原 _get_request_ip 在 request.client 为 None 时的 None 兜底。
+    return None if ip == "unknown" else ip
 
 
 def _get_user_agent(request: Request | None) -> str | None:

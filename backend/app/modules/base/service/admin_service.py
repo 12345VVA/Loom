@@ -1062,6 +1062,63 @@ class MenuAdminService(BaseAdminCrudService):
                 data["parent_name"] = parent.name
         return data
 
+    def _validate_parent_id(self, parent_id: int | None, menu_id: int | None = None) -> None:
+        """校验 parent_id 对应的父菜单存在且不形成环（P1-11）。
+
+        Args:
+            parent_id: 待设置的父菜单 id；None 表示根菜单，直接放行。
+            menu_id: 当前菜单 id；add 时为 None（新菜单无子孙，不会成环），
+                update 时为当前菜单 id，用于祖先链环路检测。
+
+        Raises:
+            HTTPException: 400 当父菜单指向自身、不存在或会形成环路时。
+        """
+        if parent_id is None:
+            return
+
+        # 指向自身
+        if menu_id is not None and parent_id == menu_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="父级菜单不能指向自身",
+            )
+
+        # 父菜单必须存在（且未软删除：session.get 不过滤 delete_time）
+        parent = self.session.exec(
+            select(Menu).where(Menu.id == parent_id, Menu.delete_time.is_(None))
+        ).first()
+        if not parent:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="父级菜单不存在",
+            )
+
+        # 环路检查：从 parent_id 向上遍历祖先链，若遇到 menu_id 则形成环
+        if menu_id is None:
+            return
+
+        visited: set[int] = set()
+        current_id: int | None = parent_id
+        while current_id is not None:
+            if current_id in visited:
+                # 防御：祖先链本身已有环（历史脏数据），避免无限循环
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="菜单祖先链存在环，无法校验",
+                )
+            if current_id == menu_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="父级菜单设置将形成环路",
+                )
+            visited.add(current_id)
+            ancestor = self.session.exec(
+                select(Menu).where(Menu.id == current_id, Menu.delete_time.is_(None))
+            ).first()
+            if not ancestor:
+                break
+            current_id = ancestor.parent_id
+
     def _before_add(self, data: dict) -> dict:
         code = data.get("code") or self._generate_menu_code(data)
         existing = self.session.exec(select(Menu).where(Menu.code == code)).first()
@@ -1070,6 +1127,8 @@ class MenuAdminService(BaseAdminCrudService):
 
         data["code"] = code
         data["type"] = self._normalize_menu_type(data.get("type"))
+        # 校验父菜单存在（add 时新菜单尚无 id，不会形成环）
+        self._validate_parent_id(data.get("parent_id"))
         return data
 
     def _before_update(self, data: dict, entity: Menu) -> dict:
@@ -1081,6 +1140,9 @@ class MenuAdminService(BaseAdminCrudService):
 
         if "type" in data:
             data["type"] = self._normalize_menu_type(data["type"])
+        # 仅当 parent_id 被实际更新时校验存在性与环路
+        if "parent_id" in data:
+            self._validate_parent_id(data.get("parent_id"), menu_id=entity.id)
         return data
 
     def _after_add(self, entity: Menu, payload: Any = None) -> None:

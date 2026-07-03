@@ -46,6 +46,7 @@ MODULE_CONFIG = ModuleConfig(
         "/admin/base/open/refresh",
         "/admin/base/open/refreshToken",
         "/admin/base/open/captcha",
+        "/admin/base/open/config",
         "/admin/base/open/eps",
         "/admin/base/health/ping",
     ),

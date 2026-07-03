@@ -14,6 +14,7 @@ DEFAULT_AUTHENTICATED_PERMISSIONS: tuple[str, ...] = (
     "base:comm:permmenu",
     "base:comm:upload",
     "base:comm:upload_mode",
+    "media:asset:downloadToken",
 )
 
 DEFAULT_PUBLIC_PERMISSION_PATHS: tuple[str, ...] = (

@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, field_serializer, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, field_serializer, field_validator
 from pydantic import Field as PydanticField
 from sqlmodel import Field
 
@@ -177,8 +177,8 @@ class UserPersonUpdateRequest(BaseModel):
 
     nick_name: str | None = None
     head_img: str | None = None
-    phone: str | None = None
-    email: str | None = None
+    phone: str | None = PydanticField(default=None, pattern=r'^1[3-9]\d{9}$')
+    email: EmailStr | None = None
     remark: str | None = None
     password: str | None = None
     old_password: str | None = None
@@ -279,8 +279,8 @@ class UserCreateRequest(BaseModel):
     nick_name: str = ""
     password: str
     head_img: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = PydanticField(default=None, pattern=r'^1[3-9]\d{9}$')
     remark: str | None = None
     department_id: int | None = None
     role_ids: list[int] = PydanticField(default_factory=list)
@@ -312,8 +312,8 @@ class UserUpdateRequest(BaseModel):
     full_name: str | None = None
     nick_name: str = ""
     head_img: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = PydanticField(default=None, pattern=r'^1[3-9]\d{9}$')
     remark: str | None = None
     department_id: int | None = None
     role_ids: list[int] = PydanticField(default_factory=list)

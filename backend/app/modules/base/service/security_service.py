@@ -16,6 +16,7 @@ from app.core.database import get_session
 from app.core.security import create_token, decode_token
 from app.modules.base.model.auth import User
 from app.modules.base.service.authority_service import (
+    TOKEN_TYPE_DOWNLOAD,
     get_user_from_access_token,
     get_user_permissions,
     get_user_roles,
@@ -64,6 +65,24 @@ def create_refresh_token(user: User) -> str:
     )
 
 
+def create_download_token(user: User) -> str:
+    """签发专用下载令牌（短 TTL），用于 /uploads 资源访问。
+
+    与 access/refresh token 隔离：仅含最小 payload、权限受限（只能下载），
+    避免长期 access token 通过 ?token= 泄露到反代日志/Referer/分享串。
+    """
+    token_version = get_user_token_version(user.id)
+    return create_token(
+        {
+            "sub": str(user.id),
+            "type": TOKEN_TYPE_DOWNLOAD,
+            "token_version": token_version,
+            "jti": uuid4().hex,
+        },
+        timedelta(seconds=settings.DOWNLOAD_TOKEN_EXPIRE_SECONDS),
+    )
+
+
 def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
@@ -97,6 +116,7 @@ def ensure_permission_patterns(request: Request, method: str, path: str) -> None
 
 __all__ = [
     "create_access_token",
+    "create_download_token",
     "create_refresh_token",
     "ensure_permission_patterns",
     "get_current_user",

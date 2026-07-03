@@ -153,6 +153,33 @@ def cache_set_json(key: str, value: Any, ttl_seconds: int | None = None) -> bool
     return cache_set(key, json.dumps(value, ensure_ascii=True), ttl_seconds)
 
 
+def cache_set_nx(key: str, value: str, ttl_seconds: int | None = None) -> bool:
+    """SETNX 语义：仅当 key 不存在时设置。成功返回 True，已存在返回 False。
+
+    用于防重放锁（如 task once() 高频去重）。Redis 异常时 fail-open 放行
+    （返回 True），与 cache_incr 的降级策略一致，避免 Redis 抖动阻断业务。
+    """
+    client = get_redis_client()
+    if client is not None:
+        try:
+            result = client.set(name=key, value=value, ex=ttl_seconds, nx=True)
+            return bool(result)
+        except RedisError as exc:
+            logger.warning("Redis SETNX 失败 %s: %s（降级放行）", key, exc)
+            return True
+    # 内存降级：检查存在性后设置（单进程下无竞争）
+    entry = _memory_cache.get(key)
+    if entry is not None:
+        _, expires_at = entry
+        if expires_at is not None and expires_at <= time.time():
+            _memory_cache.pop(key, None)
+        else:
+            return False
+    expires_at = time.time() + ttl_seconds if ttl_seconds else None
+    _memory_cache[key] = (value, expires_at)
+    return True
+
+
 def cache_incr(key: str, ttl_seconds: int | None = None) -> int | None:
     """
     原子递增计数器。返回递增后的值；Redis 异常时返回 None 表示计数不可靠。
