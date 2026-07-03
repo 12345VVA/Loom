@@ -84,6 +84,11 @@ class AuthAlignmentTests(unittest.TestCase):
         login_data = login_res.json()["data"]
         self.assertIn("token", login_data)
         self.assertIn("refreshToken", login_data)
+        # 验证登录响应设置了 refreshToken HttpOnly cookie
+        set_cookie = login_res.headers.get("set-cookie", "")
+        self.assertIn("refresh_token=", set_cookie)
+        self.assertIn("HttpOnly", set_cookie)
+        self.assertIn("Path=/admin/base/open", set_cookie)
 
         person_res = self.client.get(
             "/admin/base/comm/person",
@@ -95,9 +100,85 @@ class AuthAlignmentTests(unittest.TestCase):
             settings.DEFAULT_ADMIN_USERNAME,
         )
 
-        refresh_res = self.client.get(
+        refresh_res = self.client.post(
             "/admin/base/open/refreshToken",
-            params={"refreshToken": login_data["refreshToken"]},
+            json={"refreshToken": login_data["refreshToken"]},
+        )
+        self.assertEqual(refresh_res.status_code, 200)
+        self.assertIn("token", refresh_res.json()["data"])
+
+    def test_refresh_token_via_http_only_cookie(self):
+        """验证 refreshToken 通过 HttpOnly cookie 传递的主路径（Task 1.7）。
+
+        - 登录响应通过 Set-Cookie 下发 refreshToken HttpOnly cookie
+        - refresh 请求不传 body 参数，仅靠 Cookie 头携带 refreshToken
+        - 应成功换发新 access token
+
+        注意：生产环境 cookie 带 Secure 标记，仅 HTTPS 传输；
+        TestClient 走 http 不会自动回发 Secure cookie，因此这里手动从
+        Set-Cookie 响应头提取 cookie 值并通过 Cookie 请求头回传，
+        以模拟浏览器在 HTTPS 下对 HttpOnly cookie 的自动携带行为。
+        """
+        captcha_data = self._captcha_challenge()
+        verify_code = self._slider_verify_code(captcha_data)
+        login_res = self._login_with_captcha(captcha_data, verify_code)
+        self.assertEqual(login_res.status_code, 200)
+
+        # 从 Set-Cookie 响应头提取 refresh_token cookie 值
+        set_cookie = login_res.headers.get("set-cookie", "")
+        self.assertIn("refresh_token=", set_cookie)
+        self.assertIn("HttpOnly", set_cookie)
+        # 提取 cookie 值（refresh_token=xxx; Path=...; HttpOnly; ...）
+        cookie_value = set_cookie.split("refresh_token=", 1)[1].split(";", 1)[0]
+        self.assertTrue(cookie_value, "应能从 Set-Cookie 头解析出 refresh_token 值")
+
+        # 不传 refreshToken body 参数，仅通过 Cookie 头携带（模拟浏览器行为）
+        refresh_res = self.client.post(
+            "/admin/base/open/refreshToken",
+            json={},
+            headers={"Cookie": f"refresh_token={cookie_value}"},
+        )
+        self.assertEqual(refresh_res.status_code, 200)
+        refresh_data = refresh_res.json()["data"]
+        self.assertIn("token", refresh_data)
+        # 刷新后应重新下发 cookie（滚动续期）
+        self.assertIn("set-cookie", refresh_res.headers)
+        self.assertIn("HttpOnly", refresh_res.headers["set-cookie"])
+
+        # 新 token 可正常访问受保护接口
+        person_res = self.client.get(
+            "/admin/base/comm/person",
+            headers={"Authorization": f"Bearer {refresh_data['token']}"},
+        )
+        self.assertEqual(person_res.status_code, 200)
+
+    def test_refresh_token_rejected_without_cookie_or_body(self):
+        """验证无 cookie 且无 body 时 refresh 应返回 401。"""
+        refresh_res = self.client.post(
+            "/admin/base/open/refreshToken",
+            json={},
+        )
+        self.assertEqual(refresh_res.status_code, 401)
+
+    def test_refresh_token_via_body_when_no_cookie(self):
+        """无 cookie 时通过 body 传 refreshToken 仍可刷新（兼容路径覆盖）。
+
+        test_captcha_login_and_refresh 的 refresh 请求会被 TestClient 自动带上
+        login 的 cookie，无法证明 body 兼容分支生效；此处显式清空 cookie，
+        确保仅靠 body 的 ``refreshToken`` 字段完成刷新。
+        """
+        captcha_data = self._captcha_challenge()
+        verify_code = self._slider_verify_code(captcha_data)
+        login_res = self._login_with_captcha(captcha_data, verify_code)
+        self.assertEqual(login_res.status_code, 200)
+        refresh_value = login_res.json()["data"]["refreshToken"]
+        self.assertTrue(refresh_value)
+
+        # 清除 TestClient 自动保存的 cookie，确保仅靠 body 传 refreshToken
+        self.client.cookies.clear()
+        refresh_res = self.client.post(
+            "/admin/base/open/refreshToken",
+            json={"refreshToken": refresh_value},
         )
         self.assertEqual(refresh_res.status_code, 200)
         self.assertIn("token", refresh_res.json()["data"])

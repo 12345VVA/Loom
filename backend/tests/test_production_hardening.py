@@ -13,6 +13,10 @@ from app.core.config import settings  # noqa: E402
 from app.core.database import transaction  # noqa: E402
 from app.core.startup_checks import validate_startup_settings  # noqa: E402
 from app.framework.io import ImportExportField, ImportExportSchema, import_rows_from_csv  # noqa: E402
+from app.framework.middleware.admin_csrf import (  # noqa: E402
+    ConfigurationError,
+    assert_cors_configuration,
+)
 from app.framework.middleware.metrics import record_metric_event, render_metrics  # noqa: E402
 from app.modules.base.service.cache_service import CacheNamespace  # noqa: E402
 from app.modules.task.model.task import TaskInfo  # noqa: E402
@@ -85,6 +89,7 @@ class ProductionHardeningTests(unittest.TestCase):
                 "CORS_ORIGINS": '["*"]',
                 "REDIS_URL": "",
                 "CELERY_BROKER_URL": "",
+                "ADMIN_CSRF_ORIGIN_CHECK_ENABLED": False,
             }
         )
         results = validate_startup_settings(prod)
@@ -92,6 +97,38 @@ class ProductionHardeningTests(unittest.TestCase):
         self.assertIn("JWT_SECRET_KEY", keys)
         self.assertIn("DEFAULT_ADMIN_PASSWORD", keys)
         self.assertIn("CORS_ORIGINS", keys)
+        self.assertIn("ADMIN_CSRF_ORIGIN_CHECK_ENABLED", keys)
+
+    def test_production_config_forces_csrf_enabled(self):
+        """生产环境（DEBUG=False）model_validator 强制 ADMIN_CSRF_ORIGIN_CHECK_ENABLED=True。"""
+        prod = settings.model_copy(update={"DEBUG": False, "ADMIN_CSRF_ORIGIN_CHECK_ENABLED": False})
+        # model_copy 不触发 model_validator，模拟 .env 显式关闭
+        self.assertFalse(prod.ADMIN_CSRF_ORIGIN_CHECK_ENABLED)
+        # 通过 Settings 重新构造触发 model_validator
+        forced = prod.model_validate(prod.model_dump())
+        self.assertTrue(forced.ADMIN_CSRF_ORIGIN_CHECK_ENABLED)
+
+    def test_dev_config_preserves_csrf_disabled(self):
+        """开发环境（DEBUG=True）不强制 CSRF，保留 .env 设置。"""
+        dev = settings.model_copy(update={"DEBUG": True, "ADMIN_CSRF_ORIGIN_CHECK_ENABLED": False})
+        forced = dev.model_validate(dev.model_dump())
+        self.assertFalse(forced.ADMIN_CSRF_ORIGIN_CHECK_ENABLED)
+
+    def test_assert_cors_configuration_rejects_wildcard_with_credentials(self):
+        """allow_credentials=True + allow_origins=['*'] 抛 ConfigurationError。"""
+        with self.assertRaises(ConfigurationError):
+            assert_cors_configuration(allow_credentials=True, allow_origins=["*"])
+
+    def test_assert_cors_configuration_accepts_specific_origins(self):
+        """allow_credentials=True + 具体来源列表通过校验。"""
+        assert_cors_configuration(
+            allow_credentials=True,
+            allow_origins=["http://localhost:5173", "http://localhost:3000"],
+        )
+
+    def test_assert_cors_configuration_accepts_wildcard_without_credentials(self):
+        """allow_credentials=False + allow_origins=['*'] 通过校验（spec 允许）。"""
+        assert_cors_configuration(allow_credentials=False, allow_origins=["*"])
 
     def test_cache_namespace_builds_keys_and_clears(self):
         namespace = CacheNamespace("test:ns", default_ttl_seconds=60)

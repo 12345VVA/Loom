@@ -1370,6 +1370,7 @@ class AiModuleTestCase(unittest.TestCase):
 
         class FakeStreamResponse:
             headers = {"content-type": "image/jpeg", "content-length": "15"}
+            is_redirect = False
 
             def raise_for_status(self):
                 return None
@@ -1391,15 +1392,25 @@ class AiModuleTestCase(unittest.TestCase):
                 pass
 
         with (
-            patch("httpx.stream", side_effect=FakeStreamContext) as mocked_stream,
+            patch("app.modules.ai.service.adapters.gemini.safe_stream", side_effect=FakeStreamContext) as mocked_stream,
             patch("httpx.post", return_value=FakeResponse()) as mocked_post,
+            patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 0))]),
         ):
             adapter.image(
                 model="imagen-3.0-generate-002",
                 prompt="style of this",
                 options={"image": "https://example.com/style.jpg"},
             )
-        mocked_stream.assert_called_once_with("GET", "https://example.com/style.jpg", timeout=15)
+        mocked_stream.assert_called_once()
+        call_args = mocked_stream.call_args
+        self.assertEqual(call_args.args[0], "GET")
+        # SSRF 防护：URL 中 hostname 被替换为已校验的 IP
+        self.assertIn("93.184.216.34", call_args.args[1])
+        # SNI 修复：原 hostname 作为第 3 位置参数传入 safe_stream，用于 TLS 证书/SNI 校验
+        self.assertEqual(call_args.args[2], "example.com")
+        self.assertEqual(call_args.kwargs["headers"]["Host"], "example.com")
+        self.assertEqual(call_args.kwargs["timeout"], 15)
+        self.assertEqual(call_args.kwargs["follow_redirects"], False)
         payload = mocked_post.call_args.kwargs["json"]
         parts = payload["contents"][0]["parts"]
         import base64
