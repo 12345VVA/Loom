@@ -1,5 +1,6 @@
 import { useBase } from '/$/base';
 import { config } from '/@/config';
+import { storage } from '/@/cool/utils';
 
 export function useStream() {
 	const { user } = useBase();
@@ -24,16 +25,33 @@ export function useStream() {
 
 		let cacheText = '';
 
+		// 检查 token 是否过期，过期则先尝试 refreshToken
+		let authToken = user.token;
+		if (user.token && storage.session.isExpired('token')) {
+			try {
+				authToken = await user.refreshToken();
+			} catch {
+				// refreshToken 失败时 user.refreshToken 内部已调用 logout
+				throw new Error('token refresh failed');
+			}
+		}
+
 		return fetch(config.baseUrl + url, {
 			method,
 			headers: {
-				Authorization: user.token,
+				Authorization: authToken,
 				'Content-Type': 'application/json'
 			},
 			body: JSON.stringify(data),
 			signal: abortController?.signal
 		})
 			.then(res => {
+				// 401 处理：调用 logout 而非静默忽略
+				if (res.status === 401) {
+					user.logout();
+					throw new Error('Unauthorized');
+				}
+
 				if (res.body) {
 					const reader = res.body.getReader();
 					const decoder = new TextDecoder('utf-8');

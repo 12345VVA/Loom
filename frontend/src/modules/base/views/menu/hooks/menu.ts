@@ -1,4 +1,5 @@
 import { ElMessage } from 'element-plus';
+import { isDev } from '/@/config';
 import { service } from '/@/cool';
 
 export function useMenu() {
@@ -55,6 +56,11 @@ export function useMenu() {
 
 					service.base.sys.menu.add(perms).then(() => {
 						resolve(() => {
+							// 生产环境关闭 __cool_createFile 文件创建能力（该接口仅由 Vite dev server 提供）
+							if (!isDev) {
+								location.reload();
+								return;
+							}
 							service
 								.request({
 									url: '/__cool_createFile',

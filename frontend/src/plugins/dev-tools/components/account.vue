@@ -35,7 +35,9 @@ interface Item {
 	nickName: string;
 	username: string;
 	token: string;
-	refreshToken: string;
+	// refreshToken 现由 HttpOnly cookie 管理，前端不再持久化；
+	// 此字段保留用于兼容旧数据，但 dev-tools 账号切换不再支持跨会话刷新
+	refreshToken?: string;
 	enable: boolean;
 }
 
@@ -84,7 +86,8 @@ function save() {
 
 	const d = {
 		token: user.token,
-		refreshToken: storage.get('refreshToken')!,
+		// refreshToken 不再前端存储（HttpOnly cookie 管理），这里留空兼容数据结构
+		refreshToken: '',
 		nickName: nickName!,
 		username: username!,
 		userId: id!,

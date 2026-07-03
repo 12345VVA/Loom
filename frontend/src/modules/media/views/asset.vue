@@ -145,7 +145,7 @@ defineOptions({
 	name: 'media-asset'
 });
 
-import { computed, onMounted, reactive } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Document, Headset, Picture, VideoCamera } from '@element-plus/icons-vue';
@@ -234,8 +234,43 @@ const Crud = useCrud(
 	}
 );
 
+// 专用下载令牌：短 TTL，与 access token 隔离，避免其通过 ?token= 泄露到日志/Referer/分享串
+const downloadToken = ref('');
+const downloadTokenExpireAt = ref(0);
+let downloadTokenTimer: ReturnType<typeof setTimeout> | null = null;
+// 组件卸载标志：阻止 await 期间卸载后继续写状态/设新 timer（杜绝孤儿定时器无限续签）
+let downloadTokenUnmounted = false;
+
+async function ensureDownloadToken(): Promise<string> {
+	// 剩余有效期 > 30s 直接复用
+	if (downloadToken.value && Date.now() < downloadTokenExpireAt.value - 30000) {
+		return downloadToken.value;
+	}
+	try {
+		const res = await mediaService.downloadToken();
+		// await 期间组件可能已卸载：不再更新状态、不再设续签 timer
+		if (downloadTokenUnmounted) return downloadToken.value;
+		downloadToken.value = res?.token || '';
+		downloadTokenExpireAt.value = Date.now() + (res?.expire || 300) * 1000;
+		// 过期前 60s 续签，保证 <img>/<video> 等持续可用
+		const delay = Math.max(downloadTokenExpireAt.value - Date.now() - 60000, 10000);
+		if (downloadTokenTimer) clearTimeout(downloadTokenTimer);
+		downloadTokenTimer = setTimeout(() => ensureDownloadToken(), delay);
+	} catch {
+		if (downloadTokenUnmounted) return downloadToken.value;
+		downloadToken.value = '';
+	}
+	return downloadToken.value;
+}
+
 onMounted(() => {
 	loadStats();
+	ensureDownloadToken();
+});
+
+onUnmounted(() => {
+	downloadTokenUnmounted = true;
+	if (downloadTokenTimer) clearTimeout(downloadTokenTimer);
 });
 
 async function loadStats() {
@@ -298,7 +333,12 @@ function assetUrl(url?: string) {
 		return url;
 	}
 	if (url.startsWith('/uploads/')) {
-		return `${config.baseUrl}${url}`;
+		const token = downloadToken.value;
+		// token 未就绪时返回空串，避免发出无 token 的 401 请求（污染浏览器缓存/破图）；
+		// token 到位后 ref 变化触发响应式重渲染，src 重新带上 token 加载。
+		if (!token) return '';
+		const sep = url.includes('?') ? '&' : '?';
+		return `${config.baseUrl}${url}${sep}token=${token}`;
 	}
 	return url;
 }

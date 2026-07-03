@@ -1,4 +1,5 @@
 import type { Ref } from 'vue';
+import { h } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import { findInvalidNodeInput } from '../utils';
@@ -49,13 +50,19 @@ export function useSaveFlow(opts: {
 			// 2. 校验图结构完整性
 			const warnings = validateGraph(nodes, edges, t);
 			if (warnings.length > 0) {
+				// [P0-9 XSS 修复] 关闭 dangerouslyUseHTMLString，改用 VNode 渲染：
+				// warnings 中包含用户输入的节点 label/case 值等，若用 HTML 字符串拼接会触发 XSS。
+				// VNode 渲染时 Vue 会自动转义文本，同时 white-space: pre-wrap 保留换行。
 				ElMessageBox.alert(
-					warnings.map((w, idx) => `${idx + 1}. ${w}`).join('<br>'),
+					h(
+						'div',
+						{ style: 'white-space: pre-wrap; max-height: 60vh; overflow-y: auto;' },
+						warnings.map((w, idx) => `${idx + 1}. ${w}`).join('\n')
+					),
 					t('保存失败 (检测到拓扑问题)'),
 					{
 						confirmButtonText: t('确定'),
-						type: 'error',
-						dangerouslyUseHTMLString: true
+						type: 'error'
 					}
 				);
 				return false;

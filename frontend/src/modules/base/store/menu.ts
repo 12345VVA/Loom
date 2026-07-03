@@ -25,6 +25,22 @@ export const useMenuStore = defineStore('menu', function () {
 	// 权限列表
 	const perms = ref<any[]>(data['base.menuPerms'] || []);
 
+	// 根据路由路径推导路由级权限标识（用于 beforeEach 越权校验）
+	// /base/sys/role -> base:sys:role，仅对含 2 段及以上路径推导，避免短路径误匹配
+	function deriveRoutePermission(path: string): string | undefined {
+		if (!path || path === '/') {
+			return undefined;
+		}
+
+		const segments = path.replace(/^\//, '').split('/').filter(Boolean);
+
+		if (segments.length < 2) {
+			return undefined;
+		}
+
+		return segments.join(':');
+	}
+
 	// 设置左侧菜单
 	function setMenu(i: number = 0) {
 		// 显示分组显示菜单
@@ -43,12 +59,12 @@ export const useMenuStore = defineStore('menu', function () {
 					if (d.namespace) {
 						d._permission = {};
 						for (const i in d.permission) {
-							d._permission[i] =
-								list.findIndex(e =>
-									e
-										.replace(/:/g, '/')
-										.includes(`${d.namespace.replace('admin/', '')}/${i}`)
-								) >= 0;
+							// 段前缀匹配（/ 分段）：避免 role/roles 等兄弟资源的子串误命中
+							const req = `${d.namespace.replace('admin/', '')}/${i}`;
+							d._permission[i] = list.some(e => {
+								const stored = String(e).replace(/:/g, '/');
+								return stored === req || stored.startsWith(`${req}/`);
+							});
 						}
 					} else {
 						console.error('namespace is required', d);
@@ -72,8 +88,14 @@ export const useMenuStore = defineStore('menu', function () {
 		// 获取第一个菜单路径
 		const fp = getPath(group.value);
 
+		// 先遍历为所有路由设置 isHome 标记，避免在 find 回调中赋值导致
+		// 匹配项之后的元素 isHome 不被重置（残留脏数据）。
+		list.forEach(e => {
+			e.meta!.isHome = e.path == fp;
+		});
+
 		// 查找符合路由
-		const route = list.find(e => (e.meta!.isHome = e.path == fp));
+		const route = list.find(e => e.meta!.isHome);
 
 		// 过滤菜单
 		routes.value = list.filter(e => e.type == 1);
@@ -101,6 +123,11 @@ export const useMenuStore = defineStore('menu', function () {
 			// 设置为首页
 			route.path = '/';
 			route.name = 'home';
+
+			// 首页作为默认落地页，不校验路由级权限（P0-4）
+			if (route.meta) {
+				delete route.meta.permission;
+			}
 		}
 	}
 
@@ -130,7 +157,10 @@ export const useMenuStore = defineStore('menu', function () {
 						meta: {
 							...e.meta,
 							label: e.name, // 菜单名称的唯一标识
-							keepAlive: e.keepAlive || 0
+							keepAlive: e.keepAlive || 0,
+							// 路由级权限标识，用于 beforeEach 越权校验（P0-4）
+							// 优先使用菜单显式声明的 permission，否则按路径推导
+							permission: e.permission || deriveRoutePermission(path)
 						},
 						name: `${e.name}-${e.id}`, // 避免重复命名之前的冲突
 						children: []

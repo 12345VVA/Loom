@@ -2,13 +2,16 @@ import { BaseService } from '/@/cool';
 
 class AiRuntimeModel extends BaseService {
 	private taskService = new BaseService('admin/ai/task');
+	// 运行时 AI 调用走 aiapi scope（终端用户调用 AI），与管理端 CRUD 分离
+	private runtimeService = new BaseService('aiapi/ai/model');
 
 	constructor() {
-		super('aiapi/ai/model');
+		// 管理端 CRUD 继承自 BaseService，走 admin scope（admin/ai/model/*）
+		super('admin/ai/model');
 	}
 
 	chat(data: any) {
-		return this.request({
+		return this.runtimeService.request({
 			url: '/chat',
 			method: 'POST',
 			data
@@ -20,23 +23,23 @@ class AiRuntimeModel extends BaseService {
 	}
 
 	embedding(data: any) {
-		return this.request({ url: '/embedding', method: 'POST', data });
+		return this.runtimeService.request({ url: '/embedding', method: 'POST', data });
 	}
 
 	image(data: any) {
-		return this.request({ url: '/image', method: 'POST', data });
+		return this.runtimeService.request({ url: '/image', method: 'POST', data });
 	}
 
 	rerank(data: any) {
-		return this.request({ url: '/rerank', method: 'POST', data });
+		return this.runtimeService.request({ url: '/rerank', method: 'POST', data });
 	}
 
 	audio(data: any) {
-		return this.request({ url: '/audio', method: 'POST', data });
+		return this.runtimeService.request({ url: '/audio', method: 'POST', data });
 	}
 
 	video(data: any) {
-		return this.request({ url: '/video', method: 'POST', data });
+		return this.runtimeService.request({ url: '/video', method: 'POST', data });
 	}
 
 	submitTask(data: any) {

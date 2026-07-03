@@ -1,8 +1,8 @@
 import axios from 'axios';
 import NProgress from 'nprogress';
 import 'nprogress/nprogress.css';
-import { ElMessage } from 'element-plus';
 import { endsWith } from 'lodash-es';
+import { ElMessage } from 'element-plus';
 import { storage } from '/@/cool/utils';
 import { useBase } from '/$/base';
 import { router } from '../router';
@@ -11,7 +11,8 @@ import { config, isDev } from '/@/config';
 // 创建 axios 实例
 const request = axios.create({
 	timeout: import.meta.env.VITE_TIMEOUT, // 设置请求超时时间
-	withCredentials: false // 不携带凭证
+	// 携带凭证：refreshToken 通过 HttpOnly cookie 传递，需开启跨域凭证
+	withCredentials: true
 });
 
 // 配置 NProgress
@@ -80,50 +81,43 @@ request.interceptors.request.use(
 			}
 
 			// 忽略特定请求
-			if (['eps', 'refreshToken'].some(e => endsWith(req.url, e))) {
+			if (['eps', 'refreshToken', 'refresh'].some(e => endsWith(req.url, e))) {
 				return req;
 			}
 
 			// 判断 token 是否过期
-			if (storage.isExpired('token')) {
-				// 判断 refreshToken 是否过期
-				if (storage.isExpired('refreshToken')) {
-					const error = { message: '登录状态已失效，请重新登录' };
-					ElMessage.error(error.message);
-					rejectQueue(error);
-					isRefreshing = false;
-					user.logout();
-					return Promise.reject(error);
-				} else {
-					// 如果不在刷新中，则刷新 token
-					if (!isRefreshing) {
-						isRefreshing = true;
+			// token 存储在 sessionStorage，refreshToken 通过 HttpOnly cookie 传递
+			if (storage.session.isExpired('token')) {
+				// refreshToken 已不在前端存储，无法预判过期；
+				// 直接尝试刷新，由后端校验 cookie 有效性，失败则 401 触发登出
+				if (!isRefreshing) {
+					isRefreshing = true;
 
-						user.refreshToken()
-							.then(token => {
-								resolveQueue(token); // 处理队列中的请求
-								isRefreshing = false;
-							})
-							.catch(err => {
-								rejectQueue(err);
-								isRefreshing = false;
-								user.logout();
-							});
-					}
-
-					// 返回一个新的 Promise，等待 token 刷新完成
-					return new Promise((resolve, reject) => {
-						queue.push({
-							resolve: token => {
-								if (req.headers) {
-									req.headers['Authorization'] = token; // 重新设置 token
-								}
-								resolve(req);
-							},
-							reject
+					user.refreshToken()
+						.then(token => {
+							resolveQueue(token); // 处理队列中的请求
+							isRefreshing = false;
+						})
+						.catch(err => {
+							rejectQueue(err);
+							isRefreshing = false;
+							ElMessage.error('登录状态已失效');
+							user.logout();
 						});
-					});
 				}
+
+				// 返回一个新的 Promise，等待 token 刷新完成
+				return new Promise((resolve, reject) => {
+					queue.push({
+						resolve: token => {
+							if (req.headers) {
+								req.headers['Authorization'] = token; // 重新设置 token
+							}
+							resolve(req);
+						},
+						reject
+					});
+				});
 			}
 		}
 

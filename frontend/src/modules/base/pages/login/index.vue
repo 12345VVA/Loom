@@ -32,13 +32,13 @@
 						/>
 					</el-form-item>
 
-					<el-form-item :label="$t('验证码')">
-						<pic-captcha
-							:ref="setRefs('picCaptcha')"
-							v-model="form.captchaId"
-							@change="onCaptchaChange"
-						/>
-					</el-form-item>
+					<el-form-item v-if="captchaEnabled" :label="$t('验证码')">
+					<pic-captcha
+						:ref="setRefs('picCaptcha')"
+						v-model="form.captchaId"
+						@change="onCaptchaChange"
+					/>
+				</el-form-item>
 
 					<div class="op">
 						<el-button type="primary" :loading="saving" @click="toLogin">
@@ -76,6 +76,7 @@ const { t } = useI18n();
 
 // 状态
 const saving = ref(false);
+const captchaEnabled = ref(false);
 
 // 表单数据
 const form = reactive({
@@ -88,6 +89,19 @@ const form = reactive({
 function onCaptchaChange(payload: { verifyCode?: string }) {
 	form.verifyCode = payload.verifyCode || '';
 }
+
+// 获取登录页公开配置（验证码开关）
+async function loadCaptchaConfig() {
+	try {
+		const res = await service.base.open.config();
+		captchaEnabled.value = res?.captchaEnabled !== false;
+	} catch {
+		// 获取失败时默认开启校验（安全优先）
+		captchaEnabled.value = true;
+	}
+}
+
+loadCaptchaConfig();
 
 // 演示模式
 if (import.meta.env.MODE == 'demo') {
@@ -105,9 +119,9 @@ async function toLogin() {
 		return ElMessage.error(t('密码不能为空'));
 	}
 
-	// if (!form.verifyCode) {
-	// 	return ElMessage.error(t('请完成滑块验证'));
-	// }
+	if (captchaEnabled.value && !form.verifyCode) {
+		return ElMessage.error(t('请完成滑块验证'));
+	}
 
 	saving.value = true;
 
@@ -125,7 +139,9 @@ async function toLogin() {
 		router.push('/');
 	} catch (err) {
 		// 刷新验证码
-		refs.picCaptcha.refresh();
+		if (captchaEnabled.value && refs.picCaptcha) {
+			refs.picCaptcha.refresh();
+		}
 
 		// 提示错误
 		ElMessageBox.alert((err as Error).message, {

@@ -190,7 +190,7 @@ async function refresh() {
 
 	await service.base.open
 		.captcha({
-			height: 45,
+			height: 80,
 			width: 256
 		})
 		.then(({ captchaId: id, data }) => {
