@@ -63,7 +63,7 @@ class WorkflowAnnotationController(BaseController):
         """计算评估运行的 judge 与人工标注 κ，回填 summary_payload.judge_calibration 并返回。"""
         if payload.eval_run_id <= 0:
             raise HTTPException(status_code=400, detail="缺少有效的 evalRunId")
-        return WorkflowAnnotationService(session).compute_kappa(payload.eval_run_id)
+        return WorkflowAnnotationService(session).compute_kappa(payload.eval_run_id, current_user=current_user)
 
 
 router = WorkflowAnnotationController.router

@@ -13,6 +13,7 @@ from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.workflow_annotation.model.annotation import WorkflowAnnotation
 from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
+from app.modules.workflow_eval.service.eval_run_service import _assert_run_owned
 
 logger = logging.getLogger(__name__)
 
@@ -57,20 +58,61 @@ class WorkflowAnnotationService(BaseAdminCrudService):
         super().__init__(session, WorkflowAnnotation)
 
     def add(self, payload: Any, current_user: User | None = None) -> Any:
-        """新增标注，自动写入 annotator_user_id。"""
+        """新增标注，自动写入 annotator_user_id，并校验当前用户是否拥有该评估运行。"""
         data = payload.model_dump() if hasattr(payload, "model_dump") else dict(payload)
         if current_user is not None and "annotator_user_id" not in data:
             data["annotator_user_id"] = current_user.id
+
+        # 归属校验：通过 case_result_id 找到 eval_run_id，校验当前用户是否拥有该 run
+        case_result_id = data.get("case_result_id")
+        if case_result_id is not None and current_user is not None:
+            case_result = self.session.get(WorkflowEvalCaseResult, case_result_id)
+            if case_result is None:
+                # 关联用例不存在：不可放行（否则绕过归属校验产生孤儿标注）
+                raise HTTPException(status_code=404, detail="关联的评估用例结果不存在")
+            _assert_run_owned(self.session, case_result.eval_run_id, current_user)
+
         return super().add(data)
 
-    def compute_kappa(self, eval_run_id: int) -> dict:
+    def update(self, payload: Any, current_user: User | None = None) -> Any:
+        """更新标注前校验归属：通过 case_result → eval_run 校验当前用户拥有该 run。"""
+        if current_user is not None:
+            id_val = getattr(payload, "id", None)
+            if id_val is not None:
+                ann = self.session.get(WorkflowAnnotation, id_val)
+                if ann is not None:
+                    cr = self.session.get(WorkflowEvalCaseResult, ann.case_result_id)
+                    if cr is not None:
+                        _assert_run_owned(self.session, cr.eval_run_id, current_user)
+        return super().update(payload)
+
+    def delete(
+        self,
+        ids: list[int],
+        payload: Any = None,
+        soft_delete: bool | None = None,
+        current_user: User | None = None,
+    ) -> dict:
+        """删除标注前校验归属：每条标注对应的 eval_run 须归属当前用户。"""
+        if current_user is not None and ids:
+            anns = list(
+                self.session.exec(
+                    select(WorkflowAnnotation).where(WorkflowAnnotation.id.in_(ids))
+                ).all()
+            )
+            for ann in anns:
+                cr = self.session.get(WorkflowEvalCaseResult, ann.case_result_id)
+                if cr is not None:
+                    _assert_run_owned(self.session, cr.eval_run_id, current_user)
+        return super().delete(ids, payload=payload, soft_delete=soft_delete)
+
+    def compute_kappa(self, eval_run_id: int, current_user: User | None = None) -> dict:
         """计算某评估运行的 judge 与人工标注的 Cohen's κ，回填 run.summary_payload.judge_calibration。
 
         每 case_result 取一条标注（is_gold 优先，否则最新），与 case_result.passed 配对算 κ。
         """
-        run = self.session.get(WorkflowEvalRun, eval_run_id)
-        if not run:
-            raise HTTPException(status_code=404, detail="评估运行不存在")
+        # 归属校验：复用 workflow_eval 模块的 _assert_run_owned（超管放行，非 owner 抛 403）
+        run = _assert_run_owned(self.session, eval_run_id, current_user)
 
         case_results = list(
             self.session.exec(

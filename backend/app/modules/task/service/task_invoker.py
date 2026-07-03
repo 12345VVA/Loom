@@ -7,19 +7,28 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 import threading
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from app.core.database import engine
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class TaskInvoker:
     """任务执行器，负责解析 service 字符串并执行对应的类方法"""
 
     _service_map: dict[str, type] = {}
+
+    # 显式白名单：允许通过 TaskInfo.service 调用的 service_path（格式 "key:method"）。
+    # 为空时表示未启用白名单（仅拦截私有方法）；非空时仅放行已登记的服务路径。
+    _allowed_services: set[str] = set()
 
     @classmethod
     def scan_services(cls):
@@ -70,6 +79,39 @@ class TaskInvoker:
                 except Exception as e:
                     print(f"Failed to load service {module_path}: {e}")
 
+        # 扫描完成后填充白名单（配置驱动优先，否则登记所有已扫描公开方法）
+        cls._refresh_allowed_services()
+
+    @classmethod
+    def _refresh_allowed_services(cls) -> None:
+        """根据 settings.TASK_ALLOWED_SERVICES 填充白名单。
+
+        - 配置非空：仅允许列出的 "key:method"（fail-closed，便于收窄攻击面）。
+        - 配置为空：登记所有已扫描 service 的公开（非下划线）方法，使白名单真正生效，
+          而非空集形同虚设；行为等价于"已扫描 + 非下划线方法"放行，向后兼容。
+        """
+        configured = settings.TASK_ALLOWED_SERVICES
+        if configured:
+            cls._allowed_services = {item.strip() for item in configured.split(",") if item.strip()}
+            return
+        allowed: set[str] = set()
+        for key, service_cls in cls._service_map.items():
+            for name, _member in inspect.getmembers(service_cls, inspect.isfunction):
+                if name.startswith("_"):
+                    continue
+                allowed.add(f"{key}:{name}")
+        cls._allowed_services = allowed
+
+    @classmethod
+    def register_allowed_service(cls, service_path: str) -> None:
+        """登记一个允许调用的 service_path（格式 "key:method"）到白名单。"""
+        cls._allowed_services.add(service_path)
+
+    @classmethod
+    def register_allowed_services(cls, service_paths: list[str]) -> None:
+        """批量登记允许调用的 service_path 列表到白名单。"""
+        cls._allowed_services.update(service_paths)
+
     @classmethod
     def invoke(cls, service_path: str, data_json: str | None = None) -> Any:
         """
@@ -83,6 +125,27 @@ class TaskInvoker:
             raise ValueError(f"Invalid service path format: {service_path}. Expected 'service_key:method_name'")
 
         key, method_name = service_path.split(":", 1)
+
+        # 安全校验 1：禁止调用以 _ 开头的私有/受保护方法
+        if method_name.startswith("_"):
+            logger.warning(
+                "TaskInvoker rejected private method invocation: service_path=%s", service_path
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"不允许调用以下划线开头的方法: {method_name}",
+            )
+
+        # 安全校验 2：若已启用白名单（非空），则 service_path 必须在白名单中
+        if cls._allowed_services and service_path not in cls._allowed_services:
+            logger.warning(
+                "TaskInvoker rejected non-whitelisted service invocation: service_path=%s", service_path
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"该服务方法不在允许调用的白名单中: {service_path}",
+            )
+
         service_cls = cls._service_map.get(key)
 
         if not service_cls:

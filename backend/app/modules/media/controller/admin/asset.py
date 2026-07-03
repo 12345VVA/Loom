@@ -5,11 +5,12 @@
 from fastapi import Depends, File, UploadFile
 from sqlmodel import Session
 
+from app.core.config import settings
 from app.core.database import get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
 from app.framework.router.route_meta import Get, Post
 from app.modules.base.model.auth import User
-from app.modules.base.service.security_service import get_current_user
+from app.modules.base.service.security_service import create_download_token, get_current_user
 from app.modules.media.model.media import MediaAssetCreateRequest, MediaAssetRead, MediaAssetUpdateRequest
 from app.modules.media.service.media_service import MediaAssetService
 
@@ -64,6 +65,21 @@ class MediaAssetController(BaseController):
         session: Session = Depends(get_session),
     ):
         return MediaAssetService(session).stats(current_user)
+
+    @Get("/downloadToken", summary="签发短期下载令牌", permission="media:asset:downloadToken")
+    def download_token(
+        self,
+        current_user: User = Depends(get_current_user),
+    ):
+        """签发专用下载令牌（type=download，短 TTL），供 /uploads 资源鉴权使用。
+
+        与 access token 隔离：下载令牌权限受限（只能下载）、短时失效，
+        避免长期 access token 通过 ?token= 泄露到反代日志/Referer/分享串。
+        """
+        return {
+            "token": create_download_token(current_user),
+            "expire": settings.DOWNLOAD_TOKEN_EXPIRE_SECONDS,
+        }
 
 
 router = MediaAssetController.router

@@ -135,6 +135,14 @@ class TaskInfoService(BaseAdminCrudService):
         if not row:
             raise HTTPException(status_code=404, detail="任务不存在")
 
+        # 防重放锁：高频调用 once() 时，5 分钟内仅触发一次，避免重复 .delay() 派发
+        from app.modules.base.service.cache_service import cache_set_nx
+
+        dedup_key = f"task:once:{id}"
+        acquired = cache_set_nx(dedup_key, "1", ttl_seconds=300)
+        if not acquired:
+            return {"success": False, "message": "任务正在执行中，已跳过"}
+
         # 异步触发 Celery 任务
         from app.modules.task.tasks.system_tasks import execute_system_task
 

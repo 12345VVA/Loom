@@ -30,6 +30,23 @@ SAFE_CONDITIONS = {"active_admins", "super_admins"}
 class NotificationMessageService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, NotificationMessage)
+        self._current_user: User | None = None
+
+    def add(self, payload: Any, current_user: User | None = None) -> Any:
+        """重写 add：接收 current_user 并在 _before_add 中用其覆盖 sender_id，防止客户端伪造。"""
+        if isinstance(payload, list):
+            return [self.add(item, current_user=current_user) for item in payload]
+        self._current_user = current_user
+        try:
+            return super().add(payload)
+        finally:
+            self._current_user = None
+
+    def _before_add(self, data: dict) -> dict:
+        # 安全修复：用 current_user.id 覆盖 payload 中的 sender_id，忽略客户端传入的值
+        if self._current_user is not None:
+            data["sender_id"] = self._current_user.id
+        return data
 
     def _after_add(self, entity: NotificationMessage, payload: Any = None) -> None:
         audience = getattr(payload, "audience", None) or AudienceRule(all_admins=True)
