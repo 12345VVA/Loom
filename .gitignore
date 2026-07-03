@@ -58,5 +58,8 @@ deliverables/
 *.swo
 *~
 
+# AI Tools
+.trae/specs/
+
 # Docker
 .dockerignore
