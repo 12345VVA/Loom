@@ -175,6 +175,11 @@ class AiRuntimeInvocation(BaseEntity, table=True):
     status: str = Field(default="running", index=True, max_length=50)
     started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
     finished_at: datetime | None = Field(default=None, index=True)
+    # 关联的 AI 生成任务：cancel 时据此精确释放并发计数，避免按 user 误杀同用户其他任务
+    task_id: int | None = Field(default=None, index=True)
+    # 持久化本次 acquire 的并发计数 Redis key（JSON），worker 被 terminate 后仍可据此精确 decr，
+    # 且与 acquire 时的 key 集合一致，不受规则后续增删影响
+    cc_keys: str | None = Field(default=None, max_length=500)
 
 
 class AiModelCallLogRead(BaseModel):

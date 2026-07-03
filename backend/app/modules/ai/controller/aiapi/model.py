@@ -5,7 +5,7 @@
 import logging
 from functools import partial
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
@@ -25,10 +25,29 @@ from app.modules.ai.model.ai import (
 from app.modules.ai.service.runtime_service import AiModelRuntimeService
 from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
+from app.modules.base.service.authority_service import (
+    get_cached_user_permissions,
+    is_super_admin,
+)
 from app.modules.base.service.security_service import get_current_user
 from app.modules.media.service.media_service import MediaAssetService
 
 logger = logging.getLogger(__name__)
+
+AI_INVOKE_PERMISSION = "ai:model:invoke"
+
+
+def require_ai_call_permission(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> User:
+    """校验当前用户是否拥有 AI 调用权限，未授权返回 403。"""
+    if is_super_admin(session, current_user):
+        return current_user
+    permissions = get_cached_user_permissions(session, current_user)
+    if AI_INVOKE_PERMISSION not in permissions:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无 AI 调用权限")
+    return current_user
 
 
 class _NoopService(BaseAdminCrudService):
@@ -52,7 +71,7 @@ class AiRuntimeController(BaseController):
     def chat(
         self,
         payload: AiChatRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(require_ai_call_permission),
         session: Session = Depends(get_session),
     ):
         return AiModelRuntimeService(session).chat(payload, current_user=current_user)
@@ -61,7 +80,7 @@ class AiRuntimeController(BaseController):
     async def stream_chat(
         self,
         payload: AiChatRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(require_ai_call_permission),
         session: Session = Depends(get_session),
     ):
         return StreamingResponse(
@@ -78,7 +97,7 @@ class AiRuntimeController(BaseController):
     def embedding(
         self,
         payload: AiEmbeddingRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(require_ai_call_permission),
         session: Session = Depends(get_session),
     ):
         return AiModelRuntimeService(session).embedding(payload, current_user=current_user)
@@ -87,7 +106,7 @@ class AiRuntimeController(BaseController):
     async def image(
         self,
         payload: AiImageRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(require_ai_call_permission),
         session: Session = Depends(get_session),
     ):
         logger.info(
@@ -125,7 +144,7 @@ class AiRuntimeController(BaseController):
     def rerank(
         self,
         payload: AiRerankRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(require_ai_call_permission),
         session: Session = Depends(get_session),
     ):
         return AiModelRuntimeService(session).rerank(payload, current_user=current_user)
@@ -134,7 +153,7 @@ class AiRuntimeController(BaseController):
     def audio(
         self,
         payload: AiAudioRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(require_ai_call_permission),
         session: Session = Depends(get_session),
     ):
         return AiModelRuntimeService(session).audio(payload, current_user=current_user)
@@ -143,7 +162,7 @@ class AiRuntimeController(BaseController):
     def video(
         self,
         payload: AiVideoRequest,
-        current_user: User = Depends(get_current_user),
+        current_user: User = Depends(require_ai_call_permission),
         session: Session = Depends(get_session),
     ):
         return AiModelRuntimeService(session).video(payload, current_user=current_user)

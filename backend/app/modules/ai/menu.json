@@ -80,7 +80,10 @@
         "component": "modules/ai/views/chat.vue",
         "icon": "icon-message",
         "sort_order": 4,
-        "role_codes": ["admin"]
+        "role_codes": ["admin"],
+        "children": [
+          { "code": "ai_model_invoke", "name": "AI 调用", "type": "button", "permission": "ai:model:invoke", "role_codes": ["admin"] }
+        ]
       },
       {
         "code": "nav_ai_log",

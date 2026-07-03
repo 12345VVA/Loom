@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import base64
+import logging
 from typing import Any
 
 import httpx
+from fastapi import HTTPException
 
+from app.core.config import settings
+from app.framework.url_security import safe_stream, validate_remote_url
 from app.modules.ai.service.adapters.base import (
     BaseHttpAdapter,
     UnsupportedCapabilityError,
@@ -12,6 +16,8 @@ from app.modules.ai.service.adapters.base import (
     loads_json,
     normalize_usage,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiAdapter(BaseHttpAdapter):
@@ -193,7 +199,13 @@ def _prepare_gemini_image_part(val: str) -> dict | None:
             return None
     elif val.startswith("http://") or val.startswith("https://"):
         try:
-            with httpx.stream("GET", val, timeout=15) as r:
+            # SSRF 防护：校验协议白名单 + IP 黑名单 + DNS 解析结果，
+            # 返回以已校验 IP 为 hostname 的 URL 以缓解 DNS rebinding TOCTOU。
+            safe_url, original_host = validate_remote_url(val)
+            headers = {"Host": original_host}
+            with safe_stream("GET", safe_url, original_host, headers=headers, timeout=15, follow_redirects=False) as r:
+                if r.is_redirect:
+                    raise ValueError("图片 URL 不允许重定向")
                 r.raise_for_status()
                 content_length = r.headers.get("content-length")
                 if content_length and int(content_length) > MAX_IMAGE_DOWNLOAD_SIZE:
@@ -211,6 +223,9 @@ def _prepare_gemini_image_part(val: str) -> dict | None:
                 mime_type = r.headers.get("content-type", "image/png")
                 b64_data = base64.b64encode(content).decode("utf-8")
                 return {"inlineData": {"mimeType": mime_type, "data": b64_data}}
+        except ValueError as exc:
+            logger.warning("Gemini 图片 URL 被 SSRF 校验拒绝: %s", exc)
+            return None
         except Exception:
             return None
     return None

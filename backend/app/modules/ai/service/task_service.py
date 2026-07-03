@@ -64,6 +64,10 @@ class AiGenerationTaskService(BaseAdminCrudService):
                 celery_app.control.revoke(task.celery_task_id, terminate=True)
             except Exception:
                 pass
+        # 释放治理并发计数：revoke+terminate 可能中断 worker，invocation 的 _cc_keys 未能通过 finish() 释放
+        from app.modules.ai.service.governance_service import AiGovernanceService
+
+        AiGovernanceService(self.session).release_for_generation_task(task)
         task.status = "cancelled"
         task.progress = 100
         task.finished_at = datetime.now(timezone.utc)
@@ -77,6 +81,20 @@ class AiGenerationTaskService(BaseAdminCrudService):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI 任务不存在")
         if task.status not in {"failed", "cancelled"}:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅失败或已取消任务可以重试")
+        # 清理旧 celery 任务：防止旧任务被 worker 接走后与新任务并发执行（重复扣费/重复生成）
+        if task.celery_task_id:
+            from app.celery_app import celery_app
+
+            try:
+                celery_app.control.revoke(task.celery_task_id, terminate=True)
+            except Exception:
+                pass
+            task.celery_task_id = None
+        # 释放可能残留的治理并发计数（与 cancel 一致）：旧任务若因 worker 被硬杀而未 finish()，
+        # invocation 的 cc_keys 会残留在 Redis 直到 TTL，retry 前清理避免幽灵计数阻塞新执行
+        from app.modules.ai.service.governance_service import AiGovernanceService
+
+        AiGovernanceService(self.session).release_for_generation_task(task)
         task.status = "pending"
         task.progress = 0
         task.result_payload = None

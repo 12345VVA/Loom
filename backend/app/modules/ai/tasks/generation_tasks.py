@@ -133,16 +133,21 @@ def _invoke_runtime(session: Session, task: AiGenerationTask, payload: dict) -> 
     }
     if task.task_type == "chat":
         return runtime.chat(
-            AiChatRequest(**{**common, "messages": payload.get("messages") or []}), current_user=current_user
+            AiChatRequest(**{**common, "messages": payload.get("messages") or []}),
+            current_user=current_user,
+            task_id=task.id,
         )
     if task.task_type == "embedding":
         return runtime.embedding(
-            AiEmbeddingRequest(**{**common, "input": payload.get("input")}), current_user=current_user
+            AiEmbeddingRequest(**{**common, "input": payload.get("input")}),
+            current_user=current_user,
+            task_id=task.id,
         )
     if task.task_type == "image":
         return runtime.image(
             AiImageRequest(**{**common, "prompt": payload.get("prompt") or "", "image": payload.get("image")}),
             current_user=current_user,
+            task_id=task.id,
         )
     if task.task_type == "rerank":
         return runtime.rerank(
@@ -150,14 +155,19 @@ def _invoke_runtime(session: Session, task: AiGenerationTask, payload: dict) -> 
                 **{**common, "query": payload.get("query") or "", "documents": payload.get("documents") or []}
             ),
             current_user=current_user,
+            task_id=task.id,
         )
     if task.task_type == "audio":
         return runtime.audio(
-            AiAudioRequest(**{**common, "input": payload.get("input") or ""}), current_user=current_user
+            AiAudioRequest(**{**common, "input": payload.get("input") or ""}),
+            current_user=current_user,
+            task_id=task.id,
         )
     if task.task_type == "video":
         return runtime.video(
-            AiVideoRequest(**{**common, "prompt": payload.get("prompt") or ""}), current_user=current_user
+            AiVideoRequest(**{**common, "prompt": payload.get("prompt") or ""}),
+            current_user=current_user,
+            task_id=task.id,
         )
     raise ValueError("不支持的 AI 任务类型")
 

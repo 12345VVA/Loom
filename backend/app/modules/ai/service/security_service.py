@@ -47,11 +47,23 @@ class AiSecurityService:
         """
         total_length = 0
         for msg in messages:
-            role = msg.get("role", "") if isinstance(msg, dict) else getattr(msg, "role", "")
-            if role == "system":
-                continue
-
+            # 注意：system 消息同样需要经过注入检测。
+            # 调用方 runtime_service 直接将用户提交的 payload.messages 传入此处，
+            # role 字段无服务端约束，攻击者可通过构造 role="system" 的消息绕过校验，
+            # 因此不得对 system 角色做任何跳过处理。
             content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+            # 多模态 content（list 形式，如 OpenAI [{type:'text', text:'...'}]）：提取文本部分检测，
+            # 避免对非字符串 content 静默跳过导致注入检测被绕过
+            if isinstance(content, list):
+                texts: list[str] = []
+                for item in content:
+                    if isinstance(item, dict):
+                        t = item.get("text") if "text" in item else item.get("content")
+                        if isinstance(t, str):
+                            texts.append(t)
+                    elif isinstance(item, str):
+                        texts.append(item)
+                content = "\n".join(texts)
             if not isinstance(content, str):
                 continue
 

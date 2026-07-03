@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -13,6 +14,7 @@ from sqlmodel import Session, select
 
 from app.framework.controller_meta import CrudQuery, RelationConfig
 from app.modules.ai.model.ai import (
+    AiGenerationTask,
     AiGovernanceEvent,
     AiGovernanceRule,
     AiGovernanceRuleMatchRequest,
@@ -211,6 +213,18 @@ class AiGovernanceBlocked(Exception):
         self.metric = metric
 
 
+class AiGovernanceUnavailable(Exception):
+    """治理依赖（Redis）不可用，无法判定 cost 类并发规则是否超限。
+
+    调用方应转换为 HTTP 503（P0-17）：cost 类规则在 Redis 故障时 fail-closed，
+    避免在计数不可靠时放行导致 token/credit 超额消耗。
+    """
+
+    def __init__(self, message: str, *, metric: str = "concurrent"):
+        super().__init__(message)
+        self.metric = metric
+
+
 class AiGovernanceService:
     def __init__(self, session: Session):
         self.session = session
@@ -236,7 +250,13 @@ class AiGovernanceService:
         return matched
 
     def begin(
-        self, *, user: User | None, provider: AiProvider, model: AiModel, profile: AiModelProfile
+        self,
+        *,
+        user: User | None,
+        provider: AiProvider,
+        model: AiModel,
+        profile: AiModelProfile,
+        task_id: int | None = None,
     ) -> AiRuntimeInvocation | None:
         user_id = user.id if user else None
         rules = self.match_rules(user_id=user_id, profile_id=profile.id)
@@ -251,10 +271,13 @@ class AiGovernanceService:
             provider_id=provider.id,
             model_id=model.id,
             profile_id=profile.id,
+            task_id=task_id,
             status="running",
             started_at=datetime.now(timezone.utc),
         )
         invocation._cc_keys = concurrent_keys
+        # 持久化 cc_keys：worker 被 terminate 后内存属性丢失，cancel 仍可从 DB 字段恢复并精确 decr
+        invocation.cc_keys = json.dumps(concurrent_keys) if concurrent_keys else None
         self.session.add(invocation)
         self.session.commit()
         return invocation
@@ -291,6 +314,31 @@ class AiGovernanceService:
         self.session.add(invocation)
         self.session.commit()
 
+    def release_for_generation_task(self, task: AiGenerationTask) -> int:
+        """释放与 AI 生成任务关联的运行时调用并发预占。
+
+        cancel 场景下 celery revoke(terminate=True) 可能中断 worker，导致 invocation 未能通过
+        finish() 释放并发计数。本方法按 task_id 精确匹配该任务的 running invocation，并依据
+        invocation 持久化的 cc_keys 精确 decr——key 集合与 acquire 时一致，不受规则后续增删影响，
+        也不会误杀同用户/profile 下其他任务的 running 调用。返回释放的 invocation 数量。
+        """
+        running = self.session.exec(
+            select(AiRuntimeInvocation).where(
+                AiRuntimeInvocation.status == "running",
+                AiRuntimeInvocation.task_id == task.id,
+            )
+        ).all()
+        released = 0
+        for inv in running:
+            self._release_concurrent(inv)
+            inv.status = "error"
+            inv.finished_at = datetime.now(timezone.utc)
+            self.session.add(inv)
+            released += 1
+        if released:
+            self.session.commit()
+        return released
+
     def _acquire_concurrent(
         self,
         rules: list[AiGovernanceRule],
@@ -299,7 +347,13 @@ class AiGovernanceService:
         model: AiModel,
         profile: AiModelProfile,
     ) -> list[str]:
-        """对命中规则做并发预占，返回成功预占的 Redis key 列表。enforce 模式超限会抛 AiGovernanceBlocked。"""
+        """对命中规则做并发预占，返回成功预占的 Redis key 列表。enforce 模式超限会抛 AiGovernanceBlocked。
+
+        Redis 故障时的策略（P0-17）：
+        - enforce 模式（cost 类规则，限制 token/credit 并发消耗）：fail-closed 抛
+          AiGovernanceUnavailable，调用方转 503，避免计数不可靠时放行导致超额消耗。
+        - monitor 模式（仅观测告警）：fail-open 放行并告警，保持可用性。
+        """
         acquired: list[str] = []
         for rule in rules:
             limit = rule.max_concurrent
@@ -308,8 +362,20 @@ class AiGovernanceService:
             key = self._concurrent_key(rule)
             current = cache_incr(key, ttl_seconds=_CONCURRENT_TTL)
             if current is None:
-                # Redis 计数不可靠：fail-open 放行（保持可用性），记录告警便于追溯
-                logger.warning("并发计数不可靠（Redis 异常），治理规则 %s 本次放行", rule.name)
+                # Redis 计数不可靠
+                if rule.mode == "enforce":
+                    # cost 类规则 fail-closed：拒绝请求，避免不可靠计数下放行导致超额消耗
+                    message = (
+                        f"AI 治理规则 {rule.name} 并发计数不可用（Redis 故障），"
+                        f"为防止超额消耗已拒绝请求"
+                    )
+                    logger.error(message)
+                    # 回滚已预占的计数
+                    for prev_key in acquired:
+                        cache_decr(prev_key, ttl_seconds=_CONCURRENT_TTL)
+                    raise AiGovernanceUnavailable(message, metric="concurrent")
+                # monitor 模式：fail-open 放行，记录告警便于追溯
+                logger.warning("并发计数不可靠（Redis 异常），monitor 规则 %s 本次放行", rule.name)
                 continue
             if current > limit:
                 cache_decr(key, ttl_seconds=_CONCURRENT_TTL)
@@ -365,10 +431,17 @@ class AiGovernanceService:
         """释放本次调用预占的并发计数。幂等。"""
         if not invocation:
             return
-        keys = getattr(invocation, "_cc_keys", None) or []
+        # 优先用内存中的 _cc_keys（正常 finish 路径）；缺失时从持久化字段恢复（worker 重启/cancel）
+        keys = getattr(invocation, "_cc_keys", None)
+        if keys is None:
+            raw = getattr(invocation, "cc_keys", None)
+            keys = json.loads(raw) if raw else []
         for key in keys:
             cache_decr(key, ttl_seconds=_CONCURRENT_TTL)
         invocation._cc_keys = []
+        # 清空持久化字段，保证幂等（重复释放不会二次 decr）
+        if getattr(invocation, "cc_keys", None):
+            invocation.cc_keys = None
 
     def _concurrent_key(self, rule: AiGovernanceRule) -> str:
         if rule.scope_type == "user":

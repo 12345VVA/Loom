@@ -29,7 +29,11 @@ from app.modules.ai.model.ai import (
 )
 from app.modules.ai.service.adapters import build_adapter
 from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
-from app.modules.ai.service.governance_service import AiGovernanceBlocked, AiGovernanceService
+from app.modules.ai.service.governance_service import (
+    AiGovernanceBlocked,
+    AiGovernanceService,
+    AiGovernanceUnavailable,
+)
 from app.modules.ai.service.registry_service import AiModelRegistryService
 from app.modules.ai.service.security_service import AiSecurityService
 from app.modules.ai.service.stats_service import invalidate_summary_cache
@@ -79,13 +83,14 @@ class AiModelRuntimeService:
     def __init__(self, session: Session):
         self.session = session
 
-    def chat(self, payload: AiChatRequest, current_user: User | None = None) -> dict:
+    def chat(self, payload: AiChatRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
         AiSecurityService.check_input_safety(payload.messages)
         resolved, options, response_format_overridden = self._resolve_chat(payload)
         return self._invoke(
             resolved,
             "chat",
             current_user=current_user,
+            task_id=task_id,
             request_options=payload.options,
             structured_response=options.get("response_format"),
             response_format_overridden=response_format_overridden,
@@ -108,7 +113,7 @@ class AiModelRuntimeService:
             response_format_overridden=response_format_overridden,
         )
 
-    def embedding(self, payload: AiEmbeddingRequest, current_user: User | None = None) -> dict:
+    def embedding(self, payload: AiEmbeddingRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
         resolved = AiModelRegistryService(self.session).resolve(
             model_type="embedding", scenario=payload.scenario, profile_code=payload.profile_code
         )
@@ -117,12 +122,13 @@ class AiModelRuntimeService:
             resolved,
             "embedding",
             current_user=current_user,
+            task_id=task_id,
             request_options=payload.options,
             input=payload.input,
             options=options,
         )
 
-    def image(self, payload: AiImageRequest, current_user: User | None = None) -> dict:
+    def image(self, payload: AiImageRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
         resolved = AiModelRegistryService(self.session).resolve(
             model_type="image", scenario=payload.scenario, profile_code=payload.profile_code
         )
@@ -153,12 +159,13 @@ class AiModelRuntimeService:
             resolved,
             "image",
             current_user=current_user,
+            task_id=task_id,
             request_options=payload.options,
             prompt=payload.prompt,
             options=options,
         )
 
-    def rerank(self, payload: AiRerankRequest, current_user: User | None = None) -> dict:
+    def rerank(self, payload: AiRerankRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
         resolved = AiModelRegistryService(self.session).resolve(
             model_type="rerank", scenario=payload.scenario, profile_code=payload.profile_code
         )
@@ -167,13 +174,14 @@ class AiModelRuntimeService:
             resolved,
             "rerank",
             current_user=current_user,
+            task_id=task_id,
             request_options=payload.options,
             query=payload.query,
             documents=payload.documents,
             options=options,
         )
 
-    def audio(self, payload: AiAudioRequest, current_user: User | None = None) -> dict:
+    def audio(self, payload: AiAudioRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
         resolved = AiModelRegistryService(self.session).resolve(
             model_type="audio", scenario=payload.scenario, profile_code=payload.profile_code
         )
@@ -182,12 +190,13 @@ class AiModelRuntimeService:
             resolved,
             "audio",
             current_user=current_user,
+            task_id=task_id,
             request_options=payload.options,
             input=payload.input,
             options=options,
         )
 
-    def video(self, payload: AiVideoRequest, current_user: User | None = None) -> dict:
+    def video(self, payload: AiVideoRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
         resolved = AiModelRegistryService(self.session).resolve(
             model_type="video", scenario=payload.scenario, profile_code=payload.profile_code
         )
@@ -196,6 +205,7 @@ class AiModelRuntimeService:
             resolved,
             "video",
             current_user=current_user,
+            task_id=task_id,
             request_options=payload.options,
             prompt=payload.prompt,
             options=options,
@@ -206,6 +216,7 @@ class AiModelRuntimeService:
         resolved: dict,
         method: str,
         current_user: User | None = None,
+        task_id: int | None = None,
         request_options: dict[str, Any] | None = None,
         structured_response: dict[str, Any] | None = None,
         response_format_overridden: bool = False,
@@ -229,7 +240,9 @@ class AiModelRuntimeService:
             "scenario": profile.scenario,
         }
         try:
-            invocation = governance.begin(user=current_user, provider=provider, model=model, profile=profile)
+            invocation = governance.begin(
+                user=current_user, provider=provider, model=model, profile=profile, task_id=task_id
+            )
             adapter = build_adapter(provider)
             if method == "image":
                 logger.info(
@@ -290,6 +303,11 @@ class AiModelRuntimeService:
                 result["content"] = AiSecurityService.mask_sensitive_output(result["content"])
 
             return {"success": True, "provider": provider.code, "model": model.code, "profile": profile.code, **result}
+        except AiGovernanceUnavailable as exc:
+            # Redis 故障导致 cost 类并发规则无法判定：fail-closed 返回 503（P0-17）
+            governance.block_invocation(invocation)
+            self._log_call(provider, model, profile, "unavailable", start, usage, str(exc), user=current_user)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         except AiGovernanceBlocked as exc:
             governance.block_invocation(invocation)
             self._log_call(provider, model, profile, "blocked", start, usage, str(exc), user=current_user)
@@ -497,6 +515,14 @@ class AiModelRuntimeService:
             )
             done_sent = True
             yield _sse_event(done_payload)
+        except AiGovernanceUnavailable as exc:
+            # Redis 故障导致 cost 类并发规则无法判定：fail-closed 返回 503（P0-17）
+            governance.block_invocation(invocation)
+            invocation_closed = True
+            self._log_call(
+                provider, model, profile, "unavailable", start, usage, str(exc), user=current_user, request_id=request_id
+            )
+            yield _sse_event({"event": "error", "message": str(exc), "status": 503})
         except AiGovernanceBlocked as exc:
             governance.block_invocation(invocation)
             invocation_closed = True
