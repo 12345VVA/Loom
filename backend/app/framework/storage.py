@@ -35,9 +35,67 @@ class UploadRejectedError(ValueError):
     """文件上传被拒绝"""
 
 
+# 文件头 magic bytes 校验表
+# - list：文件内容须以其中任一字节序列开头
+# - None：需特殊校验逻辑（见 _check_magic_bytes）
+# 未列入此表的扩展名（如纯文本 .txt/.csv/.json）跳过 magic bytes 校验，仅做扩展名白名单校验
+# 注意：.doc/.xls/.ppt 共享 OLE2 容器头（\xd0\xcf\x11\xe0...）；未来若新增同容器扩展名
+# （如 .msi/.msg）须同步在此登记，否则会因缺 magic 入口而仅靠扩展名白名单放行
+_MAGIC_BYTES_TABLE: dict[str, list[bytes] | None] = {
+    ".jpg": [b"\xff\xd8\xff"],
+    ".jpeg": [b"\xff\xd8\xff"],
+    ".png": [b"\x89PNG\r\n\x1a\n"],
+    ".gif": [b"GIF87a", b"GIF89a"],
+    ".webp": None,  # RIFF....WEBP
+    ".pdf": [b"%PDF"],
+    ".zip": [b"PK\x03\x04"],
+    ".docx": [b"PK\x03\x04"],
+    ".xlsx": [b"PK\x03\x04"],
+    ".pptx": [b"PK\x03\x04"],
+    ".mp4": None,  # bytes[4:8] == b"ftyp"
+    ".rar": [b"Rar!\x1a\x07\x00", b"Rar!\x1a\x07\x01\x00"],
+    ".mp3": None,  # ID3 标签或 MPEG 帧同步字，见 _check_magic_bytes
+    ".doc": [b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],
+    ".xls": [b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],
+    ".ppt": [b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],
+}
+
+
+def _check_magic_bytes(file_content: bytes, ext: str) -> bool:
+    """校验文件头 magic bytes 是否与声明的扩展名匹配。"""
+    if ext not in _MAGIC_BYTES_TABLE:
+        # 纯文本等无固定 magic bytes 的类型：跳过校验
+        return True
+
+    entry = _MAGIC_BYTES_TABLE[ext]
+    if entry is None:
+        # 特殊校验：webp / mp4
+        if ext == ".webp":
+            return (
+                len(file_content) >= 12
+                and file_content[:4] == b"RIFF"
+                and file_content[8:12] == b"WEBP"
+            )
+        if ext == ".mp4":
+            return len(file_content) >= 8 and file_content[4:8] == b"ftyp"
+        if ext == ".mp3":
+            # ID3v2 标签开头，或 MPEG 帧同步字（首字节 0xFF，第二字节高 3 位须为 111），
+            # 覆盖 0xFFFA/0xFFF2/0xFFE3 等所有合法 Layer III 帧头，避免合法 MP3 被误拒
+            if file_content.startswith(b"ID3"):
+                return True
+            return (
+                len(file_content) >= 2
+                and file_content[0] == 0xFF
+                and (file_content[1] & 0xE0) == 0xE0
+            )
+        return True
+
+    return any(file_content.startswith(prefix) for prefix in entry)
+
+
 def validate_upload(file_content: bytes, filename: str) -> str:
     """
-    校验上传文件：类型白名单 + 大小限制。
+    校验上传文件：类型白名单 + 大小限制 + magic bytes 校验。
     通过后返回规范化的扩展名（含前导点），供后续使用。
     """
     # 1. 扩展名白名单
@@ -55,6 +113,10 @@ def validate_upload(file_content: bytes, filename: str) -> str:
         raise UploadRejectedError(
             f"文件大小 {len(file_content) / 1024 / 1024:.1f}MB 超过限制 {settings.UPLOAD_MAX_SIZE_MB}MB"
         )
+
+    # 3. magic bytes 校验：文件头须与声明的扩展名匹配，防止伪装文件绕过白名单
+    if not _check_magic_bytes(file_content, ext):
+        raise UploadRejectedError(f"文件内容与声明的类型 {ext} 不匹配")
 
     return ext
 

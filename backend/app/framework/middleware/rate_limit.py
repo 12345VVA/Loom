@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse
 from app.core.config import settings
 from app.framework.api.error_codes import ErrorCode
 from app.framework.middleware.metrics import record_metric_event
+from app.framework.request_utils import get_client_ip
 from app.modules.base.service.cache_service import cache_incr
 
 logger = logging.getLogger(__name__)
@@ -54,15 +55,15 @@ def _resolve_limit(path: str) -> int:
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
+    """
+    解析真实客户端 IP。
+
+    薄包装：委托给共享实现 `app.framework.request_utils.get_client_ip`，
+    保留模块内调用习惯与返回值（"unknown" 兜底）。
+
+    安全策略见 `get_client_ip` 文档。
+    """
+    return get_client_ip(request)
 
 
 def _get_client_id(request: Request) -> str:

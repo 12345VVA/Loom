@@ -361,7 +361,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
             response_model = PageResult[meta.page_item_model] if meta.page_item_model is not None else None
 
             async def endpoint(
-                page: int = Query(default=1, ge=1),
+                page: int = Query(default=1, ge=1, le=100000),
                 size: int = Query(default=10, ge=1, le=100),
                 keyword: str | None = Query(default=None),
                 order: str | None = Query(default=None),
@@ -792,6 +792,13 @@ def _build_crud_query(
         raw_size = all_params.get("size") or all_params.get("pageSize") or all_params.get("page_size")
         if raw_size and str(raw_size).isdigit():
             size = int(raw_size)
+
+    # 钳制 size 到 [1, 100]，防止 body 绕过 Query 校验进行 DoS
+    if size is not None:
+        try:
+            size = max(1, min(int(size), 100))
+        except (TypeError, ValueError):
+            size = None
 
     return CrudQuery(
         page=page,
