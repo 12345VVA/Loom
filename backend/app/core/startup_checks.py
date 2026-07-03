@@ -33,6 +33,11 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
     if is_prod and ("*" in origins or not origins):
         results.append(StartupCheckResult("error", "CORS_ORIGINS", "生产环境必须显式配置可信 CORS 来源"))
 
+    if is_prod and not config.ADMIN_CSRF_ORIGIN_CHECK_ENABLED:
+        results.append(
+            StartupCheckResult("error", "ADMIN_CSRF_ORIGIN_CHECK_ENABLED", "生产环境必须开启 CSRF Origin 校验")
+        )
+
     if is_prod and config.DATABASE_URL.startswith("sqlite"):
         results.append(
             StartupCheckResult("warning", "DATABASE_URL", "生产环境建议使用 PostgreSQL 或 MySQL，不建议使用 SQLite")

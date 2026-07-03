@@ -103,21 +103,41 @@ def transaction(session: Session) -> Iterator[Session]:
     """
     统一事务上下文。
 
-    已处于事务中时复用外层事务，交给外层提交/回滚；否则在当前上下文内提交或回滚。
+    - 显式 BEGIN（调用者主动 ``session.begin()``）：复用外层事务，由外层提交/回滚。
+    - AUTOBEGIN（session 自动开启的事务）：由本上下文负责提交。修复 P1-6——此前当
+      session 处于 AUTOBEGIN 且已有 pending 写入时，误判为外层工作而静默不提交，
+      导致写入丢失。
+    - SAVEPOINT（嵌套事务）：仅释放/回滚到最近 savepoint，不影响外层事务。
+    - 无活跃事务：由本上下文开启并提交。
     """
     transaction_state = session.get_transaction()
-    has_pending_outer_work = bool(session.new or session.dirty or session.deleted)
-    if transaction_state is not None and (
-        transaction_state.origin is not SessionTransactionOrigin.AUTOBEGIN or has_pending_outer_work
+
+    # 显式 BEGIN：复用外层事务，交给外层提交/回滚
+    if (
+        transaction_state is not None
+        and transaction_state.origin is SessionTransactionOrigin.BEGIN
     ):
         yield session
         return
 
+    is_savepoint = (
+        transaction_state is not None
+        and transaction_state.origin is SessionTransactionOrigin.BEGIN_NESTED
+    )
+
     try:
         yield session
-        session.commit()
+        if is_savepoint:
+            # 嵌套事务：仅释放 savepoint，不提交外层事务
+            transaction_state.commit()
+        else:
+            # AUTOBEGIN 或无事务：提交整个事务，避免 pending 写入静默丢失
+            session.commit()
     except Exception:
-        session.rollback()
+        if is_savepoint:
+            transaction_state.rollback()
+        else:
+            session.rollback()
         raise
 
 

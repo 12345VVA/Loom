@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str  # 启动时自动从 .env 中读取
     ACCESS_TOKEN_EXPIRE_MINUTES: int  # 启动时自动从 .env 中读取
     REFRESH_TOKEN_EXPIRE_DAYS: int  # 启动时自动从 .env 中读取
+    # 专用下载令牌有效期（秒）：用于 /uploads 资源访问，短 TTL 隔离 access token 泄露面
+    DOWNLOAD_TOKEN_EXPIRE_SECONDS: int = 300
     ADMIN_SSO_ENABLED: bool = False
     ADMIN_CAPTCHA_ENABLED: bool = False
     CAPTCHA_EXPIRE_SECONDS: int = 120
@@ -93,8 +95,9 @@ class Settings(BaseSettings):
 
     # 文件上传安全配置
     UPLOAD_MAX_SIZE_MB: int = 10  # 单文件最大 MB
+    # 默认白名单不含 .svg：SVG 可内嵌 <script> 导致存储型 XSS，如需上传须显式配置并另行处理
     UPLOAD_ALLOWED_EXTENSIONS: str = (
-        ".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.csv,.json,.mp4,.mp3"
+        ".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.csv,.json,.mp4,.mp3"
     )
     STORAGE_PROVIDER: str = "local"
     MEDIA_REMOTE_DOWNLOAD_MAX_SIZE_MB: int = 100
@@ -113,6 +116,18 @@ class Settings(BaseSettings):
     RATE_LIMIT_ADMIN: int = 60  # /admin 前缀每分钟上限
     RATE_LIMIT_OPEN: int = 30  # 公开接口（登录等）每分钟上限
     RATE_LIMIT_WHITELIST_PATHS: str = "/docs,/redoc,/openapi.json,/health"  # 豁免限流的路径
+
+    # 可信反向代理链配置
+    # 逗号分隔的可信代理 IP 列表（如 "127.0.0.1,10.0.0.2"）；为空表示不信任任何代理，
+    # 此时 _get_client_ip / _get_request_ip 直接使用 socket 对端 IP，忽略 X-Forwarded-For。
+    # 配置后，X-Forwarded-For 将从右向左跳过可信代理，取第一个非可信 IP 作为真实客户端 IP。
+    TRUSTED_PROXIES: str = ""
+
+    # TaskInvoker 显式白名单：逗号分隔的 "service_key:method" 列表（如 "task.info:rebuild"）。
+    # 配置后仅允许列出的服务方法被定时任务调用（fail-closed，未列出即拒绝）；
+    # 留空则允许所有已扫描 service 的公开（非下划线）方法——此时白名单仍生效，
+    # 便于审计与未来收窄，而不是形同虚设。
+    TASK_ALLOWED_SERVICES: str = ""
 
     # CORS 配置
     CORS_ORIGINS: str  # 启动时自动从 .env 中读取
@@ -157,6 +172,17 @@ class Settings(BaseSettings):
             if lowered in {"0", "false", "no", "off", "release", "production", "prod"}:
                 return False
         return bool(value)
+
+    @model_validator(mode="after")
+    def _enforce_production_csrf(self) -> "Settings":
+        """生产环境（DEBUG=False）强制开启 CSRF Origin 校验。
+
+        即使 .env 中显式设置 ADMIN_CSRF_ORIGIN_CHECK_ENABLED=False，
+        生产环境也会被覆盖为 True，防止运维误关闭。
+        """
+        if not self.DEBUG and not self.ADMIN_CSRF_ORIGIN_CHECK_ENABLED:
+            self.ADMIN_CSRF_ORIGIN_CHECK_ENABLED = True
+        return self
 
     @model_validator(mode="after")
     def _assemble_database_url(self) -> "Settings":
@@ -219,6 +245,11 @@ class Settings(BaseSettings):
             return self.DEBUG
         lowered = str(raw).strip().lower()
         return lowered in {"1", "true", "yes", "on"}
+
+    @property
+    def trusted_proxies_list(self) -> list[str]:
+        """解析可信代理 IP 列表；空字符串返回空列表（不信任任何代理）。"""
+        return self._parse_csv_or_json(self.TRUSTED_PROXIES, [])
 
     @staticmethod
     def _parse_csv_or_json(value: str, fallback: list[str]) -> list[str]:

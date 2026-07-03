@@ -43,6 +43,13 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_time_limit=30 * 60,  # 30分钟超时
+    # 任务执行完成后才 ACK（P1-5）：worker 进程级死亡/OOM kill 时任务会被重新投递，
+    # 避免静默丢失。配合 reject_on_worker_lost 在 worker 异常退出时拒绝消息重回队列。
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    # 软超时 25 分钟（早于 30 分钟硬超时），触发 SoftTimeLimitExceeded 让任务有机会
+    # 优雅收尾（写终态、释放锁、发通知），避免硬超时直接 SIGKILL 残留运行态。
+    task_soft_time_limit=25 * 60,
     task_queues=(
         Queue("celery"),
         Queue("default"),
