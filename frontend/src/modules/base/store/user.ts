@@ -7,8 +7,14 @@ import { useProcessStore } from './process';
 
 // 初始化数据：userInfo 仍从 localStorage 读取（非敏感）
 // token 从 sessionStorage 读取（页面刷新可恢复，关闭标签页失效）
+// 若 token 已过期则清理残留并视为未登录——否则路由守卫会因残留的非空 token
+// 误判“已登录”，在菜单（因鉴权失败）未加载、动态路由未注册时把用户导向 /404
 const initialUserInfo = storage.get('userInfo');
-const initialToken = storage.session.get('token');
+const storedToken = storage.session.get('token');
+const initialToken = storedToken && !storage.session.isExpired('token') ? storedToken : '';
+if (storedToken && !initialToken) {
+	storage.session.remove('token');
+}
 
 export const useUserStore = defineStore('user', function () {
 	// 标识
