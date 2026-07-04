@@ -1,6 +1,7 @@
 import { type ModuleConfig } from '/@/cool';
 import { useStore } from './store';
 import { config } from '/@/config';
+import { storage } from '/@/cool/utils';
 import { t } from '/@/plugins/i18n';
 import './static/css/index.scss';
 
@@ -78,6 +79,17 @@ export default (): ModuleConfig => {
 					app.addEvent('hasToken', cb);
 
 					if (user.token) {
+						// access token 过期：先静默续期（refreshToken 经 HttpOnly cookie 自动携带）
+						if (storage.session.isExpired('token')) {
+							try {
+								await user.refreshToken();
+							} catch {
+								// 续期失败：清空登录态，由路由守卫导向 /login
+								user.clear();
+								return;
+							}
+						}
+
 						await cb();
 					}
 				}
