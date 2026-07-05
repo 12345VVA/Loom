@@ -110,7 +110,7 @@ class BaseOpenController(BaseController):
 
     @Get("/config", summary="登录页公开配置", anonymous=True)
     def config(self) -> dict:
-        return {"captchaEnabled": bool(settings.ADMIN_CAPTCHA_ENABLED)}
+        return {"captchaEnabled": bool(settings.captcha_enabled)}
 
     @Post("/refreshToken", summary="刷新访问令牌", anonymous=True)
     def refresh_token_compat(

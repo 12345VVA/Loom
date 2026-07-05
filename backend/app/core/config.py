@@ -220,6 +220,17 @@ class Settings(BaseSettings):
         return self.effective_log_level == "DEBUG"
 
     @property
+    def captcha_enabled(self) -> bool:
+        """登录验证码开关：
+        - 生产环境（DEBUG=False）强制启用，忽略 .env 配置；
+        - 本地/测试（DEBUG=True）按 ADMIN_CAPTCHA_ENABLED 配置（默认关闭便于调试，
+          pytest 经 conftest 设 True 仍可启用以覆盖验证码校验逻辑）。
+        """
+        if not self.DEBUG:
+            return True
+        return self.ADMIN_CAPTCHA_ENABLED
+
+    @property
     def cors_origins_list(self) -> list[str]:
         """解析 CORS origins"""
         try:

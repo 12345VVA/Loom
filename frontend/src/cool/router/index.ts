@@ -74,7 +74,17 @@ router.onError((error: Error) => {
 		// 如果是动态加载模块失败的错误，且非开发环境，则刷新页面
 		if (error.message?.includes('Failed to fetch dynamically imported module')) {
 			if (!isDev) {
-				window.location.reload();
+				// 防 reload 死循环：10s 内重复触发说明 reload 无效，改跳静态错误页
+				const key = '__route_reload_ts__';
+				const last = Number(sessionStorage.getItem(key) || 0);
+				if (Date.now() - last > 10000) {
+					sessionStorage.setItem(key, String(Date.now()));
+					window.location.reload();
+				} else {
+					sessionStorage.removeItem(key);
+					ElMessage.error('页面资源加载失败，请检查网络后重试');
+					router.replace('/500');
+				}
 			}
 		}
 

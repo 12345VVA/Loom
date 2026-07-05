@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.security import (
     add_token_to_blacklist,
+    add_user_all_tokens_to_blacklist,
     decode_token,
     hash_password,
     password_needs_rehash,
@@ -90,7 +91,7 @@ class AuthService:
             )
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=locked_reason)
 
-        if settings.ADMIN_CAPTCHA_ENABLED:
+        if settings.captcha_enabled:
             try:
                 self.captcha_check(payload.captcha_id, payload.verify_code)
             except HTTPException as exc:
@@ -281,6 +282,12 @@ class AuthService:
                 login_type="logout",
                 status=1,
             )
+        except Exception:
+            pass
+        # 递增 token_version 使该用户所有已签发 token 立即失效（踢出全部设备），
+        # 避免默认 ADMIN_SESSION_MAX_CONCURRENT=0 下其他设备 access token 在自然过期前继续可用
+        try:
+            add_user_all_tokens_to_blacklist(user.id)
         except Exception:
             pass
         clear_login_caches(user.id)
