@@ -660,7 +660,7 @@ class CoolLoginResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     token: str
-    refresh_token: str
+    refresh_token: str | None = None
     expire: int
     refresh_expire: int
     user_info: CoolUserInfo

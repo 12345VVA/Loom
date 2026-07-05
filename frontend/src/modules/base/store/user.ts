@@ -31,9 +31,15 @@ export const useUserStore = defineStore('user', function () {
 		storage.session.set('token', data.token, data.expire);
 	}
 
-	// 刷新标识
+	// 刷新标识：单例化保证同时只发一次 refreshToken 请求
+	// 后端 refresh_token 为一次性消费，并发 refresh 会相互否决（旧 cookie 失效）触发链式登出
+	let inflightRefresh: Promise<string> | null = null;
+
 	async function refreshToken(): Promise<string> {
-		return new Promise((resolve, reject) => {
+		if (inflightRefresh) {
+			return inflightRefresh;
+		}
+		inflightRefresh = new Promise<string>((resolve, reject) => {
 			// refreshToken 通过 HttpOnly cookie 自动携带，无需前端传参
 			service.base.open
 				.refreshToken({})
@@ -43,7 +49,10 @@ export const useUserStore = defineStore('user', function () {
 				})
 				// 续期失败仅 reject：登出由调用方决定（请求拦截器、base.onLoad 续期流程）
 				.catch(reject);
+		}).finally(() => {
+			inflightRefresh = null;
 		});
+		return inflightRefresh;
 	}
 
 	// 用户信息
@@ -82,6 +91,10 @@ export const useUserStore = defineStore('user', function () {
 
 		router.clear();
 		router.push('/login');
+
+		// best-effort 后端清理（anonymous /open/revoke，仅凭 refresh cookie）
+		// 不阻塞前端退出；被动登出（access token 已失效）也能清掉 refresh cookie 与服务端缓存
+		service.base.open.revoke({}).catch(() => {});
 	}
 
 	// 获取用户信息

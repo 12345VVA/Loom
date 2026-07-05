@@ -83,7 +83,7 @@ class AuthAlignmentTests(unittest.TestCase):
         self.assertEqual(login_res.status_code, 200)
         login_data = login_res.json()["data"]
         self.assertIn("token", login_data)
-        self.assertIn("refreshToken", login_data)
+        # refresh_token 仅走 HttpOnly cookie，响应体不再回传（防 XSS 凭证失窃）
         # 验证登录响应设置了 refreshToken HttpOnly cookie
         set_cookie = login_res.headers.get("set-cookie", "")
         self.assertIn("refresh_token=", set_cookie)
@@ -172,7 +172,7 @@ class AuthAlignmentTests(unittest.TestCase):
         verify_code = self._slider_verify_code(captcha_data)
         login_res = self._login_with_captcha(captcha_data, verify_code)
         self.assertEqual(login_res.status_code, 200)
-        refresh_value = login_res.json()["data"]["refreshToken"]
+        refresh_value = login_res.headers.get("set-cookie", "").split("refresh_token=", 1)[1].split(";", 1)[0]
         self.assertTrue(refresh_value)
 
         # 清除 TestClient 自动保存的 cookie，确保仅靠 body 传 refreshToken

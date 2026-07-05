@@ -78,6 +78,7 @@ class BaseOpenController(BaseController):
         result = service.login(payload, request=request)
         # 通过 HttpOnly cookie 下发 refreshToken，前端不再存储
         _set_refresh_token_cookie(response, result.refresh_token)
+        result.refresh_token = None  # 仅走 HttpOnly cookie，不回传响应体（防 XSS 凭证失窃）
         return result
 
     @Post("/refresh", summary="刷新访问令牌", anonymous=True)
@@ -93,6 +94,7 @@ class BaseOpenController(BaseController):
         token_value = _read_refresh_token_cookie(request) or payload.token_value
         result = service.refresh_token_by_value(token_value)
         _set_refresh_token_cookie(response, result.refresh_token)
+        result.refresh_token = None  # 仅走 HttpOnly cookie，不回传响应体（防 XSS 凭证失窃）
         return result
 
     @Get("/captcha", summary="验证码", anonymous=True)
@@ -122,6 +124,7 @@ class BaseOpenController(BaseController):
         token_value = _read_refresh_token_cookie(request) or payload.token_value
         result = service.refresh_token_by_value(token_value)
         _set_refresh_token_cookie(response, result.refresh_token)
+        result.refresh_token = None  # 仅走 HttpOnly cookie，不回传响应体（防 XSS 凭证失窃）
         return result
 
     @Post(
@@ -140,6 +143,18 @@ class BaseOpenController(BaseController):
         service = AuthService(session)
         service.logout(current_user, request=request)
         # 登出时清除 refreshToken cookie
+        _clear_refresh_token_cookie(response)
+        return {"success": True}
+
+    @Post("/revoke", summary="登出清理（仅凭 refresh cookie，无需有效 access token）", anonymous=True)
+    def revoke(
+        self,
+        request: Request,
+        response: Response,
+        session: Session = Depends(get_session),
+    ) -> dict:
+        # 被动登出（access token 已失效）入口：best-effort 清服务端缓存 + 清 refresh cookie
+        AuthService(session).revoke_by_cookie(request)
         _clear_refresh_token_cookie(response)
         return {"success": True}
 

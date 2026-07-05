@@ -52,7 +52,7 @@ from app.modules.base.service.authority_service import (
     get_refresh_token_ttl,
     prime_login_caches,
 )
-from app.modules.base.service.cache_service import cache_delete, cache_get, cache_set
+from app.modules.base.service.cache_service import cache_delete, cache_get, cache_incr, cache_set
 from app.modules.base.service.security_service import (
     create_access_token,
     create_refresh_token,
@@ -284,6 +284,41 @@ class AuthService:
         except Exception:
             pass
         clear_login_caches(user.id)
+
+    def revoke_by_cookie(self, request: Request) -> None:
+        """best-effort 登出清理：仅凭 access token / refresh cookie 提取 user_id 清缓存。
+        用于被动登出（access token 可能已失效）场景，配合 _clear_refresh_token_cookie 确保
+        refresh cookie 与服务端缓存被清除，避免共享设备残留 cookie 被续期冒充。
+        """
+        user_id = None
+        # access token 进黑名单并尝试取 user_id（token 可能已失效，全部 try 忽略）
+        try:
+            from app.modules.base.service.authority_service import extract_token
+
+            token = extract_token(request)
+            payload = decode_token(token)
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            if jti and exp:
+                add_token_to_blacklist(jti, exp)
+            user_id = payload.get("sub") or payload.get("userId")
+        except Exception:
+            pass
+
+        # access token 失效时，从 refresh cookie 提取 user_id
+        if not user_id:
+            try:
+                refresh_token = request.cookies.get("refresh_token")
+                if refresh_token:
+                    user_id = get_refresh_token_payload(refresh_token).get("sub")
+            except Exception:
+                pass
+
+        if user_id:
+            try:
+                clear_login_caches(int(user_id))
+            except Exception:
+                pass
 
     def captcha(self, width: int = 150, height: int = 80, color: str = "#333333") -> CaptchaResponse:
         # 参数范围校验，防止恶意输入
@@ -824,10 +859,10 @@ class AuthService:
 
     @staticmethod
     def _increase_counter(key: str, ttl_seconds: int) -> int:
-        current = cache_get(key)
-        next_value = int(current or 0) + 1
-        cache_set(key, str(next_value), ttl_seconds)
-        return next_value
+        # 原子递增（Redis pipeline INCR+EXPIRE），避免并发 read-modify-write 丢失更新
+        # 导致锁定阈值被绕过。Redis 异常时返回 None（已降级内存计数），fail-open 不误锁。
+        value = cache_incr(key, ttl_seconds)
+        return value if value is not None else 0
 
     @staticmethod
     def _build_account_fail_key(account: str) -> str:
