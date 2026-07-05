@@ -271,14 +271,18 @@ class AuthService:
                 # Token解析失败不影响登出流程
                 pass
 
-        self._record_login_log(
-            request=request,
-            user_id=user.id,
-            name=user.full_name,
-            account=user.username,
-            login_type="logout",
-            status=1,
-        )
+        # 登录日志写入失败不应阻塞登出与缓存清理（避免 comm.logout 因日志 500 失败）
+        try:
+            self._record_login_log(
+                request=request,
+                user_id=user.id,
+                name=user.full_name,
+                account=user.username,
+                login_type="logout",
+                status=1,
+            )
+        except Exception:
+            pass
         clear_login_caches(user.id)
 
     def captcha(self, width: int = 150, height: int = 80, color: str = "#333333") -> CaptchaResponse:

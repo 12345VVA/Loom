@@ -99,7 +99,7 @@ async function onCommand(name: string) {
 				.then(async () => {
 				// 后端登出接口失败不应阻塞前端退出（token 失效等会 401），用 finally 兜底
 				try {
-					await service.base.comm.logout();
+					await service.base.open.logout();
 				} finally {
 					user.logout();
 				}
