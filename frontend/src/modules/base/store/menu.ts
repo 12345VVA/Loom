@@ -195,6 +195,15 @@ export const useMenuStore = defineStore('menu', function () {
 		return path;
 	}
 
+	// Pinia setup syntax 默认不提供 $reset，手动实现以支持登出时的状态重置
+	function $reset() {
+		all.value = [];
+		routes.value = [];
+		group.value = [];
+		list.value = [];
+		perms.value = [];
+	}
+
 	return {
 		all,
 		routes,
@@ -206,6 +215,7 @@ export const useMenuStore = defineStore('menu', function () {
 		setMenu,
 		setRoutes,
 		setGroup,
-		getPath
+		getPath,
+		$reset
 	};
 });

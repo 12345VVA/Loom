@@ -67,17 +67,19 @@ export const useUserStore = defineStore('user', function () {
 
 	// 退出
 	async function logout() {
-		// 重置菜单与进程 store，避免登出后残留上一个用户的菜单/标签数据
-		const menu = useMenuStore();
-		const process = useProcessStore();
-		menu.$reset();
-		process.$reset();
-
-		// 清除菜单相关的本地存储，防止刷新后恢复旧数据
+		// 先清理登录态，确保退出不被后续步骤阻断
+		clear();
 		storage.remove('base.menuGroup');
 		storage.remove('base.menuPerms');
 
-		clear();
+		// 重置菜单/进程 store，避免残留上一个用户的数据
+		try {
+			useMenuStore().$reset();
+			useProcessStore().$reset();
+		} catch {
+			// $reset 已手动实现，此处仅防御未来变更
+		}
+
 		router.clear();
 		router.push('/login');
 	}

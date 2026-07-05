@@ -62,6 +62,11 @@ export const useProcessStore = defineStore('process', function () {
 		}
 	}
 
+	// Pinia setup syntax 默认不提供 $reset，手动实现以支持登出时的状态重置
+	function $reset() {
+		list.value = [];
+	}
+
 	return {
 		list,
 		add,
@@ -69,6 +74,7 @@ export const useProcessStore = defineStore('process', function () {
 		close,
 		set,
 		clear,
-		setTitle
+		setTitle,
+		$reset
 	};
 });
