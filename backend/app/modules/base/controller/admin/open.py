@@ -24,9 +24,12 @@ from app.modules.base.service.security_service import get_current_user
 # - HttpOnly：禁止 JS 读取，防 XSS 凭证失窃
 # - Secure：生产环境强制启用（仅 HTTPS 传输）
 # - SameSite=Lax：防 CSRF 跨站提交
-# - Path=/admin/base/open：仅开放接口路径携带，缩小 cookie 暴露面
+# - Path=/：前端经 Vite 代理（dev=/dev、prod=/prod 前缀）请求，浏览器实际请求路径
+#   带前缀（如 /dev/admin/base/open/refreshToken）；若 cookie path 限定到
+#   /admin/base/open，会因前缀不匹配而无法携带，刷新续期必然 401。cookie 为
+#   HttpOnly 且仅 open 接口读取使用，放宽到根路径的暴露面风险可控。
 REFRESH_TOKEN_COOKIE_NAME = "refresh_token"
-REFRESH_TOKEN_COOKIE_PATH = "/admin/base/open"
+REFRESH_TOKEN_COOKIE_PATH = "/"
 
 
 def _set_refresh_token_cookie(response: Response, refresh_token: str) -> None:

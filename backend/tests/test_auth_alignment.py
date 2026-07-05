@@ -88,7 +88,8 @@ class AuthAlignmentTests(unittest.TestCase):
         set_cookie = login_res.headers.get("set-cookie", "")
         self.assertIn("refresh_token=", set_cookie)
         self.assertIn("HttpOnly", set_cookie)
-        self.assertIn("Path=/admin/base/open", set_cookie)
+        # cookie path 放宽到 /，避免被前端代理前缀（/dev、/prod）阻断携带
+        self.assertIn("Path=/;", set_cookie)
 
         person_res = self.client.get(
             "/admin/base/comm/person",
