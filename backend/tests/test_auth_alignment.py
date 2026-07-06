@@ -23,6 +23,16 @@ class AuthAlignmentTests(unittest.TestCase):
     def tearDown(self):
         self.client.__exit__(None, None, None)
 
+    def _captcha_target_x(self, captcha_data: dict) -> int:
+        """图像滑块不再返回答案，从服务端缓存读取 target_x 供测试构造合法轨迹。"""
+        from app.modules.base.service.auth_service import AuthService
+        from app.modules.base.service.cache_service import cache_get
+
+        captcha_id = captcha_data["captchaId"]
+        cached = cache_get(AuthService._build_captcha_cache_key(captcha_id))
+        self.assertIsNotNone(cached, "验证码缓存应存在")
+        return int(json.loads(cached)["target_x"])
+
     def _slider_verify_code(
         self,
         captcha_data: dict,
@@ -32,8 +42,7 @@ class AuthAlignmentTests(unittest.TestCase):
         empty_track: bool = False,
         track: list[dict] | None = None,
     ) -> str:
-        challenge = captcha_data["data"]
-        target_x = int(challenge["targetX"]) + x_offset
+        target_x = self._captcha_target_x(captcha_data) + x_offset
 
         if track is None and not empty_track:
             track = [{"x": round(target_x * step / 6, 2), "t": step * 120} for step in range(1, 7)]
@@ -53,8 +62,11 @@ class AuthAlignmentTests(unittest.TestCase):
         self.assertEqual(captcha_res.status_code, 200)
         captcha_data = captcha_res.json()["data"]
         self.assertEqual(captcha_data["data"]["type"], "slider")
-        self.assertIn("targetX", captcha_data["data"])
-        self.assertIn("tolerance", captcha_data["data"])
+        # 图像滑块：返回 bg/slider 图片，不再回传答案 targetX
+        self.assertIn("bg", captcha_data["data"])
+        self.assertIn("slider", captcha_data["data"])
+        self.assertIn("sliderY", captcha_data["data"])
+        self.assertNotIn("targetX", captcha_data["data"])
         return captcha_data
 
     def _login_with_captcha(self, captcha_data: dict, verify_code: str):
@@ -219,7 +231,7 @@ class AuthAlignmentTests(unittest.TestCase):
 
     def test_slider_captcha_allows_small_pointer_jitter(self):
         captcha_data = self._captcha_challenge()
-        target_x = int(captcha_data["data"]["targetX"])
+        target_x = self._captcha_target_x(captcha_data)
         jitter_track = [
             {"x": target_x * 0.18, "t": 120},
             {"x": target_x * 0.34, "t": 240},
@@ -237,7 +249,7 @@ class AuthAlignmentTests(unittest.TestCase):
 
     def test_slider_captcha_rejects_large_backtrack(self):
         captcha_data = self._captcha_challenge()
-        target_x = int(captcha_data["data"]["targetX"])
+        target_x = self._captcha_target_x(captcha_data)
         backtrack_track = [
             {"x": target_x * 0.2, "t": 120},
             {"x": target_x * 0.65, "t": 240},

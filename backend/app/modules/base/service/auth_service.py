@@ -327,6 +327,67 @@ class AuthService:
             except Exception:
                 pass
 
+    @staticmethod
+    def _random_light_color(rng) -> tuple[int, int, int]:
+        """浅色随机背景色（验证码底色，配合噪声线条防 OCR 轻易定位缺口）。"""
+        return (rng.randint(180, 230), rng.randint(180, 230), rng.randint(180, 230))
+
+    @staticmethod
+    def _image_to_data_url(img) -> str:
+        """PIL 图像转 data URL（PNG base64）。"""
+        import base64
+        import io
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    def _render_captcha_images(
+        self, width: int, height: int, target_x: int, target_y: int, puzzle_size: int
+    ):
+        """生成带缺口的背景图与滑块拼图块。缺口位置即答案，但不以数值返回前端。"""
+        import random
+
+        from PIL import Image, ImageDraw
+
+        rng = random.Random()
+        # 背景：浅色 + 随机噪声线条，避免纯色下缺口过于醒目
+        bg = Image.new("RGB", (width, height), self._random_light_color(rng))
+        draw = ImageDraw.Draw(bg)
+        for _ in range(60):
+            draw.line(
+                [
+                    rng.randint(0, width),
+                    rng.randint(0, height),
+                    rng.randint(0, width),
+                    rng.randint(0, height),
+                ],
+                fill=self._random_light_color(rng),
+                width=1,
+            )
+        # 缺口：半透明暗块 + 白色描边，供用户视觉识别对齐
+        overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        odraw = ImageDraw.Draw(overlay)
+        odraw.rounded_rectangle(
+            [target_x, target_y, target_x + puzzle_size, target_y + puzzle_size],
+            radius=8,
+            fill=(0, 0, 0, 90),
+            outline=(255, 255, 255, 200),
+            width=2,
+        )
+        bg = Image.alpha_composite(bg.convert("RGBA"), overlay).convert("RGB")
+        # 滑块拼图块：浅色圆角块 + 深色描边
+        slider = Image.new("RGBA", (puzzle_size, puzzle_size), (0, 0, 0, 0))
+        sdraw = ImageDraw.Draw(slider)
+        sdraw.rounded_rectangle(
+            [0, 0, puzzle_size, puzzle_size],
+            radius=8,
+            fill=(255, 255, 255, 235),
+            outline=(70, 70, 70, 255),
+            width=2,
+        )
+        return bg, slider
+
     def captcha(self, width: int = 150, height: int = 80, color: str = "#333333") -> CaptchaResponse:
         # 参数范围校验，防止恶意输入
         try:
@@ -350,12 +411,21 @@ class AuthService:
                 detail="color 必须为 #RRGGBB 格式的十六进制颜色",
             )
 
-        track_width = max(240, min(width_int, 360))
-        handle_width = 42
         tolerance = settings.CAPTCHA_SLIDER_TOLERANCE
-        min_target = 56
-        max_target = track_width - handle_width - 16
-        target_x = min_target + secrets.randbelow(max_target - min_target + 1)
+        puzzle_size = 44
+        max_target = width_int - puzzle_size - 8
+        if max_target <= 8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"验证码宽度需大于 {puzzle_size + 16}",
+            )
+        target_x = 8 + secrets.randbelow(max_target - 8 + 1)
+        target_y = (height_int - puzzle_size) // 2
+
+        bg_image, slider_image = self._render_captcha_images(
+            width_int, height_int, target_x, target_y, puzzle_size
+        )
+
         captcha_id = uuid4().hex
         cache_set(
             self._build_captcha_cache_key(captcha_id),
@@ -370,16 +440,19 @@ class AuthService:
             ),
             settings.CAPTCHA_EXPIRE_SECONDS,
         )
+        # 不返回 targetX（答案）：仅返回带缺口的背景图与滑块图，前端视觉对齐
         return CaptchaResponse(
             captcha_id=captcha_id,
             data={
                 "type": "slider",
-                "trackWidth": track_width,
-                "handleWidth": handle_width,
-                "targetX": target_x,
+                "bg": self._image_to_data_url(bg_image),
+                "slider": self._image_to_data_url(slider_image),
+                "sliderWidth": puzzle_size,
+                "sliderY": target_y,
+                "trackWidth": width_int,
                 "tolerance": tolerance,
                 "expireSeconds": settings.CAPTCHA_EXPIRE_SECONDS,
-                "label": "拖动滑块完成验证",
+                "label": "拖动滑块对齐缺口完成验证",
             },
         )
 
