@@ -30,6 +30,13 @@ export default (): ModuleConfig => {
 					label: t('个人中心')
 				},
 				component: () => import('./views/info.vue')
+			},
+			{
+				path: '/my/sessions',
+				meta: {
+					label: t('设备管理')
+				},
+				component: () => import('./views/session.vue')
 			}
 		],
 		pages: [

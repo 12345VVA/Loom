@@ -5,6 +5,7 @@ Base 模块管理端鉴权服务
 from __future__ import annotations
 
 import hashlib
+import time
 from fnmatch import fnmatch
 from typing import Any
 
@@ -56,8 +57,14 @@ def build_token_version_cache_key(user_id: int) -> str:
     return f"admin:tokenVersion:{user_id}"
 
 
-def build_session_tokens_cache_key(user_id: int) -> str:
-    return f"admin:sessions:{user_id}"
+def build_session_key(user_id: int, sid: str) -> str:
+    """单会话记录键：每会话独立 TTL，支持多设备并行登录。"""
+    return f"admin:sess:{user_id}:{sid}"
+
+
+def build_session_index_key(user_id: int) -> str:
+    """用户会话索引（sid 列表，供列表查询与批量清理）。"""
+    return f"admin:sessidx:{user_id}"
 
 
 def get_user_token_version(user_id: int) -> int:
@@ -231,7 +238,6 @@ def prime_login_caches(session: Session, user: User, access_token: str) -> list[
     )
     if user.department_id is not None:
         cache_set(build_department_cache_key(user.id), str(user.department_id), get_refresh_token_ttl())
-    register_user_session(user.id, access_token)
     return permissions
 
 
@@ -240,6 +246,8 @@ def build_refresh_token_cache_key(user_id: int) -> str:
 
 
 def clear_login_caches(user_id: int) -> None:
+    # 仅清理权限/登录相关缓存；会话记录(admin:sess:*)独立管理，不在此清——
+    # 角色/菜单/部门变更只应刷新权限缓存，不应把用户设备踢下线。
     cache_delete(
         build_token_cache_key(user_id),
         build_refresh_token_cache_key(user_id),
@@ -248,7 +256,6 @@ def clear_login_caches(user_id: int) -> None:
         build_permission_paths_cache_key(user_id),
         build_password_version_cache_key(user_id),
         build_department_cache_key(user_id),
-        build_session_tokens_cache_key(user_id),
     )
 
 
@@ -324,9 +331,6 @@ def get_user_from_access_token(session: Session, token: str) -> tuple[User, dict
     if token_version < current_token_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
 
-    if not is_user_session_allowed(user.id, token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号会话数量超过限制，请重新登录")
-
     cached_password_version = cache_get(build_password_version_cache_key(user.id))
     if cached_password_version is not None and str(password_version) != cached_password_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
@@ -392,31 +396,140 @@ def verify_download_token(token: str) -> dict:
     return payload
 
 
-def register_user_session(user_id: int, token: str) -> None:
+def register_session(
+    user_id: int,
+    sid: str,
+    refresh_token: str,
+    access_jti: str,
+    request: Request | None = None,
+) -> None:
+    """登录时注册一个新会话：写入会话记录 + 索引，并对超额会话按最老优先淘汰。
+
+    多设备并行登录的核心——每会话独立 key，互不覆盖。
+    """
+    now = int(time.time())
+    record = {
+        "sid": sid,
+        "ip": _request_ip(request),
+        "ua": _request_ua(request),
+        "created_at": now,
+        "last_active_at": now,
+        "refresh_hash": _refresh_token_hash(refresh_token),
+        "access_jti": access_jti,
+    }
+    cache_set_json(build_session_key(user_id, sid), record, get_refresh_token_ttl())
+    _session_index_add(user_id, sid)
+    _evict_overlimit_sessions(user_id)
+
+
+def refresh_session(user_id: int, sid: str, new_refresh_token: str, new_access_jti: str) -> None:
+    """refresh 轮转时更新会话记录（refresh_hash / access_jti / 活跃时间）并续期。"""
+    record = cache_get_json(build_session_key(user_id, sid))
+    if not record:
+        # 会话已被踢出/清理：不再复活，refresh 将由调用方的后续校验拒绝
+        return
+    record["refresh_hash"] = _refresh_token_hash(new_refresh_token)
+    record["access_jti"] = new_access_jti
+    record["last_active_at"] = int(time.time())
+    cache_set_json(build_session_key(user_id, sid), record, get_refresh_token_ttl())
+
+
+def get_session(user_id: int, sid: str) -> dict | None:
+    return cache_get_json(build_session_key(user_id, sid))
+
+
+def list_user_sessions(user_id: int) -> list[dict]:
+    """列出用户全部活跃会话，惰性清理已过期的索引项。"""
+    sids = _session_index_get(user_id)
+    sessions: list[dict] = []
+    alive: list[str] = []
+    for sid in sids:
+        record = cache_get_json(build_session_key(user_id, sid))
+        if record:
+            sessions.append(record)
+            alive.append(sid)
+    if len(alive) != len(sids):
+        _session_index_set(user_id, alive)
+    sessions.sort(key=lambda item: item.get("last_active_at", 0), reverse=True)
+    return sessions
+
+
+def delete_session(user_id: int, sid: str) -> dict | None:
+    """删除指定会话，返回被删记录（供调用方拉黑其 access_jti）。"""
+    record = cache_get_json(build_session_key(user_id, sid))
+    cache_delete(build_session_key(user_id, sid))
+    _session_index_remove(user_id, sid)
+    return record
+
+
+def clear_user_sessions(user_id: int) -> None:
+    """清空用户全部会话（改密码踢全部设备时使用）。"""
+    for sid in _session_index_get(user_id):
+        cache_delete(build_session_key(user_id, sid))
+    _session_index_set(user_id, [])
+
+
+def _evict_overlimit_sessions(user_id: int) -> None:
+    """超过 ADMIN_SESSION_MAX_CONCURRENT 时淘汰最老的会话（拉黑其 access token）。"""
+    from app.core.security import add_token_to_blacklist
+
     max_sessions = settings.ADMIN_SESSION_MAX_CONCURRENT
     if max_sessions <= 0:
         return
-    cache_key = build_session_tokens_cache_key(user_id)
-    sessions = [item for item in (cache_get_json(cache_key) or []) if isinstance(item, str)]
-    fingerprint = _token_fingerprint(token)
-    sessions = [item for item in sessions if item != fingerprint]
-    sessions.append(fingerprint)
-    sessions = sessions[-max_sessions:]
-    cache_set_json(cache_key, sessions, get_refresh_token_ttl())
+    sessions = list_user_sessions(user_id)
+    while len(sessions) > max_sessions:
+        oldest = min(sessions, key=lambda item: item.get("last_active_at", 0))
+        record = delete_session(user_id, oldest.get("sid", ""))
+        if record and record.get("access_jti"):
+            try:
+                add_token_to_blacklist(record["access_jti"], int(time.time()) + get_access_token_ttl())
+            except Exception:
+                pass
+        sessions = [s for s in sessions if s.get("sid") != oldest.get("sid")]
 
 
-def is_user_session_allowed(user_id: int, token: str) -> bool:
-    max_sessions = settings.ADMIN_SESSION_MAX_CONCURRENT
-    if max_sessions <= 0:
-        return True
-    sessions = cache_get_json(build_session_tokens_cache_key(user_id))
-    if not sessions:
-        return True
-    return _token_fingerprint(token) in set(sessions)
-
-
-def _token_fingerprint(token: str) -> str:
+def _refresh_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _request_ip(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    try:
+        from app.framework.request_utils import get_client_ip
+
+        return get_client_ip(request) or None
+    except Exception:
+        return None
+
+
+def _request_ua(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    try:
+        return request.headers.get("user-agent")
+    except Exception:
+        return None
+
+
+def _session_index_get(user_id: int) -> list[str]:
+    return list(cache_get_json(build_session_index_key(user_id)) or [])
+
+
+def _session_index_set(user_id: int, sids: list[str]) -> None:
+    cache_set_json(build_session_index_key(user_id), sids, get_refresh_token_ttl())
+
+
+def _session_index_add(user_id: int, sid: str) -> None:
+    sids = _session_index_get(user_id)
+    if sid not in sids:
+        sids.append(sid)
+    _session_index_set(user_id, sids)
+
+
+def _session_index_remove(user_id: int, sid: str) -> None:
+    sids = [item for item in _session_index_get(user_id) if item != sid]
+    _session_index_set(user_id, sids)
 
 
 def get_cached_user_permissions(session: Session, user: User) -> list[str]:

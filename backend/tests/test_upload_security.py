@@ -180,7 +180,7 @@ class DownloadTokenTests(unittest.TestCase):
 
     def test_download_token_rejects_access_token(self):
         """access token 不能用于下载鉴权（type 不匹配）。"""
-        access_token = create_access_token(self._fake_user())
+        access_token = create_access_token(self._fake_user(), "test-sid")
         session = MagicMock()
         with self.assertRaises(HTTPException) as ctx:
             get_user_from_download_token(session, access_token)

@@ -16,8 +16,9 @@ from app.framework.middleware.admin_csrf import AdminCsrfOriginMiddleware  # noq
 from app.framework.middleware.response_envelope import ResponseEnvelopeMiddleware  # noqa: E402
 from app.framework.storage import LocalStorageProvider  # noqa: E402
 from app.modules.base.service.authority_service import (  # noqa: E402
-    is_user_session_allowed,
-    register_user_session,
+    delete_session,
+    list_user_sessions,
+    register_session,
 )
 from app.modules.base.service.cache_service import cache_delete  # noqa: E402
 from app.modules.loader import _handle_module_error  # noqa: E402
@@ -116,18 +117,23 @@ class FrameworkPatchListTests(unittest.TestCase):
             settings.PASSWORD_PBKDF2_ITERATIONS = old_iterations
 
     def test_session_concurrency_policy(self):
+        """ADMIN_SESSION_MAX_CONCURRENT 限流：超额时淘汰最老会话。"""
         old_value = settings.ADMIN_SESSION_MAX_CONCURRENT
         settings.ADMIN_SESSION_MAX_CONCURRENT = 1
         user_id = 987654
-        cache_delete(f"admin:sessions:{user_id}")
+        for item in list_user_sessions(user_id):
+            delete_session(user_id, item["sid"])
         try:
-            register_user_session(user_id, "token-a")
-            self.assertTrue(is_user_session_allowed(user_id, "token-a"))
-            register_user_session(user_id, "token-b")
-            self.assertFalse(is_user_session_allowed(user_id, "token-a"))
-            self.assertTrue(is_user_session_allowed(user_id, "token-b"))
+            register_session(user_id, "sid-a", "refresh-a", "jti-a")
+            self.assertEqual(len(list_user_sessions(user_id)), 1)
+            # 第二个会话超额，应淘汰最老的 sid-a
+            register_session(user_id, "sid-b", "refresh-b", "jti-b")
+            sessions = list_user_sessions(user_id)
+            self.assertEqual(len(sessions), 1)
+            self.assertEqual(sessions[0]["sid"], "sid-b")
         finally:
-            cache_delete(f"admin:sessions:{user_id}")
+            for item in list_user_sessions(user_id):
+                delete_session(user_id, item["sid"])
             settings.ADMIN_SESSION_MAX_CONCURRENT = old_value
 
     def test_module_loader_strict_mode_switch(self):

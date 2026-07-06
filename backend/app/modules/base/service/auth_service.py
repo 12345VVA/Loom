@@ -50,9 +50,15 @@ from app.modules.base.service.authority_service import (
     build_refresh_token_cache_key,
     clear_login_caches,
     clear_login_caches_for_users,
+    clear_user_sessions,
+    delete_session,
     get_refresh_token_ttl,
+    get_session,
     get_user_token_version,
+    list_user_sessions,
     prime_login_caches,
+    refresh_session,
+    register_session,
 )
 from app.modules.base.service.cache_service import cache_delete, cache_get, cache_get_del, cache_incr, cache_set
 from app.modules.base.service.security_service import (
@@ -176,10 +182,12 @@ class AuthService:
             # 首次登录或从未修改过密码
             force_password_change = True
 
-        access_token = create_access_token(user)
-        refresh_token = create_refresh_token(user)
+        # 多设备会话：每次登录生成独立 sid，签发带 sid 的 token 并注册会话记录（含设备/IP）
+        sid = uuid4().hex
+        access_token = create_access_token(user, sid)
+        refresh_token = create_refresh_token(user, sid)
         permissions = prime_login_caches(self.session, user, access_token)
-        cache_set(build_refresh_token_cache_key(user.id), refresh_token, get_refresh_token_ttl())
+        register_session(user.id, sid, refresh_token, decode_token(access_token).get("jti"), request)
         self._clear_login_failure(payload.username, login_ip)
         self._record_login_log(
             request=request,
@@ -251,21 +259,27 @@ class AuthService:
         if token_version < get_user_token_version(user.id):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
 
-        # 服务端缓存校验：refresh_token 必须等于登录时缓存值
-        # 防止 logout 后旧 refresh_token 仍可换新 access token
-        cached_refresh_token = cache_get(build_refresh_token_cache_key(user.id))
-        if cached_refresh_token is None:
+        # 会话校验：refresh_token 须对应一个仍存活的本设备会话（logout/被踢/被挤掉后删除即拒）。
+        # 多设备各自独立会话、互不覆盖——这是多设备并行登录的关键。
+        sid = token_payload.get("sid")
+        if not sid:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
-        # 恒定时间比较，避免按字节前缀差异的定时侧信道泄露 refresh_token
-        if not hmac.compare_digest(cached_refresh_token, refresh_token_value):
+        session_record = get_session(user.id, sid)
+        if not session_record:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
+        # 恒定时间比较 refresh_hash，防止按字节前缀差异的定时侧信道泄露 refresh_token
+        if not hmac.compare_digest(
+            str(session_record.get("refresh_hash")),
+            hashlib.sha256(refresh_token_value.encode("utf-8")).hexdigest(),
+        ):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
 
         roles = get_user_roles(self.session, user.id)
         user._token_role_ids = [role.id for role in roles if role.id is not None]
-        access_token = create_access_token(user)
-        refresh_token = create_refresh_token(user)
+        access_token = create_access_token(user, sid)
+        refresh_token = create_refresh_token(user, sid)
         permissions = prime_login_caches(self.session, user, access_token)
-        cache_set(build_refresh_token_cache_key(user.id), refresh_token, get_refresh_token_ttl())
+        refresh_session(user.id, sid, refresh_token, decode_token(access_token).get("jti"))
         return self._finalize_login_response(
             user=user,
             roles=roles,
@@ -275,7 +289,13 @@ class AuthService:
         )
 
     def logout(self, user: User, request: Request | None = None) -> None:
-        # 将当前Token加入黑名单
+        """退出当前设备：仅拉黑当前 access token + 删除当前会话，不影响其他设备。
+
+        多设备会话模型下，logout 不再递增 token_version（那会踢全部设备），
+        也不再 clear_login_caches（那会清权限缓存、影响其他设备）。
+        """
+        sid = None
+        # 拉黑当前 access token 并取出 sid（用于精确删除当前会话）
         if request:
             try:
                 from app.modules.base.service.authority_service import extract_token
@@ -286,11 +306,19 @@ class AuthService:
                 exp = payload.get("exp")
                 if jti and exp:
                     add_token_to_blacklist(jti, exp)
+                sid = payload.get("sid")
             except Exception:
-                # Token解析失败不影响登出流程
+                # Token 解析失败不影响后续清理
                 pass
 
-        # 登录日志写入失败不应阻塞登出与缓存清理（避免日志异常导致登出接口 500 失败）
+        # 仅删除当前会话记录：其他设备的会话与 refresh 不受影响
+        if sid:
+            try:
+                delete_session(user.id, sid)
+            except Exception:
+                pass
+
+        # 登录日志写入失败不应阻塞登出流程
         try:
             self._record_login_log(
                 request=request,
@@ -302,21 +330,15 @@ class AuthService:
             )
         except Exception:
             pass
-        # 递增 token_version 使该用户所有已签发 token 立即失效（踢出全部设备），
-        # 避免默认 ADMIN_SESSION_MAX_CONCURRENT=0 下其他设备 access token 在自然过期前继续可用
-        try:
-            add_user_all_tokens_to_blacklist(user.id)
-        except Exception:
-            pass
-        clear_login_caches(user.id)
 
     def revoke_by_cookie(self, request: Request) -> None:
-        """best-effort 登出清理：仅凭 access token / refresh cookie 提取 user_id 清缓存。
-        用于被动登出（access token 可能已失效）场景，配合 _clear_refresh_token_cookie 确保
-        refresh cookie 与服务端缓存被清除，避免共享设备残留 cookie 被续期冒充。
+        """best-effort 登出清理（被动登出）：仅凭 access token / refresh cookie
+        删除当前会话记录。用于 access token 可能已失效场景，配合 _clear_refresh_token_cookie
+        确保共享设备残留 cookie 不能被续期冒充。
         """
         user_id = None
-        # access token 进黑名单并尝试取 user_id（token 可能已失效，全部 try 忽略）
+        sid = None
+        # access token 进黑名单并尝试取 user_id / sid（token 可能已失效，全部 try 忽略）
         try:
             from app.modules.base.service.authority_service import extract_token
 
@@ -327,23 +349,64 @@ class AuthService:
             if jti and exp:
                 add_token_to_blacklist(jti, exp)
             user_id = payload.get("sub") or payload.get("userId")
+            sid = payload.get("sid")
         except Exception:
             pass
 
-        # access token 失效时，从 refresh cookie 提取 user_id
-        if not user_id:
+        # access token 失效时，从 refresh cookie 提取 user_id / sid
+        if not user_id or not sid:
             try:
                 refresh_token = request.cookies.get("refresh_token")
                 if refresh_token:
-                    user_id = get_refresh_token_payload(refresh_token).get("sub")
+                    refresh_payload = get_refresh_token_payload(refresh_token)
+                    user_id = user_id or refresh_payload.get("sub")
+                    sid = sid or refresh_payload.get("sid")
             except Exception:
                 pass
 
-        if user_id:
+        if user_id and sid:
             try:
-                clear_login_caches(int(user_id))
+                delete_session(int(user_id), sid)
             except Exception:
                 pass
+
+    def list_sessions(self, user: User, request: Request | None = None) -> list[dict]:
+        """列出当前用户的全部活跃会话，标记当前请求所属会话为 current。"""
+        current_sid = None
+        if request:
+            try:
+                from app.modules.base.service.authority_service import extract_token
+
+                current_sid = decode_token(extract_token(request)).get("sid")
+            except Exception:
+                pass
+        sessions = list_user_sessions(user.id)
+        # 仅返回展示字段（过滤 refresh_hash/access_jti 等敏感项），字段转 camelCase 对齐前端
+        return [
+            {
+                "sid": item.get("sid"),
+                "ip": item.get("ip"),
+                "userAgent": item.get("ua"),
+                "createdAt": item.get("created_at"),
+                "lastActiveAt": item.get("last_active_at"),
+                "current": item.get("sid") == current_sid,
+            }
+            for item in sessions
+        ]
+
+    def revoke_session(self, user: User, sid: str) -> None:
+        """踢出当前用户的指定会话（防越权：sid 必须属于本人）。"""
+        record = get_session(user.id, sid)
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在或已失效")
+        # 拉黑该会话当前 access token，使其立即失效（access 校验靠 jti 黑名单）
+        access_jti = record.get("access_jti")
+        if access_jti:
+            try:
+                add_token_to_blacklist(access_jti, int(time.time()) + settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+            except Exception:
+                pass
+        delete_session(user.id, sid)
 
     @staticmethod
     def _random_light_color(rng) -> tuple[int, int, int]:
@@ -605,6 +668,9 @@ class AuthService:
         self.session.commit()
         self.session.refresh(target)
         clear_login_caches(target.id)
+        # 改密码踢出全部设备：清空该用户所有会话记录
+        # （旧 token 的 password_version 已不匹配，access/refresh 都会被拒；清 session 保持整洁）
+        clear_user_sessions(target.id)
         return {"success": True}
 
     def permmenu(self, user: User) -> dict:

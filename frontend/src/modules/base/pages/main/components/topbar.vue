@@ -46,6 +46,10 @@
 							<cl-svg name="my" />
 							<span>{{ t('个人中心') }}</span>
 						</el-dropdown-item>
+						<el-dropdown-item command="session">
+							<cl-svg name="my" />
+							<span>{{ t('设备管理') }}</span>
+						</el-dropdown-item>
 						<el-dropdown-item v-if="canViewNotification" command="notification">
 							<cl-svg name="icon-notification" />
 							<span>{{ t('我的通知') }}</span>
@@ -88,6 +92,9 @@ async function onCommand(name: string) {
 	switch (name) {
 		case 'my':
 			router.push('/my/info');
+			break;
+		case 'session':
+			router.push('/my/sessions');
 			break;
 		case 'notification':
 			router.push('/my/notification');

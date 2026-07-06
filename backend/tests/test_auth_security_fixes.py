@@ -175,8 +175,8 @@ class RefreshTokenCacheTests(unittest.TestCase):
         login_data = self._do_login()
         refresh_token = login_data["refreshToken"]
 
-        # 模拟缓存失效或被外部清除（如管理员强制下线）
-        cache_delete_pattern("admin:token:refresh:*")
+        # 模拟会话被清除（管理员强制下线/踢出）：refresh 依赖会话记录，会话删除即拒
+        cache_delete_pattern("admin:sess:*")
 
         refresh_res = self.client.post(
             "/admin/base/open/refreshToken",
