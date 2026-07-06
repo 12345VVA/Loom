@@ -4,6 +4,7 @@ import 'nprogress/nprogress.css';
 import { endsWith } from 'lodash-es';
 import { ElMessage } from 'element-plus';
 import { storage } from '/@/cool/utils';
+import { getDeviceId } from '/@/cool/utils/device';
 import { useBase } from '/$/base';
 import { router } from '../router';
 import { config, isDev } from '/@/config';
@@ -72,6 +73,9 @@ request.interceptors.request.use(
 		if (req.headers['language'] !== null) {
 			req.headers['language'] = config.i18n.locale;
 		}
+
+		// 注入持久设备标识，供后端"设备管理"按设备聚合同一浏览器的多次登录
+		req.headers['X-Device-Id'] = getDeviceId();
 
 		// 验证 token
 		if (user.token) {

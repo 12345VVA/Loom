@@ -410,6 +410,7 @@ def register_session(
     now = int(time.time())
     record = {
         "sid": sid,
+        "device_id": _extract_device_id(request),
         "ip": _request_ip(request),
         "ua": _request_ua(request),
         "created_at": now,
@@ -508,6 +509,22 @@ def _request_ua(request: Request | None) -> str | None:
         return None
     try:
         return request.headers.get("user-agent")
+    except Exception:
+        return None
+
+
+def _extract_device_id(request: Request | None) -> str | None:
+    """提取设备标识：优先用前端持久化的 X-Device-Id，兜底用 UA+IP+语言指纹。"""
+    if request is None:
+        return None
+    try:
+        device_id = request.headers.get("x-device-id") or request.headers.get("device-id")
+        if device_id:
+            return device_id
+        ua = request.headers.get("user-agent", "") or ""
+        ip = _request_ip(request) or ""
+        lang = request.headers.get("accept-language", "") or ""
+        return hashlib.sha256(f"{ua}|{ip}|{lang}".encode("utf-8")).hexdigest()[:32]
     except Exception:
         return None
 

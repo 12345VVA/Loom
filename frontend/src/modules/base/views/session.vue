@@ -9,7 +9,7 @@
 			</template>
 
 			<el-text type="info" class="session-page__tip">
-				{{ t('以下是您的账号当前登录的设备/会话，如发现可疑会话请立即踢出。踢出后该设备将立即下线。') }}
+				{{ t('以下是您的账号当前登录的设备。同一浏览器的多次登录会聚合为一条设备记录；踢出设备会使其全部会话立即下线。') }}
 			</el-text>
 
 			<el-table v-loading="loading" :data="list" style="width: 100%; margin-top: 12px">
@@ -20,6 +20,9 @@
 				</el-table-column>
 				<el-table-column :label="t('IP')" prop="ip" width="150">
 					<template #default="{ row }">{{ row.ip || '-' }}</template>
+				</el-table-column>
+				<el-table-column :label="t('会话数')" width="90">
+					<template #default="{ row }">{{ row.sessionCount || 1 }}</template>
 				</el-table-column>
 				<el-table-column :label="t('登录时间')" width="170">
 					<template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
@@ -38,7 +41,7 @@
 							v-if="!row.current"
 							type="danger"
 							text
-							:loading="revokingSid === row.sid"
+							:loading="revokingId === row.deviceId"
 							@click="onRevoke(row)"
 						>
 							{{ t('踢出') }}
@@ -69,7 +72,7 @@ const sessionService = (service.base as any).session;
 
 const list = ref<any[]>([]);
 const loading = ref(false);
-const revokingSid = ref('');
+const revokingId = ref('');
 
 function getOs(userAgent?: string) {
 	const ua = (userAgent || '').toLowerCase();
@@ -123,19 +126,19 @@ async function refresh() {
 
 async function onRevoke(row: any) {
 	try {
-		await ElMessageBox.confirm(t('确定踢出该设备吗？该设备将立即下线。'), t('提示'), {
+		await ElMessageBox.confirm(t('确定踢出该设备吗？该设备的全部会话将立即下线。'), t('提示'), {
 			type: 'warning'
 		});
 	} catch {
 		return;
 	}
-	revokingSid.value = row.sid;
+	revokingId.value = row.deviceId;
 	try {
-		await sessionService.revoke({ sid: row.sid });
+		await sessionService.revoke({ deviceId: row.deviceId });
 		ElMessage.success(t('已踢出'));
 		await refresh();
 	} finally {
-		revokingSid.value = '';
+		revokingId.value = '';
 	}
 }
 

@@ -371,42 +371,60 @@ class AuthService:
                 pass
 
     def list_sessions(self, user: User, request: Request | None = None) -> list[dict]:
-        """列出当前用户的全部活跃会话，标记当前请求所属会话为 current。"""
-        current_sid = None
-        if request:
-            try:
-                from app.modules.base.service.authority_service import extract_token
+        """列出当前用户的活跃设备（按 device_id 聚合同设备的多次登录），标记当前设备。"""
+        from app.modules.base.service.authority_service import _extract_device_id
 
-                current_sid = decode_token(extract_token(request)).get("sid")
-            except Exception:
-                pass
+        current_device_id = _extract_device_id(request) if request else None
         sessions = list_user_sessions(user.id)
-        # 仅返回展示字段（过滤 refresh_hash/access_jti 等敏感项），字段转 camelCase 对齐前端
-        return [
+        devices: dict[str, dict] = {}
+        for item in sessions:
+            device_id = item.get("device_id") or item.get("sid")
+            entry = devices.get(device_id)
+            if entry is None:
+                entry = {
+                    "deviceId": device_id,
+                    "ip": item.get("ip"),
+                    "userAgent": item.get("ua"),
+                    "createdAt": item.get("created_at") or 0,
+                    "lastActiveAt": item.get("last_active_at") or 0,
+                    "_count": 0,
+                }
+                devices[device_id] = entry
+            entry["_count"] += 1
+            # 聚合同设备的多次登录：取最早创建 + 最后活跃
+            if item.get("created_at") and item["created_at"] < entry["createdAt"]:
+                entry["createdAt"] = item["created_at"]
+            if item.get("last_active_at") and item["last_active_at"] > entry["lastActiveAt"]:
+                entry["lastActiveAt"] = item["last_active_at"]
+        result = [
             {
-                "sid": item.get("sid"),
-                "ip": item.get("ip"),
-                "userAgent": item.get("ua"),
-                "createdAt": item.get("created_at"),
-                "lastActiveAt": item.get("last_active_at"),
-                "current": item.get("sid") == current_sid,
+                "deviceId": entry["deviceId"],
+                "ip": entry["ip"],
+                "userAgent": entry["userAgent"],
+                "createdAt": entry["createdAt"],
+                "lastActiveAt": entry["lastActiveAt"],
+                "sessionCount": entry["_count"],
+                "current": entry["deviceId"] == current_device_id,
             }
-            for item in sessions
+            for entry in devices.values()
         ]
+        result.sort(key=lambda x: x.get("lastActiveAt", 0), reverse=True)
+        return result
 
-    def revoke_session(self, user: User, sid: str) -> None:
-        """踢出当前用户的指定会话（防越权：sid 必须属于本人）。"""
-        record = get_session(user.id, sid)
-        if not record:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在或已失效")
-        # 拉黑该会话当前 access token，使其立即失效（access 校验靠 jti 黑名单）
-        access_jti = record.get("access_jti")
-        if access_jti:
-            try:
-                add_token_to_blacklist(access_jti, int(time.time()) + settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
-            except Exception:
-                pass
-        delete_session(user.id, sid)
+    def revoke_device(self, user: User, device_id: str) -> None:
+        """踢出当前用户的指定设备（device_id 必须属于本人），会踢该设备全部会话。"""
+        sessions = list_user_sessions(user.id)
+        target = [item for item in sessions if (item.get("device_id") or item.get("sid")) == device_id]
+        if not target:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="设备不存在或已失效")
+        for item in target:
+            access_jti = item.get("access_jti")
+            if access_jti:
+                try:
+                    add_token_to_blacklist(access_jti, int(time.time()) + settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+                except Exception:
+                    pass
+            delete_session(user.id, item.get("sid", ""))
 
     @staticmethod
     def _random_light_color(rng) -> tuple[int, int, int]:

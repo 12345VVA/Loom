@@ -11,7 +11,7 @@ from sqlmodel import Session
 from app.core.database import get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
 from app.framework.router.route_meta import Get, Post
-from app.modules.base.model.auth import RevokeSessionRequest, User
+from app.modules.base.model.auth import RevokeDeviceRequest, User
 from app.modules.base.service.auth_service import AuthService
 from app.modules.base.service.security_service import get_current_user
 
@@ -27,26 +27,26 @@ from app.modules.base.service.security_service import get_current_user
     )
 )
 class BaseSessionController(BaseController):
-    @Get("/list", summary="当前用户会话列表", role_codes=("admin", "task_operator"))
+    @Get("/list", summary="当前用户设备列表", role_codes=("admin", "task_operator"))
     def list(
         self,
         request: Request,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ) -> dict:
-        """返回当前用户全部活跃会话，标记当前请求所属会话 current=True。"""
-        sessions = AuthService(session).list_sessions(current_user, request)
-        return {"list": sessions, "total": len(sessions)}
+        """返回当前用户全部活跃设备（按 device_id 聚合），标记当前设备 current=True。"""
+        devices = AuthService(session).list_sessions(current_user, request)
+        return {"list": devices, "total": len(devices)}
 
-    @Post("/revoke", summary="踢出指定会话", role_codes=("admin", "task_operator"))
+    @Post("/revoke", summary="踢出指定设备", role_codes=("admin", "task_operator"))
     def revoke(
         self,
-        payload: RevokeSessionRequest,
+        payload: RevokeDeviceRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ) -> dict:
-        """踢出当前用户的指定会话（sid 必须属于本人，防越权）。"""
-        AuthService(session).revoke_session(current_user, payload.sid)
+        """踢出当前用户的指定设备（deviceId 必须属于本人，会踢该设备全部会话）。"""
+        AuthService(session).revoke_device(current_user, payload.device_id)
         return {"success": True}
 
 

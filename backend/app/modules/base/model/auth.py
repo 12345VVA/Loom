@@ -139,12 +139,12 @@ class RefreshTokenRequest(BaseModel):
         return self.refresh_token
 
 
-class RevokeSessionRequest(BaseModel):
-    """踢出指定会话请求（设备管理页"踢出其他设备"）"""
+class RevokeDeviceRequest(BaseModel):
+    """踢出指定设备请求（设备管理页"踢出其他设备"，会踢该设备全部会话）"""
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    sid: str
+    device_id: str
 
 
 class UserPersonRead(BaseModel):

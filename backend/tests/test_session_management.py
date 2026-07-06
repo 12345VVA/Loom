@@ -53,8 +53,9 @@ class SessionManagementTests(unittest.TestCase):
         admin_id = _admin_user_id()
         if admin_id:
             clear_user_sessions(admin_id)
-        self.client_a = TestClient(app)
-        self.client_b = TestClient(app)
+        # 不同 X-Device-Id 模拟两台不同设备（后端按 device_id 聚合）
+        self.client_a = TestClient(app, headers={"X-Device-Id": "device-a"})
+        self.client_b = TestClient(app, headers={"X-Device-Id": "device-b"})
         self.client_a.__enter__()
         self.client_b.__enter__()
 
@@ -109,11 +110,11 @@ class SessionManagementTests(unittest.TestCase):
         ).json()["data"]["list"]
         self.assertEqual(len(sessions), 2)
         other = next(s for s in sessions if not s["current"])
-        # A 踢出 B
+        # A 踢出 B 的设备
         revoke = self.client_a.post(
             "/admin/base/session/revoke",
             headers={"Authorization": f"Bearer {a_token}"},
-            json={"sid": other["sid"]},
+            json={"deviceId": other["deviceId"]},
         )
         self.assertEqual(revoke.status_code, 200)
         # B 的 access 应立即失效（jti 进黑名单）
