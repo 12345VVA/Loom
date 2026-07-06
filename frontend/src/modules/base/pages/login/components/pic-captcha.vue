@@ -7,7 +7,12 @@
 		</div>
 
 		<template v-else>
-			<div class="captcha-track" ref="trackRef" @pointerdown="onTrackPointerDown">
+			<div
+			class="captcha-track"
+			ref="trackRef"
+			:style="{ width: trackWidth + 'px' }"
+			@pointerdown="onTrackPointerDown"
+		>
 				<img v-if="bgUrl" class="captcha-bg" :src="bgUrl" draggable="false" alt="captcha" />
 				<img
 					v-if="sliderUrl"

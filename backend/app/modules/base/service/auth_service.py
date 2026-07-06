@@ -365,25 +365,27 @@ class AuthService:
                 fill=self._random_light_color(rng),
                 width=1,
             )
-        # 缺口：半透明暗块 + 白色描边，供用户视觉识别对齐
+        # 滑块 = 裁剪缺口位置的背景内容（真正的拼图块），用户拖它对齐缺口
+        slider = bg.crop(
+            (target_x, target_y, target_x + puzzle_size, target_y + puzzle_size)
+        ).convert("RGBA")
+        # 在背景挖缺口：半透明暗块 + 描边，提示拼合位置
         overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         odraw = ImageDraw.Draw(overlay)
         odraw.rounded_rectangle(
             [target_x, target_y, target_x + puzzle_size, target_y + puzzle_size],
             radius=8,
-            fill=(0, 0, 0, 90),
-            outline=(255, 255, 255, 200),
+            fill=(0, 0, 0, 110),
+            outline=(255, 255, 255, 220),
             width=2,
         )
         bg = Image.alpha_composite(bg.convert("RGBA"), overlay).convert("RGB")
-        # 滑块拼图块：浅色圆角块 + 深色描边
-        slider = Image.new("RGBA", (puzzle_size, puzzle_size), (0, 0, 0, 0))
+        # 滑块加描边，拖动时与背景区分
         sdraw = ImageDraw.Draw(slider)
         sdraw.rounded_rectangle(
-            [0, 0, puzzle_size, puzzle_size],
+            [0, 0, puzzle_size - 1, puzzle_size - 1],
             radius=8,
-            fill=(255, 255, 255, 235),
-            outline=(70, 70, 70, 255),
+            outline=(40, 40, 40, 255),
             width=2,
         )
         return bg, slider
