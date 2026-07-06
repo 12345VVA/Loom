@@ -51,9 +51,10 @@ from app.modules.base.service.authority_service import (
     clear_login_caches,
     clear_login_caches_for_users,
     get_refresh_token_ttl,
+    get_user_token_version,
     prime_login_caches,
 )
-from app.modules.base.service.cache_service import cache_delete, cache_get, cache_incr, cache_set
+from app.modules.base.service.cache_service import cache_delete, cache_get, cache_get_del, cache_incr, cache_set
 from app.modules.base.service.security_service import (
     create_access_token,
     create_refresh_token,
@@ -63,6 +64,10 @@ from app.modules.base.service.security_service import (
 )
 from app.modules.base.service.sys_manage_service import SysLoginLogService
 from app.modules.loader import load_menu_manifest_items
+
+# 登录时序侧信道防护：用户不存在时也用此 dummy 哈希跑一次等价耗时的 PBKDF2，
+# 使"用户不存在"与"密码错误"的响应时间一致，防止攻击者据此枚举有效账号。
+_DUMMY_PASSWORD_HASH = hash_password("__invalid_dummy_account__")
 
 # captcha 参数校验范围
 CAPTCHA_WIDTH_MIN = 80
@@ -108,7 +113,12 @@ class AuthService:
         statement = select(User).where(User.username == payload.username)
         user = self.session.exec(statement).first()
 
-        if not user or not verify_password(payload.password, user.password_hash):
+        # 时序一致性：用户不存在时也用 dummy 哈希跑一次 PBKDF2，
+        # 避免"用户不存在"响应快于"密码错误"而泄露账号存在性
+        password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
+        password_ok = verify_password(payload.password, password_hash)
+
+        if not user or not password_ok:
             risk_hit = self._mark_login_failure(payload.username, login_ip)
             self._record_login_log(
                 request=request,
@@ -125,6 +135,8 @@ class AuthService:
             user.password_hash = hash_password(payload.password)
             self.session.add(user)
 
+        # 账号状态异常：对外统一为"用户名或密码错误"以避免泄露账号存在性与状态，
+        # 真实原因仅写入登录日志供管理员排查
         if not user.is_active:
             risk_hit = self._mark_login_failure(payload.username, login_ip)
             self._record_login_log(
@@ -136,7 +148,7 @@ class AuthService:
                 reason="用户已禁用",
                 risk_hit=risk_hit,
             )
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="用户已禁用")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
 
         roles = get_user_roles(self.session, user.id)
         if not roles:
@@ -150,7 +162,7 @@ class AuthService:
                 reason="当前用户未分配角色",
                 risk_hit=risk_hit,
             )
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前用户未分配角色")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
         user._token_role_ids = [role.id for role in roles if role.id is not None]
 
         user.last_login_at = datetime.now(timezone.utc)
@@ -233,6 +245,12 @@ class AuthService:
         if user.password_version != token_password_version:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效")
 
+        # token_version 校验：覆盖强制踢出/改密码场景（increment_user_token_version 后旧 token 失效）。
+        # 与 password_version 互补：password_version 仅在改密码时递增，token_version 在全设备登出时递增。
+        token_version = int(token_payload.get("token_version") or 0)
+        if token_version < get_user_token_version(user.id):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
+
         # 服务端缓存校验：refresh_token 必须等于登录时缓存值
         # 防止 logout 后旧 refresh_token 仍可换新 access token
         cached_refresh_token = cache_get(build_refresh_token_cache_key(user.id))
@@ -272,7 +290,7 @@ class AuthService:
                 # Token解析失败不影响登出流程
                 pass
 
-        # 登录日志写入失败不应阻塞登出与缓存清理（避免 comm.logout 因日志 500 失败）
+        # 登录日志写入失败不应阻塞登出与缓存清理（避免日志异常导致登出接口 500 失败）
         try:
             self._record_login_log(
                 request=request,
@@ -462,9 +480,8 @@ class AuthService:
         if not captcha_id or not verify_code:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不能为空")
         cache_key = self._build_captcha_cache_key(captcha_id)
-        cached = cache_get(cache_key)
-        # 防重放：立即删除验证码，确保只能使用一次
-        cache_delete(cache_key)
+        # 防重放：原子读取并删除（GETDEL），并发请求中仅一个能消费成功
+        cached = cache_get_del(cache_key)
         if not cached:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
         try:

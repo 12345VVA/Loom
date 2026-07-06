@@ -123,6 +123,26 @@ def cache_delete(*keys: str) -> None:
         logger.warning("Redis 删除失败 %s: %s", ",".join(keys), exc)
 
 
+def cache_get_del(key: str) -> str | None:
+    """原子地读取并删除缓存（Redis GETDEL），用于一次性消费的凭证。
+
+    验证码防重放场景下，原 get+delete 两步操作在并发请求间存在窗口：
+    两个请求可能都 get 到同一个验证码后再各自 delete，导致同一验证码被多次消费。
+    GETDEL 由 Redis 单线程保证原子，并发请求中仅一个能拿到值。
+
+    Redis 异常或降级到进程内缓存时退化为非原子的 get+delete（单进程下无竞争）。
+    """
+    client = get_redis_client()
+    if client is not None:
+        try:
+            return client.getdel(key)
+        except RedisError as exc:
+            logger.warning("Redis GETDEL 失败 %s: %s（退化为 get+delete）", key, exc)
+    value = cache_get(key)
+    cache_delete(key)
+    return value
+
+
 def cache_delete_pattern(pattern: str) -> int:
     """按模式删除缓存，Redis 使用 SCAN，内存降级使用 fnmatch。"""
     from fnmatch import fnmatch
