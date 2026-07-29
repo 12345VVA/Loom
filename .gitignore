@@ -59,6 +59,7 @@ deliverables/
 *~
 
 # AI Tools
+.trae/
 .trae/specs/
 
 # Docker
