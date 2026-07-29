@@ -49,6 +49,7 @@ logs/
 *.sqlite3
 
 # IDE
+.antigravity*
 .vscode/
 .workbuddy/
 deliverables/
