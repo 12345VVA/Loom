@@ -1,91 +1,309 @@
-# Loom - AI 内容生成平台
+# Loom — AI 内容生成 + Agent 工作流平台
 
-> Loom 一个很酷的全栈 AI 内容生成平台。基于 Vue 3 + FastAPI + Celery 深度定制，提供模块化后台管理、自动路由、权限、EPS 元数据和 AI 异步任务能力。
+> Loom 是一个面向企业的全栈 AI 内容生成与 Agent 工作流平台。它把多厂商 AI 模型统一运行时、可视化工作流编排、工作流评测与回归、企业级治理与计费整合到同一套后端，让业务方在画布上拼装 AI 流程，并通过统一的 Profile 抽象消费 12 家厂商的能力，无需关心底层差异。
 
-## 特点
+## 核心业务能力
 
-- **模块化架构**: 模块之间高度解耦，支持独立的中间件、路由、数据初始化及权限白名单。
-- **极速 CRUD**: 仅需定义模型与装饰器，一行代码即可实现全量管理后端接口。
-- **EPS 指令集**: 自动扫描并导出后端模型元数据，驱动前端表单、验证与表格的自动生成。
-- **企业级数据权限**: 内置 `DataScope` 机制，支持“本人、本部门、本部门及下属”等多种粒度的数据自动过滤。
-- **工作流编排 (Workflow)**: 可视化节点编排系统，支持动态变量传递与 LLM 节点执行，灵活构建 AI 工作流。
-- **AI 异步引擎**: 深度集成 Celery + Redis，完美支持大规模、高并发的长耗时 AI 生成任务。
-- **动态路由与权限**: 基于 JWT 与服务端二级缓存，支持动态菜单同步与精确到 Action 的权限校验。
+Loom 围绕以下九大业务域组织：
+
+- **AI 模型管理**：三层配置（Provider/Model/Profile）+ 12 家厂商适配器 + 6 种 AI 能力，密钥集中加密，Profile 抽象对业务屏蔽厂商差异。
+- **可视化工作流编排**：基于 LangGraph 的编译型引擎 + Vue Flow 画布 + 15 种已注册节点执行器 + 人工交互挂起/恢复 + Redis pub/sub 实时推送。
+- **工作流评测与回归**：测试集 / 测试用例 / 评估运行 / 回归对比四类对象，每用例跑真实 WorkflowInstance 全链路，三类评估器（rule_match / llm_judge / composite）。
+- **人工标注与 κ 校准**：独立 workflow_annotation 模块支撑标注队列与 judge 一致性校准，让 LLM judge 从「能用」走向「可信」。
+- **企业级 AI 治理与安全**：治理三维（范围 × 周期 × 模式）× 四维限流（请求/并发/Token/成本）+ 提示注入检测 + PII 脱敏 + 会话并发控制。
+- **可观测与计费**：调用日志统一以微美元计量成本，用量看板 + 操作/登录/安全三类审计日志 + `/health` + `/metrics`。
+- **通用定时任务调度**：task 模块作为通用系统定时调度器，cron / 间隔触发 + Celery Beat 扫描 + 反射执行，与业务解耦。
+- **通知系统**：站内 / 业务 / 任务通知 + 模板化发送。
+- **媒体 / 字典 / 权限**：本地与 S3 兼容文件存储、字典枚举管理、基于 JWT + 动态菜单的细粒度权限。
 
 ## 技术栈
 
 ### 前端
-- Vue 3 + TypeScript
-- Pinia (状态管理)
-- Vue Router
-- Axios
-- Vite
+- Vue 3 + TypeScript + Vite（开发服务器端口 9090）
+- Pinia + Vue Router + Axios
+- Element Plus + `@cool-vue/crud`（基于 cool-admin-vue 8.x）
+- **Vue Flow**（`@vue-flow/core`）可视化工作流编辑器
 
 ### 后端
-- FastAPI (异步 API 框架)
-- SQLModel (ORM)
-- Alembic (数据库迁移)
-- Celery (异步任务)
-- Redis (消息队列/缓存)
-- OpenAI SDK / Ollama (AI 模型)
+- FastAPI（异步 API 框架）
+- SQLModel + SQLAlchemy 2.0（ORM）+ Alembic（数据库迁移）
+- **Celery**（异步任务）+ **Celery Beat**（定时调度）
+- **Redis**（消息队列 / 缓存 / 工作流事件总线 pub/sub）
+- **LangGraph**（工作流编译与执行引擎）
+
+### AI 与编排
+- OpenAI SDK / Anthropic SDK / Google GenAI SDK / Volcengine SDK 等
+- LangGraph StateGraph + Checkpoint 持久化
+- 自研 SafeEvaluator（AST 白名单安全求值）
 
 ### 基础设施
 - Docker & Docker Compose
+- 本地 / S3-compatible 文件存储
+- 进程内缓存（开发降级）/ Redis 缓存（生产）
 
-## 项目结构
+## 工作流编排引擎
+
+Loom 的工作流引擎以 **LangGraph** 为执行内核，前端画布拓扑先经拓扑校验再编译为 StateGraph，运行期是编译后的图，比解释执行更可靠。完整设计见 [AI 与工作流系统架构说明](./docs/AI与工作流系统架构说明.md)。
+
+### LangGraph 编译链路
+
+`compiler.py` 把前端画布拓扑编译为 LangGraph StateGraph：
 
 ```
-Loom/
-├── frontend/           # Vue 3 前端
-│   ├── src/
-│   │   ├── cool/      # 框架核心、service、router、module bootstrap
-│   │   ├── modules/   # 业务模块页面、store、静态资源
-│   │   ├── plugins/   # 项目插件
-│   │   ├── config/    # 环境与代理配置
-│   │   └── main.ts    # 前端入口
-│   ├── packages/      # 本地源码包，如 @cool-vue/crud、vite-plugin
-│   ├── tests/         # Vitest 单元测试与 Playwright E2E
-│   └── Dockerfile
-├── backend/           # FastAPI 后端
-│   ├── app/
-│   │   ├── core/     # 核心配置
-│   │   ├── framework/ # 自动路由与中间件框架
-│   │   └── modules/   # 模块化业务代码
-│   ├── tests/        # pytest 自动化测试
-│   ├── alembic/      # 数据库迁移骨架
-│   └── Dockerfile
-├── docs/              # 当前有效项目文档
-├── scripts/           # 本地验证脚本
-├── docker-compose.yml # Docker 编排配置
-└── README.md
+validate_graph(拓扑校验) → 递归编译子图(loop/batch) → 主图 add_node → add_edge → 条件分流 add_conditional_edges
 ```
+
+`validate_graph` 前置校验：缺 START 节点、悬空/重复边、子图路由、孤立节点、静态环路检测（DFS）、模型节点配置完整性。条件分流节点（condition / intent_classifier / switch）的出边由运行时路由决定，不参与静态环检测；循环 / 批处理节点在编译期提取为独立子图。
+
+### 15 种已注册节点执行器
+
+> 节点系统通过 `NodeExecutorRegistry` 注册（`(state, config) -> dict`），可扩展。下表为当前已注册清单，含 `tool`（旧版兼容执行器）。
+
+| 类别 | 节点 | 说明 |
+|------|------|------|
+| 基础 | `start` / `end` | 流程起止 |
+| AI | `llm` / `image_generator` / `intent_classifier` | 调用 AI 运行时（chat / image / 意图分类） |
+| 逻辑 | `condition`（T/F 双端口）/ `switch`（动态端口）/ `loop_controller` / `batch_processor` | 条件分流、循环、批处理 |
+| 系统 | `tool_executor` / `human_input` / `variable_assignment` / `variable_transform` / `tool`（旧） | 工具调用、人工交互、变量赋值/变换 |
+| 容器 | `loop_body_group` | 循环体容器 |
+
+代表性执行器行为：
+- **LLM 节点**：分层 JSON 输出（Tier1 `json_schema` / Tier2 `json_object` / Tier3 纯文本）。
+- **循环控制器**：状态链式循环（上一次输出作为下次输入）。
+- **批处理**：`asyncio.gather + Semaphore` 控制并发（限 1–20）。
+- **人工交互**：用 LangGraph 原生 `interrupt` 挂起，靠 checkpoint 恢复，恢复时通过 `Command(resume=...)` 注入外部输入。
+
+### 可视化编辑器
+
+前端基于 `@vue-flow/core` 实现可视化编辑器，配套 15 种节点的统一基础节点与配置面板，并提供三级变量体系（全局上游 / 循环上下文 / 局部输入）与变量选择器。调试能力包含试运行（递增延迟轮询）、单节点测试（令牌防并发）、实时日志抽屉。
+
+### Checkpoint 持久化
+
+`checkpointer.py` 支持三种后端，由 `WORKFLOW_CHECKPOINT_BACKEND` 配置：
+
+| 后端 | 适用场景 |
+|------|----------|
+| `memory` | 默认开发模式，进程内 |
+| `sqlite` | 单机持久化（audit S3 后默认） |
+| `postgres` | 生产环境多 worker 共享 |
+
+Checkpoint 是人工交互挂起/恢复的基础——`human_input` 节点 `interrupt` 后状态落入持久化后端，恢复时从 checkpoint 还原继续执行。
+
+### 事件总线与 SSE
+
+`event_bus.py` 用 Redis pub/sub 跨进程推送节点执行事件；实例控制器 `/admin/workflow/instance/stream` 以 SSE 实时下发到前端，使前端试运行 / 实例监控能看到节点级实时进度。
+
+### 变量与表达式系统
+
+- **模板渲染**：`render_template` 支持 `{var}` / `{var.field}` / `{var.list.0}` 语法。
+- **安全求值**：自研 `SafeEvaluator`（AST 白名单，防条件表达式代码注入）。
+- **输入/输出映射**：节点可声明 `inputs` schema（变量名 + 类型 + 上游引用 source）实现严格数据流；未声明则透传全局变量。
+
+### 健壮性设计
+
+- **原子 CAS 状态机**：`resume` / `cancel` 用 `UPDATE ... WHERE status=?` 消除 TOCTOU 竞态。
+- **防重放**：启动 2 秒去重、单节点测试 Redis 去重（429）。
+- **稳定 Handle ID**：前端 `genId()` + 后端 `case_${stableId}`，解决删除中间分支导致连线错位。
+- **数据权限**：`assert_workflow_owner` 限定非超管只能操作本人工作流。
+
+### 工作流消费 AI 运行时的关键链路
+
+工作流不直接接触厂商 API，而是通过 `profile_code` 引用 AI 模块统一运行时，复用其治理 / 安全 / 日志 / 计费能力：
+
+```
+前端 LLM 节点配置 (modelProfileCode) 
+    → 保存到 graph_json 
+    → 后端 compiler 编译 
+    → execute_llm_node 
+    → run_ai_chat() 
+    → AiModelRuntimeService.chat() 
+    → 经过 治理检查 → 适配器 → 重试 → 成本计算 → 日志 
+    → 返回 content 
+    → 写入 output_variable 
+    → 下游节点引用
+```
+
+`run_ai_chat` 以 `skip_masking=True` 跳过脱敏（工作流内部数据），并做空响应拦截防御。
+
+## 工作流评测系统
+
+Loom 内置一套面向工作流的回归评测 harness（不仅仅是单 LLM 评测），围绕「同一测试集 × 不同图版本，跑真实实例 + 规则/LLM 打分 + 按 case_key 对齐 diff」组织。详细对标分析见 [评测系统对标分析-2026-06-26](./docs/评测系统对标分析-2026-06-26.md)。
+
+### 四类业务对象
+
+| 对象 | 实体 | 职责 |
+|------|------|------|
+| 测试集 | `WorkflowTestSet` | 一组测试用例集合 |
+| 测试用例 | `WorkflowTestCase` | 单条 input / expected / case_key |
+| 评估运行 | `WorkflowEvalRun` | 一次完整跑测，含图快照与统计结果 |
+| 回归对比 | 多版本 `WorkflowEvalRun` 对齐 | 按 case_key 比对 pass_rate / avg_score / cost 趋势 |
+
+### 三类评估器
+
+| 评估器 | 说明 |
+|--------|------|
+| `rule_match` | 规则匹配，支持 exact / contains / regex / numeric 四种模式 |
+| `llm_judge` | 单次 pointwise 0-1 打分 |
+| `composite` | 多评估器加权组合 |
+
+评估器通过 `EvaluatorRegistry` 装饰器注册，扩展点已留好。
+
+### 设计亮点
+
+- **graph_json_snapshot 图快照**：每次评估运行记录当时的图拓扑快照，历史回归可比，不依赖 definition 当前版本。
+- **真实 WorkflowInstance 全链路执行**：每个用例建真实实例跑完整编译 → 执行 → SSE 链路，能测到节点 / governance / 事件总线真实行为，不是 mock 执行。
+- **contextvar 精确 token / cost 关联**：按工作流实例精确聚合 Token 与成本，比同类系统的近似估算更准。
+
+### 健壮性
+
+- **CAS 状态机**：评估运行状态变更走原子 UPDATE，消除竞态。
+- **sweep 超时巡检**：后台巡检挂死实例并兜底收尾，达生产级健壮性。
+- **失败兜底**：单用例失败不阻断整批，最终汇总失败明细。
+
+### 人工标注与 κ 校准
+
+独立 `workflow_annotation` 模块提供标注队列与多标注者一致性校准（Cohen's κ / Fleiss' κ），用 gold set 测 LLM judge 与人工标注的一致性，把 κ 作为 judge 可信度指标显示出来。这是让 LLM judge 从「能用」走向「可信」的关键闭环。
+
+## AI 模型统一运行时
+
+AI 模块以 `AiModelRuntimeService` 为核心，对外暴露统一的调用入口，对内通过工厂模式适配 12 家厂商。详细设计见 [AI 与工作流系统架构说明](./docs/AI与工作流系统架构说明.md)。
+
+### 三层配置架构
+
+| 层级 | 实体 | 职责 |
+|------|------|------|
+| Provider 厂商 | `AiProvider` | 接入凭证 + base_url（`adapter` / `api_key_cipher` / `api_key_mask` / `extra_config`） |
+| Model 模型 | `AiModel` | 模型能力与定价（`model_type` / `context_window` / `pricing_config`） |
+| Profile 调用配置 | `AiModelProfile` | 业务侧调用参数（`code` / `temperature` / `retry_count` / `fallback_profile_id` / `is_default`） |
+
+**Profile 是业务唯一入口**：业务侧只认 `profile_code`，厂商 / 模型变更对调用方透明；支持配置级兜底（`fallback_profile_id`），主配置失败可自动降级。厂商密钥集中加密存储（`api_key_cipher`），前端只回显脱敏串 `api_key_mask`。
+
+### 12 家厂商适配器
+
+`openai-compatible`、`ollama`、`gemini`、`claude`、`deepseek`、`volcengine-ark`（火山方舟）、`bailian`（阿里百炼）、`hunyuan`（腾讯混元）、`qianfan`（百度千帆）、`zhipu`（智谱）、`minimax`、`mimo`（小米）
+
+适配器基类统一了 `chat / stream_chat / embedding / image / audio / video / rerank / test / list_models` 接口。代表性特殊处理：Claude 的 `x-api-key` 认证与 `thinking_delta` / `tool_delta` 流式事件、Gemini 的 contents/parts 结构与 base64/URL 双模式图片、百炼的 wan2.6 多种生图协议 + 异步任务轮询。内置厂商模型清单见 `service/catalog.py`，前端「导入预设」即消费它。
+
+### 6 种 AI 能力 + 6 条 Celery 队列
+
+| AI 能力 | Celery 队列 | 状态 |
+|---------|-------------|------|
+| Chat 对话（同步 + SSE 流式） | `ai.chat` | 已实现 |
+| Image 生图（同步线程池 + 异步任务） | `ai.image` | 已实现 |
+| Embedding | `ai.embedding` | 已实现 |
+| Rerank | `ai.rerank` | 已实现 |
+| Audio | `ai.audio` | 接口与队列已定义，适配器实现尚不完整 |
+| Video | `ai.video` | 接口与队列已定义，适配器实现尚不完整 |
+
+SSE 流式以 `start` / `delta` / `done` / `error` 事件下发。队列可独立扩缩容：AI 密集场景多开 `ai.chat` / `ai.image` worker，工作流密集多开 `workflow` worker。
+
+## 企业级治理与安全
+
+### 治理三维
+
+| 维度 | 取值 |
+|------|------|
+| 范围 | `global` / `user` / `profile` |
+| 周期 | `minute` / `day` / `month` |
+| 模式 | `enforce`（拦截） / `observe`（观察） |
+
+### 四维限流
+
+请求 / 并发 / Token / 成本四个维度均可配额，超限触发告警事件（`AiGovernanceEvent`）。治理规则由 `AiGovernanceRule` 维护，由 `governance_service.py` 在每次调用前后强制检查。
+
+### 安全能力
+
+- **提示注入检测**：输入侧 DoS 防护（长度上限）+ 提示注入检测。
+- **PII 脱敏**：输出侧对手机 / 身份证 / 邮箱自动脱敏（工作流内部数据可 `skip_masking=True` 跳过）。
+- **密钥加密**：厂商 API Key 使用 PBKDF2 + 加密存储，前端只回显脱敏串。
+- **会话并发控制**：`ADMIN_SESSION_MAX_CONCURRENT` 限制同一用户最大并发会话，配合 JWT + Token 吊销。
+- **CSRF Origin 校验**：`ADMIN_CSRF_ORIGIN_CHECK_ENABLED` 控制管理端变更请求的 Origin/Referer 校验。
+- **密码哈希升级**：`PASSWORD_PBKDF2_ITERATIONS` 配置迭代次数，登录成功后自动升级旧哈希。
+
+## 可观测与计费
+
+### 调用日志与计量
+
+每次 AI 调用记录到 `AiModelCallLog`，含延迟（`latency_ms`）、Token、成本字段。**成本统一以微美元 `cost_micro_usd` 计量**（1 USD = 1,000,000 micro_usd），跨厂商可比。用量看板接口 `/admin/ai/dashboard/cost` 支持按天 / 按维度分组聚合。
+
+### 三类审计日志
+
+- **操作日志**：管理端变更类操作流水。
+- **登录日志**：登录成功 / 失败记录。
+- **安全日志**：限流触发、CSRF 拦截、Token 吊销等安全事件。
+
+### 健康检查与指标
+
+- `/health`：返回数据库、Redis、Celery 配置检查。
+- `/metrics`：文本指标端点，由 `METRICS_ENABLED` 控制开关，默认关闭。
+
+### Celery Beat 三项定时任务
+
+| 任务 | 周期 | 职责 |
+|------|------|------|
+| `task.dispatch_due_system_tasks` | 每分钟 | 扫描启用且到期的系统任务并派发执行 |
+| `clean-expired-logs-daily` | 每天 02:00 | 清理过期任务日志 |
+| `clean-expired-ai-governance-data-daily` | 每天 03:00 | 清理过期治理数据 |
+
+## 通用任务调度
+
+`task` 模块是**通用系统定时任务调度器**，不是 AI / 工作流任务的「信封」——它不记录 `celery_task_id` / `progress` 等运行态字段，与 AI / 工作流没有直接外键耦合，是平行的通用能力。
+
+- **触发模型**：cron（五段表达式）或固定间隔（`every` 毫秒）。
+- **保守调度器**：自行计算下次运行时间，调度状态缓存到 Redis（`task:schedule` 命名空间）。
+- **Celery Beat 扫描**：每分钟扫描启用且到期的任务，派发到 `default` 队列执行。
+- **反射执行**：按 `service` 字段中的方法路径反射调用业务方法，传入 `data` 参数。
+- **运维接口**：`start` / `stop` / `once` 提供启停与立即执行；`TaskLog` 记录每次执行结果。
+- **通知配置**：成功 / 失败 / 超时均可配置通知收件人与模板。
+
+典型用途：给工作流定义做定时触发、定时跑数据加工、定时清理等。
+
+## 通知 / 媒体 / 字典 / 权限
+
+- **通知系统**：站内 / 业务 / 任务通知 + 模板化发送，详见 [通知系统框架说明](./docs/通知系统框架说明.md)。
+- **媒体资源**：本地与 S3-compatible 文件存储统一抽象，由 `STORAGE_PROVIDER` 与 `S3_*` 配置切换。
+- **字典管理**：枚举值集中维护，前端通过 EPS 自动消费。
+- **权限管理**：JWT + 动态菜单 + 细粒度 Action 权限校验 + DataScope 数据权限，详见 [权限管理与登录模块设计](./docs/权限管理与登录模块设计.md)。
+
+## 示例工作流
+
+`examples/workflows/` 下提供可导入的工作流样例，便于快速上手：
+
+- [基础 QA 工作流](./examples/workflows/01_Basic_QA_Workflow.json)：最简单的 LLM 单节点范例，演示 start → llm → end 的基础文本生成。
+- [Agent 工具协同工作流](./examples/workflows/03_Agent_Tool_Workflow.json)：演示 tool_executor 调用外部工具（联网搜索）→ llm 整理答案的智能体协同模式。
+
+其余示例覆盖意图路由、循环处理、条件分支、批处理、变量操作等场景，可直接在工作流编辑器导入体验。
 
 ## 快速开始
 
-### 使用 Docker Compose (推荐)
+### 使用 Docker Compose（推荐）
 
-1. 复制环境变量文件:
+1. 复制环境变量文件：
+
 ```bash
 cp .env.example .env
 ```
 
-2. 编辑 `.env` 文件，填入你的 OpenAI API Key 或配置本地 Ollama
+2. 编辑 `.env`，填入 OpenAI API Key 或配置本地 Ollama 等厂商凭证。
 
-3. 启动所有服务:
+3. 启动所有服务：
+
 ```bash
 docker-compose up -d
 ```
 
-4. 访问应用:
-- 前端: http://localhost:5173
-- 后端 API: http://localhost:8000
-- API 文档: http://localhost:8000/docs
+4. 访问应用：
+- 前端：http://localhost:9090
+- 后端 API：http://localhost:8000
+- API 文档：http://localhost:8000/docs
+- Redoc：http://localhost:8000/redoc
 
 ### 本地开发
 
-#### 后端开发
+#### 后端
 
-1. 创建 Python 虚拟环境并安装依赖:
+1. 创建 Python 虚拟环境并安装依赖：
+
 ```bash
 cd backend
 python -m venv venv
@@ -93,173 +311,190 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-2. 配置环境变量:
+2. 配置环境变量：
+
 ```bash
 cp .env.example .env
-# 编辑 .env 文件配置你的 API Key
+# 编辑 .env 配置 API Key、数据库、Redis 等
 ```
 
-3. 启动 FastAPI 服务:
+3. 启动 FastAPI 服务：
+
 ```bash
 uvicorn main:app --reload
 ```
 
-4. 启动 Celery Worker (新终端):
+4. 启动 Celery Worker（新终端）。队列可按需选择，全量场景建议同时消费多个队列：
+
 ```bash
 cd backend
-celery -A app.celery_app worker --loglevel=info
+celery -A app.celery_app worker --loglevel=info -Q workflow,ai.chat,ai.image,default
 ```
 
-#### 前端开发
+5. 启动 Celery Beat（可选，启用定时任务调度时需要）：
 
-1. 安装依赖:
+```bash
+celery -A app.celery_app beat --loglevel=info
+```
+
+#### 前端
+
+1. 安装依赖：
+
 ```bash
 cd frontend
 npm install
 ```
 
-2. 启动开发服务器:
+2. 启动开发服务器（端口 9090）：
+
 ```bash
 npm run dev
 ```
 
-## 核心机制
+## 项目结构
 
-### 自动建表 (Auto Table Creation)
+```
+Loom/
+├── frontend/                      # Vue 3 前端
+│   ├── src/
+│   │   ├── cool/                  # 框架核心、service、router、bootstrap
+│   │   ├── modules/               # 业务模块（ai / base / dict / media / notification / task / workflow 等）
+│   │   ├── plugins/               # 项目插件
+│   │   └── config/                # 环境与代理配置
+│   ├── packages/                  # 本地源码包（@cool-vue/crud 等）
+│   └── tests/                     # Vitest 单元测试与 Playwright E2E
+├── backend/                       # FastAPI 后端
+│   ├── app/
+│   │   ├── core/                  # 配置、数据库、安全、Redis、日志
+│   │   ├── framework/             # 自动路由、EPS、中间件、查询构建
+│   │   └── modules/               # 业务模块（见下表）
+│   ├── tests/                     # pytest 自动化测试
+│   └── alembic/                   # 数据库迁移骨架
+├── docs/                          # 项目文档（见文末索引）
+├── examples/workflows/            # 示例工作流 JSON
+├── scripts/                       # 本地验证脚本
+├── docker-compose.yml
+└── README.md
+```
 
-项目采用 **SQLModel (SQLAlchemy)** 实现全自动数据库建模：
-- **启动即建表**: 应用在每次通过 `uvicorn` 启动时，会在 `main.py` 的 `lifespan` 生命周期中调用 `init_db()`。
-- **元数据同步**: 自动扫描所有已加载模块中的 `model` 定义，并创建对应的数据表。
-- **兼容性补丁**: 针对 SQLite 环境，框架在 `app/core/database.py` 中实现了 schema 自动修补机制，能够自动为旧表补充缺失的字段（如 `delete_time` 等），降低开发阶段的迁移成本。
+### 后端业务模块（`backend/app/modules/`）
 
-### 自动路由与 EPS (Auto Routing & EPS)
+| 模块 | 职责 |
+|------|------|
+| `ai` | 厂商/模型/调用配置管理、12 家厂商适配、统一运行时、治理安全、计费可观测 |
+| `base` | 权限 / 认证 / 菜单 / 部门 / 角色等基础能力 |
+| `dict` | 字典枚举管理 |
+| `media` | 媒体资源与本地 / S3-compatible 文件存储 |
+| `notification` | 站内 / 业务 / 任务通知与模板 |
+| `task` | 通用系统定时任务调度器（cron / 间隔 + Beat 扫描 + 反射执行） |
+| `workflow` | 基于 LangGraph 的可视化工作流编排引擎 |
+| `workflow_annotation` | 人工标注队列与 κ 校准 |
+| `workflow_eval` | 工作流评测与回归对比 |
 
-项目基于装饰器元数据实现高度自动化的路由聚合与元数据导出：
-- **CoolController**: 通过在该控制器类上使用 `@CoolController` 装饰器，自动将类方法注册为 API 接口。
-- **URL 结构**: 遵循 `/{scope}/{module}/{resource}/{action}` 的标准命名规范，例如：`/admin/base/sys/user/page`。
-- **EPS (Entity-Permission-System)**: 框架会自动扫描 Pydantic/SQLModel 模型定义，提取字段类型、枚举值、验证规则及描述，导出为前端识别的元数据。这使得前端可以根据后端定义自动渲染表单、表格和验证逻辑。
+### 前端业务模块
 
-### 数据权限 (Data Scope)
+`frontend/src/modules/` 下对应 `ai` / `base` / `dict` / `media` / `notification` / `task` / `workflow` 等模块的页面、store、service 与静态资源。AI 模块包含对话测试台（SSE 流式）、生图工作台、厂商/模型/配置管理、治理规则/事件、看板、日志、异步任务等 10 个页面；工作流模块包含 Vue Flow 编辑器、节点配置面板、试运行 / 单节点测试 / 实时日志抽屉、实例管理（含人工审批恢复）。
 
-内置企业级的数据权限隔离机制：
-- **声明式控制**: 在 `Role` 模型中定义 `data_scope`（全部、本人、本部门、本部门及下属、自定义）。
-- **无感注入**: `QueryBuilder` 会在执行查询前自动注入当前用户的权限过滤 SQL（如 `WHERE department_id IN (...)`），无需在业务代码中手动处理隔离逻辑。
-- **字段约定**: 默认识别模型中的 `user_id` 和 `department_id` 字段进行隔离。
+### 示例与文档
 
-### CRUD 增强与生命周期钩子 (CRUD & Hooks)
+- `examples/workflows/`：10 个示例工作流 JSON，覆盖基础 QA、意图路由、Agent 工具协同、循环、批处理、条件分支、变量操作等场景。
+- `docs/`：项目文档全集，详见文末[完整文档](#完整文档)。
 
-通过 `BaseAdminCrudService` 提供标准化的业务抽象：
-- **通用能力**: 自动实现分页、列表、详情、增删改等标准接口。
-- **生命周期钩子**: 子类可以通过覆盖 `_before_add`, `_after_add`, `_before_update` 等方法，在不破坏通用流程的情况下植入业务特有的逻辑（如密码加密、关联表同步、缓存清理等）。
-- **字段转换**: 自动处理 `snake_case` (DB) 与 `camelCase` (API) 的字段映射。
-  约定为模型与 Service 内部使用 `snake_case`，响应与 EPS 中的 `prop/propertyName` 输出前端字段名，`source` 保留后端源字段名。
+## 框架能力概览
 
-### 菜单初始化 (Menu Initialization)
+Loom 后端框架层提供以下基础能力，每项均不展开实现细节，详细规范见 `docs/` 下对应文档：
 
-系统支持通过声明式配置文件初始化系统菜单与角色权限：
-- **menu.json**: 每个业务模块均可在其目录下维护 `menu.json`，定义该模块所需的菜单树、路由组件路径及权限标识。
-- **自动同步**: 启动时 `bootstrap_modules` 会扫描所有模块的菜单配置，并调用 `AuthService.bootstrap_defaults()` 将其持久化至 `sys_menu` 表。
-- **角色分配**: 支持在 JSON 中配置 `role_codes`，系统会自动建立菜单与对应角色（如 `admin`）的关联关系。
-- **使用示例**: 在模块根目录创建 `menu.json`：
-  ```json
-  [
-    {
-      "name": "任务管理",
-      "code": "task_manage",
-      "type": "menu",
-      "path": "/task",
-      "component": "/task/index",
-      "icon": "icon-task",
-      "role_codes": ["admin"],
-      "children": [
-        { "name": "任务列表", "code": "task_list", "type": "menu", "path": "/task/list", "permission": "task:task:page" }
-      ]
-    }
-  ]
-  ```
-
-### 模块化与中间件隔离 (Modularity)
-
-为了支持高内聚、低耦合的模块化开发，框架提供了以下特性：
-- **前缀作用域中间件**: 支持通过 `PrefixScopedMiddleware` 将中间件绑定到特定的模块或 URL 前缀，使得认证、日志等逻辑可以按需差异化配置，互不干扰。
-- **模块自治**: 模块配置（`config.py`）可以声明自己的白名单、全局或局部中间件、数据初始化脚本等。
-
-### 软删除支持 (Soft Delete)
-
-框架对业务建模中的物理删除与软删除提供了透明支持：
-- **自动识别**: 只要模型中定义了 `delete_time` 字段，`QueryBuilder` 会在所有的查询操作中自动过滤掉已删除的记录。
-- **统一 API**: 在 Service 层调用 `delete` 时，系统会根据元数据配置自动选择执行 `UPDATE`（置空 `delete_time`）还是 `DELETE` 操作。
-
-## 框架完善度与后续建议
-
-当前框架主干机制已基本完善，并已有后端 pytest、前端单元测试、类型检查和构建命令覆盖关键路径：
-
-- **已完善**: 模块加载、自动路由、`CoolController` CRUD、EPS 输出、管理端鉴权、RBAC、DataScope、统一响应、字段映射、Redis/内存缓存降级、上传校验、S3-compatible 存储、健康检查、`/metrics`、限流、CSRF Origin 检查、密码强度/哈希升级、验证码防重放、Token 吊销、会话并发控制、操作/登录/安全日志、启动配置校验、统一事务 helper、缓存命名空间、导入导出 schema 校验、任务保守调度和 Alembic baseline。
-- **后续生产化建议**: 接入集中日志与告警平台、为业务模块声明导入导出字段白名单和权限点、为跨进程事件补可靠消费确认、将更多多表业务逐步迁移到统一事务 helper。
-- **当前边界**: Python 后端通过显式元数据对象承载控制器声明，不依赖 Midway/TypeScript 反射；EPS 已覆盖当前前端需要的字段与接口元数据，但不是 TypeScript 原生反射生成；SQLite 自动补列主要服务开发阶段，生产环境应以 Alembic 迁移为准。
-
-
+- **模块化架构**：模块自治，独立中间件、白名单、数据初始化与菜单注入，详见 [框架说明文档](./docs/框架说明文档.md)。
+- **自动路由**：按目录约定扫描 `controller/{scope}/` 自动注册路由，URL 遵循 `/{scope}/{module}/{resource}/{action}`，详见 [模块自动路由与管理端鉴权说明](./docs/模块自动路由与管理端鉴权说明.md)。
+- **声明式 CRUD 控制器**：`@CoolController` 装饰器自动注册 add/delete/update/info/list/page 等标准接口，详见 [框架Controller使用规范](./docs/框架Controller使用规范.md)。
+- **EPS 元数据**：自动扫描模型字段与验证规则导出，驱动前端表单/表格/验证自动生成，详见 [EPS规范原理与操作指南](./docs/EPS规范原理与操作指南.md)。
+- **数据权限**：`DataScope` 在查询时自动注入权限过滤（全部 / 本人 / 本部门 / 本部门及下属 / 自定义），详见 [权限管理与登录模块设计](./docs/权限管理与登录模块设计.md)。
+- **软删除**：模型含 `delete_time` 字段时自动过滤已删除记录，删除时按元数据配置选择 `UPDATE` 或 `DELETE`。
+- **字段映射**：内部 snake_case ↔ API camelCase 自动转换，关键全局别名如 `created_at→createTime` / `is_active→status` / `component→viewPath` / `path→router`，详见 [字段映射使用规范](./docs/字段映射使用规范.md)。
+- **缓存命名空间与降级**：Redis 缓存按命名空间隔离，开发模式自动降级为进程内缓存，详见 [框架说明文档](./docs/框架说明文档.md)。
 
 ## API 规范与兼容性
 
 本项目后端 API 面向 Loom 管理端前端设计，统一输出 `{ code, message, data }` 响应结构，并通过 EPS 元数据驱动前端 service、表格和表单。
 
 ### 命名规范
+
 路由遵循 `/{scope}/{module}/{resource}/{action}` 结构：
-- **scope**: 访问域隔离。`admin` 为管理后台，`app` 为移动端/用户端，`aiapi` 为 AI 开放接口。
-- **module**: 业务模块名称。如 `base` (权限), `task` (任务), `workflow` (工作流), `dict` (字典)。
-- **resource**: 资源标识。如 `sys/user`, `sys/role`。
-- **action**: 动作指令。对应 `BaseAdminCrudService` 提供的标准操作。
+
+| scope | 说明 |
+|-------|------|
+| `admin` | 管理后台接口 |
+| `app` | 移动端 / 用户端接口 |
+| `aiapi` | AI 开放接口（对应 `/aiapi/ai/model/*`） |
+| `open` | 开放接口 |
+
+- **module**：业务模块名，如 `base`（权限）、`ai`（AI 模型）、`workflow`（工作流）、`task`（任务）、`dict`（字典）。
+- **resource**：资源标识，如 `sys/user`、`sys/role`、`ai/model`。
+- **action**：动作指令，对应 `BaseAdminCrudService` 提供的标准操作或自定义接口。
 
 ### 标准 CRUD 动作
+
 所有基于 `BaseController` 开发的资源默认具备以下动作：
+
 | 动作 | 方法 | 描述 |
 |------|------|------|
 | `add` | POST | 新增记录 |
 | `delete` | POST | 批量删除记录 |
 | `update` | POST | 更新记录 |
 | `info` | GET | 获取单条详情 |
-| `list` | GET / POST | 获取全量列表，POST 为 Loom 主协议，GET 为兼容入口 |
-| `page` | GET / POST | 获取分页列表 (支持高级搜索)，POST 为 Loom 主协议，GET 为兼容入口 |
+| `list` | GET / POST | 获取全量列表，POST 为主协议，GET 为兼容入口 |
+| `page` | GET / POST | 获取分页列表（支持高级搜索），POST 为主协议，GET 为兼容入口 |
 
 ### 完整文档
-项目启动后，请访问以下路径查看实时互动的完整 API 文档：
-- **API 文档**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Redoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- **项目说明文档索引**: [docs/README.md](./docs/README.md)
 
+项目启动后，可访问以下路径查看实时 API 文档：
+- API 文档：http://localhost:8000/docs
+- Redoc：http://localhost:8000/redoc
+- 项目说明文档索引：[docs/README.md](./docs/README.md)
 
 ## 环境变量
 
-### 后端 (.env)
-- `DATABASE_URL`: 数据库连接字符串
-- `REDIS_URL`: Redis 连接字符串
-- `JWT_SECRET_KEY`: JWT 密钥，建议至少 32 字节
-- `OPENAI_API_KEY`: OpenAI API 密钥
-- `OPENAI_BASE_URL`: OpenAI API 基础 URL
-- `CORS_ORIGINS` / `CORS_ALLOW_METHODS` / `CORS_ALLOW_HEADERS`: CORS 来源、方法与头白名单
-- `ADMIN_CSRF_ORIGIN_CHECK_ENABLED`: 是否启用管理端变更请求 Origin/Referer 校验
-- `RESPONSE_ENVELOPE_MAX_BYTES`: 统一响应包装最大 JSON 体积，超出后跳过包装
-- `MODULE_LOAD_STRICT`: 模块加载失败时是否直接中断启动
-- `PASSWORD_PBKDF2_ITERATIONS`: PBKDF2 密码哈希迭代次数，登录成功后自动升级旧哈希
-- `ADMIN_SESSION_MAX_CONCURRENT`: 管理端同一用户最大并发会话数，`0` 表示不限制
-- `STORAGE_PROVIDER` 与 `S3_*`: 本地或 S3-compatible 文件存储配置
-- `METRICS_ENABLED`: 是否记录并开放 `/metrics` 文本指标
-- `DB_POOL_*`: 非 SQLite 数据库连接池参数
-- `API_VERSION_PREFIX_ENABLED`: 是否额外挂载 `/api/v1` 兼容前缀
+### 后端
 
-### 前端 (.env)
-- `VITE_API_BASE_URL`: 后端 API 基础 URL
+- `DATABASE_URL`：数据库连接字符串
+- `REDIS_URL`：Redis 连接字符串
+- `JWT_SECRET_KEY`：JWT 密钥，建议至少 32 字节
+- `OPENAI_API_KEY` / `OPENAI_BASE_URL`：OpenAI 默认凭证（用于早期兼容，生产应通过厂商配置管理）
+- `CORS_ORIGINS` / `CORS_ALLOW_METHODS` / `CORS_ALLOW_HEADERS`：CORS 白名单
+- `ADMIN_CSRF_ORIGIN_CHECK_ENABLED`：管理端变更请求 Origin/Referer 校验开关
+- `RESPONSE_ENVELOPE_MAX_BYTES`：统一响应包装最大 JSON 体积，超出后跳过包装
+- `MODULE_LOAD_STRICT`：模块加载失败时是否中断启动
+- `PASSWORD_PBKDF2_ITERATIONS`：PBKDF2 密码哈希迭代次数，登录成功后自动升级旧哈希
+- `ADMIN_SESSION_MAX_CONCURRENT`：管理端同一用户最大并发会话数，`0` 表示不限制
+- `STORAGE_PROVIDER` 与 `S3_*`：本地或 S3-compatible 文件存储配置
+- `METRICS_ENABLED`：是否记录并开放 `/metrics` 文本指标
+- `DB_POOL_*`：非 SQLite 数据库连接池参数
+- `API_VERSION_PREFIX_ENABLED`：是否额外挂载 `/api/v1` 兼容前缀
 
-## 说明
+### 前端
 
-- 管理端接口统一走 `/admin/*`
-- `base` 和 `task` 模块都已切到动作式管理接口风格
-- 前端业务页不再由静态路由表维护，而是根据 `/admin/base/menu/currentTree` 动态注册
-- `/tasks/:id` 作为任务详情补充路由，依赖 `/tasks` 菜单权限
-- 自动路由说明见 [docs/模块自动路由与管理端鉴权说明.md](./docs/模块自动路由与管理端鉴权说明.md)
-- 本地若未启动 Redis，开发模式会自动回退到进程内缓存；生产环境应使用真实 Redis
-- `/health` 返回数据库、Redis、Celery 配置检查；`/metrics` 默认关闭，可通过 `METRICS_ENABLED` 启用
+- `VITE_API_BASE_URL`：后端 API 基础 URL
+
+### 工作流
+
+- `WORKFLOW_CHECKPOINT_BACKEND`：工作流 Checkpoint 后端，取值 `memory` / `sqlite` / `postgres`。开发默认 `memory`，audit S3 后默认 `sqlite`，生产建议 `postgres`。
+- 其他 `WORKFLOW_*`：节点级超时、单节点测试去重窗口、批处理并发上下界等运行时参数，详见 [AI 与工作流系统架构说明](./docs/AI与工作流系统架构说明.md)。
+
+## 完整文档
+
+完整文档索引见 [docs/README.md](./docs/README.md)，关键文档包括：
+
+- [AI 与工作流系统架构说明](./docs/AI与工作流系统架构说明.md)：AI 模块、工作流模块、task 模块的完整架构与集成关系。
+- [评测系统对标分析-2026-06-26](./docs/评测系统对标分析-2026-06-26.md)：工作流评测系统能力边界与提升路线图。
+- [框架说明文档](./docs/框架说明文档.md)：模块化、自动路由、EPS、DataScope 等核心机制。
+- [模块自动路由与管理端鉴权说明](./docs/模块自动路由与管理端鉴权说明.md)：路由约定与权限校验。
+- [EPS规范原理与操作指南](./docs/EPS规范原理与操作指南.md)：EPS 元数据协议。
+- [字段映射使用规范](./docs/字段映射使用规范.md)：snake_case ↔ camelCase 字段映射。
+- [框架Controller使用规范](./docs/框架Controller使用规范.md) / [框架Service使用规范](./docs/框架Service使用规范.md) / [框架Model使用规范](./docs/框架Model使用规范.md)：CRUD 与建模规范。
+- [权限管理与登录模块设计](./docs/权限管理与登录模块设计.md)：JWT、动态菜单、数据权限。
+- [通知系统框架说明](./docs/通知系统框架说明.md)：通知与模板。
+- [自动化测试使用说明](./docs/自动化测试使用说明.md)：pytest / 单元测试 / E2E。
 
 ## 开源协议
 
