@@ -29,45 +29,7 @@
 			<cl-pagination />
 		</cl-row>
 
-		<cl-upsert ref="Upsert">
-			<template #slot-response-format="{ scope }">
-				<div class="response-format">
-					<el-segmented
-						v-model="scope.responseFormatMode"
-						:options="responseFormatModes"
-					/>
-					<el-alert
-						class="mt-2"
-						title="OpenAI Compatible、DeepSeek、百炼、火山方舟、混元、千帆、智谱、MiniMax 等兼容适配器会透传 response_format；Claude、Gemini、Ollama 暂不做协议转换，可能由上游拒绝或忽略。"
-						type="info"
-						show-icon
-						:closable="false"
-					/>
-					<template v-if="scope.responseFormatMode === 'json_schema'">
-						<el-input
-							v-model="scope.responseSchemaName"
-							class="mt-2"
-							placeholder="schema_name"
-						/>
-						<el-input
-							v-model="scope.responseSchemaDescription"
-							class="mt-2"
-							placeholder="description"
-						/>
-						<el-switch
-							v-model="scope.responseSchemaStrict"
-							class="mt-2"
-							active-text="strict"
-						/>
-						<cl-editor-codemirror
-							v-model="scope.responseSchemaBody"
-							class="mt-2"
-							:height="300"
-						/>
-					</template>
-				</div>
-			</template>
-		</cl-upsert>
+		<cl-upsert ref="Upsert" />
 	</cl-crud>
 
 	<el-drawer v-model="tester.visible" :title="$t('测试调用')" size="440px">
@@ -117,10 +79,13 @@ defineOptions({
 
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { ElMessage } from 'element-plus';
-import { reactive } from 'vue';
+import { h, markRaw, reactive } from 'vue';
+import { ElIcon, ElTooltip } from 'element-plus';
+import { InfoFilled } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { extractImageItems } from '../utils/image-utils';
+import ResponseFormatEditor from '../components/response-format-editor.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -134,11 +99,18 @@ const tester = reactive({
 	imageItems: [] as { src: string; value: string; url?: string }[]
 });
 
-const responseFormatModes = [
-	{ label: 'Text', value: 'text' },
-	{ label: 'JSON Object', value: 'json_object' },
-	{ label: 'JSON Schema', value: 'json_schema' }
-];
+// 表单标签旁的 tooltip 图标（ui-guidelines：解释性小字图标化）
+function renderLabelWithTip(label: string, tip: string) {
+	return () =>
+		h('span', { class: 'label-with-tip' }, [
+			label,
+			h(
+				ElTooltip,
+				{ content: tip, placement: 'top', effect: 'dark' },
+				{ default: () => h(ElIcon, { class: 'label-tip-icon' }, { default: () => h(InfoFilled) }) }
+			)
+		]);
+}
 
 const Upsert = useUpsert({
 	dialog: { width: '860px' },
@@ -172,34 +144,52 @@ const Upsert = useUpsert({
 			component: { name: 'el-input' }
 		},
 		{
-			label: 'temperature',
+			label: t('采样温度'),
+			renderLabel: renderLabelWithTip(t('采样温度'), t('控制输出随机性，范围 0-2，精确任务建议调低')),
 			prop: 'temperature',
 			component: { name: 'el-input-number', props: { min: 0, max: 2, step: 0.1 } }
 		},
 		{
-			label: 'top_p',
+			label: t('核采样 (Top-P)'),
+			renderLabel: renderLabelWithTip(
+				t('核采样 (Top-P)'),
+				t('仅保留累计概率前 P 的词元，值越小输出越确定')
+			),
 			prop: 'topP',
 			component: { name: 'el-input-number', props: { min: 0, max: 1, step: 0.05 } }
 		},
-		{ label: 'max_tokens', prop: 'maxTokens', component: { name: 'el-input-number' } },
 		{
-			label: 'response_format',
-			prop: 'responseFormatMode',
-			value: 'text',
-			component: { name: 'slot-response-format' }
+			label: t('单次最大 Token'),
+			renderLabel: renderLabelWithTip(t('单次最大 Token'), t('限制单次回复生成的最大 Token 数')),
+			prop: 'maxTokens',
+			component: { name: 'el-input-number' }
 		},
 		{
-			label: 'tools',
+			label: t('响应格式'),
+			prop: 'responseFormat',
+			component: {
+				name: 'response-format-editor',
+				vm: markRaw(ResponseFormatEditor)
+			}
+		},
+		{
+			label: t('工具集 (tools)'),
+			renderLabel: renderLabelWithTip(
+				t('工具集 (tools)'),
+				t('JSON 数组，声明模型可调用的工具（Function Calling）')
+			),
 			prop: 'toolsConfig',
 			component: { name: 'cl-editor', props: { name: 'cl-editor-codemirror', height: 200 } }
 		},
 		{
-			label: 'timeout(s)',
+			label: t('超时时间 (秒)'),
+			renderLabel: renderLabelWithTip(t('超时时间 (秒)'), t('单次调用允许的最长等待时间')),
 			prop: 'timeout',
 			component: { name: 'el-input-number', props: { min: 1, 'controls-position': 'right' } }
 		},
 		{
-			label: 'retry_count',
+			label: t('重试次数'),
+			renderLabel: renderLabelWithTip(t('重试次数'), t('调用失败后自动重试的次数上限')),
 			prop: 'retryCount',
 			value: 0,
 			component: {
@@ -208,7 +198,8 @@ const Upsert = useUpsert({
 			}
 		},
 		{
-			label: 'retry_delay(s)',
+			label: t('重试间隔 (秒)'),
+			renderLabel: renderLabelWithTip(t('重试间隔 (秒)'), t('两次重试之间的等待时间')),
 			prop: 'retryDelaySeconds',
 			value: 0,
 			component: {
@@ -225,28 +216,13 @@ const Upsert = useUpsert({
 		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } },
 		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } }
 	],
-	onInfo(data, { done }) {
-		service.ai.profile.info({ id: data.id }).then((res: any) => {
-			done({ ...res, ...parseResponseFormat(res.responseFormat) });
+	onSubmit(data, { next }) {
+		next({
+			...data,
+			modelId: normalizeSingleId(data.modelId),
+			// text 模式下编辑器产出空串，保持与旧行为一致：不提交该字段
+			responseFormat: data.responseFormat || undefined
 		});
-	},
-	onSubmit(data, { next, done }) {
-		try {
-			const payload = {
-				...data,
-				modelId: normalizeSingleId(data.modelId),
-				responseFormat: stringifyResponseFormat(data)
-			};
-			delete payload.responseFormatMode;
-			delete payload.responseSchemaName;
-			delete payload.responseSchemaDescription;
-			delete payload.responseSchemaStrict;
-			delete payload.responseSchemaBody;
-			next(payload);
-		} catch (err: any) {
-			ElMessage.error(err.message || t('保存失败'));
-			done();
-		}
 	}
 });
 
@@ -307,68 +283,6 @@ async function runTest() {
 	}
 }
 
-function parseResponseFormat(value?: string) {
-	const defaults = {
-		responseFormatMode: 'text',
-		responseSchemaName: '',
-		responseSchemaDescription: '',
-		responseSchemaStrict: true,
-		responseSchemaBody:
-			'{\n  "type": "object",\n  "properties": {},\n  "required": [],\n  "additionalProperties": false\n}'
-	};
-	if (!value) {
-		return defaults;
-	}
-	try {
-		const data = JSON.parse(value);
-		if (data?.type === 'json_object') {
-			return { ...defaults, responseFormatMode: 'json_object' };
-		}
-		if (data?.type === 'json_schema') {
-			const jsonSchema = data.json_schema || data.jsonSchema || {};
-			return {
-				...defaults,
-				responseFormatMode: 'json_schema',
-				responseSchemaName: jsonSchema.name || '',
-				responseSchemaDescription: jsonSchema.description || '',
-				responseSchemaStrict: jsonSchema.strict !== false,
-				responseSchemaBody: JSON.stringify(jsonSchema.schema || {}, null, 2)
-			};
-		}
-		return defaults;
-	} catch {
-		return defaults;
-	}
-}
-
-function stringifyResponseFormat(data: any) {
-	if (!data.responseFormatMode || data.responseFormatMode === 'text') {
-		return undefined;
-	}
-	if (data.responseFormatMode === 'json_object') {
-		return JSON.stringify({ type: 'json_object' });
-	}
-	const name = String(data.responseSchemaName || '').trim();
-	if (!name) {
-		throw new Error('schema_name 不能为空');
-	}
-	let schema: any;
-	try {
-		schema = JSON.parse(data.responseSchemaBody || '{}');
-	} catch {
-		throw new Error('schema JSON 格式错误');
-	}
-	return JSON.stringify({
-		type: 'json_schema',
-		json_schema: {
-			name,
-			description: data.responseSchemaDescription || undefined,
-			schema,
-			strict: data.responseSchemaStrict !== false
-		}
-	});
-}
-
 function normalizeSingleId(value: any) {
 	return Array.isArray(value) ? value[0] : value;
 }
@@ -408,11 +322,19 @@ async function copyText(value: string) {
 	}
 }
 
-.response-format {
-	width: 100%;
+.label-with-tip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 
-	.mt-2 {
-		margin-top: 8px;
+	.label-tip-icon {
+		color: var(--el-text-color-placeholder);
+		cursor: help;
+		transition: color 0.3s;
+
+		&:hover {
+			color: var(--el-color-primary);
+		}
 	}
 }
 </style>
