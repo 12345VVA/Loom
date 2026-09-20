@@ -44,24 +44,6 @@
 		</cl-row>
 	</cl-crud>
 
-	<el-drawer v-model="submitter.visible" :title="$t('提交 AI 任务')" size="520px">
-		<el-form label-position="top">
-			<el-form-item :label="$t('任务类型')">
-				<cl-select v-model="submitter.taskType" :options="taskTypeOptions" />
-			</el-form-item>
-			<el-form-item :label="$t('场景')">
-				<el-input v-model="submitter.scenario" />
-			</el-form-item>
-			<el-form-item :label="$t('调用配置编码')">
-				<el-input v-model="submitter.profileCode" clearable />
-			</el-form-item>
-			<el-form-item :label="$t('请求 JSON')">
-				<cl-editor-codemirror v-model="submitter.payload" :height="340" />
-			</el-form-item>
-			<el-button type="primary" @click="submitTask">{{ $t('提交') }}</el-button>
-		</el-form>
-	</el-drawer>
-
 	<el-drawer v-model="viewer.visible" :title="$t('任务详情')" size="640px">
 		<el-tabs>
 			<el-tab-pane :label="$t('请求')">
@@ -123,7 +105,7 @@ defineOptions({
 });
 
 import { computed, onMounted, reactive } from 'vue';
-import { useCrud, useTable } from '@cool-vue/crud';
+import { useCrud, useForm, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
@@ -153,18 +135,11 @@ const stats = reactive({
 	statusCounts: {} as Record<string, number>,
 	recentErrors: [] as string[]
 });
-const submitter = reactive({
-	visible: false,
-	taskType: 'chat',
-	scenario: 'default',
-	profileCode: '',
-	payload:
-		'{\n  "messages": [\n    { "role": "user", "content": "你好" }\n  ],\n  "options": { "max_tokens": 512 }\n}'
-});
 const viewer = reactive({
 	visible: false,
 	row: null as any
 });
+const Form = useForm();
 
 const statItems = computed(() =>
 	statusOptions.map(item => ({
@@ -227,25 +202,55 @@ async function loadStats() {
 }
 
 function openSubmit() {
-	submitter.visible = true;
-}
-
-async function submitTask() {
-	try {
-		const payload = JSON.parse(submitter.payload || '{}');
-		await service.ai.task.submit({
-			taskType: submitter.taskType,
-			scenario: submitter.scenario || 'default',
-			profileCode: submitter.profileCode || undefined,
-			payload
-		});
-		ElMessage.success(t('提交成功'));
-		submitter.visible = false;
-		Crud.value?.refresh();
-		loadStats();
-	} catch (err: any) {
-		ElMessage.error(err.message || t('提交失败'));
-	}
+	Form.value?.open({
+		title: t('提交 AI 任务'),
+		width: '600px',
+		form: {
+			taskType: 'chat',
+			scenario: 'default',
+			profileCode: '',
+			payload:
+				'{\n  "messages": [\n    { "role": "user", "content": "你好" }\n  ],\n  "options": { "max_tokens": 512 }\n}'
+		},
+		items: [
+			{
+				label: t('任务类型'),
+				prop: 'taskType',
+				required: true,
+				component: { name: 'cl-select', props: { options: taskTypeOptions } }
+			},
+			{ label: t('场景'), prop: 'scenario' },
+			{ label: t('调用配置编码'), prop: 'profileCode' },
+			{
+				label: t('请求 JSON'),
+				prop: 'payload',
+				component: {
+					name: 'cl-editor',
+					props: { name: 'cl-editor-codemirror', height: 300 }
+				}
+			}
+		],
+		on: {
+			async submit(data, { close, done }) {
+				try {
+					const payload = JSON.parse(data.payload || '{}');
+					await service.ai.task.submit({
+						taskType: data.taskType,
+						scenario: data.scenario || 'default',
+						profileCode: data.profileCode || undefined,
+						payload
+					});
+					ElMessage.success(t('提交成功'));
+					close();
+					Crud.value?.refresh();
+					loadStats();
+				} catch (err: any) {
+					ElMessage.error(err.message || t('提交失败'));
+					done();
+				}
+			}
+		}
+	});
 }
 
 async function cancelTask(row: any) {
