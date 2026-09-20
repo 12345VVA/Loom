@@ -9,11 +9,7 @@
 				<cl-select :options="metricOptions" prop="metric" :width="130" />
 			</cl-filter>
 			<cl-flex1 />
-			<div class="stats">
-				<span v-for="item in statItems" :key="item.label" class="stat-chip"
-					>{{ item.label }}: {{ item.value }}</span
-				>
-			</div>
+			<stat-chips :items="statItems" />
 			<cl-search-key :placeholder="$t('搜索事件、指标、消息')" />
 		</cl-row>
 
@@ -37,6 +33,7 @@ import { computed, onMounted, reactive } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import StatChips from '../components/stat-chips.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -117,29 +114,6 @@ async function loadStats() {
 </script>
 
 <style lang="scss" scoped>
-.stats {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	align-items: center;
-}
-
-.stat-chip {
-	box-sizing: border-box;
-	height: 36px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	padding: 0 12px;
-	border: 1px solid var(--el-color-primary-light-5);
-	border-radius: 6px;
-	background: var(--el-fill-color-blank);
-	color: var(--el-color-primary);
-	font-size: 14px;
-	line-height: 1;
-	white-space: nowrap;
-}
-
 .toolbar-row {
 	align-items: center;
 }

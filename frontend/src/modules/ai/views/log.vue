@@ -9,16 +9,7 @@
 				<cl-select :options="modelTypeOptions" prop="modelType" :width="130" />
 			</cl-filter>
 			<cl-flex1 />
-			<div class="stats">
-				<span class="stat-chip">{{ $t('调用') }}: {{ stats.total }}</span>
-				<span class="stat-chip">{{ $t('成功') }}: {{ stats.success }}</span>
-				<span class="stat-chip">{{ $t('错误') }}: {{ stats.error }}</span>
-				<span class="stat-chip"
-					>{{ $t('成功率') }}: {{ (stats.successRate * 100).toFixed(2) }}%</span
-				>
-				<span class="stat-chip">{{ $t('平均延迟') }}: {{ stats.avgLatencyMs }}ms</span>
-				<span class="stat-chip">Tokens: {{ stats.totalTokens }}</span>
-			</div>
+			<stat-chips :items="statItems" />
 			<cl-search-key :placeholder="$t('搜索场景、状态、Request ID、错误')" />
 		</cl-row>
 
@@ -38,10 +29,11 @@ defineOptions({
 	name: 'ai-log'
 });
 
-import { onMounted, reactive } from 'vue';
+import { computed, onMounted, reactive } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import StatChips from '../components/stat-chips.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -54,6 +46,15 @@ const stats = reactive({
 	avgLatencyMs: 0,
 	totalTokens: 0
 });
+
+const statItems = computed(() => [
+	{ label: t('调用'), value: stats.total },
+	{ label: t('成功'), value: stats.success },
+	{ label: t('错误'), value: stats.error },
+	{ label: t('成功率'), value: `${(stats.successRate * 100).toFixed(2)}%` },
+	{ label: t('平均延迟'), value: `${stats.avgLatencyMs}ms` },
+	{ label: 'Tokens', value: stats.totalTokens }
+]);
 
 const statusOptions = [
 	{ label: t('成功'), value: 'success', type: 'success' },
@@ -123,29 +124,6 @@ async function loadStats() {
 </script>
 
 <style lang="scss" scoped>
-.stats {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	align-items: center;
-}
-
-.stat-chip {
-	box-sizing: border-box;
-	height: 36px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	padding: 0 12px;
-	border: 1px solid var(--el-color-primary-light-5);
-	border-radius: 6px;
-	background: var(--el-fill-color-blank);
-	color: var(--el-color-primary);
-	font-size: 14px;
-	line-height: 1;
-	white-space: nowrap;
-}
-
 .toolbar-row {
 	align-items: center;
 
