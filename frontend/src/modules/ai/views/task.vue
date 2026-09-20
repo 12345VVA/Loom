@@ -129,6 +129,7 @@ import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import { extractImageItems } from '../utils/image-utils';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -303,58 +304,6 @@ function openUrl(url: string) {
 
 function optionLabel(options: { label: string; value: string }[], value: string) {
 	return options.find(item => item.value === value)?.label || value || '-';
-}
-
-function extractImageItems(value: any): { src: string; value: string; url?: string }[] {
-	const items = findImageData(value);
-	return items
-		.map(item => {
-			const url = item?.url || item?.image_url || item?.imageUrl;
-			const b64 = item?.b64_json || item?.b64Json || item?.base64;
-			if (url) {
-				return { src: url, value: url, url };
-			}
-			if (b64) {
-				const src = String(b64).startsWith('data:image')
-					? String(b64)
-					: `data:image/png;base64,${b64}`;
-				return { src, value: String(b64) };
-			}
-			return null;
-		})
-		.filter(Boolean) as { src: string; value: string; url?: string }[];
-}
-
-function findImageData(value: any): any[] {
-	if (!value) {
-		return [];
-	}
-	if (typeof value === 'string') {
-		try {
-			return findImageData(JSON.parse(value));
-		} catch {
-			return [];
-		}
-	}
-	if (Array.isArray(value)) {
-		return value;
-	}
-	if (Array.isArray(value.data)) {
-		return value.data;
-	}
-	if (value.raw) {
-		const rawItems = findImageData(value.raw);
-		if (rawItems.length) {
-			return rawItems;
-		}
-	}
-	if (value.result) {
-		return findImageData(value.result);
-	}
-	if (Array.isArray(value.images)) {
-		return value.images;
-	}
-	return [];
 }
 </script>
 

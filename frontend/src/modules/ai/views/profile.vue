@@ -120,6 +120,7 @@ import { ElMessage } from 'element-plus';
 import { reactive } from 'vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import { extractImageItems } from '../utils/image-utils';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -375,61 +376,6 @@ function normalizeSingleId(value: any) {
 async function copyText(value: string) {
 	await navigator.clipboard.writeText(value);
 	ElMessage.success(t('已复制'));
-}
-
-function extractImageItems(value: any): { src: string; value: string; url?: string }[] {
-	const items = findImageData(value);
-	return items
-		.map(item => {
-			const url = item?.url || item?.image_url || item?.imageUrl || item?.image;
-			const b64 = item?.b64_json || item?.b64Json || item?.base64;
-			if (url) {
-				return { src: url, value: url, url };
-			}
-			if (b64) {
-				const src = String(b64).startsWith('data:image')
-					? String(b64)
-					: `data:image/png;base64,${b64}`;
-				return { src, value: String(b64) };
-			}
-			return null;
-		})
-		.filter(Boolean) as { src: string; value: string; url?: string }[];
-}
-
-function findImageData(value: any): any[] {
-	if (!value) {
-		return [];
-	}
-	if (typeof value === 'string') {
-		try {
-			return findImageData(JSON.parse(value));
-		} catch {
-			return [];
-		}
-	}
-	if (Array.isArray(value)) {
-		return value;
-	}
-	if (Array.isArray(value.data)) {
-		return value.data;
-	}
-	if (value.raw) {
-		const rawItems = findImageData(value.raw);
-		if (rawItems.length) {
-			return rawItems;
-		}
-	}
-	if (value.output) {
-		const outputItems = findImageData(value.output);
-		if (outputItems.length) {
-			return outputItems;
-		}
-	}
-	if (value.result) {
-		return findImageData(value.result);
-	}
-	return [];
 }
 </script>
 

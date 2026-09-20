@@ -371,7 +371,7 @@ import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { Bell, Close, InfoFilled } from '@element-plus/icons-vue';
-import { findImageData } from './image-utils';
+import { extractImageItems } from '../utils/image-utils';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -905,28 +905,6 @@ function normalizeProviderToken(value: any) {
 		.trim()
 		.toLowerCase();
 }
-
-function extractImageItems(value: any): { src: string; value: string; url?: string }[] {
-	const items = findImageData(value);
-	return items
-		.map(item => {
-			const url = item?.url || item?.image_url || item?.imageUrl || item?.image;
-			const b64 = item?.b64_json || item?.b64Json || item?.base64;
-			if (url) {
-				return { src: url, value: url, url };
-			}
-			if (b64) {
-				const src = String(b64).startsWith('data:image')
-					? String(b64)
-					: `data:image/png;base64,${b64}`;
-				return { src, value: String(b64) };
-			}
-			return null;
-		})
-		.filter(Boolean) as { src: string; value: string; url?: string }[];
-}
-
-// findImageData 已抽离至 ./image-utils，便于单元测试（含递归深度保护）
 </script>
 
 <style lang="scss" scoped>

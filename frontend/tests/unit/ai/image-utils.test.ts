@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findImageData } from '/$/ai/views/image-utils';
+import { extractImageItems, findImageData } from '/$/ai/utils/image-utils';
 
 describe('findImageData', () => {
 	it('returns empty for nullish input', () => {
@@ -40,5 +40,45 @@ describe('findImageData', () => {
 		const a: any = { result: null };
 		a.result = a;
 		expect(() => findImageData(a)).not.toThrow();
+	});
+
+	// [P1 回归] resultPayload 包装形态（旧 profile/task 拷贝缺失的分支）
+	it('extracts from resultPayload wrapper', () => {
+		expect(findImageData({ resultPayload: { data: [{ p: 1 }] } })).toEqual([{ p: 1 }]);
+	});
+});
+
+describe('extractImageItems', () => {
+	it('maps url items', () => {
+		expect(extractImageItems({ data: [{ url: 'http://x/a.png' }] })).toEqual([
+			{ src: 'http://x/a.png', value: 'http://x/a.png', url: 'http://x/a.png' }
+		]);
+	});
+
+	it('maps image_url / imageUrl / image aliases', () => {
+		expect(extractImageItems({ data: [{ image_url: 'http://x/b.png' }] })[0]?.src).toBe(
+			'http://x/b.png'
+		);
+		expect(extractImageItems({ data: [{ imageUrl: 'http://x/c.png' }] })[0]?.src).toBe(
+			'http://x/c.png'
+		);
+		expect(extractImageItems({ data: [{ image: 'http://x/d.png' }] })[0]?.src).toBe(
+			'http://x/d.png'
+		);
+	});
+
+	it('wraps raw base64 into data URI', () => {
+		const items = extractImageItems({ data: [{ b64_json: 'abc123' }] });
+		expect(items[0]?.src).toBe('data:image/png;base64,abc123');
+		expect(items[0]?.value).toBe('abc123');
+	});
+
+	it('keeps already-encoded data URI as-is', () => {
+		const uri = 'data:image/png;base64,xyz';
+		expect(extractImageItems({ data: [{ b64_json: uri }] })[0]?.src).toBe(uri);
+	});
+
+	it('filters out items without url or base64', () => {
+		expect(extractImageItems({ data: [{ foo: 1 }, { url: 'http://x/e.png' }] })).toHaveLength(1);
 	});
 });
