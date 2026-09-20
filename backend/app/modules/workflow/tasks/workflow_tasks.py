@@ -283,6 +283,30 @@ def sweep_archived_versions() -> None:
         logger.info("清理 %d 个过期归档工作流版本", swept)
 
 
+@celery_app.task(name="workflow.cleanup.sweep")
+def sweep_workflow_cleanup() -> dict:
+    """周期清理执行日志（SysParam workflowExecutionLogKeepDays，默认 90 天）与孤儿载荷文件。
+
+    先删日志再回收孤儿：同轮内日志删除后残留的载荷文件即被孤儿回收兜底。
+    """
+    from app.modules.base.service.sys_manage_service import SysParamService
+    from app.modules.workflow.service.cleanup_service import WorkflowCleanupService
+
+    with Session(engine) as session:
+        keep_days = _int_param(SysParamService(session).get_value("workflowExecutionLogKeepDays", "90"), 90)
+        service = WorkflowCleanupService(session)
+        logs_removed = service.sweep_execution_logs(keep_days=keep_days)
+        orphans_removed = service.sweep_orphan_payloads()
+    return {"logsRemoved": logs_removed, "orphanPayloadsRemoved": orphans_removed, "keepDays": keep_days}
+
+
+def _int_param(value: str | None, default: int) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
 def _resolve_execution_graph(
     session: Session,
     instance_id: int,
@@ -514,7 +538,8 @@ async def _async_execute(
                             "node_update",
                             {
                                 "node_id": node_id,
-                                "variables": output_masked,
+                                # 产物/变量全文不再随 SSE 推送（前端零消费，节点状态由 /logs 还原）；
+                                # output_masked 仍用于下方日志落库
                                 "status": "running",
                             },
                         )

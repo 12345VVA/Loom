@@ -105,6 +105,26 @@ def close_checkpointer() -> None:
     _checkpointer = None
 
 
+def delete_thread_best_effort(thread_id: str) -> bool:
+    """删除指定 thread 的全部 checkpoint 数据（实例删除级联用，best-effort）。
+
+    直接多态调用 saver 原生 delete_thread（sqlite 删 checkpoints+writes、postgres 删
+    checkpoints+checkpoint_blobs+checkpoint_writes、memory 清内存 dict），不手写 SQL。
+    失败仅告警返回 False——残留 checkpoint 只占存储，无功能影响。
+    """
+    try:
+        saver = get_checkpointer()
+        delete = getattr(saver, "delete_thread", None)
+        if delete is None:
+            logger.warning("checkpointer 不支持 delete_thread，跳过 thread=%s", thread_id)
+            return False
+        delete(thread_id)
+        return True
+    except Exception:
+        logger.warning("checkpoint 清理失败 thread=%s", thread_id, exc_info=True)
+        return False
+
+
 import contextlib
 from typing import Any, AsyncGenerator
 

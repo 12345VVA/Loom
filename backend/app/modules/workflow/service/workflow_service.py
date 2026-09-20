@@ -22,6 +22,7 @@ from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.base.service.authority_service import is_super_admin
 from app.modules.workflow.model.workflow import (
     WorkflowDefinition,
+    WorkflowExecutionLog,
     WorkflowInstance,
 )
 from app.modules.workflow.service.compiler import (
@@ -1152,12 +1153,100 @@ class WorkflowInstanceService(BaseAdminCrudService):
         """删除前校验调用者是否为每个待删工作流实例的所有者（修复 IDOR 越权删实例）。
 
         BaseAdminCrudService.delete 按 ids 直接软删除，不走 DataScope，故在此显式逐条校验 owner。
+        附带级联（详见 _cascade_delete）：软删执行日志/产物、清空 state_data、
+        commit 后 best-effort 删 offload 载荷文件与 checkpoint thread。
+        ai_model_call_log（成本审计）与 media_asset（用户资产）保留不删。
         """
         for entity_id in ids or []:
             instance = self.session.get(self.model, entity_id)
             if instance is not None:
                 assert_workflow_owner(self.session, instance, current_user)
-        return super().delete(ids, payload=payload, soft_delete=soft_delete)
+                if instance.status in ("running", "pending"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"实例 {entity_id} 正在运行中，请先取消后再删除",
+                    )
+
+        storage_refs, thread_ids = self._cascade_delete(ids or [])
+
+        result = super().delete(ids, payload=payload, soft_delete=soft_delete)
+
+        # DB 已提交，文件与 checkpoint 清理失败仅留孤儿（孤儿清理任务兜底），不影响删除结果
+        self._delete_storage_refs(storage_refs)
+        from app.modules.workflow.service.checkpointer import delete_thread_best_effort
+
+        for thread_id in thread_ids:
+            delete_thread_best_effort(thread_id)
+        return result
+
+    def _cascade_delete(self, ids: list[int]) -> tuple[list[str], list[str]]:
+        """实例删除级联的 DB 部分：软删执行日志与产物、清空实例大字段。
+
+        返回 (storage_refs, thread_ids)，供 super().delete() commit 后做文件/checkpoint 清理。
+        """
+        from datetime import datetime, timezone
+
+        from sqlalchemy import update as sa_update
+
+        from app.modules.workflow.model.workflow_artifact import WorkflowArtifact
+
+        if not ids:
+            return [], []
+        now = datetime.now(timezone.utc)
+        storage_refs: list[str] = []
+        thread_ids: list[str] = []
+
+        instances = list(self.session.exec(select(WorkflowInstance).where(WorkflowInstance.id.in_(ids))).all())
+        for inst in instances:
+            if inst.state_data_ref:
+                storage_refs.append(inst.state_data_ref)
+            if inst.thread_id:
+                thread_ids.append(inst.thread_id)
+
+        logs = list(
+            self.session.exec(select(WorkflowExecutionLog).where(WorkflowExecutionLog.instance_id.in_(ids))).all()
+        )
+        for log in logs:
+            if log.input_storage_ref:
+                storage_refs.append(log.input_storage_ref)
+            if log.output_storage_ref:
+                storage_refs.append(log.output_storage_ref)
+
+        artifacts = list(
+            self.session.exec(select(WorkflowArtifact).where(WorkflowArtifact.instance_id.in_(ids))).all()
+        )
+        for artifact in artifacts:
+            if artifact.content_ref:
+                storage_refs.append(artifact.content_ref)
+
+        self.session.execute(
+            sa_update(WorkflowExecutionLog)
+            .where(WorkflowExecutionLog.instance_id.in_(ids), WorkflowExecutionLog.delete_time == None)  # noqa: E711
+            .values(delete_time=now)
+        )
+        self.session.execute(
+            sa_update(WorkflowArtifact)
+            .where(WorkflowArtifact.instance_id.in_(ids), WorkflowArtifact.delete_time == None)  # noqa: E711
+            .values(delete_time=now)
+        )
+        self.session.execute(
+            sa_update(WorkflowInstance)
+            .where(WorkflowInstance.id.in_(ids))
+            .values(state_data="", state_data_ref=None)
+        )
+        self.session.commit()
+        return storage_refs, thread_ids
+
+    def _delete_storage_refs(self, refs: list[str]) -> None:
+        """best-effort 删除 offload 载荷文件；失败仅告警（残留由孤儿清理任务回收）。"""
+        from app.framework.storage import StorageService
+
+        storage = StorageService.get_instance()
+        for ref in refs:
+            try:
+                storage.delete(ref)
+            except Exception:
+                logger.warning("实例级联清理载荷文件失败 ref=%s", ref, exc_info=True)
 
     def info(self, id, current_user=None, relations=()):
         result = super().info(id, current_user, relations)
@@ -1168,21 +1257,23 @@ class WorkflowInstanceService(BaseAdminCrudService):
         return result
 
     def list(self, query=None, current_user=None, relations=None, is_tree=None, parent_field=None):
+        # 列表不做 stateData 还原（前端零消费，offload 实例返回空串原样），避免逐行读对象存储
         data = super().list(query, current_user, relations, is_tree, parent_field)
-        self._resolve_state_data(data)
         self._enrich_version_no(data)
         self._enrich_token_cost(data)
         return data
 
     def page(self, query, current_user=None, relations=()):
         result = super().page(query, current_user, relations)
-        self._resolve_state_data(result.items)
         self._enrich_version_no(result.items)
         self._enrich_token_cost(result.items)
         return result
 
     def _resolve_state_data(self, items: list) -> None:
-        """T8 还原：stateData 超阈值落对象存储时（stateDataRef 非空）读回全量快照回填 stateData。"""
+        """T8 还原：stateData 超阈值落对象存储时（stateDataRef 非空）读回全量快照回填 stateData。
+
+        载荷文件丢失时降级为空串（不使详情接口 500）；仅 info 调用，列表不还原。
+        """
         if not items:
             return
         from app.framework.storage import resolve_payload
@@ -1192,7 +1283,11 @@ class WorkflowInstanceService(BaseAdminCrudService):
                 continue
             ref = it.get("stateDataRef")
             if ref:
-                it["stateData"] = resolve_payload(it.get("stateData") or "", ref)
+                try:
+                    it["stateData"] = resolve_payload(it.get("stateData") or "", ref)
+                except Exception:
+                    logger.warning("state_data 载荷还原失败 ref=%s", ref, exc_info=True)
+                    it["stateData"] = ""
 
     def _enrich_version_no(self, items: list) -> None:
         """回填 versionNo（join 版本表，一次 IN 查询）。"""

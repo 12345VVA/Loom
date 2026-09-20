@@ -15,7 +15,7 @@ from sqlalchemy import func, update
 from sqlmodel import Session, select
 
 from app.core.database import engine
-from app.framework.storage import offload_payload
+from app.framework.storage import offload_payload, resolve_payload
 from app.modules.ai.model.ai import AiModelCallLog
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
 from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
@@ -158,7 +158,9 @@ def read_instance_result(instance_id: int) -> dict:
         inst = session.get(WorkflowInstance, instance_id)
         if not inst:
             return {"status": "error", "output": None, "error": "实例不存在", "final_vars": {}}
-        final_vars = json.loads(inst.state_data) if inst.state_data else {}
+        # T8：state_data 超阈值时为空串，须按 ref 还原全量快照（否则 offload 实例评测丢输出）
+        state_str = resolve_payload(inst.state_data or "", inst.state_data_ref) or "{}"
+        final_vars = json.loads(state_str)
         return {
             "status": inst.status,
             "output": final_vars.get("workflow_output"),

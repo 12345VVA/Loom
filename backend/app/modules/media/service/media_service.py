@@ -81,6 +81,51 @@ class MediaAssetService(BaseAdminCrudService):
     def info(self, id: Any, current_user: User | None = None, relations=()) -> dict:
         return self._detail_media_row(super().info(id, current_user, relations))
 
+    def retry_failed(self, limit: int = 100, window_hours: int = 24) -> dict:
+        """重试窗口内转存失败的资产（复用 _transfer_artifact，含去重与落盘）。
+
+        窗口语义：以 updated_at 近似"最近一次失败时间"，重试再失败会刷新 updated_at
+        从而移出窗口——每资产至多 1~2 次尝试（厂商签名 URL 默认 24h 过期，过期后
+        重试无意义）。并发双跑幂等无害（md5 去重兜底），不做 CAS 认领。
+        """
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours)))
+        assets = list(
+            self.session.exec(
+                select(MediaAsset)
+                .where(
+                    MediaAsset.status == "failed",
+                    MediaAsset.original_url != None,  # noqa: E711
+                    MediaAsset.delete_time == None,  # noqa: E711
+                    MediaAsset.updated_at >= cutoff,
+                )
+                .order_by(MediaAsset.id)
+                .limit(max(1, int(limit)))
+            ).all()
+        )
+        attempted = succeeded = 0
+        for asset in assets:
+            artifact = MediaArtifact(
+                asset_type=asset.asset_type,
+                original_url=asset.original_url,
+                mime_type=asset.mime_type,
+                file_name=asset.file_name,
+                width=asset.width,
+                height=asset.height,
+                duration_seconds=asset.duration_seconds,
+            )
+            attempted += 1
+            try:
+                self._transfer_artifact(asset, artifact)
+                succeeded += 1
+            except Exception as exc:  # 单资产失败不影响其余
+                asset.status = "failed"
+                asset.error_message = str(exc)[:1000]
+                self.session.add(asset)
+                self.session.commit()
+        return {"attempted": attempted, "succeeded": succeeded, "failed": attempted - succeeded}
+
     def upload(self, file: UploadFile, current_user: User | None = None) -> dict:
         content = _read_upload_file(file)
         try:

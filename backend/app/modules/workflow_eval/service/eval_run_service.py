@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, update
 from sqlmodel import Session, select
 
+from app.framework.storage import resolve_payload
 from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
@@ -256,7 +257,9 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         sampled = 0
         for inst in instances:
             try:
-                final_vars = json.loads(inst.state_data) if inst.state_data else {}
+                # T8：offload 实例须按 ref 还原全量快照
+                state_str = resolve_payload(inst.state_data or "", inst.state_data_ref) or "{}"
+                final_vars = json.loads(state_str)
             except Exception:
                 continue
             if not isinstance(final_vars, dict):

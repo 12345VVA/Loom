@@ -124,14 +124,25 @@ def persist_workflow_artifacts(
     if not drafts:
         return
     try:
+        stale_refs: list[str] = []
         with Session(engine) as session:
             for old in session.exec(
                 select(WorkflowArtifact).where(WorkflowArtifact.instance_id == instance_id)
             ).all():
+                if old.content_ref:
+                    stale_refs.append(old.content_ref)
                 session.delete(old)
             for draft in drafts:
                 session.add(_build_row(instance_id, definition_id, version_id, user_id, node_hint, draft, session))
             session.commit()
+        # commit 成功后再删旧载荷文件（新 ref 是新 uuid 不会误删；失败残留由孤儿清理兜底）
+        for ref in stale_refs:
+            try:
+                from app.framework.storage import StorageService
+
+                StorageService.get_instance().delete(ref)
+            except Exception:
+                logger.warning("旧产物载荷文件删除失败 ref=%s", ref, exc_info=True)
         logger.info(
             "工作流产物流转完成 instance=%d count=%d", instance_id, len(drafts)
         )
