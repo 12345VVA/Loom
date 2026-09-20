@@ -46,7 +46,6 @@ import { useI18n } from 'vue-i18n';
 const { service } = useCool();
 const { t } = useI18n();
 
-const aiService = service.ai as any;
 const stats = reactive({
 	total: 0,
 	success: 0,
@@ -103,7 +102,7 @@ const Table = useTable({
 
 const Crud = useCrud(
 	{
-		service: aiService.log
+		service: service.ai.log
 	},
 	app => {
 		app.refresh();
@@ -116,7 +115,7 @@ onMounted(() => {
 });
 
 async function loadStats() {
-	const res = await aiService.log.stats({});
+	const res = await service.ai.log.stats({});
 	Object.assign(stats, res || {});
 }
 

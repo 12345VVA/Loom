@@ -82,7 +82,7 @@ onMounted(loadStats);
 async function loadStats() {
 	loading.value = true;
 	try {
-		const res = await (service.ai as any).dashboard.cost({
+		const res = await service.ai.dashboard.cost({
 			days: query.days,
 			groupBy: query.groupBy
 		});

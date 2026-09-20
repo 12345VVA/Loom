@@ -107,7 +107,6 @@ import { reactive } from 'vue';
 
 const { service } = useCool();
 const { t } = useI18n();
-const aiService = service.ai as any;
 
 const scopeOptions = [
 	{ label: t('全局'), value: 'global' },
@@ -255,7 +254,7 @@ const Table = useTable({
 
 const Crud = useCrud(
 	{
-		service: aiService.governance_rule
+		service: service.ai.governance_rule
 	},
 	app => {
 		app.refresh();
@@ -263,7 +262,7 @@ const Crud = useCrud(
 );
 
 async function toggleRule(row: any) {
-	await aiService.governance_rule.toggle({ id: row.id });
+	await service.ai.governance_rule.toggle({ id: row.id });
 	ElMessage.success(t('操作成功'));
 	Crud.value?.refresh();
 }
@@ -278,7 +277,7 @@ function openMatch() {
 async function runMatch() {
 	matcher.loading = true;
 	try {
-		const res = await aiService.governance_rule.match({
+		const res = await service.ai.governance_rule.match({
 			userId: matcher.form.userId,
 			profileId: matcher.form.profileId
 		});

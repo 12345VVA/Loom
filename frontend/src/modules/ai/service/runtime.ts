@@ -9,7 +9,7 @@ class AiRuntimeModel extends BaseService {
 		super('admin/ai/model');
 	}
 
-	chat(data: any) {
+	chat(data: any): Promise<any> {
 		return this.runtimeService.request({
 			url: '/chat',
 			method: 'POST',
@@ -17,27 +17,27 @@ class AiRuntimeModel extends BaseService {
 		});
 	}
 
-	streamUrl() {
+	streamUrl(): string {
 		return '/aiapi/ai/model/streamChat';
 	}
 
-	embedding(data: any) {
+	embedding(data: any): Promise<any> {
 		return this.runtimeService.request({ url: '/embedding', method: 'POST', data });
 	}
 
-	image(data: any) {
+	image(data: any): Promise<any> {
 		return this.runtimeService.request({ url: '/image', method: 'POST', data });
 	}
 
-	rerank(data: any) {
+	rerank(data: any): Promise<any> {
 		return this.runtimeService.request({ url: '/rerank', method: 'POST', data });
 	}
 
-	audio(data: any) {
+	audio(data: any): Promise<any> {
 		return this.runtimeService.request({ url: '/audio', method: 'POST', data });
 	}
 
-	video(data: any) {
+	video(data: any): Promise<any> {
 		return this.runtimeService.request({ url: '/video', method: 'POST', data });
 	}
 }

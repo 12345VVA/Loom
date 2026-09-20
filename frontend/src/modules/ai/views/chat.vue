@@ -74,6 +74,7 @@ import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useStream } from '/@/cool/service/stream';
+import { aiRuntime } from '../service';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -159,10 +160,11 @@ onMounted(() => {
 });
 
 async function loadProfiles() {
-	const res = await (service.ai.profile as any).list({
+	// EPS 生成的 list 参数类型未含业务查询字段，实际后端支持，此处对参数放宽类型
+	const res = await service.ai.profile.list({
 		modelType: 'chat',
 		status: true
-	});
+	} as any);
 	profileOptions.value = (res || []).map((item: any) => ({
 		label: `${item.name || item.code} / ${item.modelName || item.modelId}`,
 		value: item.code
@@ -196,7 +198,7 @@ async function sendChat() {
 	addMessage('user', prompt.value.trim());
 
 	try {
-		const res = await (service.ai as any).runtime.model.chat(payload);
+		const res = await aiRuntime.chat(payload);
 		addMessage('assistant', res?.content || JSON.stringify(res, null, 2));
 	} catch (err: any) {
 		ElMessage.error(err.message || t('调用失败'));
@@ -229,7 +231,7 @@ async function sendStream() {
 
 	try {
 		await stream.invoke({
-			url: (service.ai as any).runtime.model.streamUrl(),
+			url: aiRuntime.streamUrl(),
 			data: payload,
 			cb(event) {
 				streamEvents.value.push(event);

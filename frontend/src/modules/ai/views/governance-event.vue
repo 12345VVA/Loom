@@ -40,7 +40,6 @@ import { useI18n } from 'vue-i18n';
 
 const { service } = useCool();
 const { t } = useI18n();
-const aiService = service.ai as any;
 
 const eventOptions = [
 	{ label: t('放行'), value: 'allowed' },
@@ -97,7 +96,7 @@ const Table = useTable({
 
 const Crud = useCrud(
 	{
-		service: aiService.governance_event
+		service: service.ai.governance_event
 	},
 	app => {
 		app.refresh();
@@ -108,7 +107,7 @@ const Crud = useCrud(
 onMounted(loadStats);
 
 async function loadStats() {
-	const res = await aiService.governance_event.stats({ days: 14 });
+	const res = await service.ai.governance_event.stats({ days: 14 });
 	stats.total = res?.total || 0;
 	stats.byType = res?.byType || {};
 	stats.byMetric = res?.byMetric || {};

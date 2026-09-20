@@ -86,7 +86,6 @@ import { useI18n } from 'vue-i18n';
 
 const { service } = useCool();
 const { t } = useI18n();
-const aiService = service.ai as any;
 
 const adapterOptions = [
 	{ label: 'OpenAI Compatible', value: 'openai-compatible' },
@@ -217,7 +216,7 @@ async function testProvider(row: any) {
 
 async function syncModels(row: any) {
 	try {
-		const res = await aiService.provider.syncModels({ id: row.id });
+		const res = await service.ai.provider.syncModels({ id: row.id });
 		ElMessage.success(`${t('同步完成')}，${t('新增')}: ${res?.created || 0}`);
 	} catch (err: any) {
 		ElMessage.error(err.message || t('同步失败'));

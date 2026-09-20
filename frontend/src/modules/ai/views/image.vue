@@ -372,10 +372,10 @@ import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { Bell, Close, InfoFilled } from '@element-plus/icons-vue';
 import { extractImageItems } from '../utils/image-utils';
+import { aiRuntime } from '../service';
 
 const { service } = useCool();
 const { t } = useI18n();
-const aiService = service.ai as any;
 
 const showTopNotice = ref(localStorage.getItem('loom_ai_image_notice_closed') !== 'true');
 
@@ -673,10 +673,11 @@ watch(selectedProfile, profile => {
 });
 
 async function loadProfiles() {
-	const res = await (service.ai.profile as any).list({
+	// EPS 生成的 list 参数类型未含业务查询字段，实际后端支持，此处对参数放宽类型
+	const res = await service.ai.profile.list({
 		modelType: 'image',
 		status: true
-	});
+	} as any);
 	profiles.value = res || [];
 }
 
@@ -756,7 +757,7 @@ async function generate() {
 	loading.generate = true;
 	lastPayload.value = payload;
 	try {
-		result.value = await aiService.runtime.model.image(payload);
+		result.value = await aiRuntime.image(payload);
 		if (!extractImageItems(result.value).length) {
 			ElMessage.warning(t('调用成功，但未解析到图片'));
 		}
