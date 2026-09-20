@@ -20,7 +20,7 @@ import {
 	type ImageProviderKind,
 	type ImageSizeOption
 } from '../utils/image-providers';
-import { aiRuntime } from '../service';
+import { aiRuntime } from '/$/ai';
 
 export interface ImageWorkbenchForm {
 	profileCode: string;

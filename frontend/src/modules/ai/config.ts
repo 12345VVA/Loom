@@ -1,5 +1,5 @@
 import { service, type ModuleConfig } from '/@/cool';
-import { aiRuntime } from './service';
+import { aiRuntime } from './index';
 
 export default (): ModuleConfig => {
 	return {
