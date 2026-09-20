@@ -62,6 +62,8 @@ class WorkflowExecutionLog(BaseEntity, table=True):
     output_data: str = Field(default="{}", max_length=100000)
     latency_ms: int = Field(default=0)
     status: str = Field(default="success", max_length=50)  # success, error
+    # 节点失败原因（status=error 时写入），供日志抽屉直接展示，无需翻实例终态
+    error_message: str | None = Field(default=None, max_length=1000)
     # T6：full=全量输入；ref_prev=输入引用上一条 log 的 output（消除 input 冗余）
     payload_type: str = Field(default="full", max_length=20)
     diff_base_log_id: int | None = Field(default=None, index=True)
@@ -189,6 +191,7 @@ class WorkflowExecutionLogRead(BaseModel):
     output_data: str
     latency_ms: int
     status: str
+    error_message: str | None = None
     created_at: datetime
 
 

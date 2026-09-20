@@ -30,6 +30,7 @@ from app.modules.workflow.service.compiler import (
     safe_eval,
     strip_braces,
 )
+from app.modules.workflow.service.error_format import friendly_error_message
 
 if TYPE_CHECKING:
     from app.modules.workflow.model.workflow import NodeTestResponse
@@ -586,7 +587,8 @@ async def execute_image_generator_node(variables: dict[str, Any], config: dict[s
         ai_result = await asyncio.to_thread(run_ai_image, profile_code, prompt, size, image_val, custom_options)
     except Exception as e:
         logger.error(f"工作流生图 API 呼叫失败: {e}")
-        raise ValueError("工作流生图失败，模型服务异常或内部错误。")
+        # 带上原始异常摘要（此前整体抹为固定文案，厂商限流/鉴权/参数错误无法区分）
+        raise ValueError(f"工作流生图失败: {friendly_error_message(e)}") from e
 
     temp_url = ai_result["url"]
     if not temp_url:
@@ -1507,7 +1509,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
             is_timeout = True
         except Exception as e:
             logger.error("单节点测试执行失败 [%s]: %s", node_id, e, exc_info=True)
-            error_msg = str(e) if isinstance(e, ValueError) else "节点执行过程中发生内部错误，请联系管理员或查看日志。"
+            error_msg = friendly_error_message(e)
             is_timeout = False
 
         latency_ms = int((time.perf_counter() - start_time) * 1000)

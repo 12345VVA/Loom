@@ -171,6 +171,8 @@ export interface WorkflowLogItem {
 	inputData?: string;
 	outputData?: string;
 	status?: string;
+	/** 节点失败原因（status=error 时后端写入），抽屉红色错误区块展示 */
+	errorMessage?: string;
 	createTime?: string;
 	isExpanded?: boolean;
 }

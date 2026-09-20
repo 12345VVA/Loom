@@ -12,11 +12,14 @@
 		<cl-row>
 			<cl-table ref="Table">
 				<template #column-failedNodeId="{ scope }">
-					<el-tag
+					<el-tooltip
 						v-if="scope.row.status === 'failed' && scope.row.failedNodeId"
-						type="danger"
-						>{{ scope.row.failedNodeId }}</el-tag
+						:content="scope.row.errorMessage"
+						:disabled="!scope.row.errorMessage"
+						placement="top"
 					>
+						<el-tag type="danger">{{ scope.row.failedNodeId }}</el-tag>
+					</el-tooltip>
 					<span v-else>-</span>
 				</template>
 			</cl-table>

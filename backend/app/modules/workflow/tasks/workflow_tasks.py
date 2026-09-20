@@ -30,7 +30,9 @@ from app.modules.workflow.model.workflow import (
 from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
 from app.modules.workflow.service.checkpointer import get_async_checkpointer
 from app.modules.workflow.service.compiler import WorkflowCompiler
+from app.modules.workflow.service.error_format import friendly_error_message
 from app.modules.workflow.service.event_bus import publish_event
+from app.framework.storage import resolve_payload
 import app.modules.workflow.service.workflow_service as _workflow_service  # noqa: F401  冗余保险：compile_graph 入口已确保注册，此处保留双保险以防漏
 
 logger = logging.getLogger(__name__)
@@ -105,12 +107,40 @@ def _persist_node_payloads_sync(instance_id: int, payloads: list[dict]) -> None:
                 payload_type=payload_type,
                 diff_base_log_id=diff_base_log_id,
                 latency_ms=p["latency_ms"],
-                status="success",
+                # error 行由异常兜底投递（_build_error_log_payload），缺 key 视为成功行（兼容旧调用形态）
+                status=p.get("status", "success"),
+                error_message=(p.get("error_message") or None),
             )
             session.add(log)
             session.flush()  # 取 log.id 作为下一条 ref_prev 的 base
             prev_log_id = log.id
         session.commit()
+
+
+def _build_error_log_payload(error: BaseException, nodes_map: dict, current_vars: dict) -> dict | None:
+    """构造失败节点的 error 日志 payload；失败节点未知（异常无 node_id）时返回 None。
+
+    与成功行 payload 同构（_persist 会无条件读 state_data/latency_ms 更新实例进度，
+    缺 key 会 KeyError 且日志行静默丢失）：
+    - state_data 用未脱敏的 current_vars 快照（与成功行一致，input/output 才是脱敏副本）
+    - output 为空对象：失败节点没有输出
+    """
+    node_id = getattr(error, "node_id", None)
+    if not node_id:
+        return None
+    node_info = nodes_map.get(node_id) or {}
+    node_names = {nid: (n.get("name") or nid) for nid, n in nodes_map.items()}
+    return {
+        "node_id": node_id,
+        "node_name": node_info.get("name") or node_id,
+        "node_type": node_info.get("type") or "unknown",
+        "state_data": json.dumps(current_vars),
+        "input_data": json.dumps(AiSecurityService.mask_sensitive_dict(current_vars)),
+        "output_data": "{}",
+        "latency_ms": 0,
+        "status": "error",
+        "error_message": friendly_error_message(error, node_names),
+    }
 
 
 def _is_cancelled_sync(instance_id: int) -> bool:
@@ -321,6 +351,11 @@ async def _async_execute(
     flush_queue: asyncio.Queue = asyncio.Queue()
     flush_task = asyncio.create_task(_flush_worker(instance_id, flush_queue))
 
+    # 兜底异常路径引用的执行态：编译前异常（拓扑解析/编译失败）时事件循环未启动，
+    # 预初始化避免 UnboundLocalError；正常路径由事件循环内赋值覆盖
+    nodes_map: dict = {}
+    current_vars: dict = initial_vars
+
     # 设置 contextvar：本次实例的所有 LLM 调用（节点执行）按 instance 打标，
     # 供 workflow_eval 按 instance 精确聚合 token/cost（runtime_service._log_call 读取）
     _inst_ctx_token = workflow_instance_id_ctx.set(instance_id)
@@ -379,11 +414,19 @@ async def _async_execute(
                             inst = session.get(WorkflowInstance, instance_id)
                             if inst:
                                 timeout_node_id = inst.current_node
+                            # current_node 是最后"完成"的节点而非超时节点（执行中节点无事件产出），
+                            # 文案以"最后完成节点"表述给出定位线索，不把超时归咎该节点
+                            timeout_node_name = ((nodes_map.get(timeout_node_id, {}) or {}).get("name") or timeout_node_id) if timeout_node_id else None
+                            timeout_msg = (
+                                f"节点执行超时（{node_timeout}秒），最后完成节点：「{timeout_node_name}」"
+                                if timeout_node_name
+                                else f"节点执行超时（{node_timeout}秒）"
+                            )
                             _cas(
                                 session,
                                 "running",
                                 status="failed",
-                                error_message=f"节点执行超时（{node_timeout}秒）",
+                                error_message=timeout_msg,
                                 failed_node_id=timeout_node_id,
                             )
                             session.commit()
@@ -391,7 +434,7 @@ async def _async_execute(
                         publish_event(
                             instance_id,
                             "failed",
-                            {"status": "failed", "error": "节点执行超时", "node_id": timeout_node_id},
+                            {"status": "failed", "error": timeout_msg, "node_id": timeout_node_id},
                         )
                         _notify_workflow_failure(instance_id)
                         return
@@ -509,21 +552,28 @@ async def _async_execute(
             )
 
     except Exception as e:
-        # 兜底 drain：异常路径也保证已入队的节点日志落库（flush_task 在 try 外创建，此处可达）
+        logger.error("工作流运行异常: %s", e, exc_info=True)
+        # failed_node_id 来自 NodeExecutionError（业务异常精确到节点）；超时等无则留空。
+        failed_node_id = getattr(e, "node_id", None)
+        node_names = {nid: (n.get("name") or nid) for nid, n in nodes_map.items()}
+        # 异常分类折叠为可读消息（节点名 + 原因），替代此前"非 ValueError 一律内部错误"的兜底；
+        # friendly_error_message 自身不抛（内部已防御），error_msg_safe 必被赋值
+        error_msg_safe = friendly_error_message(e, node_names)
+        # 失败节点写入 status=error 的日志行（此前失败节点无日志记录，时间线上缺位）。
+        # 必须先 put 再 drain——_drain_flush 送出 SENTINEL 后 flush_worker 直接退出
+        err_payload = _build_error_log_payload(e, nodes_map, current_vars)
+        if err_payload is not None:
+            try:
+                await flush_queue.put(err_payload)
+            except Exception:
+                logger.error("失败节点日志入队失败，该行日志丢失", exc_info=True)
+        # 兜底 drain：异常路径也保证已入队的节点日志（含 error 行）落库
         try:
             await _drain_flush(flush_queue, flush_task)
         except Exception:
             logger.error("异常路径 drain flush_task 失败，节点日志可能部分丢失", exc_info=True)
-        logger.error("工作流运行异常: %s", e, exc_info=True)
-        # 预置默认值：若下方 DB 写入失败走到 except se，error_msg_safe 仍已被赋值，
-        # 否则 publish_event 会触发 UnboundLocalError
-        error_msg_safe = "执行失败，发生内部错误。"
-        # failed_node_id 来自 NodeExecutionError（业务异常精确到节点）；超时等无则留空。
-        # 提到 try 外赋值，确保下方 publish_event 始终能引用（DB 写入失败时也安全）。
-        failed_node_id = getattr(e, "node_id", None)
         try:
             with Session(engine) as session:
-                error_msg_safe = str(e) if isinstance(e, ValueError) else "执行失败，发生内部错误。"
                 # 仅 running→failed，不覆盖 cancelled（用户在异常发生时取消的情况）
                 _cas(session, "running", status="failed", error_message=error_msg_safe, failed_node_id=failed_node_id)
                 session.commit()

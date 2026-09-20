@@ -72,6 +72,23 @@
 								</div>
 								<pre>{{ formatJson(item.outputData) }}</pre>
 							</div>
+							<div
+								v-if="item.status === 'error' && item.errorMessage"
+								class="log-payload__section log-payload__error"
+								style="margin-top: 10px"
+							>
+								<div class="section-header">
+									<strong>{{ $t('错误信息：') }}</strong>
+									<el-button
+										link
+										type="primary"
+										:icon="CopyDocument"
+										@click="copyToClipboard(item.errorMessage || '')"
+										>{{ $t('复制') }}</el-button
+									>
+								</div>
+								<pre>{{ item.errorMessage }}</pre>
+							</div>
 						</div>
 					</el-card>
 				</el-timeline-item>
@@ -161,6 +178,15 @@ function formatTime(value?: string): string {
 		overflow-x: auto;
 		white-space: pre-wrap;
 		word-break: break-all;
+	}
+	&__error {
+		strong {
+			color: var(--el-color-danger);
+		}
+		pre {
+			color: var(--el-color-danger);
+			background-color: var(--el-color-danger-light-9);
+		}
 	}
 }
 </style>

@@ -281,6 +281,7 @@ def _ensure_sqlite_compatible_schema() -> None:
             "diff_base_log_id": "ALTER TABLE workflow_execution_log ADD COLUMN diff_base_log_id INTEGER",
             "input_storage_ref": "ALTER TABLE workflow_execution_log ADD COLUMN input_storage_ref VARCHAR",
             "output_storage_ref": "ALTER TABLE workflow_execution_log ADD COLUMN output_storage_ref VARCHAR",
+            "error_message": "ALTER TABLE workflow_execution_log ADD COLUMN error_message VARCHAR(1000)",
         },
         "workflow_eval_case_result": {
             "actual_output_storage_ref": "ALTER TABLE workflow_eval_case_result ADD COLUMN actual_output_storage_ref VARCHAR",
