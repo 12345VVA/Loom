@@ -108,6 +108,8 @@
 		@expand-all="expandAllLogs"
 		@collapse-all="collapseAllLogs"
 	/>
+
+	<artifact-drawer v-model:visible="artifactDrawer.visible" :instance-id="artifactDrawer.instanceId" />
 </template>
 
 <script lang="ts" setup>
@@ -121,6 +123,7 @@ import { ref, reactive, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
 import LogDrawer from '../components/log-drawer.vue';
+import ArtifactDrawer from '../components/artifact-drawer.vue';
 import { formatVersionNo } from '../utils';
 
 const { service } = useCool();
@@ -193,6 +196,12 @@ const logDrawer = reactive({
 	items: [] as WorkflowExecutionLog[]
 });
 
+// 产物抽屉状态
+const artifactDrawer = reactive({
+	visible: false,
+	instanceId: undefined as number | undefined
+});
+
 const Table = useTable({
 	columns: [
 		{ label: t('实例ID'), prop: 'id', width: 90 },
@@ -242,6 +251,14 @@ const Table = useTable({
 						type: 'primary',
 						onClick({ scope }: any) {
 							viewExecutionLogs(scope.row);
+						}
+					},
+					{
+						label: t('产物'),
+						type: 'success',
+						hidden: scope.row.status !== 'success',
+						onClick({ scope }: any) {
+							openArtifactDrawer(scope.row);
 						}
 					},
 					{
@@ -385,6 +402,11 @@ async function submitApproval() {
 	} finally {
 		approvalDialog.loading = false;
 	}
+}
+
+function openArtifactDrawer(row: WorkflowInstance) {
+	artifactDrawer.instanceId = row.id;
+	artifactDrawer.visible = true;
 }
 
 async function viewExecutionLogs(row: WorkflowInstance) {

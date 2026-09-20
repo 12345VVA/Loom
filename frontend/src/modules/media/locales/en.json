@@ -36,5 +36,7 @@
 	"提示": "Tip",
 	"部分资源删除失败": "Some resources failed to delete",
 	"删除成功": "Delete Succeeded",
-	"已复制": "Copied"
+	"已复制": "Copied",
+	"工作流": "Workflow",
+	"来源实例": "Source Instance"
 }

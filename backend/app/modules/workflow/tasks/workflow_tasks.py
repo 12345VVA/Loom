@@ -28,6 +28,7 @@ from app.modules.workflow.model.workflow import (
     WorkflowInstance,
 )
 from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
+from app.modules.workflow.service.artifact_service import persist_workflow_artifacts
 from app.modules.workflow.service.checkpointer import get_async_checkpointer
 from app.modules.workflow.service.compiler import WorkflowCompiler
 from app.modules.workflow.service.error_format import friendly_error_message
@@ -525,6 +526,9 @@ async def _async_execute(
             # 先 drain 剩余日志，再读 state_data 做 success 终态
             await _drain_flush(flush_queue, flush_task)
             state_data_str = "{}"
+            inst_definition_id: int | None = None
+            inst_version_id: int | None = None
+            inst_user_id: int | None = None
             with Session(engine) as session:
                 instance = session.get(WorkflowInstance, instance_id)
                 if instance:
@@ -535,11 +539,19 @@ async def _async_execute(
                         return
                     # T8：state_data 超阈值时以 storage ref 还原全量快照再做 success 终态
                     state_data_str = resolve_payload(instance.state_data, instance.state_data_ref) or "{}"
+                    inst_definition_id = instance.definition_id
+                    inst_version_id = instance.version_id
+                    inst_user_id = instance.user_id
                     _cas(session, "running", status="success")
                     session.commit()
 
             final_vars = json.loads(state_data_str)
             workflow_output = final_vars.pop("workflow_output", None)
+            # 产物落地（best-effort）：在 success SSE 推送前执行，前端收到事件后打开产物抽屉即可查询
+            if inst_definition_id is not None:
+                persist_workflow_artifacts(
+                    instance_id, inst_definition_id, inst_version_id, inst_user_id, None, workflow_output
+                )
             publish_event(
                 instance_id,
                 "success",

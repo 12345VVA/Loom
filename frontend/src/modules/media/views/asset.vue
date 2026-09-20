@@ -145,13 +145,13 @@ defineOptions({
 	name: 'media-asset'
 });
 
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Document, Headset, Picture, VideoCamera } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
-import { config } from '/@/config';
 import { useI18n } from 'vue-i18n';
+import { useAssetUrl } from '../composables/use-asset-url';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -166,6 +166,7 @@ const assetTypeOptions = [
 const sourceTypeOptions = [
 	{ label: t('AI 任务'), value: 'ai_task' },
 	{ label: t('同步生成'), value: 'ai_sync' },
+	{ label: t('工作流'), value: 'workflow' },
 	{ label: t('上传'), value: 'upload' }
 ];
 const statusOptions = [
@@ -216,6 +217,12 @@ const Table = useTable({
 			minWidth: 120,
 			formatter: ({ status }: any) => optionLabel(statusOptions, status)
 		},
+		{
+			label: t('来源实例'),
+			prop: 'workflowInstanceId',
+			minWidth: 100,
+			formatter: ({ workflowInstanceId }: any) => workflowInstanceId ?? '-'
+		},
 		{ label: t('大小'), prop: 'sizeBytes', minWidth: 100 },
 		{ label: 'MD5', prop: 'md5', minWidth: 220, showOverflowTooltip: true },
 		{ label: t('提示词'), prop: 'prompt', minWidth: 220, showOverflowTooltip: true },
@@ -234,43 +241,12 @@ const Crud = useCrud(
 	}
 );
 
-// 专用下载令牌：短 TTL，与 access token 隔离，避免其通过 ?token= 泄露到日志/Referer/分享串
-const downloadToken = ref('');
-const downloadTokenExpireAt = ref(0);
-let downloadTokenTimer: ReturnType<typeof setTimeout> | null = null;
-// 组件卸载标志：阻止 await 期间卸载后继续写状态/设新 timer（杜绝孤儿定时器无限续签）
-let downloadTokenUnmounted = false;
-
-async function ensureDownloadToken(): Promise<string> {
-	// 剩余有效期 > 30s 直接复用
-	if (downloadToken.value && Date.now() < downloadTokenExpireAt.value - 30000) {
-		return downloadToken.value;
-	}
-	try {
-		const res = await mediaService.downloadToken();
-		// await 期间组件可能已卸载：不再更新状态、不再设续签 timer
-		if (downloadTokenUnmounted) return downloadToken.value;
-		downloadToken.value = res?.token || '';
-		downloadTokenExpireAt.value = Date.now() + (res?.expire || 300) * 1000;
-		// 过期前 60s 续签，保证 <img>/<video> 等持续可用
-		const delay = Math.max(downloadTokenExpireAt.value - Date.now() - 60000, 10000);
-		if (downloadTokenTimer) clearTimeout(downloadTokenTimer);
-		downloadTokenTimer = setTimeout(() => ensureDownloadToken(), delay);
-	} catch {
-		if (downloadTokenUnmounted) return downloadToken.value;
-		downloadToken.value = '';
-	}
-	return downloadToken.value;
-}
+// 专用下载令牌 + 资产地址拼接：抽为 composable 供产物视图复用
+const { assetUrl, ensureDownloadToken } = useAssetUrl();
 
 onMounted(() => {
 	loadStats();
 	ensureDownloadToken();
-});
-
-onUnmounted(() => {
-	downloadTokenUnmounted = true;
-	if (downloadTokenTimer) clearTimeout(downloadTokenTimer);
 });
 
 async function loadStats() {
@@ -323,24 +299,6 @@ async function copyText(value: string) {
 
 function openUrl(url: string) {
 	window.open(url, '_blank');
-}
-
-function assetUrl(url?: string) {
-	if (!url) {
-		return '';
-	}
-	if (/^(https?:)?\/\//.test(url) || url.startsWith('data:')) {
-		return url;
-	}
-	if (url.startsWith('/uploads/')) {
-		const token = downloadToken.value;
-		// token 未就绪时返回空串，避免发出无 token 的 401 请求（污染浏览器缓存/破图）；
-		// token 到位后 ref 变化触发响应式重渲染，src 重新带上 token 加载。
-		if (!token) return '';
-		const sep = url.includes('?') ? '&' : '?';
-		return `${config.baseUrl}${url}${sep}token=${token}`;
-	}
-	return url;
 }
 
 function previewSrc(row: any) {

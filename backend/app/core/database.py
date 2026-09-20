@@ -21,6 +21,7 @@ from app.modules.media.model import media as _media_models  # noqa: F401
 from app.modules.notification.model import notification as _notification_models  # noqa: F401
 from app.modules.task.model import task as _task_models  # noqa: F401
 from app.modules.workflow.model import workflow as _workflow_models  # noqa: F401
+from app.modules.workflow.model import workflow_artifact as _workflow_artifact_models  # noqa: F401
 from app.modules.workflow_eval.model import eval_run as _workflow_eval_eval_run_models  # noqa: F401
 from app.modules.workflow_eval.model import test_set as _workflow_eval_test_set_models  # noqa: F401
 
@@ -356,6 +357,7 @@ def _ensure_sqlite_compatible_schema() -> None:
         "workflow_definition_version",
         "workflow_instance",
         "workflow_execution_log",
+        "workflow_artifact",
         "workflow_eval_case_result",
         "workflow_eval_test_case",
         "workflow_eval_run",

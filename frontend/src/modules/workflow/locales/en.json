@@ -267,5 +267,9 @@
 	"此节点类型已弃用，建议使用「工具执行器」节点": "This node type is deprecated, use the \"Tool Executor\" node",
 	"节点存在未完成的必填配置": "Node has incomplete required config",
 	"本次运行暂无数据": "No data for this run",
-	"试运行中...": "Running trial..."
+	"试运行中...": "Running trial...",
+	"产物": "Artifacts",
+	"实例产物": "Instance Artifacts",
+	"该实例暂无产物": "No artifacts for this instance",
+	"获取产物失败: ": "Failed to Get Artifacts: "
 }
