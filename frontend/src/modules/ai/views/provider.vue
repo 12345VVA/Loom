@@ -148,6 +148,32 @@ const Upsert = useUpsert({
 			}
 		},
 		{
+			label: t('管理 Access Key'),
+			prop: 'adminAccessKey',
+			hidden: ({ scope }) => scope.adapter !== 'volcengine-ark',
+			component: {
+				name: 'el-input',
+				props: {
+					type: 'password',
+					showPassword: true,
+					placeholder: t('火山 OpenAPI 鉴权（模型同步用），留空则不修改')
+				}
+			}
+		},
+		{
+			label: t('管理 Secret Key'),
+			prop: 'adminSecretKey',
+			hidden: ({ scope }) => scope.adapter !== 'volcengine-ark',
+			component: {
+				name: 'el-input',
+				props: {
+					type: 'password',
+					showPassword: true,
+					placeholder: t('仅用于接口签名，留空则不修改')
+				}
+			}
+		},
+		{
 			label: t('扩展配置'),
 			prop: 'extraConfig',
 			component: { name: 'slot-extraConfig' }
@@ -163,7 +189,7 @@ const Upsert = useUpsert({
 		}
 	},
 	onInfo(data, { done }) {
-		done({ ...data, apiKey: '' });
+		done({ ...data, apiKey: '', adminAccessKey: '', adminSecretKey: '' });
 	}
 });
 
@@ -175,6 +201,7 @@ const Table = useTable({
 		{ label: t('适配器'), prop: 'adapter', minWidth: 150 },
 		{ label: 'Base URL', prop: 'baseUrl', minWidth: 240, showOverflowTooltip: true },
 		{ label: 'API Key', prop: 'apiKeyMask', minWidth: 130 },
+		{ label: t('管理 AK'), prop: 'adminAccessKeyMask', minWidth: 130 },
 		{ label: t('启用'), prop: 'status', width: 100 },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
 		{
@@ -224,7 +251,9 @@ async function testProvider(row: any) {
 async function syncModels(row: any) {
 	try {
 		const res = await service.ai.provider.syncModels({ id: row.id });
-		ElMessage.success(`${t('同步完成')}，${t('新增')}: ${res?.created || 0}`);
+		ElMessage.success(
+			`${t('同步完成')}，${t('新增')}: ${res?.created || 0}，${t('已更新')}: ${res?.updated || 0}`
+		);
 	} catch (err: any) {
 		ElMessage.error(err.message || t('同步失败'));
 	}

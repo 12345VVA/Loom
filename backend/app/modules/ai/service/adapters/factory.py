@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import HTTPException, status
 
+from app.core.secret import decrypt_secret
 from app.modules.ai.model.ai import AiProvider
 from app.modules.ai.service.adapters.base import UpstreamApiError, normalize_usage, openai_image_result
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
@@ -15,6 +16,7 @@ from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
 from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
 from app.modules.ai.service.adapters.openai_http import OpenAIHttpAdapter
+from app.modules.ai.service.adapters.volcengine_openapi import iter_ark_available_models
 
 
 class BailianAdapter(OpenAIHttpAdapter):
@@ -103,12 +105,49 @@ class BailianAdapter(OpenAIHttpAdapter):
         return headers
 
 
+def _adapt_deepseek_options(options: dict[str, Any] | None) -> dict[str, Any]:
+    """DeepSeek chat/completions 的两项结构化输出适配：
+
+    1. JSON Output 仅支持 response_format=json_object，不支持 json_schema
+       （返回 400 "This response_format type is unavailable now"）。json_schema 降级为
+       json_object；schema 结构信息由调用方 prompt 中的格式指令兜底（如工作流 LLM 节点
+       会追加 jsonFields 结构描述）。
+    2. V4 思考模型的思维链与正文共享 max_tokens，JSON 模式下小预算会导致 content 为空
+       （官方已知问题）。结构化输出场景思维链无消费方，注入 thinking=disabled 保证正文
+       直接产出；调用方显式设置 thinking 时尊重其选择。旧模型名（deepseek-chat 等）
+       安全接受该参数，已实测。
+    """
+    normalized = dict(options or {})
+    response_format = normalized.get("response_format")
+    if isinstance(response_format, dict) and response_format.get("type") == "json_schema":
+        normalized["response_format"] = {"type": "json_object"}
+    if normalized.get("response_format") == {"type": "json_object"} and "thinking" not in normalized:
+        normalized["thinking"] = {"type": "disabled"}
+    return normalized
+
+
 class DeepSeekAdapter(OpenAIHttpAdapter):
     default_base_url = "https://api.deepseek.com"
+
+    def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]) -> dict:
+        return super().chat(model=model, messages=messages, options=_adapt_deepseek_options(options))
+
+    def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
+        return super().stream_chat(model=model, messages=messages, options=_adapt_deepseek_options(options))
 
 
 class VolcengineArkAdapter(OpenAIHttpAdapter):
     default_base_url = "https://ark.cn-beijing.volces.com/api/v3"
+
+    def list_models(self) -> list[dict[str, Any]]:
+        # 方舟推理域名不提供 OpenAI 风格 /models；模型开通列表走火山 OpenAPI（AK/SK V4 签名）
+        access_key = decrypt_secret(self.provider.admin_access_key_cipher)
+        secret_key = decrypt_secret(self.provider.admin_secret_key_cipher)
+        if not access_key or not secret_key:
+            raise UpstreamApiError(
+                "火山方舟模型列表仅支持 Access Key 鉴权，请先在厂商配置中填写管理 Access Key/Secret Key"
+            )
+        return iter_ark_available_models(access_key=access_key, secret_key=secret_key, timeout=self.timeout)
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
         normalized_options = _normalize_volcengine_image_options(model, options or {})

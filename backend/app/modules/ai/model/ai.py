@@ -45,6 +45,10 @@ class AiProvider(BaseEntity, table=True):
     base_url: str | None = Field(default=None, max_length=500)
     api_key_cipher: str | None = None
     api_key_mask: str | None = Field(default=None, max_length=100)
+    # 管理侧凭证（火山 V4 签名等 OpenAPI 鉴权用），与推理 api_key 相互独立
+    admin_access_key_cipher: str | None = None
+    admin_secret_key_cipher: str | None = None
+    admin_access_key_mask: str | None = Field(default=None, max_length=100)
     extra_config: str | None = None
     is_active: bool = Field(default=True, index=True)
     sort_order: int = Field(default=0, index=True)
@@ -220,6 +224,9 @@ class AiProviderRead(BaseModel):
     base_url: str | None = None
     api_key_mask: str | None = None
     has_api_key: bool = False
+    admin_access_key_mask: str | None = None
+    has_admin_access_key: bool = False
+    has_admin_secret_key: bool = False
     extra_config: str | None = None
     is_active: bool
     sort_order: int = 0
@@ -235,6 +242,9 @@ class AiProviderCreateRequest(BaseModel):
     adapter: str = "openai-compatible"
     base_url: str | None = None
     api_key: str | None = None
+    # 管理侧凭证明文入参（仅写入方向，读取只回掩码）；留空表示不修改
+    admin_access_key: str | None = None
+    admin_secret_key: str | None = None
     extra_config: str | None = None
     is_active: bool = True
     sort_order: int = 0

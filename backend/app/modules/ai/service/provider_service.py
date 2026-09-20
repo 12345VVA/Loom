@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -28,6 +29,7 @@ class AiProviderService(BaseAdminCrudService):
         if api_key:
             data["api_key_cipher"] = encrypt_secret(api_key)
             data["api_key_mask"] = mask_secret(api_key)
+        self._apply_admin_keys(data)
         return data
 
     def _before_update(self, data: dict, entity: AiProvider) -> dict:
@@ -39,7 +41,21 @@ class AiProviderService(BaseAdminCrudService):
         if api_key:
             data["api_key_cipher"] = encrypt_secret(api_key)
             data["api_key_mask"] = mask_secret(api_key)
+        self._apply_admin_keys(data)
         return data
+
+    def _apply_admin_keys(self, data: dict) -> None:
+        """管理侧 AK/SK：明文入参加密落库，留空不修改；AK 只保留掩码。"""
+        for plain_field, cipher_field in (
+            ("admin_access_key", "admin_access_key_cipher"),
+            ("admin_secret_key", "admin_secret_key_cipher"),
+        ):
+            data.pop(cipher_field, None)
+            value = data.pop(plain_field, None)
+            if value:
+                data[cipher_field] = encrypt_secret(value)
+                if plain_field == "admin_access_key":
+                    data["admin_access_key_mask"] = mask_secret(value)
 
     def add(self, payload: Any) -> dict:
         entity = super().add(payload)
@@ -97,14 +113,18 @@ class AiProviderService(BaseAdminCrudService):
             code = str(item.get("code") or "").strip()
             if not code:
                 continue
+            pricing = item.get("pricing")
+            pricing_json = json.dumps(pricing, ensure_ascii=False) if pricing else None
             exists = self.session.exec(
                 select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == code)
             ).first()
             if exists:
                 existing_count += 1
                 exists.name = str(item.get("name") or code)
+                # 尊重管理员的手动启停与人工分类结果：同步只补元数据，不动 is_active
+                if pricing_json:
+                    exists.pricing_config = pricing_json
                 exists.delete_time = None
-                exists.is_active = False
                 self.session.add(exists)
                 continue
             self.session.add(
@@ -114,6 +134,7 @@ class AiProviderService(BaseAdminCrudService):
                     name=str(item.get("name") or code),
                     model_type="chat",
                     capabilities="sync-pending,manual-classification-required",
+                    pricing_config=pricing_json,
                     is_active=False,
                 )
             )
@@ -194,4 +215,13 @@ class AiProviderService(BaseAdminCrudService):
         data.pop("apiKeyCipher", None)
         data.pop("api_key_cipher", None)
         data["hasApiKey"] = bool(data.get("apiKeyMask") or data.get("api_key_mask"))
+        # SK 无掩码字段，须在 pop 密文前判定是否已配置（snake/camel 取决于 finalize 阶段）
+        sk_cipher = data.pop("admin_secret_key_cipher", None)
+        sk_cipher = data.pop("adminSecretKeyCipher", sk_cipher)
+        data.pop("admin_access_key_cipher", None)
+        data.pop("adminAccessKeyCipher", None)
+        mask = data.get("adminAccessKeyMask") or data.get("admin_access_key_mask")
+        data["adminAccessKeyMask"] = mask
+        data["hasAdminAccessKey"] = bool(mask)
+        data["hasAdminSecretKey"] = bool(sk_cipher)
         return data

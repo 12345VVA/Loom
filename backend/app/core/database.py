@@ -189,6 +189,9 @@ def _ensure_sqlite_compatible_schema() -> None:
         "ai_provider": {
             "api_key_cipher": "ALTER TABLE ai_provider ADD COLUMN api_key_cipher VARCHAR",
             "api_key_mask": "ALTER TABLE ai_provider ADD COLUMN api_key_mask VARCHAR",
+            "admin_access_key_cipher": "ALTER TABLE ai_provider ADD COLUMN admin_access_key_cipher VARCHAR",
+            "admin_secret_key_cipher": "ALTER TABLE ai_provider ADD COLUMN admin_secret_key_cipher VARCHAR",
+            "admin_access_key_mask": "ALTER TABLE ai_provider ADD COLUMN admin_access_key_mask VARCHAR",
             "sort_order": "ALTER TABLE ai_provider ADD COLUMN sort_order INTEGER DEFAULT 0",
         },
         "ai_model": {
@@ -261,12 +264,17 @@ def _ensure_sqlite_compatible_schema() -> None:
             "status": "ALTER TABLE ai_runtime_invocation ADD COLUMN status VARCHAR DEFAULT 'running'",
             "started_at": "ALTER TABLE ai_runtime_invocation ADD COLUMN started_at DATETIME",
             "finished_at": "ALTER TABLE ai_runtime_invocation ADD COLUMN finished_at DATETIME",
+            # cancel 按 task 精确释放并发计数（见 governance_service.release_by_task）
+            "task_id": "ALTER TABLE ai_runtime_invocation ADD COLUMN task_id INTEGER",
+            # 持久化 acquire 的并发计数 Redis key（JSON），worker terminate 后据此精确 decr
+            "cc_keys": "ALTER TABLE ai_runtime_invocation ADD COLUMN cc_keys VARCHAR",
         },
         "workflow_instance": {
             "celery_task_id": "ALTER TABLE workflow_instance ADD COLUMN celery_task_id VARCHAR",
             "user_id": "ALTER TABLE workflow_instance ADD COLUMN user_id INTEGER",
             "version_id": "ALTER TABLE workflow_instance ADD COLUMN version_id INTEGER",
             "failed_node_id": "ALTER TABLE workflow_instance ADD COLUMN failed_node_id VARCHAR",
+            "state_data_ref": "ALTER TABLE workflow_instance ADD COLUMN state_data_ref VARCHAR",
         },
         "workflow_execution_log": {
             "payload_type": "ALTER TABLE workflow_execution_log ADD COLUMN payload_type VARCHAR DEFAULT 'full'",
@@ -401,6 +409,8 @@ INDEX_DEFINITIONS: list[tuple[str, str, str, str | None]] = [
     # workflow_definition_version：版本历史（按定义+时间）与状态过滤（查 draft/发布版）
     ("ix_workflow_definition_version_definition_id_created_at", "workflow_definition_version", "definition_id, created_at", None),
     ("ix_workflow_definition_version_definition_id_status", "workflow_definition_version", "definition_id, status", None),
+    # ai_runtime_invocation：cancel 按 task 定位 running invocation（Field(index=True) 的旧库补齐）
+    ("ix_ai_runtime_invocation_task_id", "ai_runtime_invocation", "task_id", None),
 ]
 
 
