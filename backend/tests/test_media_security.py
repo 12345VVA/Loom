@@ -6,6 +6,7 @@
 2. 文件大小超限被拒（upload 流程早期校验）
 3. 普通用户无法删除他人媒体
 4. 普通用户 list 只看到自己的媒体
+5. safe_stream 代理环境回退：系统代理激活时改用 hostname 请求，直连时保持 IP URL + SNI
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.config import settings
+from app.framework.url_security import safe_stream
 from app.modules.base.model.auth import User
 from app.modules.media.model.media import MediaAsset
 from app.modules.media.service.media_service import (
@@ -107,6 +109,75 @@ class MediaSecurityTestCase(unittest.TestCase):
         # 转存成功
         self.assertEqual(asset.status, "success")
         self.assertEqual(asset.storage_url, "/uploads/safe.png")
+
+    # ------------------------------------------------------------------
+    # 1.1 safe_stream 代理环境回退
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _mock_httpx_client():
+        """patch url_security.httpx.Client，返回 (Client 构造 mock, 发起 stream 的 client mock)"""
+        client = MagicMock()
+        client.__enter__.return_value = client
+        mock_client_cls = MagicMock(return_value=client)
+        return mock_client_cls, client
+
+    def test_safe_stream_falls_back_to_hostname_url_when_proxy_active(self):
+        """系统代理激活时改用原 hostname 请求（httpcore 代理隧道不支持 sni_hostname 扩展）"""
+        mock_client_cls, client = self._mock_httpx_client()
+        with patch(
+            "app.framework.url_security.urllib.request.getproxies",
+            return_value={"https": "http://127.0.0.1:7897"},
+        ):
+            with patch("app.framework.url_security.urllib.request.proxy_bypass", return_value=False):
+                with patch("app.framework.url_security.httpx.Client", mock_client_cls):
+                    with safe_stream("GET", "https://198.18.0.48/a.jpeg", "cdn.example.com"):
+                        pass
+        args, kwargs = client.stream.call_args
+        # URL 还原为原 hostname，保留路径；不再携带 sni 扩展
+        self.assertEqual(args[1], "https://cdn.example.com/a.jpeg")
+        self.assertIsNone(kwargs.get("extensions"))
+        # SSRF 硬约束保持：代理场景同样禁止重定向
+        self.assertFalse(kwargs.get("follow_redirects"))
+
+    def test_safe_stream_hostname_fallback_preserves_port(self):
+        """hostname 回退时保留原 URL 端口"""
+        mock_client_cls, client = self._mock_httpx_client()
+        with patch(
+            "app.framework.url_security.urllib.request.getproxies",
+            return_value={"https": "http://127.0.0.1:7897"},
+        ):
+            with patch("app.framework.url_security.urllib.request.proxy_bypass", return_value=False):
+                with patch("app.framework.url_security.httpx.Client", mock_client_cls):
+                    with safe_stream("GET", "https://198.18.0.48:8443/a.jpeg", "cdn.example.com"):
+                        pass
+        args, _ = client.stream.call_args
+        self.assertEqual(args[1], "https://cdn.example.com:8443/a.jpeg")
+
+    def test_safe_stream_keeps_ip_url_with_sni_when_no_proxy(self):
+        """无代理时保持 IP 直连 URL + sni_hostname 扩展（DNS rebinding 防护语义不变）"""
+        mock_client_cls, client = self._mock_httpx_client()
+        with patch("app.framework.url_security.urllib.request.getproxies", return_value={}):
+            with patch("app.framework.url_security.httpx.Client", mock_client_cls):
+                with safe_stream("GET", "https://198.18.0.48/a.jpeg", "cdn.example.com"):
+                    pass
+        args, kwargs = client.stream.call_args
+        self.assertEqual(args[1], "https://198.18.0.48/a.jpeg")
+        self.assertEqual(kwargs.get("extensions"), {"sni_hostname": "cdn.example.com"})
+
+    def test_safe_stream_keeps_ip_url_when_proxy_bypass_matches(self):
+        """目标 host 命中 no_proxy/代理例外时不走代理，保持 IP 直连 + sni_hostname"""
+        mock_client_cls, client = self._mock_httpx_client()
+        with patch(
+            "app.framework.url_security.urllib.request.getproxies",
+            return_value={"https": "http://127.0.0.1:7897"},
+        ):
+            with patch("app.framework.url_security.urllib.request.proxy_bypass", return_value=True):
+                with patch("app.framework.url_security.httpx.Client", mock_client_cls):
+                    with safe_stream("GET", "https://198.18.0.48/a.jpeg", "cdn.example.com"):
+                        pass
+        args, kwargs = client.stream.call_args
+        self.assertEqual(args[1], "https://198.18.0.48/a.jpeg")
+        self.assertEqual(kwargs.get("extensions"), {"sni_hostname": "cdn.example.com"})
 
     # ------------------------------------------------------------------
     # 2. 文件大小超限（P0-13）

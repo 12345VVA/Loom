@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import urllib.request
 from contextlib import contextmanager
 from urllib.parse import urlparse
 
@@ -95,14 +96,47 @@ def _remote_allowed_host_patterns() -> list[str]:
     ]
 
 
+def _environment_proxy_active(safe_url: str, hostname: str) -> bool:
+    """判断发起该请求时 httpx（trust_env 默认开启）是否会路由到 HTTP 代理。
+
+    httpx 经由 urllib 读取环境变量与 Windows 系统代理（注册表）。httpcore 的 HTTP 代理
+    隧道不支持 sni_hostname 扩展（http_proxy.py 硬编码以 URL host 作为 TLS
+    server_hostname），代理激活时 IP 直连 URL 会按 IP 校验证书，遇到代理软件 fake-ip
+    网段（198.18.0.0/15）必然失败，故调用方需回退为 hostname 请求。
+    """
+    proxies = urllib.request.getproxies()
+    scheme = urlparse(safe_url).scheme
+    proxy_keys = ("https", "all") if scheme == "https" else ("http", "all")
+    if not any(key in proxies for key in proxy_keys):
+        return False
+    try:
+        return not urllib.request.proxy_bypass(hostname)
+    except Exception:
+        # bypass 判断异常时保守视为走代理（hostname 请求在直连场景同样可用）
+        return True
+
+
+def _restore_hostname_url(safe_url: str, hostname: str) -> str:
+    """把 IP 直连 URL 的 netloc 还原为原 hostname，保留端口/路径/查询参数。"""
+    parsed = urlparse(safe_url)
+    netloc = f"{hostname}:{parsed.port}" if parsed.port else hostname
+    return parsed._replace(netloc=netloc).geturl()
+
+
 @contextmanager
 def safe_stream(method: str, safe_url: str, hostname: str | None, **kwargs):
     """对已校验的 IP URL 发起流式请求，TLS 的 SNI/证书校验改用原 hostname。
 
     validate_remote_url 把 netloc 替换为已校验 IP 以缓解 DNS rebinding TOCTOU，
     但 httpx 默认以 netloc(host) 作为 SNI 与证书校验的 server_hostname，对需要 SNI 的
-    CDN/HTTPS 源会握手失败或证书不匹配。此处通过 httpcore 的 extensions["sni_hostname"]
+    CDN/HTTPS 源会握手失败或证书不匹配。直连场景通过 httpcore 的 extensions["sni_hostname"]
     覆盖 server_hostname：TCP 连接到已校验 IP，SNI/证书按原 hostname 校验。
+
+    代理场景（环境变量 / Windows 系统代理激活）例外：httpcore 的 HTTP 代理隧道不支持
+    sni_hostname 扩展，须改用原 hostname 发起请求，DNS 解析与连接交由代理完成，TLS 按
+    域名校验（即普通客户端行为），否则证书会按 IP 校验而失败。此时 rebinding 防护退化
+    为 hostname 级：代理模式下解析权在代理侧，IP 直连语义无法维持。
+
     顶层 httpx.stream 不透传 extensions，故须经 Client.stream 发起请求。
     """
     kwargs.setdefault("timeout", 30)
@@ -110,7 +144,12 @@ def safe_stream(method: str, safe_url: str, hostname: str | None, **kwargs):
     # 跟随重定向会绕过 IP 黑名单（重定向目标可能是内网/元数据地址）。
     # 即使调用方误传 follow_redirects=True 也在此硬覆盖为 False。
     kwargs["follow_redirects"] = False
-    extensions = {"sni_hostname": hostname} if hostname else None
+    if hostname and _environment_proxy_active(safe_url, hostname):
+        request_url = _restore_hostname_url(safe_url, hostname)
+        extensions = None
+    else:
+        request_url = safe_url
+        extensions = {"sni_hostname": hostname} if hostname else None
     with httpx.Client() as client:
-        with client.stream(method, safe_url, extensions=extensions, **kwargs) as response:
+        with client.stream(method, request_url, extensions=extensions, **kwargs) as response:
             yield response
