@@ -30,7 +30,7 @@
 		</cl-row>
 
 		<cl-upsert ref="Upsert">
-			<template #slot-extra-config="{ scope }">
+			<template #slot-extraConfig="{ scope }">
 				<div class="extra-config-editor">
 					<div class="extra-config-editor__tools">
 						<span>{{ $t('按适配器填充常用配置') }}</span>
@@ -150,11 +150,18 @@ const Upsert = useUpsert({
 		{
 			label: t('扩展配置'),
 			prop: 'extraConfig',
-			component: { name: 'slot-extra-config' }
+			component: { name: 'slot-extraConfig' }
 		},
 		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } },
 		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } }
 	],
+	onOpen() {
+		// 旧数据可能为 null，编辑器需有初始 JSON 串（仅在空值时兜底，避免覆盖编辑回填）
+		const data = Upsert.value?.form;
+		if (data && data.extraConfig == null) {
+			data.extraConfig = '{}';
+		}
+	},
 	onInfo(data, { done }) {
 		done({ ...data, apiKey: '' });
 	}

@@ -27,7 +27,7 @@
 		</cl-row>
 
 		<cl-upsert ref="Upsert">
-			<template #slot-pricing-config="{ scope }">
+			<template #slot-pricingConfig="{ scope }">
 				<div class="default-config-editor">
 					<div class="default-config-editor__tools">
 						<span>{{ $t('模型调用价格配置') }}</span>
@@ -38,7 +38,7 @@
 					<cl-editor-codemirror v-model="scope.pricingConfig" :height="200" />
 				</div>
 			</template>
-			<template #slot-default-config="{ scope }">
+			<template #slot-defaultConfig="{ scope }">
 				<div class="default-config-editor">
 					<div class="default-config-editor__tools">
 						<span>{{ defaultConfigHint(scope) }}</span>
@@ -117,16 +117,28 @@ const Upsert = useUpsert({
 		{
 			label: t('价格配置'),
 			prop: 'pricingConfig',
-			component: { name: 'slot-pricing-config' }
+			component: { name: 'slot-pricingConfig' }
 		},
 		{
 			label: t('默认参数'),
 			prop: 'defaultConfig',
-			component: { name: 'slot-default-config' }
+			component: { name: 'slot-defaultConfig' }
 		},
 		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } },
 		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } }
-	]
+	],
+	onOpen() {
+		// 旧数据可能为 null，编辑器需有初始 JSON 串（仅在空值时兜底，避免覆盖编辑回填）
+		const data = Upsert.value?.form;
+		if (data) {
+			if (data.pricingConfig == null) {
+				data.pricingConfig = '{}';
+			}
+			if (data.defaultConfig == null) {
+				data.defaultConfig = '{}';
+			}
+		}
+	}
 });
 
 const Table = useTable({
