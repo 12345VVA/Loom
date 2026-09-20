@@ -602,10 +602,16 @@ async def execute_image_generator_node(variables: dict[str, Any], config: dict[s
             ai_result["result"],
             ai_result["request_payload"],
             profile_code,
+            config.get("id"),
         )
         logger.info(f"工作流生图转存成功: temp={temp_url[:80]}... → permanent={permanent_url}")
     except Exception as e:
-        logger.warning(f"工作流生图转存失败，使用临时 URL: {e}")
+        # 回退临时 URL（约 24h 过期）：转存失败明细已在 media 资产 failed 行（归属齐全可重试），
+        # temp_url 前缀入日志便于追踪腐化链接
+        logger.warning(
+            f"工作流生图转存失败，使用临时 URL: {e}",
+            extra={"temp_url_prefix": temp_url[:80], "node_id": config.get("id")},
+        )
 
     return {output_variable: permanent_url}
 
@@ -614,10 +620,26 @@ def _persist_image_to_media(
     result: dict[str, Any],
     request_payload: dict[str, Any],
     profile_code: str | None = None,
+    node_id: str | None = None,
 ) -> str:
-    """将 AI 生图结果转存到媒体资源库，返回永久存储 URL。转存失败时抛异常由调用方兜底。"""
+    """将 AI 生图结果转存到媒体资源库，返回永久存储 URL。转存失败时抛异常由调用方兜底。
+
+    归属：instance 框架信息（instance_id/definition_id/user_id）从 workflow_instance_id_ctx
+    读取（asyncio.to_thread 复制上下文，同 runtime_service._log_call 打标机制）；node_id 由
+    executor_config 显式传入。单节点测试路径不设置 ctx，转存资产归属为空（仅超管可见）。
+    """
     from app.core.database import SessionLocal
+    from app.core.logging import workflow_instance_id_ctx
     from app.modules.media.service.media_service import MediaAssetService
+
+    instance_id = workflow_instance_id_ctx.get()
+    instance = None
+    if instance_id is not None:
+        with SessionLocal() as inst_session:
+            instance = inst_session.get(WorkflowInstance, instance_id)
+        if instance is None:
+            # 实例已被删除：ctx 引用失效，归属整体置空，不落孤儿 id
+            instance_id = None
 
     with SessionLocal() as session:
         media_service = MediaAssetService(session)
@@ -627,6 +649,10 @@ def _persist_image_to_media(
             request_payload=request_payload,
             source_type="workflow",
             profile_code=profile_code,
+            created_by=instance.user_id if instance else None,
+            workflow_instance_id=instance_id,
+            workflow_definition_id=instance.definition_id if instance else None,
+            workflow_node_id=node_id,
         )
         # 正常转存成功
         if assets:

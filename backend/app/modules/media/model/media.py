@@ -14,7 +14,7 @@ from app.framework.api.naming import resolve_alias
 from app.framework.models.entity import BaseEntity
 
 MEDIA_ASSET_TYPES = {"image", "video", "audio", "file"}
-MEDIA_SOURCE_TYPES = {"ai_task", "ai_sync", "upload"}
+MEDIA_SOURCE_TYPES = {"ai_task", "ai_sync", "upload", "workflow"}
 MEDIA_ASSET_STATUSES = {"pending", "transferring", "success", "failed", "deleted"}
 
 
@@ -41,6 +41,10 @@ class MediaAsset(BaseEntity, table=True):
     status: str = Field(default="pending", index=True, max_length=50)
     error_message: str | None = Field(default=None, max_length=1000)
     created_by: int | None = Field(default=None, index=True)
+    # 工作流来源归属（source_type=workflow 时写入；供资源库反查实例/定义与 /uploads 归属校验）
+    workflow_instance_id: int | None = Field(default=None, index=True)
+    workflow_definition_id: int | None = Field(default=None)
+    workflow_node_id: str | None = Field(default=None, max_length=100)
 
 
 class MediaAssetRead(BaseModel):
@@ -67,6 +71,9 @@ class MediaAssetRead(BaseModel):
     status: str
     error_message: str | None = None
     created_by: int | None = None
+    workflow_instance_id: int | None = None
+    workflow_definition_id: int | None = None
+    workflow_node_id: str | None = None
     created_at: datetime
     updated_at: datetime
 

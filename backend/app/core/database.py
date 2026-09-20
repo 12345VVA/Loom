@@ -320,6 +320,9 @@ def _ensure_sqlite_compatible_schema() -> None:
             "status": "ALTER TABLE media_asset ADD COLUMN status VARCHAR DEFAULT 'pending'",
             "error_message": "ALTER TABLE media_asset ADD COLUMN error_message VARCHAR",
             "created_by": "ALTER TABLE media_asset ADD COLUMN created_by INTEGER",
+            "workflow_instance_id": "ALTER TABLE media_asset ADD COLUMN workflow_instance_id INTEGER",
+            "workflow_definition_id": "ALTER TABLE media_asset ADD COLUMN workflow_definition_id INTEGER",
+            "workflow_node_id": "ALTER TABLE media_asset ADD COLUMN workflow_node_id VARCHAR(100)",
         },
     }
 
@@ -398,6 +401,8 @@ INDEX_DEFINITIONS: list[tuple[str, str, str, str | None]] = [
     ("ix_ai_model_call_log_status_created_at", "ai_model_call_log", "status, created_at", None),
     ("ix_ai_model_call_log_user_id_created_at", "ai_model_call_log", "user_id, created_at", None),
     ("ix_ai_model_call_log_model_id_created_at", "ai_model_call_log", "model_id, created_at", None),
+    # media_asset：工作流产物按实例反查（资源库归属筛选 / 实例产物溯源）
+    ("ix_media_asset_workflow_instance_id", "media_asset", "workflow_instance_id", None),
     # workflow_execution_log：节点日志按实例 + 时间排序/分页(T7)
     ("ix_workflow_execution_log_instance_id_created_at", "workflow_execution_log", "instance_id, created_at", None),
     # workflow_instance：实例列表按定义 + 时间查询

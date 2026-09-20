@@ -199,6 +199,9 @@ class MediaAssetService(BaseAdminCrudService):
         created_by: int | None = None,
         source_task_id: int | None = None,
         profile_code: str | None = None,
+        workflow_instance_id: int | None = None,
+        workflow_definition_id: int | None = None,
+        workflow_node_id: str | None = None,
     ) -> list[MediaAsset]:
         artifacts = _extract_artifacts(result, task_type)
         assets: list[MediaAsset] = []
@@ -209,6 +212,7 @@ class MediaAssetService(BaseAdminCrudService):
                 "source_type": source_type,
                 "source_task_id": source_task_id,
                 "profile_code": result.get("profile") or profile_code,
+                "workflow_instance_id": workflow_instance_id,
                 "artifact_count": len(artifacts),
                 "artifacts": [_artifact_summary(item) for item in artifacts],
             },
@@ -219,6 +223,9 @@ class MediaAssetService(BaseAdminCrudService):
                 asset_type=artifact.asset_type,
                 source_type=source_type,
                 source_task_id=source_task_id,
+                workflow_instance_id=workflow_instance_id,
+                workflow_definition_id=workflow_definition_id,
+                workflow_node_id=workflow_node_id,
                 original_url=artifact.original_url,
                 file_name=artifact.file_name,
                 mime_type=artifact.mime_type,
@@ -292,6 +299,9 @@ class MediaAssetService(BaseAdminCrudService):
     def _find_existing_asset(self, asset: MediaAsset) -> MediaAsset | None:
         if not asset.md5:
             return None
+        if asset.created_by is None:
+            # 无归属的资产不参与去重：复用他人资产会导致 /uploads 归属校验 403
+            return None
         statement = (
             select(MediaAsset)
             .where(
@@ -300,6 +310,7 @@ class MediaAssetService(BaseAdminCrudService):
                 MediaAsset.status == "success",
                 MediaAsset.source_type == asset.source_type,
                 MediaAsset.md5 == asset.md5,
+                MediaAsset.created_by == asset.created_by,
             )
             .order_by(MediaAsset.created_at.desc())
         )
