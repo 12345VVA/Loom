@@ -68,12 +68,12 @@ const { t } = useI18n();
 const showHint = ref(false);
 
 const modelTypeOptions = [
-	{ label: t('对话'), value: 'chat' },
-	{ label: t('向量'), value: 'embedding' },
-	{ label: t('图片'), value: 'image' },
-	{ label: t('音频'), value: 'audio' },
-	{ label: t('视频'), value: 'video' },
-	{ label: t('重排'), value: 'rerank' }
+	{ label: t('对话'), value: 'chat', type: 'primary' },
+	{ label: t('向量'), value: 'embedding', type: 'success' },
+	{ label: t('图片'), value: 'image', type: 'warning' },
+	{ label: t('音频'), value: 'audio', type: 'danger' },
+	{ label: t('视频'), value: 'video', type: 'info' },
+	{ label: t('重排'), value: 'rerank', type: 'success' }
 ];
 
 const Upsert = useUpsert({
@@ -151,7 +151,8 @@ const Table = useTable({
 			label: t('类型'),
 			prop: 'modelType',
 			minWidth: 120,
-			formatter: ({ modelType }: any) => optionLabel(modelTypeOptions, modelType)
+			dict: modelTypeOptions,
+			dictColor: true
 		},
 		{
 			label: t('能力'),
@@ -182,10 +183,6 @@ function splitCapabilities(value?: string) {
 		.split(',')
 		.map(item => item.trim())
 		.filter(Boolean);
-}
-
-function optionLabel(options: { label: string; value: string }[], value: string) {
-	return options.find(item => item.value === value)?.label || value || '-';
 }
 
 function defaultConfigHint(scope: any) {

@@ -77,7 +77,9 @@
 						viewer.row.id || '-'
 					}}</el-descriptions-item>
 					<el-descriptions-item :label="$t('状态')">{{
-						optionLabel(statusOptions, viewer.row.status)
+						statusOptions.find(item => item.value === viewer.row.status)?.label ||
+						viewer.row.status ||
+						'-'
 					}}</el-descriptions-item>
 					<el-descriptions-item :label="$t('配置')">{{
 						viewer.row.profileCode || '-'
@@ -135,19 +137,19 @@ const { service } = useCool();
 const { t } = useI18n();
 
 const statusOptions = [
-	{ label: t('等待中'), value: 'pending' },
-	{ label: t('运行中'), value: 'running' },
-	{ label: t('成功'), value: 'success' },
-	{ label: t('失败'), value: 'failed' },
-	{ label: t('已取消'), value: 'cancelled' }
+	{ label: t('等待中'), value: 'pending', type: 'info' },
+	{ label: t('运行中'), value: 'running', type: 'primary' },
+	{ label: t('成功'), value: 'success', type: 'success' },
+	{ label: t('失败'), value: 'failed', type: 'danger' },
+	{ label: t('已取消'), value: 'cancelled', type: 'warning' }
 ];
 const taskTypeOptions = [
-	{ label: t('对话'), value: 'chat' },
-	{ label: t('向量'), value: 'embedding' },
-	{ label: t('图片'), value: 'image' },
-	{ label: t('重排'), value: 'rerank' },
-	{ label: t('音频'), value: 'audio' },
-	{ label: t('视频'), value: 'video' }
+	{ label: t('对话'), value: 'chat', type: 'primary' },
+	{ label: t('向量'), value: 'embedding', type: 'success' },
+	{ label: t('图片'), value: 'image', type: 'warning' },
+	{ label: t('重排'), value: 'rerank', type: 'success' },
+	{ label: t('音频'), value: 'audio', type: 'danger' },
+	{ label: t('视频'), value: 'video', type: 'info' }
 ];
 
 const stats = reactive({
@@ -187,7 +189,8 @@ const Table = useTable({
 			label: t('类型'),
 			prop: 'taskType',
 			minWidth: 100,
-			formatter: ({ taskType }: any) => optionLabel(taskTypeOptions, taskType)
+			dict: taskTypeOptions,
+			dictColor: true
 		},
 		{ label: t('场景'), prop: 'scenario', minWidth: 120 },
 		{ label: t('配置'), prop: 'profileCode', minWidth: 140 },
@@ -195,7 +198,8 @@ const Table = useTable({
 			label: t('状态'),
 			prop: 'status',
 			minWidth: 110,
-			formatter: ({ status }: any) => optionLabel(statusOptions, status)
+			dict: statusOptions,
+			dictColor: true
 		},
 		{ label: t('进度'), prop: 'progress', minWidth: 90 },
 		{ label: t('重试'), prop: 'retryCount', minWidth: 80 },
@@ -293,10 +297,6 @@ async function copyText(value: string) {
 
 function openUrl(url: string) {
 	window.open(url, '_blank');
-}
-
-function optionLabel(options: { label: string; value: string }[], value: string) {
-	return options.find(item => item.value === value)?.label || value || '-';
 }
 </script>
 

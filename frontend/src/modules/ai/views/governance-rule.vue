@@ -109,9 +109,9 @@ const { service } = useCool();
 const { t } = useI18n();
 
 const scopeOptions = [
-	{ label: t('全局'), value: 'global' },
-	{ label: t('用户'), value: 'user' },
-	{ label: 'Profile', value: 'profile' }
+	{ label: t('全局'), value: 'global', type: 'primary' },
+	{ label: t('用户'), value: 'user', type: 'success' },
+	{ label: 'Profile', value: 'profile', type: 'warning' }
 ];
 const periodOptions = [
 	{ label: t('分钟'), value: 'minute' },
@@ -119,8 +119,8 @@ const periodOptions = [
 	{ label: t('月'), value: 'month' }
 ];
 const modeOptions = [
-	{ label: t('拦截'), value: 'enforce' },
-	{ label: t('观察'), value: 'observe' }
+	{ label: t('拦截'), value: 'enforce', type: 'danger' },
+	{ label: t('观察'), value: 'observe', type: 'info' }
 ];
 
 const matcher = reactive({
@@ -226,7 +226,8 @@ const Table = useTable({
 			label: t('范围'),
 			prop: 'scopeType',
 			minWidth: 100,
-			formatter: ({ scopeType }: any) => optionLabel(scopeOptions, scopeType)
+			dict: scopeOptions,
+			dictColor: true
 		},
 		{ label: t('用户'), prop: 'username', minWidth: 130 },
 		{ label: 'Profile', prop: 'profileName', minWidth: 150 },
@@ -234,7 +235,8 @@ const Table = useTable({
 			label: t('周期'),
 			prop: 'period',
 			minWidth: 90,
-			formatter: ({ period }: any) => optionLabel(periodOptions, period)
+			dict: periodOptions,
+			dictColor: true
 		},
 		{ label: t('请求'), prop: 'maxRequests', minWidth: 90 },
 		{ label: 'Tokens', prop: 'maxTokens', minWidth: 100 },
@@ -244,7 +246,8 @@ const Table = useTable({
 			label: t('模式'),
 			prop: 'mode',
 			minWidth: 100,
-			formatter: ({ mode }: any) => optionLabel(modeOptions, mode)
+			dict: modeOptions,
+			dictColor: true
 		},
 		{ label: t('启用'), prop: 'status', width: 90 },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },

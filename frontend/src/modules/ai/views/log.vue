@@ -56,18 +56,18 @@ const stats = reactive({
 });
 
 const statusOptions = [
-	{ label: t('成功'), value: 'success' },
-	{ label: t('错误'), value: 'error' },
-	{ label: t('未支持'), value: 'unsupported' }
+	{ label: t('成功'), value: 'success', type: 'success' },
+	{ label: t('错误'), value: 'error', type: 'danger' },
+	{ label: t('未支持'), value: 'unsupported', type: 'info' }
 ];
 
 const modelTypeOptions = [
-	{ label: t('对话'), value: 'chat' },
-	{ label: t('向量'), value: 'embedding' },
-	{ label: t('图片'), value: 'image' },
-	{ label: t('音频'), value: 'audio' },
-	{ label: t('视频'), value: 'video' },
-	{ label: t('重排'), value: 'rerank' }
+	{ label: t('对话'), value: 'chat', type: 'primary' },
+	{ label: t('向量'), value: 'embedding', type: 'success' },
+	{ label: t('图片'), value: 'image', type: 'warning' },
+	{ label: t('音频'), value: 'audio', type: 'danger' },
+	{ label: t('视频'), value: 'video', type: 'info' },
+	{ label: t('重排'), value: 'rerank', type: 'success' }
 ];
 
 const Table = useTable({
@@ -81,13 +81,15 @@ const Table = useTable({
 			label: t('类型'),
 			prop: 'modelType',
 			minWidth: 100,
-			formatter: ({ modelType }: any) => optionLabel(modelTypeOptions, modelType)
+			dict: modelTypeOptions,
+			dictColor: true
 		},
 		{
 			label: t('状态'),
 			prop: 'status',
 			minWidth: 110,
-			formatter: ({ status }: any) => optionLabel(statusOptions, status)
+			dict: statusOptions,
+			dictColor: true
 		},
 		{ label: t('延迟(ms)'), prop: 'latencyMs', minWidth: 110 },
 		{ label: 'Prompt Tokens', prop: 'promptTokens', minWidth: 130 },
@@ -117,10 +119,6 @@ onMounted(() => {
 async function loadStats() {
 	const res = await service.ai.log.stats({});
 	Object.assign(stats, res || {});
-}
-
-function optionLabel(options: { label: string; value: string }[], value: string) {
-	return options.find(item => item.value === value)?.label || value || '-';
 }
 </script>
 

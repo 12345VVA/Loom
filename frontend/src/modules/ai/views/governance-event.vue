@@ -42,10 +42,10 @@ const { service } = useCool();
 const { t } = useI18n();
 
 const eventOptions = [
-	{ label: t('放行'), value: 'allowed' },
-	{ label: t('拦截'), value: 'blocked' },
-	{ label: t('告警'), value: 'warn' },
-	{ label: t('超限'), value: 'breach' }
+	{ label: t('放行'), value: 'allowed', type: 'success' },
+	{ label: t('拦截'), value: 'blocked', type: 'primary' },
+	{ label: t('告警'), value: 'warn', type: 'warning' },
+	{ label: t('超限'), value: 'breach', type: 'danger' }
 ];
 const metricOptions = [
 	{ label: t('请求'), value: 'request' },
@@ -78,13 +78,15 @@ const Table = useTable({
 			label: t('事件'),
 			prop: 'eventType',
 			minWidth: 100,
-			formatter: ({ eventType }: any) => optionLabel(eventOptions, eventType)
+			dict: eventOptions,
+			dictColor: true
 		},
 		{
 			label: t('指标'),
 			prop: 'metric',
 			minWidth: 100,
-			formatter: ({ metric }: any) => optionLabel(metricOptions, metric)
+			dict: metricOptions,
+			dictColor: true
 		},
 		{ label: t('当前值'), prop: 'currentValue', minWidth: 100 },
 		{ label: t('限制值'), prop: 'limitValue', minWidth: 100 },
@@ -111,10 +113,6 @@ async function loadStats() {
 	stats.total = res?.total || 0;
 	stats.byType = res?.byType || {};
 	stats.byMetric = res?.byMetric || {};
-}
-
-function optionLabel(options: { label: string; value: string }[], value: string) {
-	return options.find(item => item.value === value)?.label || value || '-';
 }
 </script>
 
