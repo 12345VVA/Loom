@@ -8,12 +8,13 @@
 				<cl-select :options="modelTypeOptions" prop="modelType" :width="130" />
 			</cl-filter>
 			<cl-flex1 />
-			<el-tag v-if="showHint" class="capability-hint" type="info" effect="plain">
-				{{ $t('能力字段是模型元信息，未实现接口仍会返回 501。') }}
-			</el-tag>
-			<el-button text type="primary" @click="showHint = !showHint">
-				{{ showHint ? $t('隐藏说明') : $t('说明') }}
-			</el-button>
+			<el-tooltip
+				:content="$t('能力字段是模型元信息，未实现接口仍会返回 501。')"
+				placement="top"
+				effect="dark"
+			>
+				<el-icon class="capability-tip-icon"><info-filled /></el-icon>
+			</el-tooltip>
 			<cl-search-key :placeholder="$t('搜索编码、名称')" />
 		</cl-row>
 
@@ -60,12 +61,11 @@ defineOptions({
 
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
-import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { InfoFilled } from '@element-plus/icons-vue';
 
 const { service } = useCool();
 const { t } = useI18n();
-const showHint = ref(false);
 
 const modelTypeOptions = [
 	{ label: t('对话'), value: 'chat', type: 'primary' },
@@ -228,11 +228,15 @@ function defaultConfigTemplate(scope: any) {
 </script>
 
 <style lang="scss" scoped>
-.capability-hint {
-	max-width: 520px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+.capability-tip-icon {
+	font-size: 16px;
+	color: var(--el-text-color-placeholder);
+	cursor: help;
+	transition: color 0.3s;
+
+	&:hover {
+		color: var(--el-color-primary);
+	}
 }
 
 .default-config-editor {

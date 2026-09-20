@@ -120,13 +120,6 @@
 						clearable
 					/>
 				</div>
-
-				<div class="field-tip">
-					<el-icon><info-filled /></el-icon>
-					<span>{{
-						$t('仅在火山方舟、阿里百炼和 OpenAI 兼容渠道等支持图生图的模型下生效。')
-					}}</span>
-				</div>
 			</div>
 
 			<div class="section">
