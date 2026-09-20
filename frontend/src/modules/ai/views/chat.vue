@@ -121,18 +121,37 @@ function onCtrlEnter(e: KeyboardEvent) {
 	}
 }
 
-// 新消息加入后自动滚到底部
+// 新消息加入后平滑滚动到底部
 watch(
 	() => messages.value.length,
-	() => {
-		nextTick(() => {
-			messagesContainer.value?.scrollTo({
-				top: messagesContainer.value.scrollHeight,
-				behavior: 'smooth'
-			});
-		});
-	}
+	() => scrollToBottom('smooth')
 );
+
+// 流式输出期间节流跟随：仅当用户停留在底部附近时跟进，不打断向上翻阅
+let lastFollowAt = 0;
+
+function followStreamOutput() {
+	const now = Date.now();
+	if (now - lastFollowAt < 100) {
+		return;
+	}
+	lastFollowAt = now;
+	scrollToBottom('auto');
+}
+
+function scrollToBottom(behavior: ScrollBehavior) {
+	nextTick(() => {
+		const el = messagesContainer.value;
+		if (!el) {
+			return;
+		}
+		if (behavior === 'auto' && el.scrollHeight - el.scrollTop - el.clientHeight > 120) {
+			// 用户已向上翻阅，不强制拉回
+			return;
+		}
+		el.scrollTo({ top: el.scrollHeight, behavior });
+	});
+}
 
 onMounted(() => {
 	loadProfiles();
@@ -198,6 +217,14 @@ async function sendStream() {
 	streamEvents.value = [];
 	addMessage('user', prompt.value.trim());
 
+	// 先压入空的 assistant 占位气泡，流式期间增量填充，避免"生成中无反馈"
+	const assistantMsg = reactive({
+		id: Date.now() + Math.random(),
+		role: 'assistant' as const,
+		content: ''
+	});
+	messages.value.push(assistantMsg);
+
 	let content = '';
 
 	try {
@@ -210,19 +237,29 @@ async function sendStream() {
 
 				if (event.event === 'delta') {
 					content += event.content || '';
+					assistantMsg.content = content;
+					followStreamOutput();
 				}
 
 				if (event.event === 'done') {
 					if (!content && event.content) {
 						content = event.content;
+						assistantMsg.content = content;
 					}
-					addMessage('assistant', content || JSON.stringify(event, null, 2));
+					if (!content) {
+						// 全程无内容：移除空气泡，用结束事件兜底展示
+						removeMessage(assistantMsg.id);
+						addMessage('assistant', JSON.stringify(event, null, 2));
+					}
 					loading.stream = false;
 				}
 
 				if (event.event === 'error') {
 					if (streamCancelled) return;
 					ElMessage.error(event.message || t('流式调用失败'));
+					if (!content) {
+						removeMessage(assistantMsg.id);
+					}
 					loading.stream = false;
 				}
 			}
@@ -230,6 +267,9 @@ async function sendStream() {
 	} catch (err: any) {
 		if (err.name !== 'AbortError') {
 			ElMessage.error(err.message || t('流式调用失败'));
+		}
+		if (!content) {
+			removeMessage(assistantMsg.id);
 		}
 		loading.stream = false;
 		streamStatus.value = err.name === 'AbortError' ? 'aborted' : 'error';
@@ -255,6 +295,13 @@ function addMessage(role: 'user' | 'assistant', content: string) {
 		role,
 		content
 	});
+}
+
+function removeMessage(id: number) {
+	const index = messages.value.findIndex(item => item.id === id);
+	if (index !== -1) {
+		messages.value.splice(index, 1);
+	}
 }
 
 function formatEvent(event: any) {
