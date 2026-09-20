@@ -1,12 +1,11 @@
 import { BaseService } from '/@/cool';
 
+// 运行时 AI 调用走 aiapi scope（终端用户调用 AI），与管理端 CRUD 分离；
+// 管理端任务 CRUD 已回归 EPS（service.ai.task），此处不再重复封装。
 class AiRuntimeModel extends BaseService {
-	private taskService = new BaseService('admin/ai/task');
-	// 运行时 AI 调用走 aiapi scope（终端用户调用 AI），与管理端 CRUD 分离
 	private runtimeService = new BaseService('aiapi/ai/model');
 
 	constructor() {
-		// 管理端 CRUD 继承自 BaseService，走 admin scope（admin/ai/model/*）
 		super('admin/ai/model');
 	}
 
@@ -40,61 +39,6 @@ class AiRuntimeModel extends BaseService {
 
 	video(data: any) {
 		return this.runtimeService.request({ url: '/video', method: 'POST', data });
-	}
-
-	submitTask(data: any) {
-		return this.taskService.request({
-			url: '/submit',
-			method: 'POST',
-			data
-		});
-	}
-
-	taskInfo(params: any) {
-		return this.taskService.request({
-			url: '/info',
-			params
-		});
-	}
-
-	taskPage(data: any) {
-		return this.taskService.request({
-			url: '/page',
-			method: 'POST',
-			data
-		});
-	}
-
-	taskList(data: any) {
-		return this.taskService.request({
-			url: '/list',
-			method: 'POST',
-			data
-		});
-	}
-
-	taskStats(data: any = {}) {
-		return this.taskService.request({
-			url: '/stats',
-			method: 'POST',
-			data
-		});
-	}
-
-	cancelTask(data: any) {
-		return this.taskService.request({
-			url: '/cancel',
-			method: 'POST',
-			data
-		});
-	}
-
-	retryTask(data: any) {
-		return this.taskService.request({
-			url: '/retry',
-			method: 'POST',
-			data
-		});
 	}
 }
 

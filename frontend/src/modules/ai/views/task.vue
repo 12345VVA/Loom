@@ -133,13 +133,6 @@ import { extractImageItems } from '../utils/image-utils';
 
 const { service } = useCool();
 const { t } = useI18n();
-const aiService = service.ai as any;
-const taskService = {
-	page: (data: any) => aiService.runtime.model.taskPage(data),
-	list: (data: any) => aiService.runtime.model.taskList(data),
-	info: (data: any) => aiService.runtime.model.taskInfo(data),
-	stats: (data: any) => aiService.runtime.model.taskStats(data)
-};
 
 const statusOptions = [
 	{ label: t('等待中'), value: 'pending' },
@@ -214,7 +207,7 @@ const Table = useTable({
 
 const Crud = useCrud(
 	{
-		service: taskService
+		service: service.ai.task
 	},
 	app => {
 		app.refresh();
@@ -227,7 +220,7 @@ onMounted(() => {
 });
 
 async function loadStats() {
-	const res = await taskService.stats({});
+	const res = await service.ai.task.stats({});
 	stats.statusCounts = res?.statusCounts || {};
 	stats.recentErrors = res?.recentErrors || [];
 }
@@ -239,7 +232,7 @@ function openSubmit() {
 async function submitTask() {
 	try {
 		const payload = JSON.parse(submitter.payload || '{}');
-		await aiService.runtime.model.submitTask({
+		await service.ai.task.submit({
 			taskType: submitter.taskType,
 			scenario: submitter.scenario || 'default',
 			profileCode: submitter.profileCode || undefined,
@@ -256,14 +249,14 @@ async function submitTask() {
 
 async function cancelTask(row: any) {
 	await ElMessageBox.confirm(t('确认取消该任务？'), t('提示'), { type: 'warning' });
-	await aiService.runtime.model.cancelTask({ id: row.id });
+	await service.ai.task.cancel({ id: row.id });
 	ElMessage.success(t('取消成功'));
 	Crud.value?.refresh();
 	loadStats();
 }
 
 async function retryTask(row: any) {
-	await aiService.runtime.model.retryTask({ id: row.id });
+	await service.ai.task.retry({ id: row.id });
 	ElMessage.success(t('已重新提交'));
 	Crud.value?.refresh();
 	loadStats();

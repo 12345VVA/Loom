@@ -785,7 +785,7 @@ async function submitTask() {
 		}
 	};
 	try {
-		result.value = await aiService.runtime.model.submitTask(lastPayload.value);
+		result.value = await service.ai.task.submit(lastPayload.value);
 		ElMessage.success(t('提交成功'));
 	} catch (err: any) {
 		ElMessage.error(err.message || t('提交失败'));
