@@ -1134,21 +1134,37 @@ class WorkflowInstanceService(BaseAdminCrudService):
     def info(self, id, current_user=None, relations=()):
         result = super().info(id, current_user, relations)
         if isinstance(result, dict):
+            self._resolve_state_data([result])
             self._enrich_version_no([result])
             self._enrich_token_cost([result])
         return result
 
     def list(self, query=None, current_user=None, relations=None, is_tree=None, parent_field=None):
         data = super().list(query, current_user, relations, is_tree, parent_field)
+        self._resolve_state_data(data)
         self._enrich_version_no(data)
         self._enrich_token_cost(data)
         return data
 
     def page(self, query, current_user=None, relations=()):
         result = super().page(query, current_user, relations)
+        self._resolve_state_data(result.items)
         self._enrich_version_no(result.items)
         self._enrich_token_cost(result.items)
         return result
+
+    def _resolve_state_data(self, items: list) -> None:
+        """T8 还原：stateData 超阈值落对象存储时（stateDataRef 非空）读回全量快照回填 stateData。"""
+        if not items:
+            return
+        from app.framework.storage import resolve_payload
+
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            ref = it.get("stateDataRef")
+            if ref:
+                it["stateData"] = resolve_payload(it.get("stateData") or "", ref)
 
     def _enrich_version_no(self, items: list) -> None:
         """回填 versionNo（join 版本表，一次 IN 查询）。"""
@@ -1344,8 +1360,11 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         # 通过 Celery 异步任务恢复执行，Command(resume=user_input) 继续
         from app.modules.workflow.tasks.workflow_tasks import execute_workflow
+        from app.framework.storage import resolve_payload
 
-        task = execute_workflow.delay(instance.id, definition.id, instance.state_data, json.dumps(user_input))
+        # T8：state_data 可能已超阈值落对象存储（state_data_ref 非空），须还原全量快照再作为初始变量续跑
+        initial_state = resolve_payload(instance.state_data, instance.state_data_ref)
+        task = execute_workflow.delay(instance.id, definition.id, initial_state, json.dumps(user_input))
         instance.celery_task_id = task.id
         self.session.add(instance)
         self.session.commit()

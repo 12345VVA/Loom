@@ -45,9 +45,14 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
                     continue
                 data = loads_json(value)
                 choice = (data.get("choices") or [{}])[0]
-                delta = (choice.get("delta") or {}).get("content")
+                message_delta = choice.get("delta") or {}
+                delta = message_delta.get("content")
+                reasoning_delta = message_delta.get("reasoning_content") or message_delta.get("reasoning")
                 finish_reason = choice.get("finish_reason")
                 usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
+                # DeepSeek 等思考模型的思维链增量，按 thinking_delta 事件透传（不混入正文）
+                if reasoning_delta:
+                    yield {"event": "thinking_delta", "content": reasoning_delta, "raw": data, "requestId": request_id}
                 if delta:
                     yield {"event": "delta", "content": delta, "raw": data, "requestId": request_id}
                 if usage or finish_reason:

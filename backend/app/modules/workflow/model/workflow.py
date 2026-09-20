@@ -39,7 +39,10 @@ class WorkflowInstance(BaseEntity, table=True):
     thread_id: str = Field(index=True, max_length=100)  # LangGraph checkpoint 隔离 thread
     status: str = Field(default="pending", index=True, max_length=50)  # pending, running, paused, success, failed
     current_node: str | None = Field(default=None, max_length=100)
-    state_data: str = Field(default="{}", max_length=100000)  # 运行中的上下文变量快照
+    # 运行中的上下文变量快照（T8 超阈值载荷分离到对象存储后，此处存空串并置状态快照引用）
+    state_data: str = Field(default="{}", max_length=100000)
+    # T8：state_data 超阈值时落对象存储的引用（ref 非空时 state_data 为空串，读取需 resolve_payload 还原）
+    state_data_ref: str | None = Field(default=None, max_length=500)
     error_message: str | None = Field(default=None, max_length=1000)
     celery_task_id: str | None = Field(default=None, max_length=200, index=True)
     user_id: int | None = Field(default=None, index=True)  # 启动者，用于数据权限隔离

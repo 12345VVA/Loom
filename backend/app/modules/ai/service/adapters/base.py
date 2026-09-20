@@ -157,12 +157,17 @@ def normalize_usage(data: dict[str, Any] | None) -> dict[str, int]:
 def openai_chat_result(data: dict[str, Any], response: httpx.Response | None = None) -> dict:
     choice = (data.get("choices") or [{}])[0]
     message = choice.get("message") or {}
-    return {
+    result = {
         "content": message.get("content") or choice.get("text"),
         "raw": data,
         "usage": normalize_usage(data.get("usage")),
         "requestId": response.headers.get("x-request-id") if response else None,
     }
+    # DeepSeek 等思考模型把思维链放在 reasoning_content（正文仍是 content），单独透出
+    reasoning = message.get("reasoning_content") or message.get("reasoning")
+    if reasoning:
+        result["reasoning"] = reasoning
+    return result
 
 
 def openai_embedding_result(data: dict[str, Any], response: httpx.Response | None = None) -> dict:

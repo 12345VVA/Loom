@@ -560,6 +560,253 @@ def generate_10():
     ]
     save_workflow("10_故事绘本生成流", "10_Story_Illustration_Workflow.json", "完整的故事-插图生成工作流，演示复杂的LLM JSON输出提取与循环生图", elements)
 
+def generate_11():
+    """小红书绘本内容流水线：输入话题/一段话 → 选题策划 → 故事+内页提示词 → 正文文案 → 封面+内页配图。
+
+    方法论来源：晓悠绘本馆 23 篇全量风格分析报告（选题五层漏斗、Gen3 干货文案模板、
+    封面骨架、平涂蜡笔+纸纹米白底视觉锚点）+ 阿苏角色宇宙 + Q1-Q10 质控红线。
+    注意：提示词中的模板占位符后禁止紧跟英文冒号/逗号/右花括号（render_template 的排除规则）。
+    """
+
+    # 视觉锚点：报告色彩定量结论（暖色主导 85%、亮度 67%、饱和度 28.6%、蜜黄/奶油底）
+    # 注：生图模型 doubao-seedream-4-5 中文文字渲染可靠，走「图文式」（文字压图），
+    # 与晓悠绘本馆实际形态对齐（封面描边标题 + 内页手写体故事文字压图）。
+    STYLE_ANCHOR = (
+        "flat crayon-style children's picture book illustration, visible paper grain texture, "
+        "off-white cream paper background, low-saturation warm earthy color palette "
+        "(honey yellow, cream, sage green, terracotta, muted cocoa brown), "
+        "soft diffused warm lighting, no black outlines, "
+        "simple composition with generous negative space, one single scene per page, "
+        "cozy bedtime mood, no photorealism, consistent style"
+    )
+
+    # 角色设定表：跨篇锁定的角色宇宙（打同类账号「角色每篇一换」的死穴）
+    CHARACTERS = (
+        "- 阿苏 Asu: \"Asu, a 4-year-old Chinese boy, round face, short slightly-tousled black hair, "
+        "big curious eyes, wearing an orange-yellow hoodie and blue overalls, "
+        "same character design, consistent appearance\"\n"
+        "- 妈妈: \"a warm young Chinese mother with shoulder-length black hair, wearing a soft beige cardigan, "
+        "same character design, consistent appearance\"\n"
+        "- 白白（小兔）: \"a small white rabbit with pink inner ears, wearing a tiny mint-green scarf, "
+        "same character design, consistent appearance\"\n"
+        "- 憨憨（小熊）: \"a chubby brown bear with a cream-colored belly patch, "
+        "same character design, consistent appearance\"\n"
+        "- 啾啾（小鸟）: \"a tiny round yellow bird with a small orange beak, "
+        "same character design, consistent appearance\"\n"
+        "- 橙橙（小狐）: \"a small orange fox with a fluffy white-tipped tail, "
+        "same character design, consistent appearance\""
+    )
+
+    PLAN_PROMPT = """用户输入（一个话题或一段话）：
+{input_query}
+
+你是小红书亲子绘本账号「阿苏的睡前故事」的选题策划。以下方法论来自对同类爆款账号 23 篇全量数据的研究，必须严格执行。
+
+【选题漏斗】
+1. 取材：只从 3-6 岁家长的日常冲突场景取材（磨蹭、没礼貌、不喝水、憋尿、不肯睡、不刷牙、怕黑、发脾气），不从童话创意取材。标题即家长的搜索词。
+2. 筛选判据：这个问题能不能让角色用身体动作演出来。行为类都能演；抽象情绪类难演，除非用户输入明确指向情绪主题。
+3. 题材双轨：行为管教/生理习惯类拿流量和转发（家庭群共识型题材如喝水、卫生、礼貌转发率最高）；情绪安抚类拿收藏沉淀。默认优先行为管教/生理习惯，除非输入明显是情绪主题。
+4. 命名公式：书名 = 角色名 + 负面行为，痛点词直接进书名，例如《阿苏不肯睡觉》《阿苏不想刷牙》《憨憨没礼貌》。
+5. 笔记标题公式：「睡前故事 | 《书名》」，书名号必带，整体不超过 20 字。
+
+【输出要求】
+- category：题材分类，三选一（行为管教 / 生理习惯 / 情绪安抚）
+- book_title：绘本书名，带书名号
+- note_title：小红书笔记标题，格式「睡前故事 | 《书名》」
+- pain_point：一句话戳中家长痛点，用于正文开头
+- core_points：3 条教育要点，每条一句话，供正文「3个方法」展开
+- tags：10 个小红书标签，不带井号 = 品类大词（儿童绘本、睡前故事等）+ 场景词（睡前、亲子共读、哄睡等）+ 主题词（与本书行为问题相关）+ 1 个平台活动感话题
+- cover_prompt：封面图绘图提示词，按以下规则生成——
+  A. 原样包含下面的 Style Anchor，一个词都不许改：
+  @@STYLE@@
+  B. 封面骨架（图文式，必须照做）：米白纸纹底；顶部约四分之一区域放置超大描边中文标题——标题文字为书名号内的书名（不含书名号本身），黑色粗体配白色描边，居中、醒目、一字不差；标题下方居中一行小字署名「图/文：阿苏的睡前故事」；中景 1 到 2 个角色（主角按本书书名确定）；简化场景（卧室、草地、浴室、餐桌四选一）。
+  C. 出场角色必须使用下面角色设定表中的完整英文描述，逐字复用：
+  @@CHARACTERS@@
+  D. 提示词写法：画面描述用英文，文字渲染指令用中文，并用中文引号精确标出要渲染的标题与署名文字。除标题和署名外，画面不出现任何其他文字、字母或符号。"""
+
+    STORY_PROMPT = """用户原始输入：
+{input_query}
+
+本期选题方案（JSON）：
+{plan_output}
+
+你是儿童睡前故事作家兼绘本分镜师。围绕选题方案中的 book_title 和 pain_point，创作 1 个**固定 6 段**的睡前故事，并为每段写一条场景提示词。
+
+【故事质控红线，每条必须遵守】
+1. 阿苏在场：主角阿苏贯穿全篇；配角只能从固定角色宇宙选择（妈妈、白白小兔、憨憨小熊、啾啾小鸟、橙橙小狐），不新造角色。
+2. 儿童视角：用 3-6 岁孩子能懂的具体动作、声音和感受来写，不用抽象词语。
+3. 不说教：道理藏在剧情里，结尾禁止出现「这个故事告诉我们」式总结。
+4. 不恐怖：不出现怪兽、黑暗恐吓、抛弃威胁、医生打针吓唬等元素。
+5. 节奏下行：情节从冲突到安抚，越到结尾越安静，最后一段必须是温暖入睡感的画面，适合哄睡。
+6. 每段 2 到 4 句话，口语化，家长可直接朗读。
+
+【场景提示词规则（scene_prompt，英文，只写本段差异化内容）】
+1. 只描述本段画面：出场角色（从下面角色设定表逐字复用其完整描述）+ 动作 + 场景 + 构图（中景为主、主体居中、留白充足）。
+2. 图文逐句对齐：本段 story_text 中出现的角色和动作必须画出来；没有出现的角色禁止加入画面。这是同类账号最大的翻车点，必须守住。
+3. 不要包含 Style Anchor、不要包含任何文字渲染指令——这些由下游统一拼接，写了就是浪费。
+4. scene_prompt 控制在 80 词以内，宁可简洁不可堆砌。
+
+【角色设定表】
+@@CHARACTERS@@
+
+【输出】
+- style_anchor：原样复用下面这段 Style Anchor，全篇唯一，一个词都不许改：
+@@STYLE@@
+- paragraphs：固定 6 个段落对象，paragraph_id 必须恰好为 1、2、3、4、5、6，每个含 story_text（中文故事段落）和 scene_prompt（英文场景描述）。
+
+【自检，必须执行】输出 JSON 之前先数一遍 paragraphs 数组长度：必须恰好为 6 个对象，少了就补齐到 6 段再输出，绝不许只交 1 段。"""
+
+    COPY_PROMPT = """本期选题方案（JSON）：
+{plan_output}
+
+本期故事全文（JSON，含每段 story_text）：
+{story_output}
+
+你是小红书亲子博主「阿苏的睡前故事」的文案。你写的不是文学，是「给家长的讲读说明书」——家长收藏的不是故事，是今晚就能用的育儿脚本。
+
+【正文模板（实测收藏率最高的干货结构）】
+1. 开头栏目「📚教育意义」：用 pain_point 一句话戳痛点，然后两段式讲清这个故事帮家长解决什么、为什么讲道理没用而讲故事有用。
+2. 主体栏目「🎈亲子共读干货｜3个方法」：把 core_points 展开成 3 条方法，每条 = 小标题 + 具体做法 + 一句可直接照念的示范话术（用引号标出，家长能照着读）。
+3. 话术对比：全篇至少 2 处「不要说 X，可以说 Y」对比结构，这是收藏率的发动机，话术要口语、具体、今晚就能用。
+4. 固定收尾句式：「你家宝贝也……吗？评论区告诉我吧～」（结合本书行为问题改写）。
+5. 末尾另起一行放 10 个标签，用井号连接。
+
+【约束】
+- 正文（不含标签）600 字以内。
+- 语气像隔壁有经验的妈妈，不端着、不说教、不用专业术语。
+- 不出现 AI、生成、模型等字眼。
+- 书名第一次出现时带书名号。
+
+【输出】
+copy_text：完整可直接发布的小红书正文（含末尾标签行）。"""
+
+    for name in ("PLAN_PROMPT", "STORY_PROMPT", "COPY_PROMPT"):
+        text = locals()[name]
+        text = text.replace("@@STYLE@@", STYLE_ANCHOR).replace("@@CHARACTERS@@", CHARACTERS)
+        locals()[name]  # no-op, 仅为可读性
+        if name == "PLAN_PROMPT":
+            PLAN_PROMPT = text
+        elif name == "STORY_PROMPT":
+            STORY_PROMPT = text
+        else:
+            COPY_PROMPT = text
+
+    elements = [
+        create_node("node_start", "start", "开始", 50, 250,
+                    {"inputVariables": ["input_query"]}),
+        create_node("node_plan", "llm", "① 选题策划", 320, 250, {
+            "inputs": [{"name": "input_query", "type": "string", "source": ["node_start", "input_query"]}],
+            "modelProfileCode": "deepseek-flash",
+            "promptTemplate": PLAN_PROMPT,
+            "outputFormat": "json",
+            "jsonFields": [{"name": "output", "type": "object", "children": [
+                {"name": "category", "type": "string", "description": "行为管教/生理习惯/情绪安抚", "children": []},
+                {"name": "book_title", "type": "string", "description": "带书名号的书名", "children": []},
+                {"name": "note_title", "type": "string", "description": "小红书笔记标题", "children": []},
+                {"name": "pain_point", "type": "string", "description": "家长痛点一句话", "children": []},
+                {"name": "core_points", "type": "array_string", "description": "3条教育要点", "children": []},
+                {"name": "tags", "type": "array_string", "description": "10个标签，不带井号", "children": []},
+                {"name": "cover_prompt", "type": "string", "description": "封面英文绘图提示词", "children": []},
+            ]}],
+            "outputVariable": "plan_output",
+        }),
+        create_node("node_story", "llm", "② 故事+内页提示词", 590, 250, {
+            "inputs": [
+                {"name": "input_query", "type": "string", "source": ["node_start", "input_query"]},
+                {"name": "plan_output", "type": "string", "source": ["node_plan", "plan_output"]},
+            ],
+            "modelProfileCode": "deepseek-flash",
+            "promptTemplate": STORY_PROMPT,
+            "outputFormat": "json",
+            "jsonFields": [{"name": "output", "type": "object", "children": [
+                {"name": "style_anchor", "type": "string", "description": "全篇统一的风格锚点，原样复用", "children": []},
+                {"name": "paragraphs", "type": "array_object", "description": "固定6段故事+场景提示词", "children": [
+                    {"name": "paragraph_id", "type": "number", "description": "", "children": []},
+                    {"name": "story_text", "type": "string", "description": "中文故事段落", "children": []},
+                    {"name": "scene_prompt", "type": "string", "description": "英文场景描述，不含风格锚点和文字指令", "children": []},
+                ]},
+            ]}],
+            "outputVariable": "story_output",
+        }),
+        create_node("node_copy", "llm", "③ 小红书正文", 860, 250, {
+            "inputs": [
+                {"name": "plan_output", "type": "string", "source": ["node_plan", "plan_output"]},
+                {"name": "story_output", "type": "string", "source": ["node_story", "story_output"]},
+            ],
+            "modelProfileCode": "deepseek-flash",
+            "promptTemplate": COPY_PROMPT,
+            "outputFormat": "json",
+            "jsonFields": [{"name": "output", "type": "object", "children": [
+                {"name": "copy_text", "type": "string", "description": "可直接发布的完整正文", "children": []},
+            ]}],
+            "outputVariable": "copy_output",
+        }),
+        create_node("node_transform", "variable_transform", "提取段落数组", 1130, 250, {
+            "inputs": [{"name": "story_output", "type": "string", "source": ["node_story", "story_output"]}],
+            "input_variable": "{story_output}",
+            "transform_type": "extract_json_path",
+            "transform_args": {"path": "output.paragraphs"},
+            "output_variable": "paragraphs_array",
+        }),
+        create_node("node_cover", "image_generator", "④ 封面图", 1400, 80, {
+            "inputs": [{"name": "plan_output", "type": "string", "source": ["node_plan", "plan_output"]}],
+            "modelProfileCode": "doubao-seedream-4-5-251128",
+            "promptTemplate": "{plan_output.output.cover_prompt}",
+            "size": "1728x2304",
+            "outputVariable": "cover_image_url",
+        }),
+        create_node("node_loop", "loop_controller", "⑤ 循环生成内页", 1400, 330, {
+            "inputs": [{"name": "paragraphs_array", "type": "string", "source": ["node_transform", "paragraphs_array"]}],
+            "arrayVariable": "{paragraphs_array}",
+            "itemVariable": "paragraph",
+            "outputVariable": "inner_images",
+            "concurrency": 2,
+        }),
+        create_node("loop_body_group", "loop_body_group", "内页生图容器", 1400, 520,
+                    {"controllerNodeId": "node_loop"},
+                    style={"width": "420px", "height": "240px"}),
+        create_node("node_inner_image", "image_generator", "内页插图", 40, 60, {
+            "inputs": [
+                {"name": "paragraph", "type": "string", "source": ["node_loop", "paragraph"]},
+                {"name": "story_output", "type": "string", "source": ["node_story", "story_output"]},
+            ],
+            "modelProfileCode": "doubao-seedream-4-5-251128",
+            "promptTemplate": "{story_output.output.style_anchor}. {paragraph.scene_prompt}. Bottom quarter of the page: a clean cream paper area with warm handwritten Chinese text rendering exactly \"{paragraph.story_text}\" — the text must be clear, centered, correctly line-wrapped, and must not overlap the main subject. No other text, letters, or symbols anywhere in the image.",
+            "size": "1728x2304",
+            "outputVariable": "image_url",
+        }, parent_node="loop_body_group", extent="parent"),
+        create_node("node_end", "end", "结束", 1700, 250, {
+            "outputFormat": "json",
+            "outputFields": [
+                {"name": "note_title", "type": "string", "value": "{plan_output.output.note_title}", "children": []},
+                {"name": "book_title", "type": "string", "value": "{plan_output.output.book_title}", "children": []},
+                {"name": "category", "type": "string", "value": "{plan_output.output.category}", "children": []},
+                {"name": "tags", "type": "string", "value": "{plan_output.output.tags}", "children": []},
+                {"name": "copy_text", "type": "string", "value": "{copy_output.output.copy_text}", "children": []},
+                {"name": "cover_image", "type": "string", "value": "{cover_image_url}", "children": []},
+                {"name": "inner_images", "type": "string", "value": "{inner_images}", "children": []},
+                {"name": "story_paragraphs", "type": "string", "value": "{story_output.output.paragraphs}", "children": []},
+            ],
+        }),
+        create_edge("node_start", "node_plan"),
+        create_edge("node_plan", "node_story"),
+        create_edge("node_story", "node_copy"),
+        create_edge("node_copy", "node_transform"),
+        create_edge("node_transform", "node_cover"),
+        create_edge("node_cover", "node_loop"),
+        create_edge("node_loop", "loop_body_group"),
+        create_edge("loop_body_group", "node_end"),
+    ]
+    save_workflow(
+        "11_小红书绘本内容流水线",
+        "11_XHS_PictureBook_Pipeline.json",
+        "输入话题/一段话 → 选题策划（五层漏斗）→ 睡前故事固定6段+场景提示词（Q1-Q10红线+角色宇宙，风格锚点只输出一次防超长）→ "
+        "Gen3干货正文（话术对比+互动收尾+10标签）→ 封面图+循环内页图（图文式：描边标题+手写体故事文字压图，生图节点拼装风格锚点+场景+文字指令，"
+        "平涂蜡笔+纸纹米白底统一风格）。模型：deepseek-flash 文案 / doubao-seedream-4-5-251128 生图 1728x2304 竖版",
+        elements,
+    )
+
+
 if __name__ == "__main__":
     generate_01()
     generate_02()
@@ -571,3 +818,4 @@ if __name__ == "__main__":
     generate_08()
     generate_09()
     generate_10()
+    generate_11()

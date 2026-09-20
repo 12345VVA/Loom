@@ -43,6 +43,7 @@ from app.modules.ai.service.adapters.factory import (
     DeepSeekAdapter,
     QianfanAdapter,
     VolcengineArkAdapter,
+    _adapt_deepseek_options,
 )
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
@@ -1634,6 +1635,54 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["requestId"], "ds-req-1")
         self.assertEqual(str(mocked.call_args.args[0]), "https://api.deepseek.com/chat/completions")
         self.assertEqual(mocked.call_args.kwargs["json"]["model"], "deepseek-v4-flash")
+
+    def test_deepseek_adapter_chat_downgrades_json_schema_response_format(self):
+        """DeepSeek chat/completions 不支持 json_schema，须降级为 json_object（否则 400）。"""
+        provider = AiProvider(code="deepseek", name="DeepSeek", adapter="deepseek", api_key_cipher=encrypt_secret("sk"))
+        adapter = DeepSeekAdapter(provider)
+
+        class FakeResponse:
+            headers = {"x-request-id": "ds-req-2"}
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"choices": [{"message": {"content": "{}"}}], "usage": {}}
+
+        json_schema_format = {
+            "type": "json_schema",
+            "json_schema": {"name": "plan", "schema": {"type": "object"}, "strict": True},
+        }
+        with patch("httpx.post", return_value=FakeResponse()) as mocked:
+            adapter.chat(
+                model="deepseek-v4-flash",
+                messages=[{"role": "user", "content": "输出 json"}],
+                options={"response_format": json_schema_format, "temperature": 0.3},
+            )
+
+        payload = mocked.call_args.kwargs["json"]
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        # JSON 模式注入 thinking=disabled，避免思维链耗尽 max_tokens 导致 content 为空
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
+        self.assertEqual(payload["temperature"], 0.3)
+        # 原 options 不被原地修改
+        self.assertEqual(json_schema_format["type"], "json_schema")
+
+    def test_adapt_deepseek_options_keeps_other_cases(self):
+        self.assertEqual(_adapt_deepseek_options(None), {})
+        # 无 response_format 的普通调用不受影响
+        self.assertEqual(_adapt_deepseek_options({"temperature": 0.5}), {"temperature": 0.5})
+        # 显式设置 thinking 时尊重调用方选择
+        self.assertEqual(
+            _adapt_deepseek_options(
+                {"response_format": {"type": "json_object"}, "thinking": {"type": "enabled"}}
+            ),
+            {"response_format": {"type": "json_object"}, "thinking": {"type": "enabled"}},
+        )
+        adapted = _adapt_deepseek_options({"response_format": {"type": "json_schema", "json_schema": {}}})
+        self.assertEqual(adapted["response_format"], {"type": "json_object"})
+        self.assertEqual(adapted["thinking"], {"type": "disabled"})
 
     def test_volcengine_adapter_image_defaults_url_and_passes_options(self):
         provider = AiProvider(

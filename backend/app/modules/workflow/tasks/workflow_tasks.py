@@ -72,8 +72,13 @@ def _persist_node_payloads_sync(instance_id: int, payloads: list[dict]) -> None:
         inst = session.get(WorkflowInstance, instance_id)
         for p in payloads:
             if inst and inst.status != "cancelled":
+                # error 行也会推进 current_node 到失败节点：失败后实例随终态置 failed，
+                # current_node 指向失败节点语义正确（顺带修复失败路径的定位 off-by-one）
                 inst.current_node = p["node_id"]
-                inst.state_data = p["state_data"]
+                # T8：state_data 超阈值落对象存储 + 存引用，避免状态快照超列宽导致落库失败（实例卡 running）
+                state_data, state_data_ref = _maybe_offload(p["state_data"])
+                inst.state_data = state_data
+                inst.state_data_ref = state_data_ref
                 session.add(inst)
 
             # output 始终 full，走 T8 offload
@@ -485,7 +490,8 @@ async def _async_execute(
                         session.commit()
                         publish_event(instance_id, "cancelled", {"status": "cancelled"})
                         return
-                    state_data_str = instance.state_data
+                    # T8：state_data 超阈值时以 storage ref 还原全量快照再做 success 终态
+                    state_data_str = resolve_payload(instance.state_data, instance.state_data_ref) or "{}"
                     _cas(session, "running", status="success")
                     session.commit()
 

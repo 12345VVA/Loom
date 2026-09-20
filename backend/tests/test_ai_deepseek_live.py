@@ -87,7 +87,7 @@ class DeepSeekLiveTestCase(unittest.TestCase):
             code=model_code,
             name=f"DeepSeek Live {model_code}",
             model_type="chat",
-            default_config='{"temperature": 0.1, "max_tokens": 64}',
+            default_config='{"temperature": 0.1, "max_tokens": 1024}',
             is_active=True,
         )
         self.session.add(model)
@@ -129,7 +129,7 @@ class DeepSeekLiveTestCase(unittest.TestCase):
                         "content": "请只回复四个汉字：测试成功",
                     }
                 ],
-                options={"max_tokens": 32, "temperature": 0.1},
+                options={"max_tokens": 1024, "temperature": 0.1},
             )
         )
 
@@ -140,6 +140,48 @@ class DeepSeekLiveTestCase(unittest.TestCase):
         log = self.session.exec(select(AiModelCallLog)).one()
         self.assertEqual(log.status, "success")
         self.assertEqual(log.model_type, "chat")
+
+    def test_live_deepseek_runtime_chat_json_schema_downgrades_to_json_object(self):
+        """复现工作流 LLM 节点报错链路：json_schema 在 DeepSeek 会 400，须降级为 json_object。"""
+        adapter = DeepSeekAdapter(_live_provider())
+        model_code = _choose_model(adapter)
+        profile = self._create_runtime_stack(model_code)
+
+        result = AiModelRuntimeService(self.session).chat(
+            AiChatRequest(
+                profile_code=profile.code,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": '请输出 JSON：{"question": "...", "answer": "..."}，'
+                        '从这句话提取："世界上最高的山是什么？珠穆朗玛峰。"',
+                    }
+                ],
+                options={"max_tokens": 128, "temperature": 0.1},
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "qa",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "question": {"type": "string"},
+                                "answer": {"type": "string"},
+                            },
+                            "required": ["question", "answer"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+            )
+        )
+
+        self.assertTrue(result["success"])
+        import json
+
+        parsed = json.loads(result["content"])
+        self.assertIn("question", parsed)
+        self.assertIn("answer", parsed)
 
     def test_live_deepseek_adapter_stream_chat(self):
         adapter = DeepSeekAdapter(_live_provider())
@@ -154,11 +196,13 @@ class DeepSeekLiveTestCase(unittest.TestCase):
                         "content": "请用一句很短的话确认流式输出可用。",
                     }
                 ],
-                options={"max_tokens": 64, "temperature": 0.1},
+                # 思考模型（v4 默认开启思维链）的 reasoning 增量也计入 max_tokens，预算须留足
+                options={"max_tokens": 1024, "temperature": 0.1},
             )
         )
 
         self.assertTrue(events)
+        self.assertTrue(any(item.get("event") == "delta" and item.get("content") for item in events))
         self.assertTrue(any(item.get("event") == "done" for item in events))
         self.assertTrue(any(item.get("usage") for item in events))
 
