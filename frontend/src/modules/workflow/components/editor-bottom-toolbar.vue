@@ -278,6 +278,12 @@ function onPopoverShow() {
 	font-size: 14px;
 	font-weight: 600;
 	color: var(--el-text-color-primary);
+	// 工具条绝对定位居中，可用宽度只有包含块右半区；长标题不锁定会被 flex
+	// 压缩成逐字竖排（中文 min-content 为单字宽），限宽截断显示
+	max-width: 280px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .add-node-btn {
