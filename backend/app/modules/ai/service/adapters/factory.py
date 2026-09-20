@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 
 from app.core.secret import decrypt_secret
 from app.modules.ai.model.ai import AiProvider
+from app.modules.ai.service.adapters.bailian_openapi import list_workspace_authorized_models
 from app.modules.ai.service.adapters.base import UpstreamApiError, normalize_usage, openai_image_result
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
@@ -21,6 +22,17 @@ from app.modules.ai.service.adapters.volcengine_openapi import iter_ark_availabl
 
 class BailianAdapter(OpenAIHttpAdapter):
     default_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    def list_models(self) -> list[dict[str, Any]]:
+        # compatible-mode /models 返回的是平台模型全集；业务空间已授权视角走 maas 权限接口
+        workspace_id = str(self.extra_config.get("workspace_id") or "").strip()
+        if not workspace_id:
+            raise UpstreamApiError("百炼模型同步需要业务空间 ID，请在扩展配置中填写 workspace_id")
+        if not self.api_key:
+            raise UpstreamApiError("百炼模型同步需要 API Key，请先在厂商配置中填写")
+        return list_workspace_authorized_models(
+            api_key=self.api_key, workspace_id=workspace_id, timeout=self.timeout
+        )
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
         options = dict(options or {})
