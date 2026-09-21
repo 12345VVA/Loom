@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     MEDIA_REMOTE_DOWNLOAD_MAX_SIZE_MB: int = 100
     MEDIA_REMOTE_DOWNLOAD_TIMEOUT_SECONDS: int = 30
     MEDIA_REMOTE_ALLOWED_HOSTS: str = "*.volces.com"
+    # Fake-IP DNS 例外开关：开启后远程媒体域名的解析结果全部落在代理网段 (198.18.0.0/15)
+    # 时放行并按原 hostname 请求。开启即把 SSRF 防线移交本地代理，仅限受信开发环境（如
+    # Clash TUN/fake-ip），生产保持关闭。
+    MEDIA_REMOTE_TRUST_FAKEIP: bool = False
     S3_ENDPOINT_URL: str = ""
     S3_ACCESS_KEY_ID: str = ""
     S3_SECRET_ACCESS_KEY: str = ""

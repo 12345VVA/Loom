@@ -614,7 +614,10 @@ async def execute_image_generator_node(variables: dict[str, Any], config: dict[s
             extra={"temp_url_prefix": temp_url[:80], "node_id": config.get("id")},
         )
 
-    return {output_variable: permanent_url}
+    # 同时输出上游临时 URL（厂商公网地址，约 24h 有效）：转存后的 /uploads 本地地址
+    # 在本地部署时厂商服务器无法回源拉取，不能作为图生图参考图；__src 后缀变量专供
+    # 下游生图节点 imageVariable 引用（如绘本内页以封面为参考图锁风格与角色一致性）。
+    return {output_variable: permanent_url, f"{output_variable}__src": temp_url}
 
 
 def _persist_image_to_media(

@@ -220,7 +220,7 @@
 			:loading="testLogDrawer.loading"
 			:status="testLogDrawer.status"
 			:title="$t('测试运行日志')"
-			size="500px"
+			size="780px"
 			:empty-text="$t('暂无执行记录，等待后端运行')"
 			@close="stopLogPolling"
 			@expand-all="expandAllTestLogs"

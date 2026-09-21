@@ -18,7 +18,11 @@ from app.modules.base.model.auth import User
 from app.modules.media.model.media import MediaAsset
 from app.modules.workflow.model.workflow_artifact import WorkflowArtifact, WorkflowArtifactRead
 from app.modules.workflow.service.artifact_crud_service import WorkflowArtifactService
-from app.modules.workflow.service.artifact_service import classify_artifacts, persist_workflow_artifacts
+from app.modules.workflow.service.artifact_service import (
+    classify_artifacts,
+    is_image_url,
+    persist_workflow_artifacts,
+)
 
 
 class ClassifyArtifactsTest(unittest.TestCase):
@@ -63,6 +67,86 @@ class ClassifyArtifactsTest(unittest.TestCase):
         self.assertEqual(drafts["paragraphs"].asset_type, "json")
         self.assertIn('"text": "a"', drafts["paragraphs"].value)
         self.assertEqual(drafts["meta"].asset_type, "json")
+
+    def test_loop_inner_images_dict_list_extracted_as_images(self):
+        output = {
+            "cover_image": "/uploads/cover.jpeg",
+            "inner_images": [
+                {"image_url": "https://example.com/p1.png"},
+                {"image_url": "https://example.com/p2.png"}
+            ]
+        }
+        drafts = classify_artifacts(output)
+        paths = [d.field_path for d in drafts if d.asset_type == "image"]
+        self.assertIn("inner_images.0.image_url", paths)
+        self.assertIn("inner_images.1.image_url", paths)
+        self.assertEqual(len([d for d in drafts if d.asset_type == "image"]), 3)
+        # json 整体并存：文案/失败信息不随图片提取丢失
+        json_draft = next(d for d in drafts if d.asset_type == "json")
+        self.assertEqual(json_draft.field_key, "inner_images")
+
+    def test_dunder_src_internal_vars_skipped(self):
+        """__src 内部通道变量（厂商临时 URL 专供下游节点 imageVariable 引用）不分类"""
+        output = {
+            "cover_image_url": "/uploads/cover.jpeg",
+            "cover_image_url__src": "https://ark-content-generation.tos-cn-beijing.volces.com/tmp/u",
+            "row": {"image": "/uploads/a.png", "image__src": "https://tos-x.volces.com/tmp/v"},
+            "inner_images": [
+                {"image_url": "/uploads/b.png", "image_url__src": "https://tos-x.volces.com/tmp/w"}
+            ],
+        }
+        drafts = classify_artifacts(output)
+        image_paths = [d.field_path for d in drafts if d.asset_type == "image"]
+        # 顶层标量 field_path 为 None（field_key 才是 cover_image_url）
+        self.assertEqual(image_paths, [None, "row.image", "inner_images.0.image_url"])
+        # row 含图片子键不落 json；inner_images 落 json 整体（内容含 __src 供排查，不产生额外 image）
+        json_drafts = [d for d in drafts if d.asset_type == "json"]
+        self.assertEqual(len(json_drafts), 1)
+        self.assertEqual(json_drafts[0].field_key, "inner_images")
+
+    def test_duplicate_image_urls_deduped_across_fields(self):
+        """循环快照重复携带外层图片（封面进每个迭代 dict）：同一 URL 全程仅保留首见"""
+        cover = "/uploads/cover.jpeg"
+        output = {
+            "cover_image": cover,
+            "inner_images": [
+                {"image_url": "/uploads/p1.jpeg", "cover_image_url": cover},
+                {"image_url": "/uploads/p2.jpeg", "cover_image_url": cover},
+            ],
+        }
+        drafts = classify_artifacts(output)
+        image_values = [d.value for d in drafts if d.asset_type == "image"]
+        self.assertEqual(image_values.count(cover), 1, "封面只保留首见一条")
+        self.assertEqual(len(image_values), 3, "封面 + 两张内页")
+
+    def test_list_with_images_keeps_json_draft(self):
+        """list 含图片时 json 整体并存：失败迭代的 error/文案不丢失"""
+        output = {
+            "inner_images": [
+                {"image_url": "/uploads/p1.png", "caption": "第一页"},
+                {"error": "图片生成超量限流"},
+            ]
+        }
+        drafts = classify_artifacts(output)
+        image_paths = [d.field_path for d in drafts if d.asset_type == "image"]
+        self.assertEqual(image_paths, ["inner_images.0.image_url"])
+        json_draft = next(d for d in drafts if d.asset_type == "json")
+        self.assertEqual(json_draft.field_key, "inner_images")
+        self.assertIn("超量限流", json_draft.value)
+        self.assertIn("第一页", json_draft.value)
+
+    def test_is_image_url_host_and_extension_rules(self):
+        # 有扩展名时只按扩展名判定：存储桶上的音频/文档直链不误判为图片
+        self.assertTrue(is_image_url("https://example.com/pic.png"))
+        self.assertFalse(is_image_url("https://tos-cn-beijing.volces.com/audio.mp3"))
+        self.assertFalse(is_image_url("https://bucket.oss-cn-hangzhou.aliyuncs.com/report.pdf"))
+        # 无扩展名：受限对象存储域按 host 兜底（转存失败回退厂商临时 URL 场景）
+        self.assertTrue(is_image_url("https://tos-cn-beijing.volces.com/obj/sign~noext"))
+        self.assertTrue(is_image_url("https://bucket.oss-cn-hangzhou.aliyuncs.com/obj/noext"))
+        self.assertTrue(is_image_url("https://bucket.cos.ap-guangzhou.myqcloud.com/obj/noext"))
+        # 域级匹配：含 "cos." 的无关域名不再误判
+        self.assertFalse(is_image_url("https://macos.dev/page"))
+        self.assertFalse(is_image_url("https://foo.macos.dev/obj/noext"))
 
     def test_non_dict_non_str_top_level_yields_nothing(self):
         self.assertEqual(classify_artifacts(None), [])

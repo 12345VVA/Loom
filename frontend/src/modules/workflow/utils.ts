@@ -166,10 +166,13 @@ export function isRequiredConfigMissing(node: {
  */
 export interface WorkflowLogItem {
 	id?: number;
+	instanceId?: number;
+	nodeId?: string;
 	nodeName?: string;
 	nodeType?: string;
 	inputData?: string;
 	outputData?: string;
+	latencyMs?: number;
 	status?: string;
 	/** 节点失败原因（status=error 时后端写入），抽屉红色错误区块展示 */
 	errorMessage?: string;

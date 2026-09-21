@@ -81,6 +81,36 @@ class MediaAssetService(BaseAdminCrudService):
     def info(self, id: Any, current_user: User | None = None, relations=()) -> dict:
         return self._detail_media_row(super().info(id, current_user, relations))
 
+    def add(self, payload: Any, current_user: User | None = None) -> Any:
+        """记录请求用户供 _before_add 归属赋值（框架按签名自动注入 current_user）。"""
+        if current_user is not None:
+            self._current_user = current_user
+        return super().add(payload)
+
+    def update(self, payload: Any, current_user: User | None = None) -> Any:
+        if current_user is not None:
+            self._current_user = current_user
+        return super().update(payload)
+
+    def _before_add(self, data: dict) -> dict:
+        # 服务端管理字段不接受客户端提交：storage_url/status 由转存流程写入，
+        # created_by 取请求用户。防止自造资产行伪造文件归属（proxyImage 本地
+        # 分支与 /uploads 路由均按 storage_url+created_by 判定归属放行）。
+        data.pop("storage_url", None)
+        data.pop("created_by", None)
+        data["status"] = "pending"
+        current_user = getattr(self, "_current_user", None)
+        if current_user is not None:
+            data["created_by"] = current_user.id
+        return data
+
+    def _before_update(self, data: dict, entity: Any) -> dict:
+        # 状态/归属/存储位置流转均由服务端直写（upload/_transfer_artifact/retry_failed
+        # 直接操作 session），不走本钩子；此处统一剥除客户端提交的受控字段。
+        for key in ("storage_url", "status", "created_by"):
+            data.pop(key, None)
+        return data
+
     def retry_failed(self, limit: int = 100, window_hours: int = 24) -> dict:
         """重试窗口内转存失败的资产（复用 _transfer_artifact，含去重与落盘）。
 

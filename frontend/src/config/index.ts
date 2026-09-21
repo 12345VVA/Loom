@@ -1,4 +1,4 @@
-import { storage } from '../cool';
+import { storage } from '../cool/utils';
 import dev from './dev';
 import prod from './prod';
 

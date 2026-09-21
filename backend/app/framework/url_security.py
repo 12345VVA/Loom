@@ -30,6 +30,8 @@ def validate_remote_url(url: str) -> tuple[str, str]:
     - 拒绝 localhost / 回环 / 私有 / 链路本地 / 元数据服务 / 非全球单播地址
     - 对域名做 DNS 解析后逐个校验解析结果 IP
     - 代理网段 (198.18.0.0/15) 仅在白名单内放行
+    - MEDIA_REMOTE_TRUST_FAKEIP 开启且解析结果全部为代理 fake-ip 网段时放行并按原
+      hostname 请求（SSRF 防线移交本地代理，仅限受信开发环境；混合解析仍拒绝）
 
     Raises:
         ValueError: URL 不合法或解析到内网地址。
@@ -46,9 +48,14 @@ def validate_remote_url(url: str) -> tuple[str, str]:
         addresses = socket.getaddrinfo(hostname, None)
     except socket.gaierror as exc:
         raise ValueError("远程 URL 域名解析失败") from exc
+    resolved_ips = [ipaddress.ip_address(address[4][0]) for address in addresses]
+    # Fake-IP DNS 例外（Clash TUN 等本地代理接管 DNS，未设代理环境变量）：
+    # 解析结果全部落在代理网段时按原 hostname 请求，连接交由本地代理完成。
+    # 开启后 SSRF 防线整体移交本地代理，仅限受信开发环境；混合解析（fake + 真实 IP）仍拒绝。
+    if resolved_ips and settings.MEDIA_REMOTE_TRUST_FAKEIP and all(ip in _PROXY_NETWORK for ip in resolved_ips):
+        return url, hostname
     resolved_ip: str | None = None
-    for address in addresses:
-        ip = ipaddress.ip_address(address[4][0])
+    for ip in resolved_ips:
         if ip in _PROXY_NETWORK:
             if not is_allowed_host:
                 # 未列入白名单的代理网段地址视为内网，避免 SSRF
@@ -116,6 +123,18 @@ def _environment_proxy_active(safe_url: str, hostname: str) -> bool:
         return True
 
 
+def _is_proxy_network_url(safe_url: str) -> bool:
+    """检测 URL 是否为代理软件 Fake-IP / 基准测试网段 (198.18.0.0/15)。"""
+    try:
+        host = urlparse(safe_url).hostname
+        if host:
+            ip = ipaddress.ip_address(host)
+            return ip in _PROXY_NETWORK
+    except Exception:
+        pass
+    return False
+
+
 def _restore_hostname_url(safe_url: str, hostname: str) -> str:
     """把 IP 直连 URL 的 netloc 还原为原 hostname，保留端口/路径/查询参数。"""
     parsed = urlparse(safe_url)
@@ -132,24 +151,27 @@ def safe_stream(method: str, safe_url: str, hostname: str | None, **kwargs):
     CDN/HTTPS 源会握手失败或证书不匹配。直连场景通过 httpcore 的 extensions["sni_hostname"]
     覆盖 server_hostname：TCP 连接到已校验 IP，SNI/证书按原 hostname 校验。
 
-    代理场景（环境变量 / Windows 系统代理激活）例外：httpcore 的 HTTP 代理隧道不支持
-    sni_hostname 扩展，须改用原 hostname 发起请求，DNS 解析与连接交由代理完成，TLS 按
-    域名校验（即普通客户端行为），否则证书会按 IP 校验而失败。此时 rebinding 防护退化
-    为 hostname 级：代理模式下解析权在代理侧，IP 直连语义无法维持。
-
-    顶层 httpx.stream 不透传 extensions，故须经 Client.stream 发起请求。
+    代理场景（环境变量 / Windows 系统代理激活 / Fake-IP 网段 198.18.0.0/15）例外：
+    httpcore 的 HTTP 代理隧道不支持 sni_hostname 扩展，Fake-IP 网段亦非真实 IP，
+    须改用原 hostname 发起请求，DNS 解析与连接交由代理完成，TLS 按域名校验。
     """
     kwargs.setdefault("timeout", 30)
     # 强制禁止重定向：SSRF 防护要求对重定向目标重新走 validate_remote_url 校验，
     # 跟随重定向会绕过 IP 黑名单（重定向目标可能是内网/元数据地址）。
     # 即使调用方误传 follow_redirects=True 也在此硬覆盖为 False。
     kwargs["follow_redirects"] = False
-    if hostname and _environment_proxy_active(safe_url, hostname):
+    # Fake-IP 网段（198.18.0.0/15）非真实目标 IP，直连无意义：无论代理环境变量是否
+    # 激活都改用原 hostname 请求，交由本地代理/TUN 完成实际连接。
+    use_hostname = bool(hostname and (_environment_proxy_active(safe_url, hostname) or _is_proxy_network_url(safe_url)))
+    if use_hostname:
         request_url = _restore_hostname_url(safe_url, hostname)
         extensions = None
     else:
         request_url = safe_url
         extensions = {"sni_hostname": hostname} if hostname else None
+
+    # 不做异常回退：连接错误后按 hostname 重发会触发二次 DNS 解析，破坏
+    # validate_remote_url 的 IP 锁定（DNS rebinding TOCTOU 防护）；失败应显式抛出。
     with httpx.Client() as client:
         with client.stream(method, request_url, extensions=extensions, **kwargs) as response:
             yield response

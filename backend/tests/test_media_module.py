@@ -414,6 +414,208 @@ class MediaModuleTestCase(unittest.TestCase):
                         "https://ark-content-generation-v2-cn-beijing.tos-cn-beijing.volces.com/image.png"
                     )
 
+    def test_proxy_image_success(self):
+        from app.modules.media.controller.admin.asset import MediaAssetController
+        controller = MediaAssetController()
+        user = User(id=1, username="admin")
+
+        with patch("app.modules.media.controller.admin.asset._validate_remote_url", return_value=("https://1.2.3.4/pic.jpg", "example.com")), \
+             patch("app.modules.media.controller.admin.asset._download_remote_file", return_value=(b"fake-image-bytes", "image/jpeg")):
+            response = controller.proxy_image(url="https://example.com/pic.jpg", current_user=user)
+            self.assertEqual(response.body, b"fake-image-bytes")
+            self.assertEqual(response.media_type, "image/jpeg")
+            self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
+
+    def test_proxy_image_handles_failure(self):
+        from app.modules.media.controller.admin.asset import MediaAssetController
+        from fastapi import HTTPException
+        controller = MediaAssetController()
+        user = User(id=1, username="admin")
+
+        with patch("app.modules.media.controller.admin.asset._validate_remote_url", side_effect=ValueError("不允许访问内网地址")):
+            with self.assertRaises(HTTPException) as ctx:
+                controller.proxy_image(url="http://127.0.0.1/evil.png", current_user=user)
+            self.assertEqual(ctx.exception.status_code, 400)
+
+    def _make_user(self, user_id: int, *, super_admin: bool = False) -> User:
+        return User(
+            id=user_id,
+            username=f"user{user_id}",
+            full_name=f"user{user_id}",
+            password_hash="x",
+            is_active=True,
+            is_super_admin=super_admin,
+        )
+
+    def test_proxy_image_local_file_requires_ownership(self):
+        """本地分支按文件级归属（storage_url+created_by）放行：本人/超管可读，他人 400"""
+        import tempfile
+        from pathlib import Path
+
+        from fastapi import HTTPException
+
+        from app.modules.media.controller.admin.asset import MediaAssetController
+
+        asset = MediaAsset(
+            asset_type="image",
+            source_type="upload",
+            original_url="https://example.com/own.png",
+            storage_url="/uploads/2026/test/own.png",
+            status="success",
+            created_by=2,
+        )
+        self.session.add(asset)
+        self.session.commit()
+
+        controller = MediaAssetController()
+        owner = self._make_user(2)
+        stranger = self._make_user(1)
+        super_admin = self._make_user(1, super_admin=True)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "2026" / "test"
+            target.mkdir(parents=True)
+            (target / "own.png").write_bytes(b"local-bytes")
+            with patch("app.modules.media.controller.admin.asset.DEFAULT_UPLOAD_DIR", Path(tmp)):
+                # 本人：命中本地文件直接返回
+                response = controller.proxy_image(
+                    url="https://example.com/own.png", current_user=owner, session=self.session
+                )
+                self.assertIn("own.png", str(response.path))
+                # 超管：放行
+                response = controller.proxy_image(
+                    url="https://example.com/own.png", current_user=super_admin, session=self.session
+                )
+                self.assertIn("own.png", str(response.path))
+                # 陌生人：归属不命中 → 不走本地分支，落入远程分支（mock 抛错 → 400）
+                with patch(
+                    "app.modules.media.controller.admin.asset._validate_remote_url",
+                    side_effect=ValueError("不允许访问内网地址"),
+                ):
+                    with self.assertRaises(HTTPException) as ctx:
+                        controller.proxy_image(
+                            url="https://example.com/own.png", current_user=stranger, session=self.session
+                        )
+                    self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_proxy_image_local_path_escape_rejected(self):
+        """storage_url 含路径逃逸（../../）时即使文件存在也拒绝走本地分支"""
+        import tempfile
+        from pathlib import Path
+
+        from fastapi import HTTPException
+
+        from app.modules.media.controller.admin.asset import MediaAssetController
+
+        asset = MediaAsset(
+            asset_type="image",
+            source_type="upload",
+            original_url="/uploads/../../evil.txt",
+            storage_url="/uploads/../../evil.txt",
+            status="success",
+            created_by=1,
+        )
+        self.session.add(asset)
+        self.session.commit()
+
+        controller = MediaAssetController()
+        owner = self._make_user(1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("app.modules.media.controller.admin.asset.DEFAULT_UPLOAD_DIR", Path(tmp)), patch(
+                "app.modules.media.controller.admin.asset.os.path.isfile", return_value=True
+            ), patch(
+                "app.modules.media.controller.admin.asset._validate_remote_url",
+                side_effect=ValueError("不允许访问内网地址"),
+            ):
+                with self.assertRaises(HTTPException) as ctx:
+                    controller.proxy_image(
+                        url="/uploads/../../evil.txt", current_user=owner, session=self.session
+                    )
+                self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_proxy_image_forces_download_for_non_inline_mime(self):
+        """远程声明的 text/html / SVG / 缺失 MIME 一律降级为附件下载，仅图片 inline"""
+        from app.modules.media.controller.admin.asset import MediaAssetController
+
+        controller = MediaAssetController()
+        user = self._make_user(1, super_admin=True)
+
+        for mime in ("text/html", "image/svg+xml", None):
+            with patch(
+                "app.modules.media.controller.admin.asset._validate_remote_url",
+                return_value=("https://1.2.3.4/p.html", "example.com"),
+            ), patch(
+                "app.modules.media.controller.admin.asset._download_remote_file",
+                return_value=(b"payload", mime),
+            ):
+                response = controller.proxy_image(url="https://example.com/p.html", current_user=user)
+                self.assertEqual(response.media_type, "application/octet-stream")
+                self.assertTrue(response.headers.get("content-disposition", "").startswith("attachment"))
+
+        with patch(
+            "app.modules.media.controller.admin.asset._validate_remote_url",
+            return_value=("https://1.2.3.4/pic.jpg", "example.com"),
+        ), patch(
+            "app.modules.media.controller.admin.asset._download_remote_file",
+            return_value=(b"payload", "image/jpeg; charset=binary"),
+        ):
+            response = controller.proxy_image(url="https://example.com/pic.jpg", current_user=user)
+            self.assertEqual(response.media_type, "image/jpeg")
+            self.assertTrue(response.headers.get("content-disposition", "").startswith("inline"))
+
+    def test_add_strips_client_controlled_fields(self):
+        """add 剥离客户端提交的 storage_url/status/created_by，归属取请求用户"""
+        from app.modules.media.model.media import MediaAssetCreateRequest
+
+        entity = MediaAssetService(self.session).add(
+            MediaAssetCreateRequest(
+                asset_type="image",
+                source_type="ai_sync",
+                original_url="https://example.com/x.png",
+                storage_url="/uploads/evil.png",
+                status="success",
+                created_by=99,
+            ),
+            current_user=self._make_user(7),
+        )
+        self.assertIsNone(entity.storage_url)
+        self.assertEqual(entity.status, "pending")
+        self.assertEqual(entity.created_by, 7)
+
+    def test_update_ignores_protected_fields(self):
+        """update 剥离 storage_url/status/created_by，其余字段正常更新"""
+        from app.modules.media.model.media import MediaAssetUpdateRequest
+
+        asset = MediaAsset(
+            asset_type="image",
+            source_type="upload",
+            storage_url="/uploads/a.png",
+            status="success",
+            created_by=1,
+            file_name="old.png",
+        )
+        self.session.add(asset)
+        self.session.commit()
+        self.session.refresh(asset)
+
+        MediaAssetService(self.session).update(
+            MediaAssetUpdateRequest(
+                id=asset.id,
+                storage_url="/uploads/evil.png",
+                status="pending",
+                created_by=99,
+                file_name="new.png",
+            )
+        )
+
+        refreshed = self.session.get(MediaAsset, asset.id)
+        self.assertEqual(refreshed.storage_url, "/uploads/a.png")
+        self.assertEqual(refreshed.status, "success")
+        self.assertEqual(refreshed.created_by, 1)
+        self.assertEqual(refreshed.file_name, "new.png")
+
 
 if __name__ == "__main__":
     unittest.main()
+

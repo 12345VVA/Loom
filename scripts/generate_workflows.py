@@ -571,19 +571,22 @@ def generate_11():
     # 视觉锚点：报告色彩定量结论（暖色主导 85%、亮度 67%、饱和度 28.6%、蜜黄/奶油底）
     # 注：生图模型 doubao-seedream-4-5 中文文字渲染可靠，走「图文式」（文字压图），
     # 与晓悠绘本馆实际形态对齐（封面描边标题 + 内页手写体故事文字压图）。
+    # v4：实测 seedream-4-5 默认审美会把画面拉向日漫数字插画（光滑喷枪渐变+动漫大眼），
+    # 弱质感词压不住，必须正面强调手绘蜡笔笔触 + 明确反日漫/反光面负面词（该模型无 negative_prompt 参数）。
     STYLE_ANCHOR = (
-        "flat crayon-style children's picture book illustration, visible paper grain texture, "
-        "off-white cream paper background, low-saturation warm earthy color palette "
-        "(honey yellow, cream, sage green, terracotta, muted cocoa brown), "
-        "soft diffused warm lighting, no black outlines, "
-        "simple composition with generous negative space, one single scene per page, "
-        "cozy bedtime mood, no photorealism, consistent style"
+        "hand-drawn children's picture book illustration in wax crayon and oil pastel, "
+        "clearly visible crayon strokes and scribble texture, grainy off-white cream paper background, "
+        "matte flat color fills with slightly rough uneven edges, childlike naive drawing style, "
+        "low-saturation warm earthy color palette (honey yellow, cream, sage green, terracotta, muted cocoa brown), "
+        "simple composition with generous negative space, one single scene per page, cozy bedtime mood. "
+        "IMPORTANT: NOT anime, NOT manga, no glossy digital airbrushing, no smooth gradient shading, "
+        "no sparkling highlight eyes, no 3D rendering, no vector-clean outlines, no photorealism"
     )
 
     # 角色设定表：跨篇锁定的角色宇宙（打同类账号「角色每篇一换」的死穴）
     CHARACTERS = (
         "- 阿苏 Asu: \"Asu, a 4-year-old Chinese boy, round face, short slightly-tousled black hair, "
-        "big curious eyes, wearing an orange-yellow hoodie and blue overalls, "
+        "simple small round black eyes, childlike naive facial features, wearing an orange-yellow hoodie and blue overalls, "
         "same character design, consistent appearance\"\n"
         "- 妈妈: \"a warm young Chinese mother with shoulder-length black hair, wearing a soft beige cardigan, "
         "same character design, consistent appearance\"\n"
@@ -619,7 +622,7 @@ def generate_11():
 - cover_prompt：封面图绘图提示词，按以下规则生成——
   A. 原样包含下面的 Style Anchor，一个词都不许改：
   @@STYLE@@
-  B. 封面骨架（图文式，必须照做）：米白纸纹底；顶部约四分之一区域放置超大描边中文标题——标题文字为书名号内的书名（不含书名号本身），黑色粗体配白色描边，居中、醒目、一字不差；标题下方居中一行小字署名「图/文：阿苏的睡前故事」；中景 1 到 2 个角色（主角按本书书名确定）；简化场景（卧室、草地、浴室、餐桌四选一）。
+  B. 封面骨架（图文式，必须照做）：米白纸纹底；顶部约四分之一区域放置超大描边中文标题——标题文字为书名号内的书名（不含书名号本身），黑色粗体配白色描边，居中、醒目、一字不差，**标题只渲染一次，绝不重复出现**；标题下方居中一行小字署名「图/文：阿苏的睡前故事」；中景 1 到 2 个角色（主角按本书书名确定）；简化场景（卧室、草地、浴室、餐桌四选一）。
   C. 出场角色必须使用下面角色设定表中的完整英文描述，逐字复用：
   @@CHARACTERS@@
   D. 提示词写法：画面描述用英文，文字渲染指令用中文，并用中文引号精确标出要渲染的标题与署名文字。除标题和署名外，画面不出现任何其他文字、字母或符号。"""
@@ -638,7 +641,7 @@ def generate_11():
 3. 不说教：道理藏在剧情里，结尾禁止出现「这个故事告诉我们」式总结。
 4. 不恐怖：不出现怪兽、黑暗恐吓、抛弃威胁、医生打针吓唬等元素。
 5. 节奏下行：情节从冲突到安抚，越到结尾越安静，最后一段必须是温暖入睡感的画面，适合哄睡。
-6. 每段 2 到 4 句话，口语化，家长可直接朗读。
+6. 每段 1 到 2 句话、不超过 45 字，口语化，家长可直接朗读。文字要短——这段文字会原样压到插图上，超过 45 字排版必崩、渲染必错字。
 
 【场景提示词规则（scene_prompt，英文，只写本段差异化内容）】
 1. 只描述本段画面：出场角色（从下面角色设定表逐字复用其完整描述）+ 动作 + 场景 + 构图（中景为主、主体居中、留白充足）。
@@ -753,6 +756,7 @@ copy_text：完整可直接发布的小红书正文（含末尾标签行）。""
             "modelProfileCode": "doubao-seedream-4-5-251128",
             "promptTemplate": "{plan_output.output.cover_prompt}",
             "size": "1728x2304",
+            "optionsJson": "{\"watermark\": false}",
             "outputVariable": "cover_image_url",
         }),
         create_node("node_loop", "loop_controller", "⑤ 循环生成内页", 1400, 330, {
@@ -771,8 +775,11 @@ copy_text：完整可直接发布的小红书正文（含末尾标签行）。""
                 {"name": "story_output", "type": "string", "source": ["node_story", "story_output"]},
             ],
             "modelProfileCode": "doubao-seedream-4-5-251128",
-            "promptTemplate": "{story_output.output.style_anchor}. {paragraph.scene_prompt}. Bottom quarter of the page: a clean cream paper area with warm handwritten Chinese text rendering exactly \"{paragraph.story_text}\" — the text must be clear, centered, correctly line-wrapped, and must not overlap the main subject. No other text, letters, or symbols anywhere in the image.",
+            # 以封面为参考图锁定全书画风与角色外观（__src 为厂商公网临时 URL，本地部署也能回源）
+            "imageVariable": "cover_image_url__src",
+            "promptTemplate": "{story_output.output.style_anchor}. 参考图仅用于统一画风和角色外观，绝不能复制参考图中的标题与署名文字。整幅画面必须是手绘蜡笔插画，绝不是照片，不是真人摄影。{paragraph.scene_prompt}. 画面底部严格保留约四分之一高度作为文字区：干净均匀的米白底色，以温暖的黑色手写体（马克笔质感）呈现中文文字「{paragraph.story_text}」，一字不差、只渲染一遍、绝不重复任何句子；文字 2 到 3 行、居中、字号统一且大小适中，不与画面主体重叠。除这段文字外，画面不出现任何其他文字、字母或符号。",
             "size": "1728x2304",
+            "optionsJson": "{\"watermark\": false}",
             "outputVariable": "image_url",
         }, parent_node="loop_body_group", extent="parent"),
         create_node("node_end", "end", "结束", 1700, 250, {
@@ -800,9 +807,9 @@ copy_text：完整可直接发布的小红书正文（含末尾标签行）。""
     save_workflow(
         "11_小红书绘本内容流水线",
         "11_XHS_PictureBook_Pipeline.json",
-        "输入话题/一段话 → 选题策划（五层漏斗）→ 睡前故事固定6段+场景提示词（Q1-Q10红线+角色宇宙，风格锚点只输出一次防超长）→ "
-        "Gen3干货正文（话术对比+互动收尾+10标签）→ 封面图+循环内页图（图文式：描边标题+手写体故事文字压图，生图节点拼装风格锚点+场景+文字指令，"
-        "平涂蜡笔+纸纹米白底统一风格）。模型：deepseek-flash 文案 / doubao-seedream-4-5-251128 生图 1728x2304 竖版",
+        "输入话题/一段话 → 选题策划（五层漏斗）→ 睡前故事固定6段+场景提示词（Q1-Q10红线+角色宇宙，每段≤45字防压图排版崩坏）→ "
+        "Gen3干货正文 → 封面图 → 循环内页图（以封面为参考图 imageVariable 锁全书画风与角色一致性，手绘蜡笔质感+反日漫/反照片负面词，"
+        "文字只渲染一遍防重复句，optionsJson 关厂商水印）。模型：deepseek-flash 文案 / doubao-seedream-4-5-251128 生图 1728x2304 竖版",
         elements,
     )
 

@@ -7,10 +7,27 @@ function toPath(dir: string) {
 	return fileURLToPath(new URL(dir, import.meta.url));
 }
 
+function virtualMockPlugin() {
+	return {
+		name: 'virtual-mock-plugin',
+		resolveId(id: string) {
+			if (id === 'virtual:svg-register' || id === '@intlify/unplugin-vue-i18n/messages') {
+				return id;
+			}
+		},
+		load(id: string) {
+			if (id === 'virtual:svg-register') return 'export default {}';
+			if (id === '@intlify/unplugin-vue-i18n/messages') return 'export default {}';
+		}
+	};
+}
+
 export default defineConfig({
-	plugins: [vue(), vueJsx()],
+	plugins: [vue(), vueJsx(), virtualMockPlugin()],
 	resolve: {
 		alias: {
+			'@intlify/unplugin-vue-i18n/messages': toPath('./tests/mocks/empty.ts'),
+			'virtual:svg-register': toPath('./tests/mocks/empty.ts'),
 			'/@': toPath('./src'),
 			'/$': toPath('./src/modules'),
 			'/#': toPath('./src/plugins'),

@@ -102,7 +102,7 @@
 		:items="logDrawer.items"
 		:loading="logDrawer.loading"
 		:title="$t('工作流步骤执行日志')"
-		size="650px"
+		size="850px"
 		time-format="YYYY-MM-DD HH:mm:ss"
 		:empty-text="$t('暂无节点执行步骤记录')"
 		@expand-all="expandAllLogs"

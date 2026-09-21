@@ -56,6 +56,51 @@ def _restore_logs_payload(logs: list[WorkflowExecutionLog]) -> None:
         prev_output = log.output_data
 
 
+def _replace_transferred_urls(logs: list[WorkflowExecutionLog], instance_id: int, session: Session) -> None:
+    """若工作流执行产物已成功转存到本地存储，将日志载荷中的远程原始 URL 替换为本地 storage_url，
+    使前端日志抽屉与画廊优先展示并下载本地图片链接。
+    """
+    from app.modules.media.model.media import MediaAsset
+    from app.modules.workflow.model.workflow_artifact import WorkflowArtifact
+
+    assets = session.exec(
+        select(MediaAsset).where(
+            MediaAsset.workflow_instance_id == instance_id,
+            MediaAsset.status == "success",
+            MediaAsset.delete_time == None,  # noqa: E711
+        )
+    ).all()
+    url_map: dict[str, str] = {
+        a.original_url: a.storage_url
+        for a in assets
+        if a.original_url and a.storage_url
+    }
+
+    artifacts = session.exec(
+        select(WorkflowArtifact).where(
+            WorkflowArtifact.instance_id == instance_id,
+            WorkflowArtifact.storage_url != None,  # noqa: E711
+            WorkflowArtifact.original_url != None,  # noqa: E711
+        )
+    ).all()
+    for art in artifacts:
+        if art.original_url and art.storage_url:
+            url_map[art.original_url] = art.storage_url
+
+    if not url_map:
+        return
+
+    for log in logs:
+        if log.output_data:
+            for orig, stor in url_map.items():
+                if orig in log.output_data:
+                    log.output_data = log.output_data.replace(orig, stor)
+        if log.input_data:
+            for orig, stor in url_map.items():
+                if orig in log.input_data:
+                    log.input_data = log.input_data.replace(orig, stor)
+
+
 @CoolController(
     CoolControllerMeta(
         module="workflow",
@@ -154,6 +199,7 @@ class WorkflowInstanceController(BaseController):
             stmt = stmt.limit(limit)
         logs = session.exec(stmt).all()
         _restore_logs_payload(logs)
+        _replace_transferred_urls(logs, instance_id, session)
         return logs
 
     @Get("/stream", summary="SSE 实时推送工作流进度", permission="workflow:instance:page")

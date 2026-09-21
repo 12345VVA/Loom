@@ -110,6 +110,28 @@ class MediaSecurityTestCase(unittest.TestCase):
         self.assertEqual(asset.status, "success")
         self.assertEqual(asset.storage_url, "/uploads/safe.png")
 
+    def test_validate_remote_url_fakeip_trusted_returns_original_url(self):
+        """MEDIA_REMOTE_TRUST_FAKEIP 开启且解析结果全部为 fake-ip 网段时放行，返回原 URL 按 hostname 请求"""
+        with patch.object(settings, "MEDIA_REMOTE_TRUST_FAKEIP", True):
+            with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("198.18.0.66", 0))]):
+                safe_url, hostname = _validate_remote_url("https://cdn.example.net/a.jpeg")
+        self.assertEqual(safe_url, "https://cdn.example.net/a.jpeg")
+        self.assertEqual(hostname, "cdn.example.net")
+
+    def test_validate_remote_url_fakeip_mixed_resolution_still_rejected(self):
+        """混合解析（fake-ip + 真实公网 IP）即使开关开启也拒绝，防绕过"""
+        with patch.object(settings, "MEDIA_REMOTE_TRUST_FAKEIP", True):
+            with patch(
+                "socket.getaddrinfo",
+                return_value=[
+                    (None, None, None, None, ("198.18.0.66", 0)),
+                    (None, None, None, None, ("93.184.216.34", 0)),
+                ],
+            ):
+                with self.assertRaises(ValueError) as ctx:
+                    _validate_remote_url("https://cdn.example.net/a.jpeg")
+        self.assertIn("内网", str(ctx.exception))
+
     # ------------------------------------------------------------------
     # 1.1 safe_stream 代理环境回退
     # ------------------------------------------------------------------
@@ -158,11 +180,23 @@ class MediaSecurityTestCase(unittest.TestCase):
         mock_client_cls, client = self._mock_httpx_client()
         with patch("app.framework.url_security.urllib.request.getproxies", return_value={}):
             with patch("app.framework.url_security.httpx.Client", mock_client_cls):
+                with safe_stream("GET", "https://93.184.216.34/a.jpeg", "cdn.example.com"):
+                    pass
+        args, kwargs = client.stream.call_args
+        self.assertEqual(args[1], "https://93.184.216.34/a.jpeg")
+        self.assertEqual(kwargs.get("extensions"), {"sni_hostname": "cdn.example.com"})
+
+    def test_safe_stream_uses_hostname_for_fakeip_url_without_proxy(self):
+        """Fake-IP 网段 IP 非真实目标，即使无代理环境变量也改用原 hostname 请求"""
+        mock_client_cls, client = self._mock_httpx_client()
+        with patch("app.framework.url_security.urllib.request.getproxies", return_value={}):
+            with patch("app.framework.url_security.httpx.Client", mock_client_cls):
                 with safe_stream("GET", "https://198.18.0.48/a.jpeg", "cdn.example.com"):
                     pass
         args, kwargs = client.stream.call_args
-        self.assertEqual(args[1], "https://198.18.0.48/a.jpeg")
-        self.assertEqual(kwargs.get("extensions"), {"sni_hostname": "cdn.example.com"})
+        self.assertEqual(args[1], "https://cdn.example.com/a.jpeg")
+        self.assertIsNone(kwargs.get("extensions"))
+        self.assertFalse(kwargs.get("follow_redirects"))
 
     def test_safe_stream_keeps_ip_url_when_proxy_bypass_matches(self):
         """目标 host 命中 no_proxy/代理例外时不走代理，保持 IP 直连 + sni_hostname"""
@@ -173,10 +207,10 @@ class MediaSecurityTestCase(unittest.TestCase):
         ):
             with patch("app.framework.url_security.urllib.request.proxy_bypass", return_value=True):
                 with patch("app.framework.url_security.httpx.Client", mock_client_cls):
-                    with safe_stream("GET", "https://198.18.0.48/a.jpeg", "cdn.example.com"):
+                    with safe_stream("GET", "https://93.184.216.34/a.jpeg", "cdn.example.com"):
                         pass
         args, kwargs = client.stream.call_args
-        self.assertEqual(args[1], "https://198.18.0.48/a.jpeg")
+        self.assertEqual(args[1], "https://93.184.216.34/a.jpeg")
         self.assertEqual(kwargs.get("extensions"), {"sni_hostname": "cdn.example.com"})
 
     # ------------------------------------------------------------------

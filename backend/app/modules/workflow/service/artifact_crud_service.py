@@ -16,6 +16,39 @@ class WorkflowArtifactService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, WorkflowArtifact)
 
+    def page(self, query: Any, current_user: User | None = None, relations: tuple = ()) -> Any:
+        result = super().page(query, current_user, relations=relations)
+        self._backfill_storage_urls(result.items)
+        return result
+
+    def _backfill_storage_urls(self, items: list[dict]) -> None:
+        from app.modules.media.model.media import MediaAsset
+
+        missing_urls = [
+            item.get("original_url") or item.get("originalUrl")
+            for item in items
+            if not (item.get("storage_url") or item.get("storageUrl"))
+            and (item.get("original_url") or item.get("originalUrl"))
+        ]
+        if not missing_urls:
+            return
+
+        assets = list(
+            self.session.exec(
+                select(MediaAsset).where(
+                    MediaAsset.original_url.in_(missing_urls),
+                    MediaAsset.status == "success",
+                    MediaAsset.delete_time == None,  # noqa: E711
+                )
+            ).all()
+        )
+        url_map = {a.original_url: a.storage_url for a in assets if a.original_url and a.storage_url}
+        for item in items:
+            orig = item.get("original_url") or item.get("originalUrl")
+            if orig and orig in url_map:
+                item["storage_url"] = url_map[orig]
+                item["storageUrl"] = url_map[orig]
+
     def delete(
         self,
         ids: list[int],
