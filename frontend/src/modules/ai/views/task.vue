@@ -104,7 +104,7 @@ defineOptions({
 	name: 'ai-task'
 });
 
-import { computed, onMounted, reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import { useCrud, useForm, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useCool } from '/@/cool';
@@ -190,10 +190,6 @@ const Crud = useCrud(
 		loadStats();
 	}
 );
-
-onMounted(() => {
-	loadStats();
-});
 
 async function loadStats() {
 	const res = await service.ai.task.stats({});

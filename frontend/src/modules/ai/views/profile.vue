@@ -11,15 +11,20 @@
 		<cl-row>
 			<cl-table ref="Table">
 				<template #slot-default="{ scope }">
-					<el-button text type="primary" @click="setDefault(scope.row)">{{
-						$t('设默认')
-					}}</el-button>
+					<el-button
+						v-if="!scope.row.isDefault"
+						text
+						type="primary"
+						@click="setDefault(scope.row)"
+					>
+						{{ $t('设为默认') }}
+					</el-button>
+					<el-tag v-else size="small" type="success">{{ $t('默认') }}</el-tag>
 				</template>
-
 				<template #slot-test="{ scope }">
-					<el-button text type="primary" @click="openTest(scope.row)">{{
-						$t('测试')
-					}}</el-button>
+					<el-button text type="primary" @click="openTest(scope.row)">
+						{{ $t('测试') }}
+					</el-button>
 				</template>
 			</cl-table>
 		</cl-row>
@@ -79,7 +84,7 @@ defineOptions({
 
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { ElMessage } from 'element-plus';
-import { h, markRaw, reactive } from 'vue';
+import { h, markRaw, onMounted, reactive, ref } from 'vue';
 import { ElIcon, ElTooltip } from 'element-plus';
 import { InfoFilled } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
@@ -99,6 +104,32 @@ const tester = reactive({
 	imageItems: [] as { src: string; value: string; url?: string }[]
 });
 
+const modelsList = ref<any[]>([]);
+
+onMounted(async () => {
+	try {
+		const res = await service.ai.model.list({});
+		modelsList.value = res || [];
+	} catch (e) {
+		console.warn('加载模型列表失败:', e);
+	}
+});
+
+function getModelType(scope: any): string {
+	if (!scope) return '';
+	if (scope.modelType) return scope.modelType;
+	if (scope.modelId) {
+		const m = modelsList.value.find((item: any) => item.id == scope.modelId);
+		if (m) return m.modelType || '';
+	}
+	return '';
+}
+
+function isChatModel(scope: any): boolean {
+	const type = getModelType(scope);
+	return type === 'chat' || type === 'llm';
+}
+
 // 表单标签旁的 tooltip 图标（ui-guidelines：解释性小字图标化）
 function renderLabelWithTip(label: string, tip: string) {
 	return () =>
@@ -112,16 +143,45 @@ function renderLabelWithTip(label: string, tip: string) {
 		]);
 }
 
+// 分组标题组件
+function renderSection(title: string, desc?: string) {
+	return () =>
+		h('div', { class: 'form-section-header' }, [
+			h('span', { class: 'form-section-header__bar' }),
+			h('span', { class: 'form-section-header__title' }, title),
+			desc ? h('span', { class: 'form-section-header__desc' }, desc) : null
+		]);
+}
+
 const Upsert = useUpsert({
-	dialog: { width: '860px' },
-	props: { labelWidth: '140px' },
+	dialog: { width: '840px' },
+	props: { labelWidth: '120px' },
 	items: [
-		{ label: t('编码'), prop: 'code', required: true, component: { name: 'el-input' } },
-		{ label: t('名称'), prop: 'name', required: true, component: { name: 'el-input' } },
+		// --- 1. 基本信息 ---
+		{
+			prop: '_sec_base',
+			span: 24,
+			component: { vm: renderSection(t('基本信息'), t('配置调用编码、关联模型与业务场景')) }
+		},
+		{
+			label: t('编码'),
+			prop: 'code',
+			required: true,
+			span: 12,
+			component: { name: 'el-input', props: { placeholder: '例如: gpt-image-flare-vip' } }
+		},
+		{
+			label: t('名称'),
+			prop: 'name',
+			required: true,
+			span: 12,
+			component: { name: 'el-input', props: { placeholder: '例如: GPT-Image-2.5 Flare VIP' } }
+		},
 		{
 			label: t('模型'),
 			prop: 'modelId',
 			required: true,
+			span: 12,
 			component: {
 				name: 'cl-select-table',
 				props: {
@@ -141,13 +201,32 @@ const Upsert = useUpsert({
 			prop: 'scenario',
 			value: 'default',
 			required: true,
-			component: { name: 'el-input' }
+			span: 12,
+			component: { name: 'el-input', props: { placeholder: 'default / workflow / image' } }
+		},
+
+		// --- 2. 模型推理参数 ---
+		{
+			prop: '_sec_params',
+			span: 24,
+			component: { vm: renderSection(t('模型推理参数'), t('控制输出随机性、长度限制、响应格式与函数工具')) }
 		},
 		{
 			label: t('采样温度'),
 			renderLabel: renderLabelWithTip(t('采样温度'), t('控制输出随机性，范围 0-2，精确任务建议调低')),
 			prop: 'temperature',
-			component: { name: 'el-input-number', props: { min: 0, max: 2, step: 0.1 } }
+			span: 8,
+			component: {
+				name: 'el-input-number',
+				props: {
+					min: 0,
+					max: 2,
+					step: 0.1,
+					placeholder: '默认 0.7',
+					'controls-position': 'right',
+					style: { width: '100%' }
+				}
+			}
 		},
 		{
 			label: t('核采样 (Top-P)'),
@@ -156,17 +235,39 @@ const Upsert = useUpsert({
 				t('仅保留累计概率前 P 的词元，值越小输出越确定')
 			),
 			prop: 'topP',
-			component: { name: 'el-input-number', props: { min: 0, max: 1, step: 0.05 } }
+			span: 8,
+			component: {
+				name: 'el-input-number',
+				props: {
+					min: 0,
+					max: 1,
+					step: 0.05,
+					placeholder: '默认 1.0',
+					'controls-position': 'right',
+					style: { width: '100%' }
+				}
+			}
 		},
 		{
 			label: t('单次最大 Token'),
 			renderLabel: renderLabelWithTip(t('单次最大 Token'), t('限制单次回复生成的最大 Token 数')),
 			prop: 'maxTokens',
-			component: { name: 'el-input-number' }
+			span: 8,
+			component: {
+				name: 'el-input-number',
+				props: {
+					min: 1,
+					placeholder: '默认 (不限)',
+					'controls-position': 'right',
+					style: { width: '100%' }
+				}
+			}
 		},
 		{
 			label: t('响应格式'),
 			prop: 'responseFormat',
+			span: 24,
+			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
 				name: 'response-format-editor',
 				vm: markRaw(ResponseFormatEditor)
@@ -179,22 +280,56 @@ const Upsert = useUpsert({
 				t('JSON 数组，声明模型可调用的工具（Function Calling）')
 			),
 			prop: 'toolsConfig',
-			component: { name: 'cl-editor', props: { name: 'cl-editor-codemirror', height: 200 } }
+			span: 24,
+			hidden: ({ scope }) => !isChatModel(scope),
+			component: { name: 'cl-editor', props: { name: 'cl-editor-codemirror', height: 180 } }
+		},
+		{
+			prop: '_hint_non_chat',
+			span: 24,
+			hidden: ({ scope }) => isChatModel(scope),
+			component: {
+				vm: () =>
+					h('div', { class: 'non-chat-tip' }, [
+						h(ElIcon, { class: 'mr-1' }, { default: () => h(InfoFilled) }),
+						h(
+							'span',
+							t('当前所选模型为非对话模型（如生图/视频/向量等），不需要且不支持设置响应格式与函数工具集。')
+						)
+					])
+			}
+		},
+
+		// --- 3. 运行调度与容灾 ---
+		{
+			prop: '_sec_schedule',
+			span: 24,
+			component: { vm: renderSection(t('运行调度与容灾'), t('超时控制、异常重试与故障转移降级')) }
 		},
 		{
 			label: t('超时时间 (秒)'),
 			renderLabel: renderLabelWithTip(t('超时时间 (秒)'), t('单次调用允许的最长等待时间')),
 			prop: 'timeout',
-			component: { name: 'el-input-number', props: { min: 1, 'controls-position': 'right' } }
+			span: 12,
+			component: {
+				name: 'el-input-number',
+				props: {
+					min: 1,
+					placeholder: '留空使用默认',
+					'controls-position': 'right',
+					style: { width: '100%' }
+				}
+			}
 		},
 		{
 			label: t('重试次数'),
 			renderLabel: renderLabelWithTip(t('重试次数'), t('调用失败后自动重试的次数上限')),
 			prop: 'retryCount',
 			value: 0,
+			span: 12,
 			component: {
 				name: 'el-input-number',
-				props: { min: 0, max: 5, 'controls-position': 'right' }
+				props: { min: 0, max: 5, 'controls-position': 'right', style: { width: '100%' } }
 			}
 		},
 		{
@@ -202,26 +337,84 @@ const Upsert = useUpsert({
 			renderLabel: renderLabelWithTip(t('重试间隔 (秒)'), t('两次重试之间的等待时间')),
 			prop: 'retryDelaySeconds',
 			value: 0,
+			span: 12,
 			component: {
 				name: 'el-input-number',
-				props: { min: 0, max: 60, 'controls-position': 'right' }
+				props: { min: 0, max: 60, 'controls-position': 'right', style: { width: '100%' } }
 			}
 		},
 		{
 			label: t('兜底配置ID'),
+			renderLabel: renderLabelWithTip(t('兜底配置ID'), t('主模型调用失败时用于降级容灾的备用 Profile ID')),
 			prop: 'fallbackProfileId',
-			component: { name: 'el-input-number' }
+			span: 12,
+			component: {
+				name: 'el-input-number',
+				props: {
+					min: 1,
+					placeholder: '选填备用 Profile ID',
+					'controls-position': 'right',
+					style: { width: '100%' }
+				}
+			}
 		},
-		{ label: t('默认'), prop: 'isDefault', value: false, component: { name: 'el-switch' } },
-		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } },
-		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } }
+
+		// --- 4. 状态与控制 ---
+		{
+			prop: '_sec_control',
+			span: 24,
+			component: { vm: renderSection(t('状态与控制'), t('排序权重、默认命中与启用状态')) }
+		},
+		{
+			label: t('排序'),
+			prop: 'orderNum',
+			value: 0,
+			span: 8,
+			component: {
+				name: 'el-input-number',
+				props: { 'controls-position': 'right', style: { width: '100%' } }
+			}
+		},
+		{
+			label: t('默认'),
+			prop: 'isDefault',
+			value: false,
+			span: 8,
+			component: { name: 'el-switch' }
+		},
+		{
+			label: t('启用'),
+			prop: 'status',
+			value: true,
+			span: 8,
+			component: { name: 'el-switch' }
+		}
 	],
+	onOpen() {
+		const data = Upsert.value?.form;
+		if (data && data.modelId && !data.modelType) {
+			const m = modelsList.value.find((item: any) => item.id == data.modelId);
+			if (m) data.modelType = m.modelType;
+		}
+	},
 	onSubmit(data, { next }) {
+		const payload = { ...data };
+		Object.keys(payload).forEach(key => {
+			if (key.startsWith('_')) {
+				delete payload[key];
+			}
+		});
+		// 非对话模型时，清理响应格式与工具集（置 null 触发后端显式清空更新）
+		const type = getModelType(payload);
+		if (type && type !== 'chat' && type !== 'llm') {
+			payload.responseFormat = null;
+			payload.toolsConfig = null;
+		}
 		next({
-			...data,
-			modelId: normalizeSingleId(data.modelId),
-			// text 模式下编辑器产出空串，保持与旧行为一致：不提交该字段
-			responseFormat: data.responseFormat || undefined
+			...payload,
+			modelId: normalizeSingleId(payload.modelId),
+			// text 模式下编辑器产出空串，按 null 或实际字符串提交
+			responseFormat: payload.responseFormat ?? null
 		});
 	}
 });
@@ -240,7 +433,7 @@ const Table = useTable({
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
 		{
 			type: 'op',
-			width: 310,
+			width: 280,
 			buttons: ['edit', 'delete', 'slot-default', 'slot-test']
 		}
 	]
@@ -336,5 +529,48 @@ async function copyText(value: string) {
 			color: var(--el-color-primary);
 		}
 	}
+}
+
+:deep(.form-section-header) {
+	display: flex;
+	align-items: center;
+	padding: 8px 0 6px;
+	margin: 6px 0 4px;
+	border-bottom: 1px solid var(--el-border-color-lighter);
+
+	.form-section-header__bar {
+		width: 3px;
+		height: 14px;
+		background: var(--el-color-primary);
+		border-radius: 2px;
+		margin-right: 8px;
+		flex-shrink: 0;
+	}
+
+	.form-section-header__title {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--el-text-color-primary);
+		letter-spacing: 0.3px;
+	}
+
+	.form-section-header__desc {
+		font-size: 12px;
+		color: var(--el-text-color-placeholder);
+		margin-left: 8px;
+	}
+}
+
+:deep(.non-chat-tip) {
+	display: flex;
+	align-items: center;
+	padding: 8px 12px;
+	margin-top: 2px;
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--el-color-info);
+	background-color: var(--el-color-info-light-9);
+	border: 1px dashed var(--el-color-info-light-5);
+	border-radius: 4px;
 }
 </style>

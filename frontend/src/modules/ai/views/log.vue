@@ -14,13 +14,41 @@
 		</cl-row>
 
 		<cl-row>
-			<cl-table ref="Table" />
+			<cl-table ref="Table">
+				<template #column-requestOptions="{ scope }">
+					<el-button
+						v-if="scope.row.requestOptions || scope.row.request_options"
+						link
+						type="primary"
+						size="small"
+						@click="viewOptions(scope.row)"
+					>
+						{{ $t('查看') }}
+					</el-button>
+					<span v-else style="color: var(--el-text-color-placeholder)">-</span>
+				</template>
+			</cl-table>
 		</cl-row>
 
 		<cl-row>
 			<cl-flex1 />
 			<cl-pagination />
 		</cl-row>
+
+		<el-dialog
+			v-model="dialogVisible"
+			:title="$t('高级调用参数 (request_options)')"
+			width="650px"
+			destroy-on-close
+		>
+			<div class="options-dialog-content">
+				<pre class="json-viewer">{{ currentOptionsText }}</pre>
+			</div>
+			<template #footer>
+				<el-button @click="copyOptions">{{ $t('复制') }}</el-button>
+				<el-button type="primary" @click="dialogVisible = false">{{ $t('关闭') }}</el-button>
+			</template>
+		</el-dialog>
 	</cl-crud>
 </template>
 
@@ -29,14 +57,35 @@ defineOptions({
 	name: 'ai-log'
 });
 
-import { computed, onMounted, reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
+import { ElMessage } from 'element-plus';
 import StatChips from '../components/stat-chips.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
+
+const dialogVisible = ref(false);
+const currentOptionsText = ref('');
+
+function viewOptions(row: any) {
+	const raw = row.requestOptions || row.request_options || '';
+	try {
+		const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+		currentOptionsText.value = JSON.stringify(parsed, null, 2);
+	} catch {
+		currentOptionsText.value = String(raw);
+	}
+	dialogVisible.value = true;
+}
+
+async function copyOptions() {
+	if (!currentOptionsText.value) return;
+	await navigator.clipboard.writeText(currentOptionsText.value);
+	ElMessage.success(t('已复制'));
+}
 
 const stats = reactive({
 	total: 0,
@@ -93,6 +142,7 @@ const Table = useTable({
 			dictColor: true
 		},
 		{ label: t('延迟(ms)'), prop: 'latencyMs', minWidth: 110 },
+		{ label: t('高级参数'), prop: 'requestOptions', minWidth: 100 },
 		{ label: 'Prompt Tokens', prop: 'promptTokens', minWidth: 130 },
 		{ label: 'Completion Tokens', prop: 'completionTokens', minWidth: 160 },
 		{ label: 'Total Tokens', prop: 'totalTokens', minWidth: 120 },
@@ -112,10 +162,6 @@ const Crud = useCrud(
 		loadStats();
 	}
 );
-
-onMounted(() => {
-	loadStats();
-});
 
 async function loadStats() {
 	const res = await service.ai.log.stats({});
@@ -138,5 +184,22 @@ async function loadStats() {
 	:deep(.el-button) {
 		padding: 0 14px;
 	}
+}
+
+.options-dialog-content {
+	max-height: 480px;
+	overflow-y: auto;
+}
+
+.json-viewer {
+	margin: 0;
+	padding: 12px;
+	background-color: var(--el-fill-color-light);
+	border-radius: 4px;
+	font-family: monospace;
+	font-size: 13px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-all;
 }
 </style>

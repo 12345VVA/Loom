@@ -29,7 +29,7 @@ defineOptions({
 	name: 'ai-governance-event'
 });
 
-import { computed, onMounted, reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
@@ -102,8 +102,6 @@ const Crud = useCrud(
 		loadStats();
 	}
 );
-
-onMounted(loadStats);
 
 async function loadStats() {
 	const res = await service.ai.governance_event.stats({ days: 14 });

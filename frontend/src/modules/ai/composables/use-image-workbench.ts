@@ -11,10 +11,13 @@ import {
 	BAILIAN_SIZE_OPTIONS,
 	BASE_SIZE_OPTIONS,
 	OPENAI_AUTO_SIZE_OPTION,
+	TOAPIS_RATIO_SIZE_OPTIONS,
 	VOLCENGINE_SEEDREAM4_SIZE_OPTIONS,
 	VOLCENGINE_SIZE_OPTIONS,
 	detectProviderKind,
+	parseProfileAllowCustomSize,
 	parseProfileLimits,
+	parseProfileSizeFormat,
 	parseProfileSizeOptions,
 	type ImageProfileLimits,
 	type ImageProviderKind,
@@ -116,6 +119,9 @@ export function useImageWorkbench() {
 		if (declared) {
 			return declared;
 		}
+		if (providerKind.value === 'toapis') {
+			return TOAPIS_RATIO_SIZE_OPTIONS;
+		}
 		if (providerKind.value === 'openai') {
 			return [OPENAI_AUTO_SIZE_OPTION, ...BASE_SIZE_OPTIONS];
 		}
@@ -131,10 +137,26 @@ export function useImageWorkbench() {
 		return BASE_SIZE_OPTIONS;
 	});
 
+	const allowCustomSize = computed<boolean>(() =>
+		parseProfileAllowCustomSize(selectedProfile.value?.modelDefaultConfig, true)
+	);
+
+	const sizeFormat = computed<'pixel' | 'ratio' | 'unknown'>(() =>
+		parseProfileSizeFormat(selectedProfile.value?.modelDefaultConfig)
+	);
+
 	const activeLimits = computed<ImageProfileLimits>(() =>
 		parseProfileLimits(selectedProfile.value?.modelDefaultConfig)
 	);
 	const sizeHint = computed(() => {
+		if (sizeFormat.value === 'ratio') {
+			return allowCustomSize.value
+				? t('当前模型使用比例模式（如 1:1, 3:4, 16:9），支持选择或自由输入比例。')
+				: t('当前模型仅支持官方指定比例，请从下拉列表中选择。');
+		}
+		if (providerKind.value === 'toapis') {
+			return t('ToAPIs 模型支持比例（普通版）或像素尺寸（VIP/Official 版）。');
+		}
 		if (providerKind.value === 'openai') {
 			return t(
 				'OpenAI 官方图片接口支持 size=auto；OpenAI 兼容渠道不保证所有底层模型都支持自动比例。'
@@ -158,6 +180,7 @@ export function useImageWorkbench() {
 			bailian: { label: '阿里百炼', type: 'success' },
 			'volcengine-ark': { label: '火山方舟', type: 'warning' },
 			openai: { label: 'OpenAI Compatible', type: 'primary' },
+			toapis: { label: 'ToAPIs', type: 'primary' },
 			qianfan: { label: '百度千帆', type: 'success' },
 			gemini: { label: '谷歌 Gemini', type: 'danger' },
 			unknown: { label: t('通用'), type: 'info' }
@@ -415,6 +438,8 @@ export function useImageWorkbench() {
 		showBailianNegativePrompt,
 		showWatermarkOption,
 		availableSizeOptions,
+		allowCustomSize,
+		sizeFormat,
 		activeLimits,
 		sizeHint,
 		providerKindTag,

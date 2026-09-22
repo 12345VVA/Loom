@@ -36,7 +36,7 @@
 							$t('填充示例')
 						}}</el-button>
 					</div>
-					<cl-editor-codemirror v-model="scope.pricingConfig" :height="200" />
+					<cl-editor-codemirror v-model="scope.pricingConfig" :height="150" />
 				</div>
 			</template>
 			<template #slot-defaultConfig="{ scope }">
@@ -47,7 +47,7 @@
 							$t('填充示例')
 						}}</el-button>
 					</div>
-					<cl-editor-codemirror v-model="scope.defaultConfig" :height="260" />
+					<cl-editor-codemirror v-model="scope.defaultConfig" :height="200" />
 				</div>
 			</template>
 		</cl-upsert>
@@ -59,6 +59,7 @@ defineOptions({
 	name: 'ai-model'
 });
 
+import { h } from 'vue';
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
@@ -76,14 +77,36 @@ const modelTypeOptions = [
 	{ label: t('重排'), value: 'rerank', type: 'success' }
 ];
 
+function isChatModel(scope: any): boolean {
+	const type = scope?.modelType;
+	return type === 'chat' || type === 'llm';
+}
+
+// 分组标题组件
+function renderSection(title: string, desc?: string) {
+	return () =>
+		h('div', { class: 'form-section-header' }, [
+			h('span', { class: 'form-section-header__bar' }),
+			h('span', { class: 'form-section-header__title' }, title),
+			desc ? h('span', { class: 'form-section-header__desc' }, desc) : null
+		]);
+}
+
 const Upsert = useUpsert({
-	dialog: { width: '820px' },
-	props: { labelWidth: '140px' },
+	dialog: { width: '840px' },
+	props: { labelWidth: '110px' },
 	items: [
+		// --- 1. 基本信息 ---
+		{
+			prop: '_sec_base',
+			span: 24,
+			component: { vm: renderSection(t('基本信息'), t('配置模型所属厂商、类型、编码与展示名称')) }
+		},
 		{
 			label: t('厂商'),
 			prop: 'providerId',
 			required: true,
+			span: 12,
 			component: {
 				name: 'cl-select-table',
 				props: {
@@ -98,34 +121,108 @@ const Upsert = useUpsert({
 				}
 			}
 		},
-		{ label: t('编码'), prop: 'code', required: true, component: { name: 'el-input' } },
-		{ label: t('名称'), prop: 'name', required: true, component: { name: 'el-input' } },
 		{
 			label: t('模型类型'),
 			prop: 'modelType',
 			value: 'chat',
 			required: true,
+			span: 12,
 			component: { name: 'cl-select', props: { options: modelTypeOptions } }
 		},
 		{
-			label: t('能力'),
-			prop: 'capabilities',
-			component: { name: 'el-input', props: { placeholder: 'vision,json,tool' } }
+			label: t('编码'),
+			prop: 'code',
+			required: true,
+			span: 12,
+			component: { name: 'el-input', props: { placeholder: '例如: gpt-image-2.5-flare' } }
 		},
-		{ label: t('上下文长度'), prop: 'contextWindow', component: { name: 'el-input-number' } },
-		{ label: t('最大输出'), prop: 'maxOutputTokens', component: { name: 'el-input-number' } },
+		{
+			label: t('名称'),
+			prop: 'name',
+			required: true,
+			span: 12,
+			component: { name: 'el-input', props: { placeholder: '例如: GPT-Image-2.5 Flare' } }
+		},
+		{
+			label: t('能力标签'),
+			prop: 'capabilities',
+			span: 24,
+			component: {
+				name: 'el-input',
+				props: { placeholder: '以逗号分隔，例如: image,text-to-image 或 chat,vision,tools,stream' }
+			}
+		},
+
+		// --- 2. 上下文与Token规格（仅对话/LLM模型显示） ---
+		{
+			prop: '_sec_context',
+			span: 24,
+			hidden: ({ scope }) => !isChatModel(scope),
+			component: { vm: renderSection(t('容量规格'), t('限制上下文窗口大小与最大生成长度')) }
+		},
+		{
+			label: t('上下文长度'),
+			prop: 'contextWindow',
+			span: 12,
+			hidden: ({ scope }) => !isChatModel(scope),
+			component: {
+				name: 'el-input-number',
+				props: { min: 1, placeholder: '例如: 128000', 'controls-position': 'right', style: { width: '100%' } }
+			}
+		},
+		{
+			label: t('最大输出'),
+			prop: 'maxOutputTokens',
+			span: 12,
+			hidden: ({ scope }) => !isChatModel(scope),
+			component: {
+				name: 'el-input-number',
+				props: { min: 1, placeholder: '例如: 4096', 'controls-position': 'right', style: { width: '100%' } }
+			}
+		},
+
+		// --- 3. 价格与默认配置 ---
+		{
+			prop: '_sec_config',
+			span: 24,
+			component: { vm: renderSection(t('配置与参数'), t('模型调用计费规则与默认启动参数')) }
+		},
 		{
 			label: t('价格配置'),
 			prop: 'pricingConfig',
+			span: 24,
 			component: { name: 'slot-pricingConfig' }
 		},
 		{
 			label: t('默认参数'),
 			prop: 'defaultConfig',
+			span: 24,
 			component: { name: 'slot-defaultConfig' }
 		},
-		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } },
-		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } }
+
+		// --- 4. 状态与控制 ---
+		{
+			prop: '_sec_control',
+			span: 24,
+			component: { vm: renderSection(t('状态与控制'), t('排序优先级与启用状态')) }
+		},
+		{
+			label: t('排序'),
+			prop: 'orderNum',
+			value: 0,
+			span: 12,
+			component: {
+				name: 'el-input-number',
+				props: { 'controls-position': 'right', style: { width: '100%' } }
+			}
+		},
+		{
+			label: t('启用'),
+			prop: 'status',
+			value: true,
+			span: 12,
+			component: { name: 'el-switch' }
+		}
 	],
 	onOpen() {
 		// 旧数据可能为 null，编辑器需有初始 JSON 串（仅在空值时兜底，避免覆盖编辑回填）
@@ -138,6 +235,20 @@ const Upsert = useUpsert({
 				data.defaultConfig = '{}';
 			}
 		}
+	},
+	onSubmit(data, { next }) {
+		const payload = { ...data };
+		Object.keys(payload).forEach(key => {
+			if (key.startsWith('_')) {
+				delete payload[key];
+			}
+		});
+		// 非对话模型清空上下文与最大输出（传 null 显式更新，防止被 exclude_unset 跳过）
+		if (!isChatModel(payload)) {
+			payload.contextWindow = null;
+			payload.maxOutputTokens = null;
+		}
+		next(payload);
 	}
 });
 
@@ -187,7 +298,7 @@ function splitCapabilities(value?: string) {
 
 function defaultConfigHint(scope: any) {
 	if (scope.modelType === 'image') {
-		return t('图片模型常用参数会合并到 options');
+		return t('图片模型：可配置 size, _size_format(pixel/ratio), _allow_custom_size, _sizes, _limits 等');
 	}
 	if (scope.modelType === 'chat') {
 		return t('对话模型默认参数');
@@ -211,9 +322,16 @@ function defaultConfigTemplate(scope: any) {
 	if (scope.modelType === 'image') {
 		return {
 			size: '1024x1024',
-			n: 1,
-			response_format: 'url',
-			watermark: true
+			_size_format: 'pixel',
+			_allow_custom_size: true,
+			_sizes: [
+				{ label: '1024x1024 (1:1)', value: '1024x1024' },
+				{ label: '768x1024 (3:4)', value: '768x1024' },
+				{ label: '1024x768 (4:3)', value: '1024x768' },
+				{ label: '720x1280 (9:16)', value: '720x1280' },
+				{ label: '1280x720 (16:9)', value: '1280x720' }
+			],
+			_limits: { max_n: 4 }
 		};
 	}
 	if (scope.modelType === 'embedding') {
@@ -249,6 +367,36 @@ function defaultConfigTemplate(scope: any) {
 		margin-bottom: 8px;
 		color: var(--el-text-color-secondary);
 		font-size: 13px;
+	}
+}
+
+:deep(.form-section-header) {
+	display: flex;
+	align-items: center;
+	padding: 8px 0 6px;
+	margin: 6px 0 4px;
+	border-bottom: 1px solid var(--el-border-color-lighter);
+
+	.form-section-header__bar {
+		width: 3px;
+		height: 14px;
+		background: var(--el-color-primary);
+		border-radius: 2px;
+		margin-right: 8px;
+		flex-shrink: 0;
+	}
+
+	.form-section-header__title {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--el-text-color-primary);
+		letter-spacing: 0.3px;
+	}
+
+	.form-section-header__desc {
+		font-size: 12px;
+		color: var(--el-text-color-placeholder);
+		margin-left: 8px;
 	}
 }
 </style>

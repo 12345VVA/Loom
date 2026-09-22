@@ -38,7 +38,7 @@
 							$t('填充模板')
 						}}</el-button>
 					</div>
-					<cl-editor-codemirror v-model="scope.extraConfig" :height="280" />
+					<cl-editor-codemirror v-model="scope.extraConfig" :height="200" />
 				</div>
 			</template>
 		</cl-upsert>
@@ -80,7 +80,7 @@ defineOptions({
 
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { ElMessage } from 'element-plus';
-import { reactive } from 'vue';
+import { h, reactive } from 'vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 
@@ -99,7 +99,8 @@ const adapterOptions = [
 	{ label: '百度千帆', value: 'qianfan' },
 	{ label: '智谱 GLM', value: 'zhipu' },
 	{ label: 'MiniMax', value: 'minimax' },
-	{ label: '小米 MiMo', value: 'mimo' }
+	{ label: '小米 MiMo', value: 'mimo' },
+	{ label: 'ToAPIs', value: 'toapis' }
 ];
 const extraConfigTemplates: Record<string, string> = {
 	bailian: JSON.stringify(
@@ -114,30 +115,95 @@ const extraConfigTemplates: Record<string, string> = {
 		2
 	),
 	'openai-compatible': JSON.stringify({ timeout: 60, skip_model_list_check: false }, null, 2),
-	'volcengine-ark': JSON.stringify({ timeout: 60 }, null, 2)
+	'volcengine-ark': JSON.stringify({ timeout: 60 }, null, 2),
+	toapis: JSON.stringify(
+		{
+			timeout: 60,
+			image_poll_interval_seconds: 3,
+			image_poll_timeout_seconds: 600,
+			skip_model_list_check: true
+		},
+		null,
+		2
+	)
 };
 const catalog = reactive({
 	visible: false,
 	items: [] as any[]
 });
 
+// 分组标题组件
+function renderSection(title: string, desc?: string) {
+	return () =>
+		h('div', { class: 'form-section-header' }, [
+			h('span', { class: 'form-section-header__bar' }),
+			h('span', { class: 'form-section-header__title' }, title),
+			desc ? h('span', { class: 'form-section-header__desc' }, desc) : null
+		]);
+}
+
 const Upsert = useUpsert({
-	dialog: { width: '760px' },
-	props: { labelWidth: '130px' },
+	dialog: { width: '800px' },
+	props: { labelWidth: '120px' },
 	items: [
-		{ label: t('编码'), prop: 'code', required: true, component: { name: 'el-input' } },
-		{ label: t('名称'), prop: 'name', required: true, component: { name: 'el-input' } },
+		// --- 1. 基本信息 ---
+		{
+			prop: '_sec_base',
+			span: 24,
+			component: { vm: renderSection(t('基本信息'), t('配置厂商唯一标识、展示名称与适配器通道')) }
+		},
+		{
+			label: t('编码'),
+			prop: 'code',
+			required: true,
+			span: 12,
+			component: { name: 'el-input', props: { placeholder: '例如: toapis / openai' } }
+		},
+		{
+			label: t('名称'),
+			prop: 'name',
+			required: true,
+			span: 12,
+			component: { name: 'el-input', props: { placeholder: '例如: ToAPIs 官方 / OpenAI' } }
+		},
 		{
 			label: t('适配器'),
 			prop: 'adapter',
 			value: 'openai-compatible',
 			required: true,
+			span: 12,
 			component: { name: 'cl-select', props: { options: adapterOptions } }
 		},
-		{ label: 'Base URL', prop: 'baseUrl', component: { name: 'el-input' } },
+		{
+			label: t('排序'),
+			prop: 'orderNum',
+			value: 0,
+			span: 12,
+			component: {
+				name: 'el-input-number',
+				props: { 'controls-position': 'right', style: { width: '100%' } }
+			}
+		},
+
+		// --- 2. 接口与鉴权 ---
+		{
+			prop: '_sec_auth',
+			span: 24,
+			component: { vm: renderSection(t('接口与鉴权'), t('API 接入地址与访问授权密钥')) }
+		},
+		{
+			label: 'Base URL',
+			prop: 'baseUrl',
+			span: 24,
+			component: {
+				name: 'el-input',
+				props: { placeholder: '例如: https://api.toapis.cn 或 https://api.openai.com/v1' }
+			}
+		},
 		{
 			label: 'API Key',
 			prop: 'apiKey',
+			span: 24,
 			component: {
 				name: 'el-input',
 				props: {
@@ -150,36 +216,58 @@ const Upsert = useUpsert({
 		{
 			label: t('管理 Access Key'),
 			prop: 'adminAccessKey',
+			span: 12,
 			hidden: ({ scope }) => scope.adapter !== 'volcengine-ark',
 			component: {
 				name: 'el-input',
 				props: {
 					type: 'password',
 					showPassword: true,
-					placeholder: t('火山 OpenAPI 鉴权（模型同步用），留空则不修改')
+					placeholder: t('火山 OpenAPI AK，留空不修改')
 				}
 			}
 		},
 		{
 			label: t('管理 Secret Key'),
 			prop: 'adminSecretKey',
+			span: 12,
 			hidden: ({ scope }) => scope.adapter !== 'volcengine-ark',
 			component: {
 				name: 'el-input',
 				props: {
 					type: 'password',
 					showPassword: true,
-					placeholder: t('仅用于接口签名，留空则不修改')
+					placeholder: t('火山 OpenAPI SK，留空不修改')
 				}
 			}
+		},
+
+		// --- 3. 厂商扩展配置 ---
+		{
+			prop: '_sec_extra',
+			span: 24,
+			component: { vm: renderSection(t('厂商扩展配置'), t('高级参数 JSON，如超时时间、轮询频率等')) }
 		},
 		{
 			label: t('扩展配置'),
 			prop: 'extraConfig',
+			span: 24,
 			component: { name: 'slot-extraConfig' }
 		},
-		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } },
-		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } }
+
+		// --- 4. 状态控制 ---
+		{
+			prop: '_sec_control',
+			span: 24,
+			component: { vm: renderSection(t('状态控制'), t('控制厂商的整体启用与停用')) }
+		},
+		{
+			label: t('启用'),
+			prop: 'status',
+			value: true,
+			span: 12,
+			component: { name: 'el-switch' }
+		}
 	],
 	onOpen() {
 		// 旧数据可能为 null，编辑器需有初始 JSON 串（仅在空值时兜底，避免覆盖编辑回填）
@@ -190,6 +278,15 @@ const Upsert = useUpsert({
 	},
 	onInfo(data, { done }) {
 		done({ ...data, apiKey: '', adminAccessKey: '', adminSecretKey: '' });
+	},
+	onSubmit(data, { next }) {
+		const payload = { ...data };
+		Object.keys(payload).forEach(key => {
+			if (key.startsWith('_')) {
+				delete payload[key];
+			}
+		});
+		next(payload);
 	}
 });
 
@@ -300,5 +397,35 @@ function modelTypeStats(row: any) {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
+}
+
+:deep(.form-section-header) {
+	display: flex;
+	align-items: center;
+	padding: 8px 0 6px;
+	margin: 6px 0 4px;
+	border-bottom: 1px solid var(--el-border-color-lighter);
+
+	.form-section-header__bar {
+		width: 3px;
+		height: 14px;
+		background: var(--el-color-primary);
+		border-radius: 2px;
+		margin-right: 8px;
+		flex-shrink: 0;
+	}
+
+	.form-section-header__title {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--el-text-color-primary);
+		letter-spacing: 0.3px;
+	}
+
+	.form-section-header__desc {
+		font-size: 12px;
+		color: var(--el-text-color-placeholder);
+		margin-left: 8px;
+	}
 }
 </style>

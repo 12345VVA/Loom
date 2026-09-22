@@ -10,6 +10,7 @@ export type ImageProviderKind =
 	| 'openai'
 	| 'qianfan'
 	| 'gemini'
+	| 'toapis'
 	| 'unknown';
 
 export interface ImageSizeOption {
@@ -75,6 +76,13 @@ export function detectProviderKind(profile: any): ImageProviderKind {
 		return 'gemini';
 	}
 	if (
+		adapter === 'toapis' ||
+		providerCode.includes('toapis') ||
+		modelCode.includes('gpt-image')
+	) {
+		return 'toapis';
+	}
+	if (
 		fallback.includes('bailian') ||
 		fallback.includes('百炼') ||
 		fallback.includes('wan2.') ||
@@ -95,6 +103,9 @@ export function detectProviderKind(profile: any): ImageProviderKind {
 	}
 	if (fallback.includes('gemini') || fallback.includes('谷歌')) {
 		return 'gemini';
+	}
+	if (fallback.includes('toapis')) {
+		return 'toapis';
 	}
 	if (fallback.includes('openai')) {
 		return 'openai';
@@ -162,6 +173,16 @@ export const STYLE_OPTIONS = [
 	{ label: 'natural', value: 'natural' }
 ];
 
+export const TOAPIS_RATIO_SIZE_OPTIONS: ImageSizeOption[] = [
+	{ label: '1:1 (正方形)', value: '1:1' },
+	{ label: '3:4 (竖向)', value: '3:4' },
+	{ label: '4:3 (横向)', value: '4:3' },
+	{ label: '9:16 (手机全屏)', value: '9:16' },
+	{ label: '16:9 (电脑宽屏)', value: '16:9' },
+	{ label: '1:2 (超长竖图)', value: '1:2' },
+	{ label: '2:1 (全景横图)', value: '2:1' }
+];
+
 /**
  * 从 profile.modelDefaultConfig（JSON 字符串）中解析模型声明的尺寸选项 `_sizes`。
  */
@@ -178,6 +199,50 @@ export function parseProfileSizeOptions(modelDefaultConfig?: string): ImageSizeO
 		console.warn('解析模型默认尺寸选项失败:', e);
 	}
 	return null;
+}
+
+/**
+ * 从 profile.modelDefaultConfig（JSON 字符串）中解析模型是否允许自定义尺寸 `_allow_custom_size`。
+ */
+export function parseProfileAllowCustomSize(
+	modelDefaultConfig?: string,
+	fallback: boolean = true
+): boolean {
+	if (!modelDefaultConfig) {
+		return fallback;
+	}
+	try {
+		const config = JSON.parse(modelDefaultConfig);
+		if (config && typeof config._allow_custom_size === 'boolean') {
+			return config._allow_custom_size;
+		}
+	} catch (e) {
+		// ignore
+	}
+	return fallback;
+}
+
+/**
+ * 从 profile.modelDefaultConfig（JSON 字符串）中解析模型声明的尺寸格式 `_size_format` ('pixel' | 'ratio' | 'unknown')。
+ */
+export function parseProfileSizeFormat(
+	modelDefaultConfig?: string
+): 'pixel' | 'ratio' | 'unknown' {
+	if (!modelDefaultConfig) {
+		return 'unknown';
+	}
+	try {
+		const config = JSON.parse(modelDefaultConfig);
+		if (config && typeof config._size_format === 'string') {
+			const fmt = config._size_format.toLowerCase();
+			if (fmt === 'pixel' || fmt === 'ratio') {
+				return fmt;
+			}
+		}
+	} catch (e) {
+		// ignore
+	}
+	return 'unknown';
 }
 
 /**

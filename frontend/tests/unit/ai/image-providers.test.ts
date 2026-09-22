@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
 	detectProviderKind,
+	parseProfileAllowCustomSize,
 	parseProfileLimits,
+	parseProfileSizeFormat,
 	parseProfileSizeOptions
 } from '/$/ai/utils/image-providers';
 
@@ -12,6 +14,7 @@ describe('detectProviderKind', () => {
 		expect(detectProviderKind({ providerAdapter: 'openai-compatible' })).toBe('openai');
 		expect(detectProviderKind({ providerAdapter: 'qianfan' })).toBe('qianfan');
 		expect(detectProviderKind({ providerAdapter: 'gemini' })).toBe('gemini');
+		expect(detectProviderKind({ providerAdapter: 'toapis' })).toBe('toapis');
 	});
 
 	it('detects by provider code / model code', () => {
@@ -22,6 +25,7 @@ describe('detectProviderKind', () => {
 		expect(detectProviderKind({ providerCode: 'openai' })).toBe('openai');
 		expect(detectProviderKind({ modelCode: 'ernie-irag-1.0' })).toBe('qianfan');
 		expect(detectProviderKind({ providerCode: 'google-gemini' })).toBe('gemini');
+		expect(detectProviderKind({ modelCode: 'gpt-image-2.5-flare' })).toBe('toapis');
 	});
 
 	it('falls back to provider name / model name heuristics', () => {
@@ -29,6 +33,7 @@ describe('detectProviderKind', () => {
 		expect(detectProviderKind({ providerName: '火山方舟' })).toBe('volcengine-ark');
 		expect(detectProviderKind({ providerName: '百度千帆' })).toBe('qianfan');
 		expect(detectProviderKind({ providerName: '谷歌 Gemini' })).toBe('gemini');
+		expect(detectProviderKind({ providerName: 'ToAPIs 官方' })).toBe('toapis');
 	});
 
 	it('returns unknown for empty profile', () => {
@@ -56,5 +61,20 @@ describe('parseProfileSizeOptions / parseProfileLimits', () => {
 		});
 		expect(parseProfileLimits(undefined)).toEqual({ max_n: 8 });
 		expect(parseProfileLimits('{bad json')).toEqual({ max_n: 8 });
+	});
+
+	it('parses _allow_custom_size correctly', () => {
+		expect(parseProfileAllowCustomSize(JSON.stringify({ _allow_custom_size: false }))).toBe(false);
+		expect(parseProfileAllowCustomSize(JSON.stringify({ _allow_custom_size: true }))).toBe(true);
+		expect(parseProfileAllowCustomSize('{}')).toBe(true);
+		expect(parseProfileAllowCustomSize(undefined, false)).toBe(false);
+	});
+
+	it('parses _size_format correctly', () => {
+		expect(parseProfileSizeFormat(JSON.stringify({ _size_format: 'ratio' }))).toBe('ratio');
+		expect(parseProfileSizeFormat(JSON.stringify({ _size_format: 'pixel' }))).toBe('pixel');
+		expect(parseProfileSizeFormat(JSON.stringify({ _size_format: 'RATIO' }))).toBe('ratio');
+		expect(parseProfileSizeFormat('{}')).toBe('unknown');
+		expect(parseProfileSizeFormat(undefined)).toBe('unknown');
 	});
 });

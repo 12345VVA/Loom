@@ -214,7 +214,13 @@ const Upsert = useUpsert({
 		{ label: t('通知'), prop: 'notifyEnabled', value: true, component: { name: 'el-switch' } },
 		{ label: t('启用'), prop: 'status', value: true, component: { name: 'el-switch' } },
 		{ label: t('排序'), prop: 'orderNum', value: 0, component: { name: 'el-input-number' } }
-	]
+	],
+	onSubmit(data, { next }) {
+		const payload = { ...data };
+		payload.userId = normalizeSingleId(payload.userId);
+		payload.profileId = normalizeSingleId(payload.profileId);
+		next(payload);
+	}
 });
 
 const Table = useTable({
@@ -281,8 +287,8 @@ async function runMatch() {
 	matcher.loading = true;
 	try {
 		const res = await service.ai.governance_rule.match({
-			userId: matcher.form.userId,
-			profileId: matcher.form.profileId
+			userId: normalizeSingleId(matcher.form.userId),
+			profileId: normalizeSingleId(matcher.form.profileId)
 		});
 		matcher.result = res || { count: 0, items: [] };
 	} catch (err: any) {
@@ -291,6 +297,10 @@ async function runMatch() {
 	} finally {
 		matcher.loading = false;
 	}
+}
+
+function normalizeSingleId(value: any) {
+	return Array.isArray(value) ? (value.length ? value[0] : null) : value ?? null;
 }
 
 function optionLabel(options: { label: string; value: string }[], value: string) {
