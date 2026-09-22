@@ -2670,6 +2670,166 @@ class AiModuleTestCase(unittest.TestCase):
         extra_body = kwargs["extra_body"]
         self.assertEqual(extra_body["image"], "https://example.com/ref.png")
 
+    def test_call_log_persists_request_options_and_sanitizes(self):
+        provider = AiProvider(
+            code="test-log-options-p",
+            name="Test Provider",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(
+            provider_id=provider.id,
+            code="test-log-options-m",
+            name="Test Model",
+            model_type="chat",
+            is_active=True,
+        )
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(
+            code="test-log-options-prof",
+            name="Test Profile",
+            model_id=model.id,
+            scenario="default",
+            is_default=True,
+            is_active=True,
+        )
+        self.session.add(profile)
+        self.session.commit()
+
+        class DummyAdapter:
+            def __init__(self, provider):
+                pass
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "usage": {"totalTokens": 10}, "requestId": "req-1"}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda p: DummyAdapter(p)):
+            res = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(
+                    profile_code=profile.code,
+                    messages=[{"role": "user", "content": "hello"}],
+                    options={"temperature": 0.8, "api_key": "secret_key"},
+                )
+            )
+
+        log = self.session.exec(
+            select(AiModelCallLog).where(AiModelCallLog.profile_id == profile.id)
+        ).first()
+        self.assertIsNotNone(log)
+        self.assertIsNotNone(log.request_options)
+        import json
+        saved_options = json.loads(log.request_options)
+        self.assertEqual(saved_options["temperature"], 0.8)
+        self.assertEqual(saved_options["api_key"], "***")
+
+    def test_runtime_fallback_preserves_task_id(self):
+        p1 = AiProvider(code="fb-p1", name="P1", adapter="openai-compatible", is_active=True)
+        p2 = AiProvider(code="fb-p2", name="P2", adapter="openai-compatible", is_active=True)
+        self.session.add(p1)
+        self.session.add(p2)
+        self.session.commit()
+        m1 = AiModel(provider_id=p1.id, code="fb-m1", name="M1", model_type="chat", is_active=True)
+        m2 = AiModel(provider_id=p2.id, code="fb-m2", name="M2", model_type="chat", is_active=True)
+        self.session.add(m1)
+        self.session.add(m2)
+        self.session.commit()
+        prof2 = AiModelProfile(code="fb-prof2", name="Prof2", model_id=m2.id, scenario="default", is_active=True)
+        self.session.add(prof2)
+        self.session.commit()
+        prof1 = AiModelProfile(
+            code="fb-prof1",
+            name="Prof1",
+            model_id=m1.id,
+            scenario="default",
+            fallback_profile_id=prof2.id,
+            is_active=True,
+        )
+        self.session.add(prof1)
+        self.session.commit()
+
+        class FailThenSuccessAdapter:
+            def __init__(self, provider):
+                self.provider = provider
+            def chat(self, *, model, messages, options):
+                if self.provider.code == "fb-p1":
+                    raise RuntimeError("primary failed")
+                return {"content": "fallback success", "usage": {}, "requestId": "r2"}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda p: FailThenSuccessAdapter(p)):
+            res = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(profile_code=prof1.code, messages=[{"role": "user", "content": "hi"}]),
+                task_id=9999,
+            )
+
+        invocations = self.session.exec(
+            select(AiRuntimeInvocation).where(AiRuntimeInvocation.task_id == 9999)
+        ).all()
+        self.assertEqual(len(invocations), 2)
+        self.assertEqual(invocations[0].profile_id, prof1.id)
+        self.assertEqual(invocations[1].profile_id, prof2.id)
+
+    def test_profile_partial_update_is_default_clears_old_default(self):
+        from app.modules.ai.service.profile_service import AiModelProfileService
+
+        p = AiProvider(code="prov-def-test", name="P", adapter="openai-compatible", is_active=True)
+        self.session.add(p)
+        self.session.commit()
+        m = AiModel(provider_id=p.id, code="model-def-test", name="M", model_type="chat", is_active=True)
+        self.session.add(m)
+        self.session.commit()
+        prof1 = AiModelProfile(
+            code="prof-old-default",
+            name="Old Default",
+            model_id=m.id,
+            scenario="sc1",
+            is_default=True,
+            is_active=True,
+        )
+        prof2 = AiModelProfile(
+            code="prof-new-default",
+            name="New Default",
+            model_id=m.id,
+            scenario="sc1",
+            is_default=False,
+            is_active=True,
+        )
+        self.session.add(prof1)
+        self.session.add(prof2)
+        self.session.commit()
+
+        from app.modules.ai.model.ai import AiModelProfileUpdateRequest
+        service = AiModelProfileService(self.session)
+        service.update(AiModelProfileUpdateRequest(id=prof2.id, is_default=True))
+
+        self.session.refresh(prof1)
+        self.session.refresh(prof2)
+        self.assertFalse(prof1.is_default)
+        self.assertTrue(prof2.is_default)
+
+    def test_model_partial_update_code_checks_uniqueness(self):
+        from app.modules.ai.model.ai import AiModelUpdateRequest
+        from app.modules.ai.service.model_service import AiModelService
+
+        p = AiProvider(code="prov-uniq-test", name="P", adapter="openai-compatible", is_active=True)
+        self.session.add(p)
+        self.session.commit()
+        m1 = AiModel(provider_id=p.id, code="code-1", name="M1", model_type="chat", is_active=True)
+        m2 = AiModel(provider_id=p.id, code="code-2", name="M2", model_type="chat", is_active=True)
+        self.session.add(m1)
+        self.session.add(m2)
+        self.session.commit()
+
+        service = AiModelService(self.session)
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as ctx:
+            service.update(AiModelUpdateRequest(id=m2.id, code="code-1"))
+        self.assertEqual(ctx.exception.status_code, 409)
+
 
 if __name__ == "__main__":
     unittest.main()

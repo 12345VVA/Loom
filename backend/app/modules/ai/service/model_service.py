@@ -28,9 +28,10 @@ class AiModelService(BaseAdminCrudService):
         # 部分更新：仅当显式传了 provider_id 才校验厂商存在（_ensure_provider 对 None 会报错）
         if data.get("provider_id") is not None:
             self._ensure_provider(data.get("provider_id"))
-        self._ensure_unique_model(
-            data.get("provider_id"), data.get("code"), data.get("model_type"), exclude_id=entity.id
-        )
+        provider_id = data.get("provider_id") if data.get("provider_id") is not None else entity.provider_id
+        code = data.get("code") or entity.code
+        model_type = data.get("model_type") or entity.model_type
+        self._ensure_unique_model(provider_id, code, model_type, exclude_id=entity.id)
         _validate_json_config(data.get("default_config"), "defaultConfig", expected_type=dict)
         return data
 
@@ -42,17 +43,17 @@ class AiModelService(BaseAdminCrudService):
         is_tree: bool | None = None,
         parent_field: str | None = None,
     ) -> list[dict]:
-        return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
+        return self._batch_decorate(list(super().list(query, current_user, relations, is_tree, parent_field)))
 
     def page(
         self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
     ) -> PageResult[dict]:
         result = super().page(query, current_user, relations)
-        result.items = [self._decorate(item) for item in result.items]
+        result.items = self._batch_decorate(list(result.items))
         return result
 
     def info(self, id: Any, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> dict:
-        return self._decorate(super().info(id, current_user, relations))
+        return self._batch_decorate([super().info(id, current_user, relations)])[0]
 
     def _ensure_provider(self, provider_id: int | None) -> None:
         if provider_id is None or not self.session.get(AiProvider, provider_id):
@@ -71,7 +72,17 @@ class AiModelService(BaseAdminCrudService):
         if self.session.exec(statement).first():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="同厂商同类型模型编码已存在")
 
-    def _decorate(self, data: dict) -> dict:
-        provider = self.session.get(AiProvider, data.get("providerId") or data.get("provider_id"))
-        data["providerName"] = provider.name if provider else None
-        return data
+    def _batch_decorate(self, items: list[dict]) -> list[dict]:
+        provider_ids = {
+            d.get("providerId") if d.get("providerId") is not None else d.get("provider_id")
+            for d in items
+            if (d.get("providerId") is not None or d.get("provider_id") is not None)
+        }
+        provider_map = {}
+        if provider_ids:
+            rows = self.session.exec(select(AiProvider).where(AiProvider.id.in_(provider_ids))).all()
+            provider_map = {p.id: p.name for p in rows}
+        for d in items:
+            pid = d.get("providerId") if d.get("providerId") is not None else d.get("provider_id")
+            d["providerName"] = provider_map.get(pid)
+        return items

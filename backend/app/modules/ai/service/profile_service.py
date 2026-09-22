@@ -50,7 +50,9 @@ class AiModelProfileService(BaseAdminCrudService):
             data["response_format"] = _dump_response_format(data.get("response_format"))
         _validate_json_config(data.get("tools_config"), "toolsConfig")
         if data.get("is_default"):
-            self._clear_default(data.get("model_id"), data.get("scenario"), exclude_id=entity.id)
+            target_model_id = data.get("model_id") or entity.model_id
+            target_scenario = data.get("scenario") or entity.scenario
+            self._clear_default(target_model_id, target_scenario, exclude_id=entity.id)
         return data
 
     def list(

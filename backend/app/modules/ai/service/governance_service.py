@@ -277,9 +277,13 @@ class AiGovernanceService:
         )
         invocation._cc_keys = concurrent_keys
         # 持久化 cc_keys：worker 被 terminate 后内存属性丢失，cancel 仍可从 DB 字段恢复并精确 decr
-        invocation.cc_keys = json.dumps(concurrent_keys) if concurrent_keys else None
-        self.session.add(invocation)
-        self.session.commit()
+        try:
+            self.session.add(invocation)
+            self.session.commit()
+        except Exception:
+            for key in concurrent_keys:
+                cache_decr(key, ttl_seconds=_CONCURRENT_TTL)
+            raise
         return invocation
 
     def finish(
