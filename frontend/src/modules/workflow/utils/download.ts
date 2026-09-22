@@ -218,7 +218,15 @@ export async function fetchImageAsArrayBuffer(url: string): Promise<ArrayBuffer>
 
 	// 2. 尝试常规 fetch
 	try {
-		const res = await fetch(url, isCross ? { mode: 'cors' } : { credentials: 'same-origin' });
+		const headers: Record<string, string> = {};
+		const rawToken = storage.session.get('token') || storage.get('token') || '';
+		if (rawToken && !isCross) {
+			headers['Authorization'] = rawToken.startsWith('Bearer ') ? rawToken : `Bearer ${rawToken}`;
+		}
+		const res = await fetch(url, {
+			...(isCross ? { mode: 'cors' } : { credentials: 'same-origin' }),
+			headers
+		});
 		if (res.ok) {
 			return await res.arrayBuffer();
 		}

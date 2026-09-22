@@ -60,12 +60,27 @@ def _replace_transferred_urls(logs: list[WorkflowExecutionLog], instance_id: int
     """若工作流执行产物已成功转存到本地存储，将日志载荷中的远程原始 URL 替换为本地 storage_url，
     使前端日志抽屉与画廊优先展示并下载本地图片链接。
     """
+    import re
+    from sqlmodel import or_
     from app.modules.media.model.media import MediaAsset
     from app.modules.workflow.model.workflow_artifact import WorkflowArtifact
 
+    # 1. 扫描日志载荷中包含的所有 http/https 远程 URL
+    url_pattern = re.compile(r'https?://[^\s"\'<>\\]+')
+    found_urls: set[str] = set()
+    for log in logs:
+        if log.output_data:
+            found_urls.update(url_pattern.findall(log.output_data))
+        if log.input_data:
+            found_urls.update(url_pattern.findall(log.input_data))
+
+    conditions = [MediaAsset.workflow_instance_id == instance_id]
+    if found_urls:
+        conditions.append(MediaAsset.original_url.in_(list(found_urls)))
+
     assets = session.exec(
         select(MediaAsset).where(
-            MediaAsset.workflow_instance_id == instance_id,
+            or_(*conditions),
             MediaAsset.status == "success",
             MediaAsset.delete_time == None,  # noqa: E711
         )
@@ -76,9 +91,13 @@ def _replace_transferred_urls(logs: list[WorkflowExecutionLog], instance_id: int
         if a.original_url and a.storage_url
     }
 
+    art_conditions = [WorkflowArtifact.instance_id == instance_id]
+    if found_urls:
+        art_conditions.append(WorkflowArtifact.original_url.in_(list(found_urls)))
+
     artifacts = session.exec(
         select(WorkflowArtifact).where(
-            WorkflowArtifact.instance_id == instance_id,
+            or_(*art_conditions),
             WorkflowArtifact.storage_url != None,  # noqa: E711
             WorkflowArtifact.original_url != None,  # noqa: E711
         )

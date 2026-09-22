@@ -351,7 +351,7 @@ function isLikelyImageUrl(str: string): boolean {
 	if (!str || typeof str !== 'string') return false;
 	const s = str.trim();
 	if (s.includes(' ') || s.includes('\n')) return false;
-	if (s.startsWith('/uploads/')) return true;
+	if (s.includes('uploads/')) return true;
 	if (/^https?:\/\//i.test(s)) {
 		const clean = s.split('?')[0].toLowerCase();
 		if (/\.(png|jpe?g|webp|gif|svg|bmp|avif)$/i.test(clean)) return true;

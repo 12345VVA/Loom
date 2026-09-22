@@ -522,7 +522,14 @@ const downloadAllProgressText = ref('');
 function resolveUrl(url: string): string {
 	if (!url) return '';
 	const s = url.trim();
-	if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:image/')) {
+	if (s.startsWith('data:image/') || s.startsWith('blob:')) {
+		return s;
+	}
+	// 任何包含 /uploads/ 的路径，统一经由 assetUrl 剥离旧 token 并注入当前有效 token
+	if (s.includes('/uploads/')) {
+		return assetUrl(s);
+	}
+	if (s.startsWith('http://') || s.startsWith('https://')) {
 		return s;
 	}
 	const normalized = s.startsWith('/') ? s : `/${s}`;
@@ -815,18 +822,10 @@ async function handleDownloadAllImages() {
 
 	try {
 		// 确保下载令牌最新有效，杜绝长时间停留导致的 401
-		const freshToken = await ensureDownloadToken();
+		await ensureDownloadToken(true);
 
 		const itemsToDownload = allWorkflowImages.value.map(img => {
-			let finalUrl = img.url;
-			if (freshToken && finalUrl.includes('/uploads/')) {
-				const sep = finalUrl.includes('?') ? '&' : '?';
-				if (finalUrl.includes('token=')) {
-					finalUrl = finalUrl.replace(/([?&])token=[^&]*/, `$1token=${freshToken}`);
-				} else {
-					finalUrl = `${finalUrl}${sep}token=${freshToken}`;
-				}
-			}
+			const finalUrl = assetUrl(img.url) || img.url;
 			return {
 				url: finalUrl,
 				title: img.title,

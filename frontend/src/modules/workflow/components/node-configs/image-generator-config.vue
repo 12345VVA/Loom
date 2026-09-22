@@ -52,7 +52,15 @@
 		</el-form-item>
 
 		<el-form-item :label="$t('图片尺寸 (size)')" style="margin-bottom: 0">
-			<el-select v-model="config.size" style="width: 100%" clearable>
+			<el-select
+				v-model="config.size"
+				style="width: 100%"
+				clearable
+				filterable
+				:allow-create="allowCustomSize"
+				default-first-option
+				:placeholder="sizePlaceholder"
+			>
 				<el-option
 					v-for="opt in availableSizeOptions"
 					:key="opt.value"
@@ -60,7 +68,7 @@
 					:value="opt.value"
 				/>
 			</el-select>
-			<div class="field-hint">留空则使用模型默认尺寸。</div>
+			<div class="field-hint">{{ sizeHint }}</div>
 		</el-form-item>
 	</node-config-section>
 
@@ -86,6 +94,17 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue';
 import NodeConfigSection from './node-config-section.vue';
+import {
+	detectProviderKind,
+	parseProfileSizeOptions,
+	parseProfileAllowCustomSize,
+	parseProfileSizeFormat,
+	BASE_SIZE_OPTIONS,
+	BAILIAN_SIZE_OPTIONS,
+	VOLCENGINE_SIZE_OPTIONS,
+	VOLCENGINE_SEEDREAM4_SIZE_OPTIONS,
+	TOAPIS_RATIO_SIZE_OPTIONS
+} from '/$/ai/utils/image-providers';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
@@ -110,95 +129,60 @@ const selectedProfile = computed(() =>
 	props.profiles.find((p: any) => p.code === config.modelProfileCode)
 );
 
-const providerKind = computed(() => {
-	const p = selectedProfile.value;
-	if (!p) return 'unknown';
-	const adapter = normalizeToken(p.providerAdapter || p.adapter);
-	const providerCode = normalizeToken(p.providerCode);
-	const modelCode = normalizeToken(p.modelCode);
+const providerKind = computed(() => detectProviderKind(selectedProfile.value));
 
-	if (
-		adapter === 'bailian' ||
-		providerCode === 'bailian' ||
-		modelCode.includes('wan2.') ||
-		modelCode.includes('wanx')
-	)
-		return 'bailian';
-	if (
-		adapter === 'volcengine-ark' ||
-		providerCode.includes('volcengine') ||
-		modelCode.includes('seedream') ||
-		modelCode.includes('doubao')
-	)
-		return 'volcengine-ark';
-	if (adapter === 'openai-compatible' || providerCode.includes('openai')) return 'openai';
-	if (
-		adapter === 'qianfan' ||
-		providerCode.includes('qianfan') ||
-		modelCode.includes('ernie') ||
-		modelCode.includes('irag')
-	)
-		return 'qianfan';
-	if (adapter === 'gemini' || providerCode.includes('gemini') || modelCode.includes('gemini'))
-		return 'gemini';
-	return 'unknown';
+const allowCustomSize = computed(() =>
+	parseProfileAllowCustomSize(selectedProfile.value?.modelDefaultConfig, true)
+);
+
+const sizeFormat = computed(() =>
+	parseProfileSizeFormat(selectedProfile.value?.modelDefaultConfig)
+);
+
+const sizePlaceholder = computed(() => {
+	if (allowCustomSize.value) {
+		return sizeFormat.value === 'ratio'
+			? '请选择或输入比例（如 3:4, 16:9）'
+			: '请选择或输入尺寸（如 864x1152, 1024x1024）';
+	}
+	return '请选择模型预设尺寸';
 });
 
-function normalizeToken(value: any) {
-	return String(value || '')
-		.trim()
-		.toLowerCase();
-}
-
-const sizeOptions = [
-	{ label: '1024x1024', value: '1024x1024' },
-	{ label: '2048x2048', value: '2048x2048' },
-	{ label: '2304x1728', value: '2304x1728' },
-	{ label: '1728x2304', value: '1728x2304' },
-	{ label: '2560x1440', value: '2560x1440' },
-	{ label: '1440x2560', value: '1440x2560' }
-];
-const bailianSizeOptions = [
-	{ label: '1024x1024 (1:1)', value: '1024x1024' },
-	{ label: '768x1024 (3:4)', value: '768x1024' },
-	{ label: '1024x768 (4:3)', value: '1024x768' },
-	{ label: '720x1280 (9:16)', value: '720x1280' },
-	{ label: '1280x720 (16:9)', value: '1280x720' }
-];
-const volcengineSeedream4SizeOptions = [
-	{ label: '2560x1440 (16:9)', value: '2560x1440' },
-	{ label: '1440x2560 (9:16)', value: '1440x2560' },
-	{ label: '2048x2048 (1:1)', value: '2048x2048' }
-];
-const volcengineSizeOptions = [
-	{ label: '1024x1024 (1:1)', value: '1024x1024' },
-	{ label: '1024x1536 (2:3)', value: '1024x1536' },
-	{ label: '1536x1024 (3:2)', value: '1536x1024' },
-	{ label: '768x1344 (9:16)', value: '768x1344' },
-	{ label: '1344x768 (16:9)', value: '1344x768' }
-];
+const sizeHint = computed(() => {
+	if (sizeFormat.value === 'ratio') {
+		return allowCustomSize.value
+			? '当前模型为比例模式，可直接选择或自定义输入比例（例如 3:4、16:9）。'
+			: '当前模型仅支持官方指定比例，请从下拉列表中选择。';
+	}
+	if (!allowCustomSize.value) {
+		return '当前模型仅支持指定预设尺寸，不支持自定义输入。留空使用默认。';
+	}
+	return '留空则使用模型默认尺寸；支持下拉选择或直接键入自定义分辨率（如 864x1152）。';
+});
 
 const availableSizeOptions = computed(() => {
 	const profile = selectedProfile.value;
-	if (profile && profile.modelDefaultConfig) {
-		try {
-			const mc = JSON.parse(profile.modelDefaultConfig);
-			if (mc && Array.isArray(mc._sizes)) return mc._sizes;
-		} catch (e) {
-			console.warn('[workflow/image-generator-config] 解析 _sizes 失败', e);
-		}
+	const customSizes = parseProfileSizeOptions(profile?.modelDefaultConfig);
+	if (customSizes && customSizes.length > 0) {
+		return customSizes;
+	}
+	if (providerKind.value === 'toapis') {
+		return TOAPIS_RATIO_SIZE_OPTIONS;
 	}
 	if (providerKind.value === 'openai') {
-		return [{ label: '自动比例', value: 'auto' }, ...sizeOptions];
+		return [{ label: '自动比例', value: 'auto' }, ...BASE_SIZE_OPTIONS];
 	}
-	if (providerKind.value === 'bailian') return bailianSizeOptions;
+	if (providerKind.value === 'bailian') {
+		return BAILIAN_SIZE_OPTIONS;
+	}
 	if (providerKind.value === 'volcengine-ark') {
-		const code = normalizeToken(profile?.modelCode || profile?.modelName || '');
-		if (code.includes('seedream-4-5') || code.includes('seedream-4-0'))
-			return volcengineSeedream4SizeOptions;
-		return volcengineSizeOptions;
+		const code = String(profile?.modelCode || profile?.modelName || '').toLowerCase();
+		if (code.includes('seedream-4-5') || code.includes('seedream-4-0')) {
+			return VOLCENGINE_SEEDREAM4_SIZE_OPTIONS;
+		}
+		return VOLCENGINE_SIZE_OPTIONS;
 	}
-	return sizeOptions;
+	return BASE_SIZE_OPTIONS;
 });
 
 // 切换 Profile 时自动加载模型默认参数
@@ -207,7 +191,7 @@ watch(selectedProfile, profile => {
 	try {
 		const mc = JSON.parse(profile.modelDefaultConfig);
 		if (mc) {
-			if (mc.size && availableSizeOptions.value.some(o => o.value === mc.size)) {
+			if (mc.size && (!config.size || availableSizeOptions.value.some(o => o.value === mc.size))) {
 				config.size = mc.size;
 			}
 			if (mc.response_format) {

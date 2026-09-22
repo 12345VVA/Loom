@@ -22,32 +22,47 @@ class WorkflowArtifactService(BaseAdminCrudService):
         return result
 
     def _backfill_storage_urls(self, items: list[dict]) -> None:
+        import re
         from app.modules.media.model.media import MediaAsset
 
-        missing_urls = [
-            item.get("original_url") or item.get("originalUrl")
-            for item in items
-            if not (item.get("storage_url") or item.get("storageUrl"))
-            and (item.get("original_url") or item.get("originalUrl"))
-        ]
+        url_pattern = re.compile(r'https?://[^\s"\'<>\\]+')
+        missing_urls: set[str] = set()
+
+        for item in items:
+            orig = item.get("original_url") or item.get("originalUrl")
+            if orig and not (item.get("storage_url") or item.get("storageUrl")):
+                missing_urls.add(orig)
+            content = item.get("content")
+            if content and isinstance(content, str):
+                missing_urls.update(url_pattern.findall(content))
+
         if not missing_urls:
             return
 
         assets = list(
             self.session.exec(
                 select(MediaAsset).where(
-                    MediaAsset.original_url.in_(missing_urls),
+                    MediaAsset.original_url.in_(list(missing_urls)),
                     MediaAsset.status == "success",
                     MediaAsset.delete_time == None,  # noqa: E711
                 )
             ).all()
         )
         url_map = {a.original_url: a.storage_url for a in assets if a.original_url and a.storage_url}
+        if not url_map:
+            return
+
         for item in items:
             orig = item.get("original_url") or item.get("originalUrl")
             if orig and orig in url_map:
                 item["storage_url"] = url_map[orig]
                 item["storageUrl"] = url_map[orig]
+            content = item.get("content")
+            if content and isinstance(content, str):
+                for o_url, s_url in url_map.items():
+                    if o_url in content:
+                        content = content.replace(o_url, s_url)
+                item["content"] = content
 
     def delete(
         self,
