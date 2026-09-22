@@ -10,6 +10,8 @@ from fastapi import Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlmodel import Session, select
 
+from pydantic import BaseModel, Field
+
 from app.core.config import settings
 from app.core.database import get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta, OrderByConfig, QueryConfig
@@ -32,6 +34,15 @@ from app.modules.media.service.media_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class RetryAssetRequest(BaseModel):
+    id: int
+
+
+class RetryFailedAssetsRequest(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+    window_hours: int = Field(default=24, ge=1, le=168)
 
 
 def _inline_image_response(declared_mime: str | None, safe_name: str) -> tuple[str, dict[str, str]]:
@@ -185,6 +196,26 @@ class MediaAssetController(BaseController):
         safe_name = re.sub(r'["\r\n\\]', "_", safe_name)
         media_type, headers = _inline_image_response(mime_type, safe_name)
         return Response(content=content, media_type=media_type, headers=headers)
+
+    @Post("/retry", summary="重试单个转存失败的媒体资产", permission="media:asset:update")
+    def retry(
+        self,
+        payload: RetryAssetRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        return MediaAssetService(session).retry_single(payload.id, current_user)
+
+    @Post("/retryFailed", summary="批量重试失败的媒体资产", permission="media:asset:update")
+    def retry_failed(
+        self,
+        payload: RetryFailedAssetsRequest | None = None,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        limit = payload.limit if payload else 100
+        window_hours = payload.window_hours if payload else 24
+        return MediaAssetService(session).retry_failed(limit=limit, window_hours=window_hours, current_user=current_user)
 
 
 router = MediaAssetController.router

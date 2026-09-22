@@ -14,6 +14,16 @@
 			<el-upload :show-file-list="false" :http-request="uploadAsset">
 				<el-button type="primary">{{ $t('上传资源') }}</el-button>
 			</el-upload>
+			<el-button
+				v-if="stats.statusCounts?.failed"
+				type="warning"
+				plain
+				:loading="retryingAll"
+				@click="retryAllFailed"
+			>
+				<el-icon><Refresh /></el-icon>
+				{{ $t('重试失败资源') }} ({{ stats.statusCounts.failed }})
+			</el-button>
 			<cl-flex1 />
 			<div class="media-stats">
 				<span v-for="item in statItems" :key="item.label" class="stat-chip">
@@ -53,6 +63,15 @@
 						$t('预览')
 					}}</el-button>
 					<el-button
+						v-if="scope.row.status === 'failed'"
+						text
+						type="warning"
+						:loading="retryingIds.has(scope.row.id)"
+						@click="retryAsset(scope.row)"
+					>
+						{{ $t('重试转存') }}
+					</el-button>
+					<el-button
 						v-if="scope.row.storageUrl"
 						text
 						type="primary"
@@ -81,6 +100,27 @@
 
 	<el-drawer v-model="viewer.visible" :title="$t('资源预览')" size="680px">
 		<div v-if="viewer.row" class="asset-preview">
+			<el-alert
+				v-if="viewer.row.status === 'failed'"
+				type="error"
+				show-icon
+				:closable="false"
+				class="failure-alert"
+			>
+				<template #title>
+					<div class="failure-title">
+						<span class="failure-text">{{ $t('转存失败: ') }}{{ viewer.row.errorMessage || $t('未知错误') }}</span>
+						<el-button
+							size="small"
+							type="warning"
+							:loading="retryingIds.has(viewer.row.id)"
+							@click="retryAsset(viewer.row)"
+						>
+							{{ $t('立即重试转存') }}
+						</el-button>
+					</div>
+				</template>
+			</el-alert>
 			<el-image
 				v-if="previewSrc(viewer.row)"
 				class="asset-preview__image"
@@ -145,10 +185,10 @@ defineOptions({
 	name: 'media-asset'
 });
 
-import { computed, onMounted, reactive } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Document, Headset, Picture, VideoCamera } from '@element-plus/icons-vue';
+import { Document, Headset, Picture, Refresh, VideoCamera } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useAssetUrl } from '../composables/use-asset-url';
@@ -156,6 +196,9 @@ import { useAssetUrl } from '../composables/use-asset-url';
 const { service } = useCool();
 const { t } = useI18n();
 const mediaService = (service as any).media.asset;
+
+const retryingIds = reactive(new Set<number>());
+const retryingAll = ref(false);
 
 const assetTypeOptions = [
 	{ label: t('图片'), value: 'image' },
@@ -227,7 +270,7 @@ const Table = useTable({
 		{ label: 'MD5', prop: 'md5', minWidth: 220, showOverflowTooltip: true },
 		{ label: t('提示词'), prop: 'prompt', minWidth: 220, showOverflowTooltip: true },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
-		{ type: 'op', width: 250, buttons: ['slot-op'] }
+		{ type: 'op', width: 280, buttons: ['slot-op'] }
 	]
 });
 
@@ -285,6 +328,55 @@ async function deleteAsset(row: any) {
 	}
 	Crud.value?.refresh();
 	loadStats();
+}
+
+async function retryAsset(row: any) {
+	if (!row?.id) return;
+	retryingIds.add(row.id);
+	try {
+		const res = await mediaService.retry({ id: row.id });
+		ElMessage.success(res?.message || t('重试转存成功'));
+		if (viewer.visible && viewer.row?.id === row.id) {
+			viewer.row.status = 'success';
+			viewer.row.storageUrl = res.storage_url || viewer.row.storageUrl;
+			viewer.row.errorMessage = null;
+		}
+		Crud.value?.refresh();
+		loadStats();
+	} catch (err: any) {
+		ElMessage.error(err.message || t('重试转存失败'));
+	} finally {
+		retryingIds.delete(row.id);
+	}
+}
+
+async function retryAllFailed() {
+	try {
+		await ElMessageBox.confirm(
+			t('确定重新尝试转存所有失败的资源（限24小时内）？'),
+			t('提示'),
+			{ type: 'warning' }
+		);
+	} catch {
+		return;
+	}
+
+	retryingAll.value = true;
+	try {
+		const res = await mediaService.retryFailed({ limit: 100, window_hours: 24 });
+		ElMessage.success(
+			t('重试完成：成功 {s} 项，失败 {f} 项', {
+				s: res?.succeeded ?? 0,
+				f: res?.failed ?? 0
+			})
+		);
+		Crud.value?.refresh();
+		loadStats();
+	} catch (err: any) {
+		ElMessage.error(err.message || t('批量重试失败'));
+	} finally {
+		retryingAll.value = false;
+	}
 }
 
 function openPreview(row: any) {
@@ -451,5 +543,28 @@ function iconFor(type: string) {
 	white-space: pre-wrap;
 	word-break: break-word;
 	font-size: 12px;
+}
+
+.failure-alert {
+	margin-bottom: 4px;
+
+	:deep(.el-alert__content) {
+		width: 100%;
+	}
+}
+
+.failure-title {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	width: 100%;
+}
+
+.failure-text {
+	flex: 1;
+	word-break: break-all;
+	font-size: 13px;
+	line-height: 1.4;
 }
 </style>

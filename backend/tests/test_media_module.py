@@ -615,6 +615,76 @@ class MediaModuleTestCase(unittest.TestCase):
         self.assertEqual(refreshed.created_by, 1)
         self.assertEqual(refreshed.file_name, "new.png")
 
+    def test_retry_single_success(self):
+        asset = MediaAsset(
+            asset_type="image",
+            status="failed",
+            original_url="https://example.com/failed.png",
+            error_message="Network error",
+            created_by=2,
+        )
+        self.session.add(asset)
+        self.session.commit()
+        self.session.refresh(asset)
+
+        service = MediaAssetService(self.session)
+        user = User(id=2, username="regular_user")
+
+        with patch.object(service, "_transfer_artifact") as mock_transfer:
+            def side_effect(a, artifact):
+                a.status = "success"
+                a.storage_url = "/uploads/20260921/retried.png"
+            mock_transfer.side_effect = side_effect
+
+            res = service.retry_single(asset.id, current_user=user)
+            self.assertEqual(res["status"], "success")
+            self.assertEqual(res["storage_url"], "/uploads/20260921/retried.png")
+
+        refreshed = self.session.get(MediaAsset, asset.id)
+        self.assertEqual(refreshed.status, "success")
+        self.assertIsNone(refreshed.error_message)
+
+    def test_retry_single_forbidden_for_other_user(self):
+        asset = MediaAsset(
+            asset_type="image",
+            status="failed",
+            original_url="https://example.com/failed.png",
+            created_by=2,
+        )
+        self.session.add(asset)
+        self.session.commit()
+
+        service = MediaAssetService(self.session)
+        other_user = User(id=3, username="other_user")
+
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as ctx:
+            service.retry_single(asset.id, current_user=other_user)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_retry_single_expired_gives_friendly_message(self):
+        asset = MediaAsset(
+            asset_type="image",
+            status="failed",
+            original_url="https://example.com/expired.png",
+            created_by=2,
+        )
+        self.session.add(asset)
+        self.session.commit()
+
+        service = MediaAssetService(self.session)
+        user = User(id=2, username="regular_user")
+
+        with patch.object(service, "_transfer_artifact", side_effect=ValueError("403 Forbidden: Signature Expired")):
+            from fastapi import HTTPException
+            with self.assertRaises(HTTPException) as ctx:
+                service.retry_single(asset.id, current_user=user)
+            self.assertIn("过期", ctx.exception.detail)
+
+        refreshed = self.session.get(MediaAsset, asset.id)
+        self.assertEqual(refreshed.status, "failed")
+        self.assertIn("过期", refreshed.error_message)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,8 @@ import hashlib
 import json
 import logging
 import mimetypes
+import re
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -111,7 +113,65 @@ class MediaAssetService(BaseAdminCrudService):
             data.pop(key, None)
         return data
 
-    def retry_failed(self, limit: int = 100, window_hours: int = 24) -> dict:
+    def retry_single(self, asset_id: int, current_user: User | None = None) -> dict:
+        """重试单个转存失败的资产。"""
+        asset = self.session.get(MediaAsset, asset_id)
+        if not asset or asset.delete_time is not None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="媒体资产不存在")
+
+        if current_user and not is_super_admin(self.session, current_user):
+            if asset.created_by != current_user.id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作该媒体资产")
+
+        if asset.status == "success" and asset.storage_url:
+            return {
+                "id": asset.id,
+                "status": asset.status,
+                "storage_url": asset.storage_url,
+                "message": "资源已转存成功，无需重试",
+            }
+
+        if not asset.original_url:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="资产缺少原始访问地址，无法重试转存")
+
+        artifact = MediaArtifact(
+            asset_type=asset.asset_type,
+            original_url=asset.original_url,
+            mime_type=asset.mime_type,
+            file_name=asset.file_name,
+            width=asset.width,
+            height=asset.height,
+            duration_seconds=asset.duration_seconds,
+        )
+
+        try:
+            self._transfer_artifact(asset, artifact)
+            asset.error_message = None
+            self.session.add(asset)
+            self.session.commit()
+            return {
+                "id": asset.id,
+                "status": "success",
+                "storage_url": asset.storage_url,
+                "message": "重试转存成功",
+            }
+        except Exception as exc:
+            err_str = str(exc)
+            friendly_msg = "重试转存失败"
+            if "403" in err_str or "Expired" in err_str or "expired" in err_str:
+                friendly_msg = "原始链接签名已过期（超过有效时限），无法挽救"
+            elif "timeout" in err_str.lower() or "timed out" in err_str.lower():
+                friendly_msg = "下载原始资源超时，请稍后重试"
+            else:
+                friendly_msg = f"重试转存失败: {err_str[:200]}"
+
+            asset.status = "failed"
+            asset.error_message = friendly_msg
+            self.session.add(asset)
+            self.session.commit()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=friendly_msg)
+
+    def retry_failed(self, limit: int = 100, window_hours: int = 24, current_user: User | None = None) -> dict:
         """重试窗口内转存失败的资产（复用 _transfer_artifact，含去重与落盘）。
 
         窗口语义：以 updated_at 近似"最近一次失败时间"，重试再失败会刷新 updated_at
@@ -121,19 +181,21 @@ class MediaAssetService(BaseAdminCrudService):
         from datetime import datetime, timedelta, timezone
 
         cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours)))
-        assets = list(
-            self.session.exec(
-                select(MediaAsset)
-                .where(
-                    MediaAsset.status == "failed",
-                    MediaAsset.original_url != None,  # noqa: E711
-                    MediaAsset.delete_time == None,  # noqa: E711
-                    MediaAsset.updated_at >= cutoff,
-                )
-                .order_by(MediaAsset.id)
-                .limit(max(1, int(limit)))
-            ).all()
+        stmt = (
+            select(MediaAsset)
+            .where(
+                MediaAsset.status == "failed",
+                MediaAsset.original_url != None,  # noqa: E711
+                MediaAsset.delete_time == None,  # noqa: E711
+                MediaAsset.updated_at >= cutoff,
+            )
+            .order_by(MediaAsset.id)
+            .limit(max(1, int(limit)))
         )
+        if current_user and not is_super_admin(self.session, current_user):
+            stmt = stmt.where(MediaAsset.created_by == current_user.id)
+
+        assets = list(self.session.exec(stmt).all())
         attempted = succeeded = 0
         for asset in assets:
             artifact = MediaArtifact(
@@ -148,10 +210,17 @@ class MediaAssetService(BaseAdminCrudService):
             attempted += 1
             try:
                 self._transfer_artifact(asset, artifact)
+                asset.error_message = None
+                self.session.add(asset)
+                self.session.commit()
                 succeeded += 1
             except Exception as exc:  # 单资产失败不影响其余
+                err_str = str(exc)
+                if "403" in err_str or "Expired" in err_str or "expired" in err_str:
+                    asset.error_message = "原始链接签名已过期（超过有效时限），无法挽救"
+                else:
+                    asset.error_message = err_str[:1000]
                 asset.status = "failed"
-                asset.error_message = str(exc)[:1000]
                 self.session.add(asset)
                 self.session.commit()
         return {"attempted": attempted, "succeeded": succeeded, "failed": attempted - succeeded}
@@ -167,12 +236,16 @@ class MediaAssetService(BaseAdminCrudService):
         except UploadRejectedError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+        asset_type = _asset_type_from_mime_or_name(file.content_type, file.filename)
+        detected = _probe_image_dimensions(content) if asset_type == "image" else None
         asset = MediaAsset(
-            asset_type=_asset_type_from_mime_or_name(file.content_type, file.filename),
+            asset_type=asset_type,
             source_type="upload",
             storage_url=storage_url,
             file_name=file.filename,
             mime_type=file.content_type or mimetypes.guess_type(file.filename or "")[0],
+            width=detected[0] if detected else None,
+            height=detected[1] if detected else None,
             md5=_md5(content),
             size_bytes=len(content),
             status="success",
@@ -356,6 +429,11 @@ class MediaAssetService(BaseAdminCrudService):
         asset.size_bytes = len(content)
         asset.md5 = _md5(content)
         _ensure_media_size(content)
+        # 厂商返回体多半不带尺寸，只能从字节头探测，否则 width/height 会长期为空
+        detected = _probe_image_dimensions(content) if asset.asset_type == "image" else None
+        if detected:
+            asset.width, asset.height = detected
+        _log_size_mismatch(asset, detected)
         existing = self._find_existing_asset(asset)
         if existing:
             logger.info(
@@ -574,6 +652,145 @@ def _ensure_media_size(content: bytes) -> None:
     max_bytes = settings.MEDIA_REMOTE_DOWNLOAD_MAX_SIZE_MB * 1024 * 1024
     if len(content) > max_bytes:
         raise ValueError(f"媒体文件超过 {settings.MEDIA_REMOTE_DOWNLOAD_MAX_SIZE_MB}MB 限制")
+
+
+# ---------------------------------------------------------------------------
+# 图片真实尺寸探测
+#
+# 为什么必须从字节里探测：厂商返回体普遍不带尺寸（ToAPIs 的 generations 响应
+# 只有 URL），而 ai_model.default_config 里声明的尺寸上游还可能按档位改写。
+# 结果是 media_asset.width/height 长期为 NULL（实测 42/42 全空），
+# 「请求 864x1152、实收 1024x1024」这类事没有任何防线能发现。
+#
+# 这里只解析文件头，不做完整解码：零第三方依赖、无解压炸弹风险，失败一律返回 None。
+# ---------------------------------------------------------------------------
+
+_REQUEST_SIZE_RE = re.compile(r"^\s*(\d{1,5})\s*[x\u00d7\u2715\u2a2f\uff0a*]\s*(\d{1,5})\s*$", re.IGNORECASE)
+
+
+def _probe_png_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        return None
+    width, height = struct.unpack(">II", data[16:24])
+    return (width, height) if width and height else None
+
+
+def _probe_gif_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 10 or data[:6] not in (b"GIF87a", b"GIF89a"):
+        return None
+    width, height = struct.unpack("<HH", data[6:10])
+    return (width, height) if width and height else None
+
+
+def _probe_bmp_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 26 or data[:2] != b"BM":
+        return None
+    width, height = struct.unpack("<ii", data[18:26])
+    return (abs(width), abs(height)) if width and height else None
+
+
+def _probe_webp_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 30 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+        return None
+    chunk = data[12:16]
+    if chunk == b"VP8X":
+        width = int.from_bytes(data[24:27], "little") + 1
+        height = int.from_bytes(data[27:30], "little") + 1
+        return (width, height) if width and height else None
+    if chunk == b"VP8 ":
+        width = int.from_bytes(data[26:28], "little") & 0x3FFF
+        height = int.from_bytes(data[28:30], "little") & 0x3FFF
+        return (width, height) if width and height else None
+    if chunk == b"VP8L":
+        bits = int.from_bytes(data[21:25], "little")
+        width = (bits & 0x3FFF) + 1
+        height = ((bits >> 14) & 0x3FFF) + 1
+        return (width, height) if width and height else None
+    return None
+
+
+def _probe_jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 4 or data[:2] != b"\xff\xd8":
+        return None
+    index = 2
+    end = len(data)
+    while index + 9 < end:
+        if data[index] != 0xFF:
+            index += 1
+            continue
+        marker = data[index + 1]
+        if marker == 0xFF:  # 填充字节
+            index += 1
+            continue
+        if marker == 0x01 or 0xD0 <= marker <= 0xD9:  # 无负载标记
+            index += 2
+            continue
+        segment_length = int.from_bytes(data[index + 2:index + 4], "big")
+        # SOF0~SOF15 中只有 C4(DHT)/C8(JPG)/CC(DAC) 不是帧头
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            height = int.from_bytes(data[index + 5:index + 7], "big")
+            width = int.from_bytes(data[index + 7:index + 9], "big")
+            return (width, height) if width and height else None
+        if segment_length < 2:
+            return None
+        index += 2 + segment_length
+    return None
+
+
+def _probe_image_dimensions(content: bytes) -> tuple[int, int] | None:
+    """从图片字节头解析真实宽高；识别不了或格式不支持时返回 None。"""
+    if not content or len(content) < 16:
+        return None
+    for probe in (
+        _probe_png_dimensions,
+        _probe_gif_dimensions,
+        _probe_bmp_dimensions,
+        _probe_webp_dimensions,
+        _probe_jpeg_dimensions,
+    ):
+        try:
+            size = probe(content)
+        except Exception:  # noqa: BLE001 探测失败绝不能影响转存
+            continue
+        if size:
+            return size
+    return None
+
+
+def _requested_image_size(params_payload: str | None) -> tuple[int, int] | None:
+    """从落库的 params_payload 中取出请求尺寸（仅识别像素写法）。"""
+    params = _loads_json(params_payload)
+    size = params.get("size")
+    if not isinstance(size, str):
+        return None
+    matched = _REQUEST_SIZE_RE.match(size)
+    if not matched:
+        return None
+    return int(matched.group(1)), int(matched.group(2))
+
+
+def _log_size_mismatch(asset: MediaAsset, actual: tuple[int, int] | None) -> None:
+    """请求尺寸与实际产出尺寸不一致时告警（上游按档位规范化是常见原因）。"""
+    if actual is None:
+        return
+    requested = _requested_image_size(asset.params_payload)
+    if requested is None or requested == actual:
+        return
+    logger.warning(
+        "生图尺寸与请求不一致：请求 %dx%d，实际 %dx%d（上游按档位规范化）",
+        requested[0],
+        requested[1],
+        actual[0],
+        actual[1],
+        extra={
+            "asset_id": asset.id,
+            "requested_size": "%dx%d" % requested,
+            "actual_size": "%dx%d" % actual,
+            "provider": asset.provider_code,
+            "model": asset.model_code,
+            "workflow_node_id": asset.workflow_node_id,
+        },
+    )
 
 
 def _asset_type_from_payload(item: dict, task_type: str, url: str | None) -> str:
