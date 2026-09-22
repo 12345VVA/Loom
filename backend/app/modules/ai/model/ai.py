@@ -27,6 +27,7 @@ AI_ADAPTERS = {
     "zhipu",
     "minimax",
     "mimo",
+    "toapis",
 }
 AI_MODEL_TYPES = {"chat", "embedding", "image", "audio", "video", "rerank"}
 AI_GOVERNANCE_SCOPE_TYPES = {"global", "user", "profile"}
@@ -111,6 +112,8 @@ class AiModelCallLog(BaseEntity, table=True):
     request_id: str | None = Field(default=None, index=True, max_length=100)
     # 工作流实例关联：评估按 instance 精确聚合 token/cost（手动 chat 等非工作流调用为空）
     workflow_instance_id: int | None = Field(default=None, index=True)
+    # 请求参数与选项快照（已脱敏的 JSON 字符串，便于复盘审计）
+    request_options: str | None = Field(default=None)
 
 
 class AiGenerationTask(BaseEntity, table=True):
@@ -210,6 +213,7 @@ class AiModelCallLogRead(BaseModel):
     currency: str = "USD"
     error_message: str | None = None
     request_id: str | None = None
+    request_options: str | None = None
     created_at: datetime
     updated_at: datetime
 

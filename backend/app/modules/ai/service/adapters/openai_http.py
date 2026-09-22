@@ -36,7 +36,10 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
             headers=self._headers(),
             timeout=self.timeout,
         ) as response:
-            response.raise_for_status()
+            if getattr(response, "is_error", False):
+                if hasattr(response, "read"):
+                    response.read()
+            self._raise_for_status(response)
             request_id = response.headers.get("x-request-id")
             for event in iter_sse_events(response.iter_lines()):
                 value = event.get("data")

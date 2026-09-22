@@ -4,6 +4,91 @@
 
 from __future__ import annotations
 
+import json
+
+DEFAULT_TOAPIS_NORMAL_IMAGE_CONFIG = json.dumps(
+    {
+        "size": "1:1",
+        "resolution": "1K",
+        "_size_format": "ratio",
+        "_allow_custom_size": True,
+        "_sizes": [
+            {"label": "1:1 (正方形)", "value": "1:1"},
+            {"label": "3:4 (竖版绘本)", "value": "3:4"},
+            {"label": "4:3 (横版配图)", "value": "4:3"},
+            {"label": "16:9 (横屏宽幅)", "value": "16:9"},
+            {"label": "9:16 (竖屏短视频)", "value": "9:16"},
+            {"label": "3:2 (经典摄影)", "value": "3:2"},
+            {"label": "2:3 (竖幅摄影)", "value": "2:3"},
+        ],
+        "_limits": {"max_n": 1},
+    },
+    ensure_ascii=False,
+)
+
+# ToAPIs gpt-image VIP/Official 版的像素尺寸档位。
+#
+# 注意：上游不兑现任意像素，会按宽高比做档位规范化。2026-09-21 实测：
+#   请求 864x1152   -> 实收 768x1024
+#   请求 1248x1664  -> 实收 1536x2048
+#   请求 1024x1024  -> 实收 1024x1024（1:1 原样兑现）
+# 因此 label 里直接标注实测产出，避免选了 864x1152 却拿到别的尺寸还查不出原因。
+DEFAULT_TOAPIS_PIXEL_IMAGE_CONFIG = json.dumps(
+    {
+        "size": "1024x1024",
+        "quality": "low",
+        "_size_format": "pixel",
+        "_allow_custom_size": True,
+        "_sizes": [
+            {"label": "1024x1024 (1:1)", "value": "1024x1024"},
+            {"label": "1536x2048 (3:4 竖版，实测兑现)", "value": "1536x2048"},
+            {"label": "768x1024 (3:4 竖版，实测兑现)", "value": "768x1024"},
+            {"label": "864x1152 (3:4，上游会规范化为 768x1024)", "value": "864x1152"},
+            {"label": "1152x864 (4:3 横板)", "value": "1152x864"},
+            {"label": "1280x720 (16:9 横屏)", "value": "1280x720"},
+            {"label": "720x1280 (9:16 竖屏)", "value": "720x1280"},
+            {"label": "1536x1024 (3:2 摄影)", "value": "1536x1024"},
+            {"label": "1024x1536 (2:3 竖版)", "value": "1024x1536"},
+        ],
+        "_limits": {"max_n": 1},
+    },
+    ensure_ascii=False,
+)
+
+DEFAULT_SEEDREAM_IMAGE_CONFIG = json.dumps(
+    {
+        "size": "2048x2048",
+        "_size_format": "pixel",
+        "_allow_custom_size": True,
+        "_sizes": [
+            {"label": "2048x2048 (1:1)", "value": "2048x2048"},
+            {"label": "2560x1440 (16:9)", "value": "2560x1440"},
+            {"label": "1440x2560 (9:16)", "value": "1440x2560"},
+            {"label": "2304x1728 (4:3)", "value": "2304x1728"},
+            {"label": "1728x2304 (3:4)", "value": "1728x2304"},
+        ],
+        "_limits": {"max_n": 4},
+    },
+    ensure_ascii=False,
+)
+
+DEFAULT_BAILIAN_IMAGE_CONFIG = json.dumps(
+    {
+        "size": "1024x1024",
+        "_size_format": "pixel",
+        "_allow_custom_size": False,
+        "_sizes": [
+            {"label": "1024x1024 (1:1)", "value": "1024x1024"},
+            {"label": "768x1024 (3:4)", "value": "768x1024"},
+            {"label": "1024x768 (4:3)", "value": "1024x768"},
+            {"label": "720x1280 (9:16)", "value": "720x1280"},
+            {"label": "1280x720 (16:9)", "value": "1280x720"},
+        ],
+        "_limits": {"max_n": 4},
+    },
+    ensure_ascii=False,
+)
+
 AI_MODEL_CATALOG = [
     {
         "code": "gemini",
@@ -105,6 +190,7 @@ AI_MODEL_CATALOG = [
                 "name": "Doubao Seedream 5.0 Lite",
                 "model_type": "image",
                 "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_SEEDREAM_IMAGE_CONFIG,
             },
         ],
     },
@@ -127,18 +213,21 @@ AI_MODEL_CATALOG = [
                 "name": "Wan 2.6 Text to Image",
                 "model_type": "image",
                 "capabilities": "image,text-to-image",
+                "default_config": DEFAULT_BAILIAN_IMAGE_CONFIG,
             },
             {
                 "code": "wan2.5-t2i-preview",
                 "name": "Wan 2.5 Text to Image Preview",
                 "model_type": "image",
                 "capabilities": "image,text-to-image",
+                "default_config": DEFAULT_BAILIAN_IMAGE_CONFIG,
             },
             {
                 "code": "wan2.2-t2i-flash",
                 "name": "Wan 2.2 Text to Image Flash",
                 "model_type": "image",
                 "capabilities": "image,text-to-image",
+                "default_config": DEFAULT_BAILIAN_IMAGE_CONFIG,
             },
         ],
     },
@@ -206,6 +295,56 @@ AI_MODEL_CATALOG = [
         "base_url": "",
         "models": [
             {"code": "MiMo-7B", "name": "MiMo 7B", "model_type": "chat", "capabilities": "chat,placeholder"},
+        ],
+    },
+    {
+        "code": "toapis",
+        "name": "ToAPIs",
+        "adapter": "toapis",
+        "base_url": "https://api.toapis.cn",
+        "models": [
+            {
+                "code": "gpt-image-2.5-flare",
+                "name": "GPT-Image-2.5 Flare",
+                "model_type": "image",
+                "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_TOAPIS_NORMAL_IMAGE_CONFIG,
+            },
+            {
+                "code": "gpt-image-2.5-sunburst",
+                "name": "GPT-Image-2.5 Sunburst",
+                "model_type": "image",
+                "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_TOAPIS_NORMAL_IMAGE_CONFIG,
+            },
+            {
+                "code": "gpt-image-2.5-flare-vip",
+                "name": "GPT-Image-2.5 Flare VIP",
+                "model_type": "image",
+                "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_TOAPIS_PIXEL_IMAGE_CONFIG,
+            },
+            {
+                "code": "gpt-image-2.5-sunburst-vip",
+                "name": "GPT-Image-2.5 Sunburst VIP",
+                "model_type": "image",
+                "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_TOAPIS_PIXEL_IMAGE_CONFIG,
+            },
+            {
+                "code": "gpt-image-2.5-flare-official",
+                "name": "GPT-Image-2.5 Flare Official",
+                "model_type": "image",
+                "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_TOAPIS_PIXEL_IMAGE_CONFIG,
+            },
+            {
+                "code": "gpt-image-2.5-sunburst-official",
+                "name": "GPT-Image-2.5 Sunburst Official",
+                "model_type": "image",
+                "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_TOAPIS_PIXEL_IMAGE_CONFIG,
+            },
         ],
     },
 ]

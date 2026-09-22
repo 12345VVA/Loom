@@ -17,6 +17,8 @@ from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
 from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
 from app.modules.ai.service.adapters.openai_http import OpenAIHttpAdapter
+from app.modules.ai.service.adapters.size_utils import parse_pixel_size
+from app.modules.ai.service.adapters.toapis import ToApisAdapter
 from app.modules.ai.service.adapters.volcengine_openapi import iter_ark_available_models
 
 
@@ -247,6 +249,7 @@ ADAPTERS = {
     "zhipu": ZhipuAdapter,
     "minimax": MiniMaxAdapter,
     "mimo": MimoAdapter,
+    "toapis": ToApisAdapter,
 }
 
 
@@ -352,8 +355,13 @@ def _bailian_image_parameters(options: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_bailian_image_size(value: Any) -> Any:
-    if isinstance(value, str) and "x" in value and "*" not in value:
-        return value.lower().replace("x", "*")
+    """百炼兼容模式要求 ``宽*高`` 写法，这里把任意分隔符写法统一过来。
+
+    旧实现用 ``"x" in value`` 判定，全角 ``864×1152`` 命中失败会被原样透传给上游。
+    """
+    parsed = parse_pixel_size(value)
+    if parsed is not None:
+        return "%d*%d" % parsed
     return value
 
 
@@ -433,15 +441,16 @@ def _normalize_volcengine_image_options(model: str, options: dict[str, Any]) -> 
 
 
 def _validate_seedream_4_size(size: Any) -> None:
-    if not isinstance(size, str) or "x" not in size:
+    """校验 Seedream 4.x 的最小像素约束。
+
+    非像素尺寸（档位别名等）不在此处校验，交给上游判断。
+    必须按归一化后的值判定，否则全角写法会静默绕过这道校验。
+    """
+    parsed = parse_pixel_size(size)
+    if parsed is None:
         return
 
-    try:
-        width_text, height_text = size.lower().split("x", 1)
-        pixels = int(width_text) * int(height_text)
-    except (TypeError, ValueError):
-        return
-
+    pixels = parsed[0] * parsed[1]
     if pixels < 3_686_400:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
