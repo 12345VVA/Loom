@@ -209,6 +209,7 @@ def _ensure_sqlite_compatible_schema() -> None:
             "cost_micro_usd": "ALTER TABLE ai_model_call_log ADD COLUMN cost_micro_usd INTEGER DEFAULT 0",
             "currency": "ALTER TABLE ai_model_call_log ADD COLUMN currency VARCHAR DEFAULT 'USD'",
             "workflow_instance_id": "ALTER TABLE ai_model_call_log ADD COLUMN workflow_instance_id INTEGER",
+            "request_options": "ALTER TABLE ai_model_call_log ADD COLUMN request_options TEXT",
         },
         "ai_generation_task": {
             "task_type": "ALTER TABLE ai_generation_task ADD COLUMN task_type VARCHAR DEFAULT 'chat'",

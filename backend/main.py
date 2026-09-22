@@ -170,7 +170,16 @@ async def serve_upload(
             )
         ).first()
         if owned is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该资源")
+            from app.modules.workflow.model.workflow_artifact import WorkflowArtifact
+
+            art_owned = session.exec(
+                select(WorkflowArtifact).where(
+                    WorkflowArtifact.storage_url.endswith("/" + file_path),
+                    WorkflowArtifact.user_id == current_user.id,
+                )
+            ).first()
+            if art_owned is None:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该资源")
 
     # nosniff 全量；可执行/可内联类型强制下载，避免浏览器自动渲染（PDF 等）
     headers = {"X-Content-Type-Options": "nosniff"}

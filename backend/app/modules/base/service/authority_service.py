@@ -348,7 +348,7 @@ def get_user_from_access_token(session: Session, token: str) -> tuple[User, dict
 
 
 def get_user_from_download_token(session: Session, token: str) -> User:
-    """校验专用下载令牌（type=download），用于 /uploads 资源访问。
+    """校验专用下载令牌（type=download）或登录令牌（type=access），用于 /uploads 资源访问。
 
     轻量校验：仅验签 + 类型 + 用户有效 + token_version。
     不查 jti 黑名单、不做会话数/SSO 校验——下载令牌短 TTL 自行过期，
@@ -356,7 +356,8 @@ def get_user_from_download_token(session: Session, token: str) -> User:
     避免长期 access token 通过 ?token= 泄露到反代日志/Referer。
     """
     payload = decode_token(token)
-    if payload.get("type") != TOKEN_TYPE_DOWNLOAD:
+    token_type = payload.get("type")
+    if token_type not in (TOKEN_TYPE_DOWNLOAD, TOKEN_TYPE_ACCESS):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="下载令牌类型错误")
 
     user_id = payload.get("sub")
@@ -375,14 +376,15 @@ def get_user_from_download_token(session: Session, token: str) -> User:
 
 
 def verify_download_token(token: str) -> dict:
-    """校验专用下载令牌（type=download），不查 DB，仅 JWT 验签 + 类型 + token_version（Redis）。
+    """校验专用下载令牌（type=download）或登录令牌（type=access），不查 DB，仅 JWT 验签 + 类型 + token_version（Redis）。
 
     用于 /uploads 资源访问的高频路径，避免每次请求都打开 DB 会话。文件访问安全性
     由令牌本身的签名 + TTL 保障；token_version 通过 Redis 校验（无 Redis 时降级为进程内缓存），
     覆盖改密码/强制踢出场景。令牌是服务端签发，用户是否存在不影响对已签发令牌的接受。
     """
     payload = decode_token(token)
-    if payload.get("type") != TOKEN_TYPE_DOWNLOAD:
+    token_type = payload.get("type")
+    if token_type not in (TOKEN_TYPE_DOWNLOAD, TOKEN_TYPE_ACCESS):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="下载令牌类型错误")
 
     user_id = payload.get("sub")

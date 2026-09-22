@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str  # 启动时自动从 .env 中读取
     ACCESS_TOKEN_EXPIRE_MINUTES: int  # 启动时自动从 .env 中读取
     REFRESH_TOKEN_EXPIRE_DAYS: int  # 启动时自动从 .env 中读取
-    # 专用下载令牌有效期（秒）：用于 /uploads 资源访问，短 TTL 隔离 access token 泄露面
-    DOWNLOAD_TOKEN_EXPIRE_SECONDS: int = 300
+    # 专用下载令牌有效期（秒）：用于 /uploads 资源访问，短 TTL 隔离 access token 泄露面（默认 2 小时）
+    DOWNLOAD_TOKEN_EXPIRE_SECONDS: int = 7200
     ADMIN_SSO_ENABLED: bool = False
     ADMIN_CAPTCHA_ENABLED: bool = False
     CAPTCHA_EXPIRE_SECONDS: int = 120
@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     STORAGE_PROVIDER: str = "local"
     MEDIA_REMOTE_DOWNLOAD_MAX_SIZE_MB: int = 100
     MEDIA_REMOTE_DOWNLOAD_TIMEOUT_SECONDS: int = 30
-    MEDIA_REMOTE_ALLOWED_HOSTS: str = "*.volces.com"
+    MEDIA_REMOTE_ALLOWED_HOSTS: str = "*.volces.com,*.toapis.cn,*.toapis.com,*.aliyuncs.com"
     # Fake-IP DNS 例外开关：开启后远程媒体域名的解析结果全部落在代理网段 (198.18.0.0/15)
     # 时放行并按原 hostname 请求。开启即把 SSRF 防线移交本地代理，仅限受信开发环境（如
     # Clash TUN/fake-ip），生产保持关闭。
