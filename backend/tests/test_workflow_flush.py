@@ -10,8 +10,8 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.modules.workflow.model.workflow import WorkflowExecutionLog, WorkflowInstance
 from app.modules.workflow.tasks.workflow_tasks import (
@@ -36,7 +36,7 @@ def _payload(node_id: str, latency: int = 10) -> dict:
 
 class FlushPersistenceTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as s:
             inst = WorkflowInstance(definition_id=1, thread_id="t1", status="running", state_data="{}")
@@ -98,7 +98,7 @@ class FlushPersistenceTestCase(unittest.TestCase):
 
 class FlushWorkerTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as s:
             inst = WorkflowInstance(definition_id=1, thread_id="t1", status="running", state_data="{}")

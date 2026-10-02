@@ -4,10 +4,10 @@ import unittest
 import warnings
 from datetime import datetime
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Field, Session, SQLModel, select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from helpers import make_test_engine  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.database import transaction  # noqa: E402
@@ -44,11 +44,7 @@ with warnings.catch_warnings():
 
 class ProductionHardeningTests(unittest.TestCase):
     def test_transaction_commits_and_rolls_back(self):
-        engine = create_engine(
-            "sqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[TxRow.__table__])
 
         with Session(engine) as session:
@@ -64,11 +60,7 @@ class ProductionHardeningTests(unittest.TestCase):
             self.assertEqual(names, ["ok"])
 
     def test_transaction_respects_explicit_outer_transaction(self):
-        engine = create_engine(
-            "sqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[TxRow.__table__])
 
         with Session(engine) as session:

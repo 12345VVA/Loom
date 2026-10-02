@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import unittest
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
 from app.modules.workflow.service.workflow_service import WorkflowInstanceService
@@ -17,9 +17,7 @@ from app.modules.workflow.service.workflow_service import WorkflowInstanceServic
 
 class EnrichTokenCostTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

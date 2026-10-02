@@ -16,8 +16,8 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.framework.storage import LocalStorageProvider, StorageService, offload_payload
 from app.modules.base.model.auth import User
@@ -48,9 +48,7 @@ def _iso(dt: datetime) -> datetime:
 
 class SweepExecutionLogsTest(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.storage = Mock()
@@ -112,9 +110,7 @@ class SweepExecutionLogsTest(unittest.TestCase):
 
 class SweepOrphanPayloadsTest(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.storage, self.tmp = _tmp_storage()
@@ -183,9 +179,7 @@ class SweepOrphanPayloadsTest(unittest.TestCase):
 
 class CascadeDeleteTest(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.storage = Mock()
@@ -278,9 +272,7 @@ class CascadeDeleteTest(unittest.TestCase):
 
 class RetryFailedTest(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.storage = Mock()
@@ -367,9 +359,7 @@ class EvalOffloadResolveTest(unittest.TestCase):
     """eval 裸读 state_data 的 bug 修复回归：offload 实例的输出可还原。"""
 
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.storage, self.tmp = _tmp_storage()

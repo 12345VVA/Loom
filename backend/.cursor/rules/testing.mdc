@@ -47,8 +47,8 @@ class SomeTests(unittest.TestCase):
 
 ## 测试数据
 
-- 局部模型测试可使用内存 SQLite 和 `StaticPool`。
-- 涉及应用启动、菜单、权限、EPS 的测试使用真实 `app` 和现有初始化机制。
+- 局部模型测试统一使用 `tests/helpers.py` 的 `make_test_engine()`（缺省内存 SQLite + `StaticPool` 单连接；设 `TEST_DATABASE_URL` 环境变量可整体切到 PostgreSQL；`tables=[...]` 参数可只建指定表）。不要再手写 `create_engine(...)`。
+- 涉及应用启动、菜单、权限、EPS 的测试使用真实 `app` 和现有初始化机制（conftest 兜底测试库）。
 - 测试前清理相关缓存，现有示例使用 `cache_delete_pattern()`。
 
 ## 检查清单

@@ -14,12 +14,12 @@ import unittest
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Field, Session, SQLModel, select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from datetime import datetime
+
+from helpers import make_test_engine  # noqa: E402
 
 from app.modules.base.model.auth import Menu, Role, RoleMenuLink, User, UserRoleLink  # noqa: E402
 from app.modules.base.model.sys import SysLog, SysSecurityLog  # noqa: E402
@@ -39,31 +39,20 @@ class DummyEntity(SQLModel, table=True):
     delete_time: datetime | None = None
 
 
-def _make_isolated_engine():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(
-        engine,
-        tables=[
-            DummyEntity.__table__,
-            SysLog.__table__,
-            SysSecurityLog.__table__,
-            User.__table__,
-            Role.__table__,
-            Menu.__table__,
-            UserRoleLink.__table__,
-            RoleMenuLink.__table__,
-        ],
-    )
-    return engine
-
-
 class AdminServiceTransactionTests(unittest.TestCase):
     def setUp(self):
-        self.engine = _make_isolated_engine()
+        self.engine = make_test_engine(
+            tables=[
+                DummyEntity.__table__,
+                SysLog.__table__,
+                SysSecurityLog.__table__,
+                User.__table__,
+                Role.__table__,
+                Menu.__table__,
+                UserRoleLink.__table__,
+                RoleMenuLink.__table__,
+            ],
+        )
 
     def test_add_rollback_when_after_add_fails(self):
         """测试在 _after_add 钩子抛出异常时，主实体自动回滚，无残留脏数据。"""

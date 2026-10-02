@@ -12,8 +12,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 
 class TaskInvokerWhitelistTests(unittest.TestCase):
@@ -68,11 +68,7 @@ class NotificationSenderIdTests(unittest.TestCase):
     """Task 4.2 (P1-14): notification sender_id 防伪造"""
 
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 
@@ -158,11 +154,7 @@ class AnnotationOwnershipTests(unittest.TestCase):
         from app.modules.workflow_eval.model.enum import CaseResultStatus
         from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
 
-        self.engine = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

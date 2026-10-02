@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 from dotenv import dotenv_values
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine  # noqa: E402
+from sqlmodel import Session, SQLModel, select
 
 from app.core.secret import encrypt_secret
 from app.modules.ai.model.ai import AiChatRequest, AiModel, AiModelCallLog, AiModelProfile, AiProvider
@@ -69,7 +70,7 @@ def _parse_sse_chunks(chunks: list[str]) -> list[dict]:
 
 class DeepSeekLiveTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

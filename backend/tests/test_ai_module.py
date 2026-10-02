@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import httpx
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.celery_app import AI_TASK_QUEUES, celery_app
 from app.core.secret import decrypt_secret, encrypt_secret, mask_secret
@@ -73,9 +73,7 @@ def _parse_sse_chunks(chunks: list[str]) -> list[dict]:
 
 class AiModuleTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

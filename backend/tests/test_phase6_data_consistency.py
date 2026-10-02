@@ -11,10 +11,10 @@ import unittest
 import warnings
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Field, Session, SQLModel, select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from helpers import make_test_engine  # noqa: E402
 
 from app.core.database import transaction  # noqa: E402
 from app.modules.base.model.auth import Menu  # noqa: E402
@@ -36,21 +36,11 @@ with warnings.catch_warnings():
     SQLModel.metadata.remove(TxRow.__table__)
 
 
-def _make_engine(tables):
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine, tables=tables)
-    return engine
-
-
 class TransactionAutobeginPendingTests(unittest.TestCase):
     """P1-6: transaction() 在 AUTOBEGIN + pending 场景应提交而非静默丢失。"""
 
     def test_pending_autobegin_work_is_committed(self):
-        engine = _make_engine([TxRow.__table__])
+        engine = make_test_engine(tables=[TxRow.__table__])
 
         with Session(engine) as session:
             # 先触发 AUTOBEGIN 并产生 pending 写入（不通过 transaction 上下文）。
@@ -65,7 +55,7 @@ class TransactionAutobeginPendingTests(unittest.TestCase):
 
     def test_transaction_persists_across_new_session(self):
         """提交后用新 session 验证落库，避免 identity map 误判。"""
-        engine = _make_engine([TxRow.__table__])
+        engine = make_test_engine(tables=[TxRow.__table__])
 
         with Session(engine) as session:
             session.add(TxRow(name="pending"))
@@ -78,7 +68,7 @@ class TransactionAutobeginPendingTests(unittest.TestCase):
 
     def test_transaction_still_respects_explicit_begin(self):
         """显式 BEGIN 仍复用外层事务，不自行提交。"""
-        engine = _make_engine([TxRow.__table__])
+        engine = make_test_engine(tables=[TxRow.__table__])
 
         with Session(engine) as session:
             with self.assertRaises(RuntimeError):
@@ -91,7 +81,7 @@ class TransactionAutobeginPendingTests(unittest.TestCase):
 
     def test_transaction_rolls_back_pending_on_autobegin(self):
         """AUTOBEGIN + pending 场景下抛异常，pending 写入应被回滚。"""
-        engine = _make_engine([TxRow.__table__])
+        engine = make_test_engine(tables=[TxRow.__table__])
 
         with Session(engine) as session:
             session.add(TxRow(name="pending"))
@@ -107,7 +97,7 @@ class MenuParentCycleTests(unittest.TestCase):
     """P1-11: 菜单 parent_id 环路检查。"""
 
     def _make_service(self):
-        engine = _make_engine([Menu.__table__])
+        engine = make_test_engine(tables=[Menu.__table__])
         session = Session(engine)
         return engine, session, MenuAdminService(session)
 

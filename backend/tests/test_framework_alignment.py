@@ -7,10 +7,10 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Field, Session, SQLModel, select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from helpers import make_test_engine  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.database import engine as app_engine  # noqa: E402
@@ -102,11 +102,7 @@ class FrameworkAlignmentTests(unittest.TestCase):
         return {"Authorization": f"Bearer {login_res.json()['data']['token']}"}
 
     def test_query_builder_data_scope_filters_self_and_department(self):
-        engine = create_engine(
-            "sqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[ScopedRow.__table__])
         with Session(engine) as session:
             session.add_all(
@@ -128,11 +124,7 @@ class FrameworkAlignmentTests(unittest.TestCase):
         self.assertEqual(names, {"self", "dept"})
 
     def test_query_builder_data_scope_allows_super_admin_and_plain_models(self):
-        engine = create_engine(
-            "sqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[ScopedRow.__table__, PlainRow.__table__])
         with Session(engine) as session:
             session.add_all(
@@ -160,11 +152,7 @@ class FrameworkAlignmentTests(unittest.TestCase):
             self.assertEqual(len(session.exec(plain_statement).all()), 2)
 
     def test_query_builder_keyword_filters_sort_and_page_boundaries(self):
-        engine = create_engine(
-            "sqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[PlainRow.__table__])
         now = datetime.utcnow()
         with Session(engine) as session:
@@ -195,11 +183,7 @@ class FrameworkAlignmentTests(unittest.TestCase):
         self.assertEqual(names, ["alpha"])
 
     def test_query_builder_ignores_disallowed_order_and_uses_fallback(self):
-        engine = create_engine(
-            "sqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[PlainRow.__table__])
         now = datetime.utcnow()
         with Session(engine) as session:

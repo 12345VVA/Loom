@@ -19,8 +19,8 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import redis
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.celery_app import celery_app
 from app.modules.ai.model.ai import AiGovernanceRule, AiModel, AiModelProfile, AiProvider
@@ -70,9 +70,7 @@ class _FakeRedis:
 
 class DispatchDueTasksLockTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 
@@ -279,9 +277,7 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
 
 class AcquireConcurrentFailClosedTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

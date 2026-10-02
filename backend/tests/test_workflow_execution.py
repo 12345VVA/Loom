@@ -14,10 +14,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from helpers import make_test_engine
 from pydantic import ValidationError
 from sqlalchemy import update
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel
 
 from app.core.config import settings
 from app.core.startup_checks import validate_startup_settings
@@ -28,10 +28,7 @@ from app.modules.workflow.model.workflow import (
     WorkflowInstanceResumeRequest,
 )
 from app.modules.workflow.service import checkpointer as ckpt_module
-from app.modules.workflow.service.workflow_service import (
-    TERMINAL_STATUSES,
-    WorkflowInstanceService,
-)
+from app.modules.workflow.service.workflow_service import TERMINAL_STATUSES, WorkflowInstanceService
 
 
 def _user(uid: int, super_admin: bool = False) -> User:
@@ -132,9 +129,7 @@ class StartupCheckCheckpointTestCase(unittest.TestCase):
 
 class ResumeAndCancelTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

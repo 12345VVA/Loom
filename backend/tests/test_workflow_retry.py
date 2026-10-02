@@ -10,8 +10,8 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.core.config import settings
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
@@ -175,9 +175,7 @@ class FailedNodeIdPersistTestCase(unittest.TestCase):
     """failed_node_id 字段持久化 + NodeExecutionError 携带 node_id。"""
 
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

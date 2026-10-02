@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.modules.workflow_annotation.model.annotation import WorkflowAnnotation
 from app.modules.workflow_annotation.service.annotation_service import (
@@ -50,9 +50,7 @@ class LabelBoolTestCase(unittest.TestCase):
 
 class ComputeKappaTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.session.add(WorkflowEvalRun(test_set_id=1, definition_id=1, status=EvalRunStatus.SUCCEEDED))

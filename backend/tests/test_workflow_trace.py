@@ -5,21 +5,16 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.modules.workflow.model.workflow import WorkflowExecutionLog, WorkflowInstance
-from app.modules.workflow_eval.service.eval_orchestrator import (
-    _load_node_io,
-    evaluate_node_evaluators,
-)
+from app.modules.workflow_eval.service.eval_orchestrator import _load_node_io, evaluate_node_evaluators
 
 
 class TraceTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.session.add(WorkflowInstance(definition_id=1, thread_id="t1", status="success"))

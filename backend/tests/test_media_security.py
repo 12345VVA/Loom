@@ -16,18 +16,14 @@ from io import BytesIO
 from unittest.mock import MagicMock, Mock, patch
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.core.config import settings
 from app.framework.url_security import safe_stream
 from app.modules.base.model.auth import User
 from app.modules.media.model.media import MediaAsset
-from app.modules.media.service.media_service import (
-    MediaArtifact,
-    MediaAssetService,
-    _validate_remote_url,
-)
+from app.modules.media.service.media_service import MediaArtifact, MediaAssetService, _validate_remote_url
 
 
 class FakeUploadFile:
@@ -50,9 +46,7 @@ def _make_user(user_id: int, *, is_super_admin: bool = False) -> User:
 
 class MediaSecurityTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

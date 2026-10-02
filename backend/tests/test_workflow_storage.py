@@ -8,8 +8,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.core.config import settings
 from app.framework.storage import offload_payload, resolve_payload
@@ -50,7 +50,7 @@ def _payload(node_id: str, input_data: str, output_data: str) -> dict:
 
 class StorageOptimizationTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         _FAKE_STORE.clear()
         with Session(self.engine) as s:

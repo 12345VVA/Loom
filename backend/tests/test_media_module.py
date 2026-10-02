@@ -6,8 +6,8 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.modules.ai.controller.aiapi.model import AiRuntimeController, _run_sync_image_pipeline
 from app.modules.ai.model.ai import AiGenerationTask, AiImageRequest
@@ -27,9 +27,7 @@ class FakeUploadFile:
 
 class MediaModuleTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

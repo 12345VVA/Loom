@@ -13,9 +13,9 @@ import base64
 import unittest
 from unittest.mock import Mock, patch
 
+from helpers import make_test_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, select
 
 from app.core.logging import workflow_instance_id_ctx
 from app.modules.base.model.auth import User
@@ -33,9 +33,7 @@ def _result() -> dict:
 
 class MediaWorkflowAttributionTest(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.storage = Mock()

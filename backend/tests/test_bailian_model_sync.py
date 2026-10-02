@@ -12,8 +12,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.core.secret import encrypt_secret
 from app.modules.ai.model.ai import AiModel, AiProvider
@@ -124,9 +124,7 @@ class BailianListModelsTest(unittest.TestCase):
 
 class BailianSyncModelsTest(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.provider = AiProvider(

@@ -12,8 +12,8 @@ import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
 from app.modules.workflow_eval.model.enum import CaseResultStatus, EvalRunStatus
@@ -43,7 +43,7 @@ def _make_echo_execute(engine):
 
 class EvalRunTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as s:
             s.add(WorkflowDefinition(code="d1", name="D1", graph_json='{"nodes":[],"edges":[]}', user_id=1))

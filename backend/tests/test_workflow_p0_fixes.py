@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, patch
 
 import redis
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.modules.base.model.auth import User
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
@@ -32,9 +32,7 @@ def _user(uid: int) -> User:
 
 class _BaseDBTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
 

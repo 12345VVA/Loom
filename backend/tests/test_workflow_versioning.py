@@ -12,8 +12,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.modules.base.model.auth import User
 from app.modules.workflow.model.workflow import WorkflowDefinition
@@ -44,9 +44,7 @@ def _graph(base: int = 0, nodes: int = 1, edges: int = 0) -> str:
 
 class VersioningTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.session.add(WorkflowDefinition(code="wf1", name="WF1", is_active=True, user_id=1))

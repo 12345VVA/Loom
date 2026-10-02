@@ -11,18 +11,14 @@ import unittest
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.modules.base.model.auth import User
 from app.modules.media.model.media import MediaAsset
 from app.modules.workflow.model.workflow_artifact import WorkflowArtifact, WorkflowArtifactRead
 from app.modules.workflow.service.artifact_crud_service import WorkflowArtifactService
-from app.modules.workflow.service.artifact_service import (
-    classify_artifacts,
-    is_image_url,
-    persist_workflow_artifacts,
-)
+from app.modules.workflow.service.artifact_service import classify_artifacts, is_image_url, persist_workflow_artifacts
 
 
 class ClassifyArtifactsTest(unittest.TestCase):
@@ -150,9 +146,7 @@ class ClassifyArtifactsTest(unittest.TestCase):
 
 class PersistArtifactsTest(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
 
     def _persist(self, output, engine=None):
@@ -241,9 +235,7 @@ class PersistArtifactsTest(unittest.TestCase):
 
 class ArtifactDeleteOwnershipTest(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         for field in ("cover", "story"):

@@ -3,10 +3,10 @@ import sys
 import unittest
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from helpers import make_test_engine  # noqa: E402
 
 from app.modules.base.model.auth import Department, Role, User, UserRoleLink  # noqa: E402
 from app.modules.notification.model.notification import (  # noqa: E402
@@ -25,11 +25,7 @@ from app.modules.task.tasks.system_tasks import _maybe_send_task_notification, _
 
 class NotificationModuleTests(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(
             self.engine,
             tables=[

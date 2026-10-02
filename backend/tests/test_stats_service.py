@@ -9,19 +9,16 @@ from __future__ import annotations
 import unittest
 from datetime import datetime
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.modules.ai.model.ai import AiModelCallLog
-from app.modules.ai.service.stats_service import (
-    AiModelCallStatsService,
-    invalidate_summary_cache,
-)
+from app.modules.ai.service.stats_service import AiModelCallStatsService, invalidate_summary_cache
 
 
 class StatsAggregationTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         invalidate_summary_cache()

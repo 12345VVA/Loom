@@ -5,9 +5,9 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from helpers import make_test_engine
 from sqlalchemy import inspect
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, select
 
 from app.core import database as db_module
 from app.core.database import _ensure_indexes
@@ -22,7 +22,7 @@ from app.modules.workflow_eval.model.enum import CaseResultStatus, EvalRunStatus
 
 class WorkflowEvalModelsTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
 
     def tearDown(self):

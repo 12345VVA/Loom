@@ -4,10 +4,10 @@ import sys
 import unittest
 from pathlib import Path
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from helpers import make_test_engine  # noqa: E402
 
 from app.modules.dict.init_db import run as init_dict  # noqa: E402
 from app.modules.dict.model.dict import DictInfo, DictType  # noqa: E402
@@ -82,11 +82,7 @@ class InitializationAlignmentTests(unittest.TestCase):
         self.assertEqual(missing_icons, [])
 
     def test_dict_initialization_creates_ordered_status_values(self):
-        engine = create_engine(
-            "sqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
+        engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[DictType.__table__, DictInfo.__table__])
 
         with Session(engine) as session:

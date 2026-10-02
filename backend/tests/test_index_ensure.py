@@ -9,26 +9,18 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from helpers import make_test_engine
 from sqlalchemy import inspect, text
-from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import SQLModel
 
 from app.core import database as db_module
 from app.core.database import INDEX_DEFINITIONS, _ensure_indexes
 
 
-def _make_test_engine():
-    """独立内存 SQLite engine（StaticPool 保证单连接，便于 inspect 一致性）。"""
-    return create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-
-
 class EnsureIndexesTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = _make_test_engine()
+        # 独立内存 SQLite engine（StaticPool 保证单连接，便于 inspect 一致性）
+        self.engine = make_test_engine()
         # 建立全部业务表（含 ai_model_call_log / workflow_execution_log / workflow_instance）
         SQLModel.metadata.create_all(self.engine)
 

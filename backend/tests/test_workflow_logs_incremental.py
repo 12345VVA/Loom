@@ -9,8 +9,8 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.modules.workflow.model.workflow import WorkflowExecutionLog, WorkflowInstance
 
@@ -30,7 +30,7 @@ def _build_logs_query(instance_id: int, since_log_id: int | None, limit: int | N
 
 class LogsIncrementalTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as s:
             s.add(WorkflowInstance(definition_id=1, thread_id="t1", status="success", state_data="{}", user_id=1))

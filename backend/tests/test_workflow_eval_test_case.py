@@ -5,8 +5,8 @@ from __future__ import annotations
 import unittest
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.modules.workflow_eval.model.test_set import WorkflowTestCaseUpdateRequest, WorkflowTestSet
 from app.modules.workflow_eval.service.test_case_service import WorkflowTestCaseService
@@ -14,7 +14,7 @@ from app.modules.workflow_eval.service.test_case_service import WorkflowTestCase
 
 class TestCaseServiceTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as s:
             s.add(WorkflowTestSet(name="ts1", items_count=0))

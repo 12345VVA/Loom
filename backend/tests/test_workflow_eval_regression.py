@@ -5,8 +5,8 @@ from __future__ import annotations
 import unittest
 
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 from app.modules.workflow_eval.model.enum import CaseResultStatus, EvalRunStatus
 from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
@@ -15,7 +15,7 @@ from app.modules.workflow_eval.service.regression import compare_runs
 
 class RegressionTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         # run_a(id=1, ts=1): c1=0.9, c2=0.5, c3=0.8
         # run_b(id=2, ts=1): c1=0.7(退化), c2=0.9(改善), c4=0.6(新增)

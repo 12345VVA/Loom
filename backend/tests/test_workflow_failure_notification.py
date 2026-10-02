@@ -10,8 +10,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel, select
 
 from app.modules.base.model.auth import User
 from app.modules.notification.model.notification import (
@@ -25,19 +25,14 @@ from app.modules.workflow.model.workflow import (
     WorkflowInstance,
     WorkflowInstanceRead,
 )
-from app.modules.workflow.tasks.workflow_tasks import (
-    _mark_instance_failed,
-    _notify_workflow_failure,
-)
+from app.modules.workflow.tasks.workflow_tasks import _mark_instance_failed, _notify_workflow_failure
 
 
 class WorkflowInstanceReadFailedNodeIdTestCase(unittest.TestCase):
     """Task 2：WorkflowInstanceRead DTO 透传 failed_node_id（camelCase: failedNodeId）。"""
 
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(
             self.engine,
             tables=[WorkflowDefinition.__table__, WorkflowInstance.__table__],
@@ -97,9 +92,7 @@ class WorkflowTemplateBootstrapTestCase(unittest.TestCase):
     """Task 5：workflow.failed 模板幂等初始化。"""
 
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine, tables=[NotificationTemplate.__table__])
 
     def tearDown(self):
@@ -145,9 +138,7 @@ class NotifyWorkflowFailureTestCase(unittest.TestCase):
     """Task 6：_notify_workflow_failure 调用 NotificationService 且异常隔离。"""
 
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(
             self.engine,
             tables=[
@@ -264,9 +255,7 @@ class MarkInstanceFailedPayloadTestCase(unittest.TestCase):
     """Task 2：_mark_instance_failed 的 SSE failed payload 携带 node_id。"""
 
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = make_test_engine()
         SQLModel.metadata.create_all(
             self.engine,
             tables=[
