@@ -8,9 +8,7 @@
 
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -53,7 +51,7 @@ class CheckpointerBackendTestCase(unittest.TestCase):
         ckpt_module._checkpointer = None
 
     def tearDown(self):
-        # 关闭可能被创建的 sqlite 连接，避免 Windows 文件句柄泄漏
+        # 关闭可能被创建的连接，避免句柄泄漏
         saver = ckpt_module._checkpointer
         conn = getattr(saver, "conn", None)
         if conn is not None:
@@ -63,17 +61,21 @@ class CheckpointerBackendTestCase(unittest.TestCase):
                 pass
         ckpt_module._checkpointer = self._saved
 
-    def test_sqlite_backend_returns_sqlitesaver(self):
-        from langgraph.checkpoint.sqlite import SqliteSaver
-
-        tmp = Path(tempfile.mkdtemp())
+    def test_postgres_backend_wiring(self):
+        """postgres 后端接线：剥方言后缀建 Connection、PostgresSaver.setup() 幂等建表、单例复用。"""
         with (
-            patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "sqlite"),
-            patch.object(ckpt_module, "get_db_path", return_value=tmp / "app.db"),
+            patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "postgres"),
+            patch("app.core.database.DATABASE_URL", "postgresql+psycopg://loom:secret@db:5432/loom"),
+            patch("psycopg.Connection.connect") as mock_connect,
+            patch("langgraph.checkpoint.postgres.PostgresSaver") as mock_saver_cls,
         ):
             saver = ckpt_module.get_checkpointer()
-            self.assertIsInstance(saver, SqliteSaver)
-            self.assertTrue((tmp / "workflow_checkpoints.db").exists())
+            mock_connect.assert_called_once()
+            conn_str = mock_connect.call_args[0][0]
+            self.assertTrue(conn_str.startswith("postgresql://"))
+            self.assertNotIn("+psycopg", conn_str)
+            mock_saver_cls.assert_called_once_with(mock_connect.return_value)
+            mock_saver_cls.return_value.setup.assert_called_once()
             # 全局单例：第二次返回同一实例
             self.assertIs(ckpt_module.get_checkpointer(), saver)
 
@@ -86,15 +88,17 @@ class CheckpointerBackendTestCase(unittest.TestCase):
         """#10：close_checkpointer 关闭底层连接并重置单例，不抛异常（供 lifespan shutdown 调用）。"""
         from app.modules.workflow.service.checkpointer import close_checkpointer
 
-        tmp = Path(tempfile.mkdtemp())
         with (
-            patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "sqlite"),
-            patch.object(ckpt_module, "get_db_path", return_value=tmp / "app.db"),
+            patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "postgres"),
+            patch("app.core.database.DATABASE_URL", "postgresql+psycopg://loom:secret@db:5432/loom"),
+            patch("psycopg.Connection.connect"),
+            patch("langgraph.checkpoint.postgres.PostgresSaver") as mock_saver_cls,
         ):
             ckpt_module.get_checkpointer()
             self.assertIsNotNone(ckpt_module._checkpointer)
             close_checkpointer()
             self.assertIsNone(ckpt_module._checkpointer)
+            mock_saver_cls.return_value.conn.close.assert_called_once()
 
 
 class StartupCheckCheckpointTestCase(unittest.TestCase):
@@ -116,10 +120,11 @@ class StartupCheckCheckpointTestCase(unittest.TestCase):
             results = validate_startup_settings(settings)
             self.assertTrue(any(r.key == "WORKFLOW_CHECKPOINT_BACKEND" and r.level == "error" for r in results))
 
-    def test_sqlite_not_flagged(self):
+    def test_removed_sqlite_backend_is_error(self):
+        """sqlite 后端已随 SQLite 支持退场移除，配置残留应被启动校验拦截。"""
         with patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "sqlite"):
             results = validate_startup_settings(settings)
-            self.assertFalse(any(r.key == "WORKFLOW_CHECKPOINT_BACKEND" for r in results))
+            self.assertTrue(any(r.key == "WORKFLOW_CHECKPOINT_BACKEND" and r.level == "error" for r in results))
 
 
 # ==========================================

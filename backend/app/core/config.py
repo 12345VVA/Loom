@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str  # 启动时自动从 .env 中读取
 
     # 工作流引擎
-    # checkpoint 默认 sqlite：保证 Celery 多 Worker / 重启后 paused 实例可恢复（memory 仅用于单进程演示）
-    WORKFLOW_CHECKPOINT_BACKEND: str = "sqlite"  # "memory" | "sqlite" | "postgres"
+    # checkpoint 默认 postgres：保证 Celery 多 Worker / 重启后 paused 实例可恢复（memory 仅用于单进程演示）
+    WORKFLOW_CHECKPOINT_BACKEND: str = "postgres"  # "memory" | "postgres"
     WORKFLOW_NODE_TEST_TIMEOUT: int = 180  # 单节点测试超时秒数（LLM 节点常需 60-180 秒）
     WORKFLOW_NODE_TIMEOUT: int = 600  # 正式执行单节点超时秒数（比 30 分钟硬上限短，留足图像节点空间）
     # 节点级自动重试：失败后按指数退避重试，覆盖 LLM / 外部 API 临时故障

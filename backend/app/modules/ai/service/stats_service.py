@@ -24,7 +24,7 @@ def invalidate_summary_cache() -> None:
 
 
 def _normalize_group_key(value: Any) -> str:
-    """归一化分组键为字符串（兼容 SQLite func.date 返回 str、PG 返回 date 对象）。"""
+    """归一化分组键为字符串（PG 的 func.date 返回 date 对象）。"""
     if value is None:
         return "-"
     if hasattr(value, "isoformat"):
@@ -85,7 +85,7 @@ class AiModelCallStatsService:
         }
 
     def _grouped(self, base_filters: list, group_by: str) -> list[dict]:
-        # 选择分组列：func.date 两端通用（SQLite 返回 'YYYY-MM-DD' 字符串，PG 返回 date 对象）
+        # 选择分组列：func.date 在 PG 返回 date 对象，经 _normalize_group_key 归一化为字符串键
         if group_by == "user":
             group_col = AiModelCallLog.user_id
         elif group_by == "profile":

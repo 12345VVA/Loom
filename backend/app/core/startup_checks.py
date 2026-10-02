@@ -38,11 +38,6 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
             StartupCheckResult("error", "ADMIN_CSRF_ORIGIN_CHECK_ENABLED", "生产环境必须开启 CSRF Origin 校验")
         )
 
-    if is_prod and config.DATABASE_URL.startswith("sqlite"):
-        results.append(
-            StartupCheckResult("warning", "DATABASE_URL", "生产环境建议使用 PostgreSQL 或 MySQL，不建议使用 SQLite")
-        )
-
     if is_prod and not config.REDIS_URL:
         results.append(StartupCheckResult("error", "REDIS_URL", "生产环境必须配置 Redis"))
 
@@ -50,10 +45,10 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
         results.append(StartupCheckResult("error", "CELERY_BROKER_URL", "生产环境必须配置 Celery broker"))
 
     # 工作流 checkpoint 后端：未知值任何环境都报错；生产禁用 memory（重启后 paused 实例无法恢复）
-    if config.WORKFLOW_CHECKPOINT_BACKEND not in {"memory", "sqlite", "postgres"}:
+    if config.WORKFLOW_CHECKPOINT_BACKEND not in {"memory", "postgres"}:
         results.append(
             StartupCheckResult(
-                "error", "WORKFLOW_CHECKPOINT_BACKEND", "未知的工作流 checkpoint 后端，可选 memory/sqlite/postgres"
+                "error", "WORKFLOW_CHECKPOINT_BACKEND", "未知的工作流 checkpoint 后端，可选 memory/postgres"
             )
         )
     elif is_prod and config.WORKFLOW_CHECKPOINT_BACKEND == "memory":
