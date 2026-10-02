@@ -1,6 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { createI18n } from 'vue-i18n';
+
+// 组件经 use-asset-url → /@/cool 传递依赖 @cool-vue/crud（UMD 包在 vitest ESM 环境加载崩溃），
+// 与其余单测一致地 stub 框架层（见 tests/unit/media/use-asset-url.test.ts）
+vi.mock('/@/cool', () => ({
+	useCool: () => ({
+		service: {
+			media: {
+				asset: {
+					downloadToken: vi.fn().mockResolvedValue({ token: 'mocked_token', expire: 7200 })
+				}
+			}
+		}
+	})
+}));
+
 import LogDrawer from '/$/workflow/components/log-drawer.vue';
 
 // vue-i18n：messages 留空，$t(key) 回退为 key 本身（zh-cn 原样显示中文 key）
@@ -57,15 +72,17 @@ describe('workflow LogDrawer', () => {
 			]
 		});
 		expect(w.text()).toContain('LLM节点');
-		expect(w.text()).toContain('llm');
+		// 新版 nodeType 渲染中文类型标签（llm → 大模型），不再显示英文原文
+		expect(w.text()).toContain('大模型');
 	});
 
 	it('shows status tag only when status prop is provided', () => {
 		const withStatus = mountDrawer({ visible: true, items: [], status: 'running' });
-		expect(withStatus.text()).toContain('状态：');
+		// 状态胶囊显示中文映射（running → 运行中），旧版"状态："前缀已废弃
+		expect(withStatus.text()).toContain('运行中');
 
 		const noStatus = mountDrawer({ visible: true, items: [] });
-		expect(noStatus.text()).not.toContain('状态：');
+		expect(noStatus.text()).not.toContain('运行中');
 	});
 
 	it('emits expand-all / collapse-all when toolbar buttons clicked', async () => {
@@ -87,9 +104,12 @@ describe('workflow LogDrawer', () => {
 		expect(w.emitted('collapse-all')).toBeTruthy();
 	});
 
-	it('hides toolbar entirely when no status and no items', () => {
+	it('hides toolbar when no status and empty items', () => {
 		const w = mountDrawer({ visible: true, items: [], emptyText: '空' });
-		// 无 status 且 items 为空 → 工具条（展开/折叠按钮）不渲染
-		expect(w.findAll('button').length).toBe(0);
+		expect(w.text()).toContain('空');
+		// 工具栏 v-if="items.length > 0"：空态不渲染（旧断言按 button 计数，
+		// 会误计入 stub 之外残留的按钮，改为按渲染文本判断）
+		expect(w.text()).not.toContain('展开全部');
+		expect(w.text()).not.toContain('全部状态');
 	});
 });
