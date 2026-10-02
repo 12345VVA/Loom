@@ -73,8 +73,12 @@ jobs:
           alembic check
 
       - name: 后端测试
-        # live 测试缺 DEEPSEEK_API_KEY 时 AssertionError 而非跳过，且真实外呼，故排除
+        # live 测试缺 DEEPSEEK_API_KEY 时 AssertionError 而非跳过，且真实外呼，故排除。
+        # TEST_DATABASE_URL：自建引擎类测试全量走 PG service（Step 3 主 job 切 PG），
+        # make_test_engine 每用例 drop+create 保证隔离；TestClient 类走 DATABASE_URL 同库。
         run: python -m pytest --ignore=tests/test_ai_deepseek_live.py
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://loom:loom@localhost:5432/loom_test
 
       - name: Celery 任务注册与调度完整性校验
         run: |
