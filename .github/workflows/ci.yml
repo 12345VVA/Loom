@@ -54,7 +54,11 @@ jobs:
         run: cp .env.example .env
 
       - name: 安装依赖
-        run: pip install -r requirements-dev.txt
+        # -c requirements.lock 把依赖树钉到经全量测试验证的版本组合。
+        # requirements 全为 >= 下限，CI 每次拉最新版曾致两轮 CI 红：
+        # sqlmodel 新版 timezone 强校验（317 failed）、anyio/starlette 漂移
+        # （CapacityLimiter.total，49 failed）。
+        run: pip install -r requirements-dev.txt -c requirements.lock
 
       - name: Ruff 检查
         run: |
