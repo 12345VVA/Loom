@@ -41,8 +41,10 @@ playwright-report/
 .DS_Store
 *.pem
 
-# 数据和日志
+# 数据和日志（data/ 目录 = 运行数据：SQLite 库/上传产物/checkpoint，任何层级均忽略）
 data/
+# 例外：distpicker 省市区数据源（源码依赖，非运行产物）
+!frontend/src/plugins/distpicker/data/
 logs/
 *.db
 *.sqlite
