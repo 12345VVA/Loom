@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
+from sqlalchemy import Index
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -94,6 +95,15 @@ class AiModelProfile(BaseEntity, table=True):
 
 class AiModelCallLog(BaseEntity, table=True):
     __tablename__ = "ai_model_call_log"
+
+    # 统计聚合（按时间范围扫描）与 keyset 分页的复合索引；名称与 database.INDEX_DEFINITIONS 一致，
+    # 声明进模型使 create_all 新库直接携带，alembic autogenerate 可感知（旧库仍由 _ensure_indexes 补齐）
+    __table_args__ = (
+        Index("ix_ai_model_call_log_created_at", "created_at"),
+        Index("ix_ai_model_call_log_status_created_at", "status", "created_at"),
+        Index("ix_ai_model_call_log_user_id_created_at", "user_id", "created_at"),
+        Index("ix_ai_model_call_log_model_id_created_at", "model_id", "created_at"),
+    )
 
     provider_id: int | None = Field(default=None, index=True)
     model_id: int | None = Field(default=None, index=True)

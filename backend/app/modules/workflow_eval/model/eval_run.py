@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Index, UniqueConstraint
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -17,6 +17,9 @@ class WorkflowEvalRun(BaseEntity, table=True):
     """一次批量评估运行：聚合指标 + 图快照（保证回归可比）。"""
 
     __tablename__ = "workflow_eval_run"
+
+    # 回归对比：同测试集按时间排列（名称与 database.INDEX_DEFINITIONS 一致）
+    __table_args__ = (Index("ix_workflow_eval_run_test_set_id_created_at", "test_set_id", "created_at"),)
 
     test_set_id: int = Field(index=True)
     definition_id: int | None = Field(default=None, index=True)
@@ -59,7 +62,12 @@ class WorkflowEvalCaseResult(BaseEntity, table=True):
 
     # (eval_run_id, case_key) 联合唯一：防同一运行出现重复 case_key 覆盖回归对比数据。
     # dev 新库由 create_all 建表时据此生成约束；已有库由 alembic 0006 补约束。
-    __table_args__ = (UniqueConstraint("eval_run_id", "case_key", name="uq_workflow_eval_case_result_run_case_key"),)
+    # 复合索引服务回归对齐（run+case_key）与 P95 排序（run+latency），名称与 INDEX_DEFINITIONS 一致。
+    __table_args__ = (
+        UniqueConstraint("eval_run_id", "case_key", name="uq_workflow_eval_case_result_run_case_key"),
+        Index("ix_workflow_eval_case_result_eval_run_id_case_key", "eval_run_id", "case_key"),
+        Index("ix_workflow_eval_case_result_eval_run_id_latency_ms", "eval_run_id", "latency_ms"),
+    )
 
     eval_run_id: int = Field(index=True)
     test_case_id: int | None = Field(default=None, index=True)

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import Index
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -30,6 +31,9 @@ class WorkflowTestCase(BaseEntity, table=True):
     """测试用例：单条输入 + 期望 + 评估器配置。"""
 
     __tablename__ = "workflow_eval_test_case"
+
+    # 集内按 case_key 对齐回归对比（名称与 database.INDEX_DEFINITIONS 一致）
+    __table_args__ = (Index("ix_workflow_eval_test_case_test_set_id_case_key", "test_set_id", "case_key"),)
 
     test_set_id: int = Field(index=True)
     case_key: str = Field(index=True, max_length=100)  # 集内唯一，回归对比按此对齐

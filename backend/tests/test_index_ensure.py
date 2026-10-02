@@ -9,7 +9,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, create_engine
 
@@ -61,13 +61,23 @@ class EnsureIndexesTestCase(unittest.TestCase):
         self.assertIn("ix_ai_model_call_log_created_at", self._index_names("ai_model_call_log"))
 
     def test_skip_flag_skips_creation(self):
-        """SKIP_INDEX_ENSURE=True 时跳过补建。"""
+        """SKIP_INDEX_ENSURE=True 时跳过补建。
+
+        复合索引已声明进模型（create_all 建表自带），故先 drop 一个再验证：
+        SKIP 开启时 _ensure_indexes 不将其补回。
+        """
+        with self.engine.begin() as conn:
+            conn.execute(text("DROP INDEX ix_ai_model_call_log_created_at"))
         with (
             patch.object(db_module.settings, "SKIP_INDEX_ENSURE", True),
             patch.object(db_module, "engine", self.engine),
         ):
             _ensure_indexes()
         self.assertNotIn("ix_ai_model_call_log_created_at", self._index_names("ai_model_call_log"))
+        # 对照：关闭 SKIP 后被 drop 的索引补回（开关确实控制补建行为）
+        with patch.object(db_module, "engine", self.engine):
+            _ensure_indexes()
+        self.assertIn("ix_ai_model_call_log_created_at", self._index_names("ai_model_call_log"))
 
     def test_definitions_use_if_not_exists_pattern(self):
         """所有索引定义命名规范，列片段非空。"""

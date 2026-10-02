@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 from pydantic import Field as PydanticField
+from sqlalchemy import Index
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -34,6 +35,9 @@ class WorkflowInstance(BaseEntity, table=True):
 
     __tablename__ = "workflow_instance"
 
+    # 实例列表按定义 + 时间查询（名称与 database.INDEX_DEFINITIONS 一致，见 ai_model_call_log 注释）
+    __table_args__ = (Index("ix_workflow_instance_definition_id_created_at", "definition_id", "created_at"),)
+
     definition_id: int = Field(index=True)
     version_id: int | None = Field(default=None, index=True)  # 本次执行所用 definition_version_id（存量 NULL）
     thread_id: str = Field(index=True, max_length=100)  # LangGraph checkpoint 隔离 thread
@@ -53,6 +57,9 @@ class WorkflowExecutionLog(BaseEntity, table=True):
     """工作流节点执行日志"""
 
     __tablename__ = "workflow_execution_log"
+
+    # 节点日志按实例 + 时间排序/分页（名称与 database.INDEX_DEFINITIONS 一致）
+    __table_args__ = (Index("ix_workflow_execution_log_instance_id_created_at", "instance_id", "created_at"),)
 
     instance_id: int = Field(index=True)
     node_id: str = Field(index=True, max_length=100)
