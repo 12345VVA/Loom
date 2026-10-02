@@ -11,22 +11,24 @@ import json
 import unittest
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
-from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
 from app.modules.workflow_eval.model.enum import CaseResultStatus, EvalRunStatus
+from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
 from app.modules.workflow_eval.model.test_set import WorkflowTestCase, WorkflowTestSet
 from app.modules.workflow_eval.service.eval_run_service import WorkflowEvalRunService
 from app.modules.workflow_eval.tasks import eval_tasks
-from fastapi import HTTPException
 
 
 def _make_echo_execute(engine):
     """fake _async_execute：把 initial_vars.q 回写成 workflow_output='echo:{q}'，模拟成功执行。"""
 
-    async def fake(instance_id, definition_id, initial_vars, resume_val=None, *, version_id=None, graph_json_override=None):
+    async def fake(
+        instance_id, definition_id, initial_vars, resume_val=None, *, version_id=None, graph_json_override=None
+    ):
         with Session(engine) as s:
             inst = s.get(WorkflowInstance, instance_id)
             if inst:
@@ -41,30 +43,47 @@ def _make_echo_execute(engine):
 
 class EvalRunTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as s:
             s.add(WorkflowDefinition(code="d1", name="D1", graph_json='{"nodes":[],"edges":[]}', user_id=1))
             s.add(WorkflowTestSet(name="ts1", definition_id=1, user_id=1, items_count=3))
             s.commit()
-            s.add(WorkflowTestCase(test_set_id=1, case_key="c1", input_data='{"q":"hello"}', expected_text="echo:hello", sort_order=0))
-            s.add(WorkflowTestCase(test_set_id=1, case_key="c2", input_data='{"q":"world"}', expected_text="echo:WRONG", sort_order=1))
-            s.add(WorkflowTestCase(test_set_id=1, case_key="c3", input_data='{"q":""}', expected_text="echo:", sort_order=2))
-            s.add(WorkflowEvalRun(
-                test_set_id=1, definition_id=1, status=EvalRunStatus.PENDING,
-                graph_json_snapshot='{"nodes":[],"edges":[]}', user_id=1,
-            ))
+            s.add(
+                WorkflowTestCase(
+                    test_set_id=1, case_key="c1", input_data='{"q":"hello"}', expected_text="echo:hello", sort_order=0
+                )
+            )
+            s.add(
+                WorkflowTestCase(
+                    test_set_id=1, case_key="c2", input_data='{"q":"world"}', expected_text="echo:WRONG", sort_order=1
+                )
+            )
+            s.add(
+                WorkflowTestCase(
+                    test_set_id=1, case_key="c3", input_data='{"q":""}', expected_text="echo:", sort_order=2
+                )
+            )
+            s.add(
+                WorkflowEvalRun(
+                    test_set_id=1,
+                    definition_id=1,
+                    status=EvalRunStatus.PENDING,
+                    graph_json_snapshot='{"nodes":[],"edges":[]}',
+                    user_id=1,
+                )
+            )
             s.commit()
 
     def tearDown(self):
         self.engine.dispose()
 
     def test_run_eval_writes_results_and_finalizes(self):
-        with patch.object(eval_tasks, "_async_execute", _make_echo_execute(self.engine)), \
-                patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1), \
-                patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine):
+        with (
+            patch.object(eval_tasks, "_async_execute", _make_echo_execute(self.engine)),
+            patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1),
+            patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine),
+        ):
             asyncio.run(eval_tasks._async_run_eval(1, "task-id", "rule_match"))
 
         with Session(self.engine) as s:
@@ -78,9 +97,7 @@ class EvalRunTestCase(unittest.TestCase):
             self.assertEqual(run.pass_rate, round(2 / 3, 4))
             self.assertIsNotNone(run.finished_at)
 
-            results = list(s.exec(
-                select(WorkflowEvalCaseResult).where(WorkflowEvalCaseResult.eval_run_id == 1)
-            ).all())
+            results = list(s.exec(select(WorkflowEvalCaseResult).where(WorkflowEvalCaseResult.eval_run_id == 1)).all())
             self.assertEqual(len(results), 3)
             by_key = {r.case_key: r for r in results}
             self.assertEqual(by_key["c1"].status, CaseResultStatus.SUCCESS)
@@ -94,12 +111,16 @@ class EvalRunTestCase(unittest.TestCase):
     def test_case_exception_isolated(self):
         """_async_execute 全部抛异常 → 每 case 写 error，整批不崩；全 error 时 run 为 FAILED（非 PARTIAL）。"""
 
-        async def always_boom(instance_id, definition_id, initial_vars, resume_val=None, *, version_id=None, graph_json_override=None):
+        async def always_boom(
+            instance_id, definition_id, initial_vars, resume_val=None, *, version_id=None, graph_json_override=None
+        ):
             raise RuntimeError("boom")
 
-        with patch.object(eval_tasks, "_async_execute", always_boom), \
-                patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1), \
-                patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine):
+        with (
+            patch.object(eval_tasks, "_async_execute", always_boom),
+            patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1),
+            patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine),
+        ):
             asyncio.run(eval_tasks._async_run_eval(1, "task-id", "rule_match"))
 
         with Session(self.engine) as s:
@@ -108,12 +129,14 @@ class EvalRunTestCase(unittest.TestCase):
             self.assertEqual(run.errored, 3)
             # 全部用例异常（errored == total）→ FAILED，而非 PARTIAL
             self.assertEqual(run.status, EvalRunStatus.FAILED)
-            errors = list(s.exec(
-                select(WorkflowEvalCaseResult).where(
-                    WorkflowEvalCaseResult.eval_run_id == 1,
-                    WorkflowEvalCaseResult.status == CaseResultStatus.ERROR,
-                )
-            ).all())
+            errors = list(
+                s.exec(
+                    select(WorkflowEvalCaseResult).where(
+                        WorkflowEvalCaseResult.eval_run_id == 1,
+                        WorkflowEvalCaseResult.status == CaseResultStatus.ERROR,
+                    )
+                ).all()
+            )
             self.assertEqual(len(errors), 3)
 
     def test_missing_run_returns_early(self):
@@ -129,18 +152,22 @@ class EvalRunTestCase(unittest.TestCase):
             "user_id": 1,
             "cases": [{"case_key": "c1", "input_data": "{}"}],
         }
-        with patch.object(eval_tasks, "load_eval_context", return_value=fake_ctx), \
-                patch.object(eval_tasks, "mark_running", return_value=False), \
-                patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine):
+        with (
+            patch.object(eval_tasks, "load_eval_context", return_value=fake_ctx),
+            patch.object(eval_tasks, "mark_running", return_value=False),
+            patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine),
+        ):
             asyncio.run(eval_tasks._async_run_eval(1, "task-id", "rule_match"))
         with Session(self.engine) as s:
             self.assertEqual(len(list(s.exec(select(WorkflowEvalCaseResult)).all())), 0)
 
     def test_list_cases_returns_camelcase(self):
         """list_cases 出口须为 camelCase（修复详情页字段取不到）。"""
-        with patch.object(eval_tasks, "_async_execute", _make_echo_execute(self.engine)), \
-                patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1), \
-                patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine):
+        with (
+            patch.object(eval_tasks, "_async_execute", _make_echo_execute(self.engine)),
+            patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1),
+            patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine),
+        ):
             asyncio.run(eval_tasks._async_run_eval(1, "task-id", "rule_match"))
         with Session(self.engine) as s:
             res = WorkflowEvalRunService(s).list_cases(1)
@@ -179,10 +206,18 @@ class EvalRunTestCase(unittest.TestCase):
 
         with Session(self.engine) as s:
             run = s.get(WorkflowEvalRun, 1)
-            run.test_set_snapshot = json.dumps([
-                {"id": 99, "case_key": "snap_c", "input_data": '{"q":"snap"}',
-                 "expected_text": "snap_exp", "weight": 1.0, "sort_order": 0}
-            ])
+            run.test_set_snapshot = json.dumps(
+                [
+                    {
+                        "id": 99,
+                        "case_key": "snap_c",
+                        "input_data": '{"q":"snap"}',
+                        "expected_text": "snap_exp",
+                        "weight": 1.0,
+                        "sort_order": 0,
+                    }
+                ]
+            )
             s.add(run)
             s.commit()
         with patch.object(eval_orchestrator, "engine", self.engine):
@@ -222,9 +257,7 @@ class EvalRunTestCase(unittest.TestCase):
                 )
             )
             s.commit()
-            res = WorkflowEvalRunService(s).sample_production(
-                definition_id=1, test_set_id=1, limit=10, days=30
-            )
+            res = WorkflowEvalRunService(s).sample_production(definition_id=1, test_set_id=1, limit=10, days=30)
             self.assertEqual(res["sampled"], 1)
             case = s.exec(
                 select(WorkflowTestCase).where(

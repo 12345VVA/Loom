@@ -22,9 +22,7 @@ from app.modules.workflow_eval.model.enum import CaseResultStatus, EvalRunStatus
 
 class WorkflowEvalModelsTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         SQLModel.metadata.create_all(self.engine)
 
     def tearDown(self):
@@ -55,24 +53,39 @@ class WorkflowEvalModelsTestCase(unittest.TestCase):
     def test_create_run_and_case_results(self):
         with Session(self.engine) as s:
             run = WorkflowEvalRun(
-                test_set_id=1, definition_id=1, status=EvalRunStatus.RUNNING,
-                total=2, passed=1, p95_latency_ms=200, user_id=1,
+                test_set_id=1,
+                definition_id=1,
+                status=EvalRunStatus.RUNNING,
+                total=2,
+                passed=1,
+                p95_latency_ms=200,
+                user_id=1,
             )
             s.add(run)
             s.commit()
             s.refresh(run)
-            s.add(WorkflowEvalCaseResult(
-                eval_run_id=run.id, case_key="c1", score=1.0, passed=True,
-                latency_ms=100, status=CaseResultStatus.SUCCESS,
-            ))
-            s.add(WorkflowEvalCaseResult(
-                eval_run_id=run.id, case_key="c2", score=0.2, passed=False,
-                latency_ms=200, status=CaseResultStatus.FAIL,
-            ))
+            s.add(
+                WorkflowEvalCaseResult(
+                    eval_run_id=run.id,
+                    case_key="c1",
+                    score=1.0,
+                    passed=True,
+                    latency_ms=100,
+                    status=CaseResultStatus.SUCCESS,
+                )
+            )
+            s.add(
+                WorkflowEvalCaseResult(
+                    eval_run_id=run.id,
+                    case_key="c2",
+                    score=0.2,
+                    passed=False,
+                    latency_ms=200,
+                    status=CaseResultStatus.FAIL,
+                )
+            )
             s.commit()
-            results = s.exec(
-                select(WorkflowEvalCaseResult).where(WorkflowEvalCaseResult.eval_run_id == run.id)
-            ).all()
+            results = s.exec(select(WorkflowEvalCaseResult).where(WorkflowEvalCaseResult.eval_run_id == run.id)).all()
             self.assertEqual(len(results), 2)
 
     def test_eval_indexes_created_by_ensure_indexes(self):
@@ -86,9 +99,7 @@ class WorkflowEvalModelsTestCase(unittest.TestCase):
         self.assertIn("ix_workflow_eval_case_result_eval_run_id_latency_ms", case_result_indexes)
         self.assertIn("ix_workflow_eval_case_result_eval_run_id_case_key", case_result_indexes)
 
-        run_indexes = {
-            ix["name"] for ix in inspect(self.engine).get_indexes("workflow_eval_run") if ix.get("name")
-        }
+        run_indexes = {ix["name"] for ix in inspect(self.engine).get_indexes("workflow_eval_run") if ix.get("name")}
         self.assertIn("ix_workflow_eval_run_test_set_id_created_at", run_indexes)
 
 

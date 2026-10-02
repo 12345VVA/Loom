@@ -79,18 +79,21 @@ class VerifyDownloadTokenNoDbTests(unittest.TestCase):
 
     def test_valid_token_passes_without_db(self):
         """合法下载令牌（type=download + token_version 匹配）应直接通过，无需 DB。"""
-        with mock.patch(
-            "app.modules.base.service.authority_service.decode_token",
-            return_value={
-                "sub": "1",
-                "type": TOKEN_TYPE_DOWNLOAD,
-                "token_version": 5,
-                "jti": "abc",
-            },
-        ), mock.patch(
-            "app.modules.base.service.authority_service.get_user_token_version",
-            return_value=5,
-        ) as tv_mock:
+        with (
+            mock.patch(
+                "app.modules.base.service.authority_service.decode_token",
+                return_value={
+                    "sub": "1",
+                    "type": TOKEN_TYPE_DOWNLOAD,
+                    "token_version": 5,
+                    "jti": "abc",
+                },
+            ),
+            mock.patch(
+                "app.modules.base.service.authority_service.get_user_token_version",
+                return_value=5,
+            ) as tv_mock,
+        ):
             payload = verify_download_token("fake.jwt.token")
 
         self.assertEqual(payload["sub"], "1")
@@ -132,17 +135,20 @@ class VerifyDownloadTokenNoDbTests(unittest.TestCase):
         """令牌 token_version 低于当前 Redis 中的版本应抛 401（强制踢出/改密码生效）。"""
         from fastapi import HTTPException
 
-        with mock.patch(
-            "app.modules.base.service.authority_service.decode_token",
-            return_value={
-                "sub": "1",
-                "type": TOKEN_TYPE_DOWNLOAD,
-                "token_version": 3,
-                "jti": "abc",
-            },
-        ), mock.patch(
-            "app.modules.base.service.authority_service.get_user_token_version",
-            return_value=4,
+        with (
+            mock.patch(
+                "app.modules.base.service.authority_service.decode_token",
+                return_value={
+                    "sub": "1",
+                    "type": TOKEN_TYPE_DOWNLOAD,
+                    "token_version": 3,
+                    "jti": "abc",
+                },
+            ),
+            mock.patch(
+                "app.modules.base.service.authority_service.get_user_token_version",
+                return_value=4,
+            ),
         ):
             with self.assertRaises(HTTPException) as ctx:
                 verify_download_token("fake.jwt.token")
@@ -154,17 +160,21 @@ class VerifyDownloadTokenNoDbTests(unittest.TestCase):
 
         通过 mock sqlmodel.Session 确保未被实例化或调用。
         """
-        with mock.patch(
-            "app.modules.base.service.authority_service.decode_token",
-            return_value={
-                "sub": "42",
-                "type": TOKEN_TYPE_DOWNLOAD,
-                "token_version": 0,
-            },
-        ), mock.patch(
-            "app.modules.base.service.authority_service.get_user_token_version",
-            return_value=0,
-        ), mock.patch("app.modules.base.service.authority_service.Session") as session_cls:
+        with (
+            mock.patch(
+                "app.modules.base.service.authority_service.decode_token",
+                return_value={
+                    "sub": "42",
+                    "type": TOKEN_TYPE_DOWNLOAD,
+                    "token_version": 0,
+                },
+            ),
+            mock.patch(
+                "app.modules.base.service.authority_service.get_user_token_version",
+                return_value=0,
+            ),
+            mock.patch("app.modules.base.service.authority_service.Session") as session_cls,
+        ):
             verify_download_token("fake.jwt.token")
         session_cls.assert_not_called()
 
@@ -184,12 +194,15 @@ class DownloadTokenPayloadSlimTests(unittest.TestCase):
             return "fake.token"
 
         user = mock.Mock(id=7, username="u")
-        with mock.patch(
-            "app.modules.base.service.security_service.get_user_token_version",
-            return_value=1,
-        ), mock.patch(
-            "app.modules.base.service.security_service.create_token",
-            side_effect=fake_create_token,
+        with (
+            mock.patch(
+                "app.modules.base.service.security_service.get_user_token_version",
+                return_value=1,
+            ),
+            mock.patch(
+                "app.modules.base.service.security_service.create_token",
+                side_effect=fake_create_token,
+            ),
         ):
             token = create_download_token(user)
 

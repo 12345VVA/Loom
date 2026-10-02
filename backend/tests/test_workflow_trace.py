@@ -49,9 +49,7 @@ class TraceTestCase(unittest.TestCase):
         self.assertEqual(io["llm1"]["node_type"], "llm")
 
     def test_evaluate_node_rule_match_pass(self):
-        node_evaluators = {
-            "llm1": {"type": "rule_match", "config": {"mode": "contains"}, "expected_text": "hello"}
-        }
+        node_evaluators = {"llm1": {"type": "rule_match", "config": {"mode": "contains"}, "expected_text": "hello"}}
         with patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine):
             results = evaluate_node_evaluators(1, node_evaluators, {})
         self.assertEqual(len(results), 1)
@@ -68,9 +66,7 @@ class TraceTestCase(unittest.TestCase):
         self.assertFalse(results[0]["passed"])
 
     def test_evaluate_node_not_found(self):
-        node_evaluators = {
-            "missing": {"type": "rule_match", "config": {"mode": "contains"}, "expected_text": "x"}
-        }
+        node_evaluators = {"missing": {"type": "rule_match", "config": {"mode": "contains"}, "expected_text": "x"}}
         with patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine):
             results = evaluate_node_evaluators(1, node_evaluators, {})
         self.assertFalse(results[0]["passed"])

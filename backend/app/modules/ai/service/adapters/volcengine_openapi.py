@@ -14,7 +14,7 @@ import hashlib
 import hmac
 import json
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -41,7 +41,7 @@ def sign_volcengine_v4(
     now: datetime | None = None,
 ) -> dict[str, str]:
     """生成火山 V4 签名请求头（Content-Type/Host/X-Content-Sha256/X-Date/Authorization）。"""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     x_date = now.strftime("%Y%m%dT%H%M%SZ")
     date_scope = now.strftime("%Y%m%d")
     body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
@@ -50,15 +50,14 @@ def sign_volcengine_v4(
         # RFC3986：unreserved 字符（-_.~ 字母数字）不编码
         return urllib.parse.quote(value, safe="-_.~")
 
-    canonical_query = "&".join(
-        f"{_uri_encode(k)}={_uri_encode(v)}" for k, v in sorted(query.items())
-    )
+    canonical_query = "&".join(f"{_uri_encode(k)}={_uri_encode(v)}" for k, v in sorted(query.items()))
     signed_header_names = "content-type;host;x-content-sha256;x-date"
     canonical_headers = (
-        f"content-type:application/json\nhost:{host.lower()}\n"
-        f"x-content-sha256:{body_hash}\nx-date:{x_date}\n"
+        f"content-type:application/json\nhost:{host.lower()}\nx-content-sha256:{body_hash}\nx-date:{x_date}\n"
     )
-    canonical_request = "\n".join([method.upper(), path or "/", canonical_query, canonical_headers, signed_header_names, body_hash])
+    canonical_request = "\n".join(
+        [method.upper(), path or "/", canonical_query, canonical_headers, signed_header_names, body_hash]
+    )
 
     credential_scope = f"{date_scope}/{region}/{service}/request"
     string_to_sign = "\n".join(
@@ -125,9 +124,7 @@ def list_model_activations(
     # 火山 OpenAPI 业务错误同样是 HTTP 200 + ResponseMetaData.Error
     error = ((data.get("ResponseMetaData") or {}).get("Error")) if isinstance(data, dict) else None
     if error:
-        raise RuntimeError(
-            f"火山方舟 ListModelActivations 失败: {error.get('Code')} {error.get('Message')}"
-        )
+        raise RuntimeError(f"火山方舟 ListModelActivations 失败: {error.get('Code')} {error.get('Message')}")
     return data
 
 

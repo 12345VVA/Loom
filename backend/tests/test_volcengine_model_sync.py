@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
@@ -84,7 +84,9 @@ class VolcengineSignatureTest(unittest.TestCase):
             side_effect=responses,
         ):
             models = iter_ark_available_models(access_key="ak", secret_key="sk")
-        self.assertEqual([m["code"] for m in models], ["doubao-seed-1-6", "doubao-embedding", "doubao-seedream-4-5-251128"])
+        self.assertEqual(
+            [m["code"] for m in models], ["doubao-seed-1-6", "doubao-embedding", "doubao-seedream-4-5-251128"]
+        )
         self.assertEqual(models[0]["state"], "Available")
         self.assertEqual(models[0]["pricing"]["ChargeItems"][0]["Price"], 0.0032)
         self.assertFalse(models[0]["deprecated"])

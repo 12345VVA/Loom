@@ -238,7 +238,10 @@ class MediaSecurityTestCase(unittest.TestCase):
     def test_non_super_admin_cannot_delete_others_media(self):
         """非超管用户删除他人媒体时返回 403，资产不被删除"""
         asset = MediaAsset(
-            asset_type="image", source_type="upload", storage_url="/uploads/a.png", status="success",
+            asset_type="image",
+            source_type="upload",
+            storage_url="/uploads/a.png",
+            status="success",
             created_by=2,
         )
         self.session.add(asset)
@@ -249,9 +252,7 @@ class MediaSecurityTestCase(unittest.TestCase):
         storage.delete.return_value = True
         user = _make_user(1)
 
-        with patch(
-            "app.modules.media.service.media_service.StorageService.get_instance", return_value=storage
-        ):
+        with patch("app.modules.media.service.media_service.StorageService.get_instance", return_value=storage):
             with self.assertRaises(HTTPException) as ctx:
                 MediaAssetService(self.session).delete([asset.id], current_user=user)
 
@@ -263,7 +264,10 @@ class MediaSecurityTestCase(unittest.TestCase):
     def test_super_admin_can_delete_others_media(self):
         """超管用户可以删除任意用户的媒体"""
         asset = MediaAsset(
-            asset_type="image", source_type="upload", storage_url="/uploads/a.png", status="success",
+            asset_type="image",
+            source_type="upload",
+            storage_url="/uploads/a.png",
+            status="success",
             created_by=2,
         )
         self.session.add(asset)
@@ -274,9 +278,7 @@ class MediaSecurityTestCase(unittest.TestCase):
         storage.delete.return_value = True
         admin = _make_user(1, is_super_admin=True)
 
-        with patch(
-            "app.modules.media.service.media_service.StorageService.get_instance", return_value=storage
-        ):
+        with patch("app.modules.media.service.media_service.StorageService.get_instance", return_value=storage):
             result = MediaAssetService(self.session).delete([asset.id], current_user=admin)
 
         self.assertTrue(result["success"])
@@ -287,15 +289,9 @@ class MediaSecurityTestCase(unittest.TestCase):
     # ------------------------------------------------------------------
     def test_list_filters_to_own_media_for_non_super_admin(self):
         """非超管用户 list 仅返回自己创建的媒体"""
-        self.session.add(
-            MediaAsset(asset_type="image", source_type="upload", status="success", created_by=1)
-        )
-        self.session.add(
-            MediaAsset(asset_type="video", source_type="upload", status="success", created_by=2)
-        )
-        self.session.add(
-            MediaAsset(asset_type="audio", source_type="upload", status="success", created_by=1)
-        )
+        self.session.add(MediaAsset(asset_type="image", source_type="upload", status="success", created_by=1))
+        self.session.add(MediaAsset(asset_type="video", source_type="upload", status="success", created_by=2))
+        self.session.add(MediaAsset(asset_type="audio", source_type="upload", status="success", created_by=1))
         self.session.commit()
 
         user = _make_user(1)
@@ -309,12 +305,8 @@ class MediaSecurityTestCase(unittest.TestCase):
 
     def test_list_allows_super_admin_to_see_all(self):
         """超管用户 list 返回所有媒体"""
-        self.session.add(
-            MediaAsset(asset_type="image", source_type="upload", status="success", created_by=1)
-        )
-        self.session.add(
-            MediaAsset(asset_type="video", source_type="upload", status="success", created_by=2)
-        )
+        self.session.add(MediaAsset(asset_type="image", source_type="upload", status="success", created_by=1))
+        self.session.add(MediaAsset(asset_type="video", source_type="upload", status="success", created_by=2))
         self.session.commit()
 
         admin = _make_user(1, is_super_admin=True)

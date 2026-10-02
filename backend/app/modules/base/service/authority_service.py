@@ -526,7 +526,7 @@ def _extract_device_id(request: Request | None) -> str | None:
         ua = request.headers.get("user-agent", "") or ""
         ip = _request_ip(request) or ""
         lang = request.headers.get("accept-language", "") or ""
-        return hashlib.sha256(f"{ua}|{ip}|{lang}".encode("utf-8")).hexdigest()[:32]
+        return hashlib.sha256(f"{ua}|{ip}|{lang}".encode()).hexdigest()[:32]
     except Exception:
         return None
 

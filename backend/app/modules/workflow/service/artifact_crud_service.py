@@ -23,6 +23,7 @@ class WorkflowArtifactService(BaseAdminCrudService):
 
     def _backfill_storage_urls(self, items: list[dict]) -> None:
         import re
+
         from app.modules.media.model.media import MediaAsset
 
         url_pattern = re.compile(r'https?://[^\s"\'<>\\]+')

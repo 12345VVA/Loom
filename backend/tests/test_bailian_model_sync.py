@@ -75,12 +75,14 @@ class BailianListModelsTest(unittest.TestCase):
     def test_merges_pages_and_maps_fields(self):
         """分页循环拉全，model→code、name→name"""
         responses = [
-            _page_response([_permission("qwen-plus", "通义千问-Plus"), _permission("qwen-turbo", "通义千问-Turbo")], total=3, page_no=1),
+            _page_response(
+                [_permission("qwen-plus", "通义千问-Plus"), _permission("qwen-turbo", "通义千问-Turbo")],
+                total=3,
+                page_no=1,
+            ),
             _page_response([_permission("qwen3-max", "通义千问3-Max")], total=3, page_no=2),
         ]
-        with patch(
-            "app.modules.ai.service.adapters.bailian_openapi.httpx.get", side_effect=responses
-        ) as mock_get:
+        with patch("app.modules.ai.service.adapters.bailian_openapi.httpx.get", side_effect=responses) as mock_get:
             models = list_workspace_authorized_models(api_key="sk-test", workspace_id="ws-1")
         self.assertEqual([m["code"] for m in models], ["qwen-plus", "qwen-turbo", "qwen3-max"])
         self.assertEqual(models[0]["name"], "通义千问-Plus")

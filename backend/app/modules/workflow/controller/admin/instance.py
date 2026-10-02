@@ -61,7 +61,9 @@ def _replace_transferred_urls(logs: list[WorkflowExecutionLog], instance_id: int
     使前端日志抽屉与画廊优先展示并下载本地图片链接。
     """
     import re
+
     from sqlmodel import or_
+
     from app.modules.media.model.media import MediaAsset
     from app.modules.workflow.model.workflow_artifact import WorkflowArtifact
 
@@ -85,11 +87,7 @@ def _replace_transferred_urls(logs: list[WorkflowExecutionLog], instance_id: int
             MediaAsset.delete_time == None,  # noqa: E711
         )
     ).all()
-    url_map: dict[str, str] = {
-        a.original_url: a.storage_url
-        for a in assets
-        if a.original_url and a.storage_url
-    }
+    url_map: dict[str, str] = {a.original_url: a.storage_url for a in assets if a.original_url and a.storage_url}
 
     art_conditions = [WorkflowArtifact.instance_id == instance_id]
     if found_urls:

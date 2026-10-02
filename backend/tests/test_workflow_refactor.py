@@ -96,7 +96,7 @@ class ParseLlmOutputTestCase(unittest.TestCase):
         self.assertEqual(_parse_llm_output('{"a": 1}', "json", "out"), {"out": {"a": 1}})
 
     def test_json_mode_strips_markdown_fence(self):
-        content = "```json\n{\"a\": 2}\n```"
+        content = '```json\n{"a": 2}\n```'
         self.assertEqual(_parse_llm_output(content, "json", "out"), {"out": {"a": 2}})
 
     def test_json_mode_invalid_keeps_raw(self):

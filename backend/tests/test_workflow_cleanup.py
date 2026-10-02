@@ -12,14 +12,14 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
-from app.framework.storage import LocalStorageProvider, StorageService, offload_payload, resolve_payload
+from app.framework.storage import LocalStorageProvider, StorageService, offload_payload
 from app.modules.base.model.auth import User
 from app.modules.media.model.media import MediaAsset
 from app.modules.media.service.media_service import MediaAssetService
@@ -67,11 +67,18 @@ class SweepExecutionLogsTest(unittest.TestCase):
         self.session.close()
 
     def _log(self, *, age_days: float, input_ref: str | None = None, output_ref: str | None = None):
-        created = datetime.now(timezone.utc) - timedelta(days=age_days)
+        created = datetime.now(UTC) - timedelta(days=age_days)
         log = WorkflowExecutionLog(
-            instance_id=self.instance.id, node_id="n1", node_name="N", node_type="llm",
-            input_data="{}", output_data="{}", input_storage_ref=input_ref, output_storage_ref=output_ref,
-            created_at=created, updated_at=created,
+            instance_id=self.instance.id,
+            node_id="n1",
+            node_name="N",
+            node_type="llm",
+            input_data="{}",
+            output_data="{}",
+            input_storage_ref=input_ref,
+            output_storage_ref=output_ref,
+            created_at=created,
+            updated_at=created,
         )
         self.session.add(log)
         self.session.commit()
@@ -138,9 +145,14 @@ class SweepOrphanPayloadsTest(unittest.TestCase):
         # 软删 artifact 的 ref（应被回收）
         self.session.add(
             WorkflowArtifact(
-                instance_id=self.instance.id, definition_id=self.definition.id, user_id=1,
-                field_key="old", asset_type="text", content="x", content_ref="/uploads/wf_payload_softdel.json",
-                delete_time=datetime.now(timezone.utc),
+                instance_id=self.instance.id,
+                definition_id=self.definition.id,
+                user_id=1,
+                field_key="old",
+                asset_type="text",
+                content="x",
+                content_ref="/uploads/wf_payload_softdel.json",
+                delete_time=datetime.now(UTC),
             )
         )
         self.session.commit()
@@ -182,19 +194,33 @@ class CascadeDeleteTest(unittest.TestCase):
         self.session.commit()
         self.session.refresh(self.definition)
         self.instance = WorkflowInstance(
-            definition_id=self.definition.id, thread_id="th-1", status="success",
-            state_data='{"a": 1}', state_data_ref="/uploads/wf_payload_state.json", user_id=1,
+            definition_id=self.definition.id,
+            thread_id="th-1",
+            status="success",
+            state_data='{"a": 1}',
+            state_data_ref="/uploads/wf_payload_state.json",
+            user_id=1,
         )
         self.session.add(self.instance)
         self.session.commit()
         self.session.refresh(self.instance)
         self.log = WorkflowExecutionLog(
-            instance_id=self.instance.id, node_id="n1", node_name="N", node_type="llm",
-            input_data="REF_PREV", output_data="{}", output_storage_ref="/uploads/wf_payload_log.json",
+            instance_id=self.instance.id,
+            node_id="n1",
+            node_name="N",
+            node_type="llm",
+            input_data="REF_PREV",
+            output_data="{}",
+            output_storage_ref="/uploads/wf_payload_log.json",
         )
         self.artifact = WorkflowArtifact(
-            instance_id=self.instance.id, definition_id=self.definition.id, user_id=1,
-            field_key="story", asset_type="text", content="x", content_ref="/uploads/wf_payload_art.json",
+            instance_id=self.instance.id,
+            definition_id=self.definition.id,
+            user_id=1,
+            field_key="story",
+            asset_type="text",
+            content="x",
+            content_ref="/uploads/wf_payload_art.json",
         )
         self.session.add_all([self.log, self.artifact])
         self.session.commit()
@@ -204,9 +230,12 @@ class CascadeDeleteTest(unittest.TestCase):
 
     def test_delete_cascades_and_clears_state(self):
         service = WorkflowInstanceService(self.session)
-        with _patch_storage(self.storage), patch(
-            "app.modules.workflow.service.checkpointer.delete_thread_best_effort", return_value=True
-        ) as mock_del_thread:
+        with (
+            _patch_storage(self.storage),
+            patch(
+                "app.modules.workflow.service.checkpointer.delete_thread_best_effort", return_value=True
+            ) as mock_del_thread,
+        ):
             service.delete([self.instance.id], current_user=_super(), soft_delete=True)
 
         # bulk update 会驱逐 session 内对象，断言前重新取
@@ -238,8 +267,9 @@ class CascadeDeleteTest(unittest.TestCase):
     def test_storage_failure_still_deletes(self):
         self.storage.delete.side_effect = RuntimeError("io error")
         service = WorkflowInstanceService(self.session)
-        with _patch_storage(self.storage), patch(
-            "app.modules.workflow.service.checkpointer.delete_thread_best_effort", return_value=False
+        with (
+            _patch_storage(self.storage),
+            patch("app.modules.workflow.service.checkpointer.delete_thread_best_effort", return_value=False),
         ):
             service.delete([self.instance.id], current_user=_super(), soft_delete=True)
         instance = self.session.get(WorkflowInstance, self.instance.id)
@@ -259,11 +289,22 @@ class RetryFailedTest(unittest.TestCase):
     def tearDown(self):
         self.session.close()
 
-    def _asset(self, *, age_hours: float, status: str = "failed", url: str = "https://v.example.com/tmp.png", soft: bool = False):
-        now = datetime.now(timezone.utc)
+    def _asset(
+        self,
+        *,
+        age_hours: float,
+        status: str = "failed",
+        url: str = "https://v.example.com/tmp.png",
+        soft: bool = False,
+    ):
+        now = datetime.now(UTC)
         asset = MediaAsset(
-            asset_type="image", source_type="workflow", status=status, original_url=url,
-            created_by=1, updated_at=now - timedelta(hours=age_hours),
+            asset_type="image",
+            source_type="workflow",
+            status=status,
+            original_url=url,
+            created_by=1,
+            updated_at=now - timedelta(hours=age_hours),
             delete_time=now if soft else None,
         )
         self.session.add(asset)
@@ -287,7 +328,7 @@ class RetryFailedTest(unittest.TestCase):
     def test_window_selection_and_outcomes(self):
         in_window = self._asset(age_hours=2)
         out_window = self._asset(age_hours=30)
-        soft = self._asset(age_hours=2, soft=True)
+        _soft = self._asset(age_hours=2, soft=True)
         no_url = MediaAsset(asset_type="image", source_type="workflow", status="failed", created_by=1)
         self.session.add(no_url)
         self.session.commit()
@@ -346,7 +387,7 @@ class EvalOffloadResolveTest(unittest.TestCase):
         self.session.commit()
         self.session.refresh(instance)
 
-        big_output = {"workflow_output": {"story": "长" * 40000}}
+        _big_output = {"workflow_output": {"story": "长" * 40000}}
         with _patch_storage(self.storage):
             _, ref = offload_payload('{"workflow_output": {"story": "' + "长" * 40000 + '"}}')
         instance.state_data = ""

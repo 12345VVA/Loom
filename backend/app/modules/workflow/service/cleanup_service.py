@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlmodel import Session, select
 
@@ -36,7 +36,7 @@ class WorkflowCleanupService:
         """分批硬删过期执行日志，返回删除行数；删行后 best-effort 删除其载荷文件。"""
         from app.framework.storage import StorageService as _Storage
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, int(keep_days)))
+        cutoff = datetime.now(UTC) - timedelta(days=max(1, int(keep_days)))
         storage = _Storage.get_instance()
         removed = 0
         while True:
@@ -69,9 +69,10 @@ class WorkflowCleanupService:
             logger.info("执行日志清理完成 keep_days=%s removed=%d", keep_days, removed)
         return removed
 
-    def sweep_orphan_payloads(self, grace_hours: int = _ORPHAN_GRACE_HOURS, max_delete: int = _ORPHAN_MAX_DELETE) -> int:
+    def sweep_orphan_payloads(
+        self, grace_hours: int = _ORPHAN_GRACE_HOURS, max_delete: int = _ORPHAN_MAX_DELETE
+    ) -> int:
         """回收无任何 DB 登记的 offload 载荷文件（仅本地存储后端），返回删除文件数。"""
-        from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult
 
         provider = StorageService.get_instance().provider
         from app.framework.storage import LocalStorageProvider

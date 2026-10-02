@@ -59,9 +59,7 @@ class WorkflowEvalCaseResult(BaseEntity, table=True):
 
     # (eval_run_id, case_key) 联合唯一：防同一运行出现重复 case_key 覆盖回归对比数据。
     # dev 新库由 create_all 建表时据此生成约束；已有库由 alembic 0006 补约束。
-    __table_args__ = (
-        UniqueConstraint("eval_run_id", "case_key", name="uq_workflow_eval_case_result_run_case_key"),
-    )
+    __table_args__ = (UniqueConstraint("eval_run_id", "case_key", name="uq_workflow_eval_case_result_run_case_key"),)
 
     eval_run_id: int = Field(index=True)
     test_case_id: int | None = Field(default=None, index=True)

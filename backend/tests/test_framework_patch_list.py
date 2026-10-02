@@ -20,7 +20,6 @@ from app.modules.base.service.authority_service import (  # noqa: E402
     list_user_sessions,
     register_session,
 )
-from app.modules.base.service.cache_service import cache_delete  # noqa: E402
 from app.modules.loader import _handle_module_error  # noqa: E402
 from app.modules.task.service.task_invoker import _run_coroutine_sync  # noqa: E402
 

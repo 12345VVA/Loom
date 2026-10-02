@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
 from app.modules.workflow_eval.model.enum import EvalRunStatus
+from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
 
 # 单 case score 变化超过此阈值视为退化/改善（可由 settings.WORKFLOW_EVAL_REGRESSION_THRESHOLD 覆盖）
 REGRESSION_SCORE_THRESHOLD = 0.1
@@ -30,7 +30,14 @@ def _bootstrap_score_delta(scores_a: list[float], scores_b: list[float], n_boot:
         return {"delta": 0.0, "ciLow": None, "ciHigh": None, "significant": False, "n": n, "sufficient": False}
     delta = (sum(scores_b) - sum(scores_a)) / n
     if n < 5:
-        return {"delta": round(delta, 4), "ciLow": None, "ciHigh": None, "significant": False, "n": n, "sufficient": False}
+        return {
+            "delta": round(delta, 4),
+            "ciLow": None,
+            "ciHigh": None,
+            "significant": False,
+            "n": n,
+            "sufficient": False,
+        }
     deltas: list[float] = []
     for _ in range(n_boot):
         idx = [random.randrange(n) for _ in range(n)]
@@ -41,7 +48,14 @@ def _bootstrap_score_delta(scores_a: list[float], scores_b: list[float], n_boot:
     lo = deltas[int(0.025 * n_boot)]
     hi = deltas[int(0.975 * n_boot)]
     significant = not (lo <= 0 <= hi)
-    return {"delta": round(delta, 4), "ciLow": round(lo, 4), "ciHigh": round(hi, 4), "significant": significant, "n": n, "sufficient": True}
+    return {
+        "delta": round(delta, 4),
+        "ciLow": round(lo, 4),
+        "ciHigh": round(hi, 4),
+        "significant": significant,
+        "n": n,
+        "sufficient": True,
+    }
 
 
 def _verdict(score_diff: dict, threshold: float) -> str:
@@ -66,9 +80,7 @@ def _run_metrics(run: WorkflowEvalRun) -> dict:
     }
 
 
-def compare_runs(
-    session: Session, run_a_id: int, run_b_id: int, current_user=None
-) -> dict:
+def compare_runs(session: Session, run_a_id: int, run_b_id: int, current_user=None) -> dict:
     """对比两次评估运行（必须同测试集且均已完成）。run_b 相对 run_a 的变化。"""
     from app.modules.workflow_eval.service.eval_run_service import _assert_run_owned
 
@@ -125,8 +137,18 @@ def compare_runs(
     }
 
     return {
-        "runA": {"id": run_a.id, "versionId": run_a.definition_version_id, "versionLabel": run_a.version_label, "metrics": ma},
-        "runB": {"id": run_b.id, "versionId": run_b.definition_version_id, "versionLabel": run_b.version_label, "metrics": mb},
+        "runA": {
+            "id": run_a.id,
+            "versionId": run_a.definition_version_id,
+            "versionLabel": run_a.version_label,
+            "metrics": ma,
+        },
+        "runB": {
+            "id": run_b.id,
+            "versionId": run_b.definition_version_id,
+            "versionLabel": run_b.version_label,
+            "metrics": mb,
+        },
         "metricsDiff": metrics_diff,
         "scoreDiff": score_diff,
         "verdict": verdict,

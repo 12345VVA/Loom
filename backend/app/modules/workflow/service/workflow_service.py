@@ -8,7 +8,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -571,9 +571,7 @@ async def execute_intent_classifier_node(variables: dict[str, Any], config: dict
     else:
         matched_label = _normalize_intent_label(matched_intent_name)
         norm_hits = [
-            i
-            for i in intents
-            if matched_label and _normalize_intent_label(str(i.get("name") or "")) == matched_label
+            i for i in intents if matched_label and _normalize_intent_label(str(i.get("name") or "")) == matched_label
         ]
         if len(norm_hits) > 1:
             logger.warning(
@@ -1155,13 +1153,13 @@ class WorkflowService(BaseAdminCrudService):
 
         取当天同前缀已有编码的最大数字序列 +1；DB code 字段 unique 约束兜底并发冲突。
         """
-        prefix = "WF" + datetime.now(timezone.utc).strftime("%Y%m%d")
+        prefix = "WF" + datetime.now(UTC).strftime("%Y%m%d")
         rows = self.session.exec(
             select(WorkflowDefinition.code).where(WorkflowDefinition.code.like(f"{prefix}%"))
         ).all()
         max_seq = 0
         for c in rows:
-            suffix = c[len(prefix):]
+            suffix = c[len(prefix) :]
             if suffix.isdigit():
                 max_seq = max(max_seq, int(suffix))
         return f"{prefix}{max_seq + 1:03d}"
@@ -1323,7 +1321,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         返回 (storage_refs, thread_ids)，供 super().delete() commit 后做文件/checkpoint 清理。
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from sqlalchemy import update as sa_update
 
@@ -1331,7 +1329,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         if not ids:
             return [], []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         storage_refs: list[str] = []
         thread_ids: list[str] = []
 
@@ -1351,9 +1349,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
             if log.output_storage_ref:
                 storage_refs.append(log.output_storage_ref)
 
-        artifacts = list(
-            self.session.exec(select(WorkflowArtifact).where(WorkflowArtifact.instance_id.in_(ids))).all()
-        )
+        artifacts = list(self.session.exec(select(WorkflowArtifact).where(WorkflowArtifact.instance_id.in_(ids))).all())
         for artifact in artifacts:
             if artifact.content_ref:
                 storage_refs.append(artifact.content_ref)
@@ -1369,9 +1365,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
             .values(delete_time=now)
         )
         self.session.execute(
-            sa_update(WorkflowInstance)
-            .where(WorkflowInstance.id.in_(ids))
-            .values(state_data="", state_data_ref=None)
+            sa_update(WorkflowInstance).where(WorkflowInstance.id.in_(ids)).values(state_data="", state_data_ref=None)
         )
         self.session.commit()
         return storage_refs, thread_ids
@@ -1510,9 +1504,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
         draft_vid = definition.draft_version_id or definition.current_version_id
         if draft_vid is None:
             raise HTTPException(status_code=400, detail="该工作流尚无任何版本（草稿/发布），无法试运行")
-        return self._create_and_dispatch_instance(
-            definition, draft_vid, inputs, current_user, dedup=False
-        )
+        return self._create_and_dispatch_instance(definition, draft_vid, inputs, current_user, dedup=False)
 
     def _create_and_dispatch_instance(
         self,
@@ -1549,7 +1541,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
             except Exception:
                 # Redis 不可用：降级为 DB 2 秒窗口查询兜底，保持与原行为一致，不阻断正常启动
                 logger.warning("工作流启动去重锁 Redis 不可用，降级为 DB 查询兜底", exc_info=True)
-                two_seconds_ago = datetime.now(timezone.utc) - timedelta(seconds=2)
+                two_seconds_ago = datetime.now(UTC) - timedelta(seconds=2)
                 stmt = select(WorkflowInstance).where(
                     WorkflowInstance.definition_id == definition_id,
                     WorkflowInstance.status == "running",
@@ -1584,9 +1576,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         return instance
 
-    def resume_instance(
-        self, instance_id: int, user_input: Any, current_user: User | None = None
-    ) -> WorkflowInstance:
+    def resume_instance(self, instance_id: int, user_input: Any, current_user: User | None = None) -> WorkflowInstance:
         """
         恢复暂停中的工作流实例并传入人类交互值
         """
@@ -1621,8 +1611,8 @@ class WorkflowInstanceService(BaseAdminCrudService):
         self.session.refresh(instance)
 
         # 通过 Celery 异步任务恢复执行，Command(resume=user_input) 继续
-        from app.modules.workflow.tasks.workflow_tasks import execute_workflow
         from app.framework.storage import resolve_payload
+        from app.modules.workflow.tasks.workflow_tasks import execute_workflow
 
         # T8：state_data 可能已超阈值落对象存储（state_data_ref 非空），须还原全量快照再作为初始变量续跑
         initial_state = resolve_payload(instance.state_data, instance.state_data_ref)
@@ -1782,7 +1772,7 @@ def recover_orphaned_instances(session: Session):
     启动时将长时间卡在 running/pending 状态的实例标记为 failed。
     30 分钟宽限期避免误杀刚启动的正常实例。paused 状态不处理。
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+    cutoff = datetime.now(UTC) - timedelta(minutes=30)
     stmt = select(WorkflowInstance).where(
         WorkflowInstance.status.in_(["running", "pending"]),
         WorkflowInstance.updated_at < cutoff,

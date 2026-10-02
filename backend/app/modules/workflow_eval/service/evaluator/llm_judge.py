@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.modules.workflow_eval.service.evaluator.base import (
     BaseEvaluator,
@@ -132,7 +133,9 @@ def build_default_judge_fn(
 
         if n == 1:
             content = run_ai_chat(
-                profile_code, user_prompt, system_prompt=system_prompt,
+                profile_code,
+                user_prompt,
+                system_prompt=system_prompt,
                 response_format={"type": "json_object"},
             )
             return _parse_judge_result(content, dims)
@@ -141,7 +144,9 @@ def build_default_judge_fn(
         results: list[dict] = []
         for _ in range(n):
             content = run_ai_chat(
-                profile_code, user_prompt, system_prompt=system_prompt,
+                profile_code,
+                user_prompt,
+                system_prompt=system_prompt,
                 response_format={"type": "json_object"},
             )
             results.append(_parse_judge_result(content, dims))

@@ -5,9 +5,7 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import HTTPException
 
-from app.core.config import settings
 from app.framework.url_security import safe_stream, validate_remote_url
 from app.modules.ai.service.adapters.base import (
     BaseHttpAdapter,

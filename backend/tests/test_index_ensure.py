@@ -62,8 +62,10 @@ class EnsureIndexesTestCase(unittest.TestCase):
 
     def test_skip_flag_skips_creation(self):
         """SKIP_INDEX_ENSURE=True 时跳过补建。"""
-        with patch.object(db_module.settings, "SKIP_INDEX_ENSURE", True), \
-                patch.object(db_module, "engine", self.engine):
+        with (
+            patch.object(db_module.settings, "SKIP_INDEX_ENSURE", True),
+            patch.object(db_module, "engine", self.engine),
+        ):
             _ensure_indexes()
         self.assertNotIn("ix_ai_model_call_log_created_at", self._index_names("ai_model_call_log"))
 

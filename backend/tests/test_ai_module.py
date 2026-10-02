@@ -1675,9 +1675,7 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(_adapt_deepseek_options({"temperature": 0.5}), {"temperature": 0.5})
         # 显式设置 thinking 时尊重调用方选择
         self.assertEqual(
-            _adapt_deepseek_options(
-                {"response_format": {"type": "json_object"}, "thinking": {"type": "enabled"}}
-            ),
+            _adapt_deepseek_options({"response_format": {"type": "json_object"}, "thinking": {"type": "enabled"}}),
             {"response_format": {"type": "json_object"}, "thinking": {"type": "enabled"}},
         )
         adapted = _adapt_deepseek_options({"response_format": {"type": "json_schema", "json_schema": {}}})
@@ -2705,11 +2703,12 @@ class AiModuleTestCase(unittest.TestCase):
         class DummyAdapter:
             def __init__(self, provider):
                 pass
+
             def chat(self, *, model, messages, options):
                 return {"content": "ok", "usage": {"totalTokens": 10}, "requestId": "req-1"}
 
         with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda p: DummyAdapter(p)):
-            res = AiModelRuntimeService(self.session).chat(
+            AiModelRuntimeService(self.session).chat(
                 AiChatRequest(
                     profile_code=profile.code,
                     messages=[{"role": "user", "content": "hello"}],
@@ -2717,12 +2716,11 @@ class AiModuleTestCase(unittest.TestCase):
                 )
             )
 
-        log = self.session.exec(
-            select(AiModelCallLog).where(AiModelCallLog.profile_id == profile.id)
-        ).first()
+        log = self.session.exec(select(AiModelCallLog).where(AiModelCallLog.profile_id == profile.id)).first()
         self.assertIsNotNone(log)
         self.assertIsNotNone(log.request_options)
         import json
+
         saved_options = json.loads(log.request_options)
         self.assertEqual(saved_options["temperature"], 0.8)
         self.assertEqual(saved_options["api_key"], "***")
@@ -2755,20 +2753,21 @@ class AiModuleTestCase(unittest.TestCase):
         class FailThenSuccessAdapter:
             def __init__(self, provider):
                 self.provider = provider
+
             def chat(self, *, model, messages, options):
                 if self.provider.code == "fb-p1":
                     raise RuntimeError("primary failed")
                 return {"content": "fallback success", "usage": {}, "requestId": "r2"}
 
-        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda p: FailThenSuccessAdapter(p)):
-            res = AiModelRuntimeService(self.session).chat(
+        with patch(
+            "app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda p: FailThenSuccessAdapter(p)
+        ):
+            AiModelRuntimeService(self.session).chat(
                 AiChatRequest(profile_code=prof1.code, messages=[{"role": "user", "content": "hi"}]),
                 task_id=9999,
             )
 
-        invocations = self.session.exec(
-            select(AiRuntimeInvocation).where(AiRuntimeInvocation.task_id == 9999)
-        ).all()
+        invocations = self.session.exec(select(AiRuntimeInvocation).where(AiRuntimeInvocation.task_id == 9999)).all()
         self.assertEqual(len(invocations), 2)
         self.assertEqual(invocations[0].profile_id, prof1.id)
         self.assertEqual(invocations[1].profile_id, prof2.id)
@@ -2803,6 +2802,7 @@ class AiModuleTestCase(unittest.TestCase):
         self.session.commit()
 
         from app.modules.ai.model.ai import AiModelProfileUpdateRequest
+
         service = AiModelProfileService(self.session)
         service.update(AiModelProfileUpdateRequest(id=prof2.id, is_default=True))
 
@@ -2826,6 +2826,7 @@ class AiModuleTestCase(unittest.TestCase):
 
         service = AiModelService(self.session)
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException) as ctx:
             service.update(AiModelUpdateRequest(id=m2.id, code="code-1"))
         self.assertEqual(ctx.exception.status_code, 409)

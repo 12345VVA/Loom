@@ -71,11 +71,7 @@ def _check_magic_bytes(file_content: bytes, ext: str) -> bool:
     if entry is None:
         # 特殊校验：webp / mp4
         if ext == ".webp":
-            return (
-                len(file_content) >= 12
-                and file_content[:4] == b"RIFF"
-                and file_content[8:12] == b"WEBP"
-            )
+            return len(file_content) >= 12 and file_content[:4] == b"RIFF" and file_content[8:12] == b"WEBP"
         if ext == ".mp4":
             return len(file_content) >= 8 and file_content[4:8] == b"ftyp"
         if ext == ".mp3":
@@ -83,11 +79,7 @@ def _check_magic_bytes(file_content: bytes, ext: str) -> bool:
             # 覆盖 0xFFFA/0xFFF2/0xFFE3 等所有合法 Layer III 帧头，避免合法 MP3 被误拒
             if file_content.startswith(b"ID3"):
                 return True
-            return (
-                len(file_content) >= 2
-                and file_content[0] == 0xFF
-                and (file_content[1] & 0xE0) == 0xE0
-            )
+            return len(file_content) >= 2 and file_content[0] == 0xFF and (file_content[1] & 0xE0) == 0xE0
         return True
 
     return any(file_content.startswith(prefix) for prefix in entry)
@@ -284,9 +276,7 @@ def offload_payload(content: str) -> tuple[str, str | None]:
     """
     if len(content.encode("utf-8")) <= settings.PAYLOAD_STORAGE_THRESHOLD:
         return content, None
-    ref = StorageService.get_instance().save(
-        content.encode("utf-8"), f"wf_payload_{uuid.uuid4().hex}.json"
-    )
+    ref = StorageService.get_instance().save(content.encode("utf-8"), f"wf_payload_{uuid.uuid4().hex}.json")
     return "", ref
 
 

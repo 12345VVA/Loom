@@ -40,9 +40,13 @@ class JudgeEvaluateTestCase(unittest.TestCase):
 
     def test_evaluate_dict_result_with_reason_dims(self):
         ev = LLMJudgeEvaluator()
-        r = ev.evaluate(self._ctx({
-            "judge_fn": lambda i, a, e: {"score": 0.9, "dimensions": {"correctness": 1.0}, "reason": "好"},
-        }))
+        r = ev.evaluate(
+            self._ctx(
+                {
+                    "judge_fn": lambda i, a, e: {"score": 0.9, "dimensions": {"correctness": 1.0}, "reason": "好"},
+                }
+            )
+        )
         self.assertEqual(r.score, 0.9)
         self.assertTrue(r.passed)  # 0.9 >= 0.6
         self.assertEqual(r.detail["dimensions"]["correctness"], 1.0)
@@ -76,11 +80,13 @@ class SelfConsistencyTestCase(unittest.TestCase):
 
         from app.modules.workflow_eval.service.evaluator.llm_judge import build_default_judge_fn
 
-        replies = iter([
-            '{"score": 0.6, "dimensions": {"correctness": 0.6}, "reason": "r1"}',
-            '{"score": 0.8, "dimensions": {"correctness": 0.8}, "reason": "r2"}',
-            '{"score": 0.7, "dimensions": {"correctness": 0.7}, "reason": "r3"}',
-        ])
+        replies = iter(
+            [
+                '{"score": 0.6, "dimensions": {"correctness": 0.6}, "reason": "r1"}',
+                '{"score": 0.8, "dimensions": {"correctness": 0.8}, "reason": "r2"}',
+                '{"score": 0.7, "dimensions": {"correctness": 0.7}, "reason": "r3"}',
+            ]
+        )
         with patch(
             "app.modules.workflow.service.workflow_service.run_ai_chat",
             side_effect=lambda *a, **k: next(replies),

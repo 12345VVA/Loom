@@ -23,7 +23,7 @@ from app.core.config import settings  # noqa: E402
 from app.core.security import create_token, decode_token  # noqa: E402
 from app.framework.storage import UploadRejectedError, validate_upload  # noqa: E402
 from app.modules.base.service.authority_service import get_user_from_download_token  # noqa: E402
-from app.modules.base.service.security_service import create_access_token, create_download_token  # noqa: E402
+from app.modules.base.service.security_service import create_download_token  # noqa: E402
 from main import app  # noqa: E402
 
 
@@ -35,10 +35,7 @@ class SvgUploadRejectedTests(unittest.TestCase):
         self.assertNotIn(".svg", allowed)
 
     def test_svg_rejected_by_validate_upload(self):
-        svg_content = (
-            b'<svg xmlns="http://www.w3.org/2000/svg">'
-            b"<script>alert(document.cookie)</script></svg>"
-        )
+        svg_content = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(document.cookie)</script></svg>'
         with self.assertRaises(UploadRejectedError) as ctx:
             validate_upload(svg_content, "evil.svg")
         self.assertIn("不支持的文件类型", str(ctx.exception))

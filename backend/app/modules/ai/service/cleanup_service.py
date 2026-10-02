@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete
 from sqlmodel import Session, select
@@ -17,7 +17,7 @@ class AiGovernanceCleanupService:
     def clean(
         self, task_payload_keep_days: int = 90, call_log_keep_days: int = 180, event_keep_days: int = 180
     ) -> dict:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         task_cutoff = now - timedelta(days=task_payload_keep_days)
         log_cutoff = now - timedelta(days=call_log_keep_days)
         event_cutoff = now - timedelta(days=event_keep_days)

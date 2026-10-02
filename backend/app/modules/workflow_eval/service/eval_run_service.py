@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -15,13 +15,13 @@ from app.framework.storage import resolve_payload
 from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
+from app.modules.workflow_eval.model.enum import EvalRunStatus
 from app.modules.workflow_eval.model.eval_run import (
     WorkflowEvalCaseResult,
     WorkflowEvalCaseResultRead,
     WorkflowEvalRun,
     WorkflowEvalRunRead,
 )
-from app.modules.workflow_eval.model.enum import EvalRunStatus
 from app.modules.workflow_eval.model.test_set import WorkflowTestCase, WorkflowTestSet
 from app.modules.workflow_eval.service.evaluator import EvaluatorRegistry
 
@@ -133,17 +133,13 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         self.session.commit()
         return WorkflowEvalRunRead.model_validate(run).model_dump(by_alias=True)
 
-    def list_cases(
-        self, eval_run_id: int, current_user: User | None = None, page: int = 1, size: int = 20
-    ) -> dict:
+    def list_cases(self, eval_run_id: int, current_user: User | None = None, page: int = 1, size: int = 20) -> dict:
         """分页查询某次运行的用例结果（camelCase 出口，大输出按 storage_ref 还原）。"""
         _assert_run_owned(self.session, eval_run_id, current_user)
 
         total = self.session.exec(
             select(func.count()).select_from(
-                select(WorkflowEvalCaseResult)
-                .where(WorkflowEvalCaseResult.eval_run_id == eval_run_id)
-                .subquery()
+                select(WorkflowEvalCaseResult).where(WorkflowEvalCaseResult.eval_run_id == eval_run_id).subquery()
             )
         ).one()
         offset = (page - 1) * size
@@ -179,7 +175,7 @@ class WorkflowEvalRunService(BaseAdminCrudService):
                 WorkflowEvalRun.id == eval_run_id,
                 WorkflowEvalRun.status.in_([EvalRunStatus.PENDING, EvalRunStatus.RUNNING]),
             )
-            .values(status=EvalRunStatus.CANCELLED, finished_at=datetime.now(timezone.utc))
+            .values(status=EvalRunStatus.CANCELLED, finished_at=datetime.now(UTC))
         )
         cancelled = result.rowcount > 0
         if cancelled:
@@ -211,28 +207,26 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         sync sleep 在 FastAPI threadpool 跑（不阻塞事件循环）；CI 脚本编排：start → poll → 判 pass_rate。
         """
         import time as _time
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        deadline = datetime.now(timezone.utc) + timedelta(seconds=max(1, timeout))
+        deadline = datetime.now(UTC) + timedelta(seconds=max(1, timeout))
         while True:
             run = self.session.get(WorkflowEvalRun, eval_run_id)
             if not run:
                 raise HTTPException(status_code=404, detail="评估运行不存在")
             if run.status in EvalRunStatus.TERMINAL:
                 return WorkflowEvalRunRead.model_validate(run).model_dump(by_alias=True)
-            if datetime.now(timezone.utc) >= deadline:
+            if datetime.now(UTC) >= deadline:
                 return {"id": run.id, "status": run.status, "timeout": True}
             _time.sleep(min(max(1, interval), 30))
 
-    def sample_production(
-        self, definition_id: int, test_set_id: int, limit: int = 50, days: int = 7
-    ) -> dict:
+    def sample_production(self, definition_id: int, test_set_id: int, limit: int = 50, days: int = 7) -> dict:
         """采样生产 success 实例的 input/output 入黄金集（expected=output，脱敏）。
 
         在线评测：定期把生产流量转为黄金测试集，回放监控质量漂移。
         生产 input 可能含 PII，用 AiSecurityService.mask_sensitive_dict 脱敏。
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from sqlalchemy import update as sa_update
 
@@ -241,7 +235,7 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         test_set = self.session.get(WorkflowTestSet, test_set_id)
         if not test_set:
             raise HTTPException(status_code=404, detail="测试集不存在")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+        cutoff = datetime.now(UTC) - timedelta(days=max(1, days))
         instances = list(
             self.session.exec(
                 select(WorkflowInstance)

@@ -35,9 +35,7 @@ class WorkflowDefinitionVersion(BaseEntity, table=True):
     # (definition_id, version_no) 联合唯一：防并发分配重复版本号。
     # draft 唯一性（每 definition 至多一条 draft）由 service 层事务保证，不加 status 唯一约束
     # （published/archived 会有多条）。
-    __table_args__ = (
-        UniqueConstraint("definition_id", "version_no", name="uq_workflow_def_version_def_no"),
-    )
+    __table_args__ = (UniqueConstraint("definition_id", "version_no", name="uq_workflow_def_version_def_no"),)
 
     definition_id: int = Field(index=True)
     version_no: int = Field(default=1)  # 定义内递增，存量迁移从 1 起

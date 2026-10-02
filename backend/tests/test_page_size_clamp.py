@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.framework.controller_meta import _build_crud_query, QueryConfig  # noqa: E402
+from app.framework.controller_meta import QueryConfig, _build_crud_query  # noqa: E402
 
 
 def _build_page_query(body: dict) -> "object":

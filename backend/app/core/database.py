@@ -4,7 +4,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import event, inspect, text
@@ -29,7 +29,7 @@ from app.modules.workflow_eval.model import test_set as _workflow_eval_test_set_
 @event.listens_for(BaseEntity, "before_update", propagate=True)
 def timestamp_before_update(mapper, connection, target):
     """在更新前自动刷新 updated_at 字段"""
-    target.updated_at = datetime.now(timezone.utc)
+    target.updated_at = datetime.now(UTC)
 
 
 BASE_DIR = Path(__file__).resolve().parents[3]
@@ -114,17 +114,11 @@ def transaction(session: Session) -> Iterator[Session]:
     transaction_state = session.get_transaction()
 
     # 显式 BEGIN：复用外层事务，交给外层提交/回滚
-    if (
-        transaction_state is not None
-        and transaction_state.origin is SessionTransactionOrigin.BEGIN
-    ):
+    if transaction_state is not None and transaction_state.origin is SessionTransactionOrigin.BEGIN:
         yield session
         return
 
-    is_savepoint = (
-        transaction_state is not None
-        and transaction_state.origin is SessionTransactionOrigin.BEGIN_NESTED
-    )
+    is_savepoint = transaction_state is not None and transaction_state.origin is SessionTransactionOrigin.BEGIN_NESTED
 
     try:
         yield session
@@ -148,12 +142,16 @@ def _ensure_sqlite_compatible_schema() -> None:
     # standard_columns 含 sqlite 专属语法（PRIMARY KEY AUTOINCREMENT），仅 sqlite 后端补齐；
     # PG 等后端的 id/created_at 等标准字段由 create_all 建表时确定，不在此补。
     # specific_columns（下方）为 ADD COLUMN 通用语法，sqlite / pg 均补，保证旧库新增字段自动迁移。
-    standard_columns = {
-        "id": "ALTER TABLE {table} ADD COLUMN id INTEGER PRIMARY KEY AUTOINCREMENT",
-        "created_at": "ALTER TABLE {table} ADD COLUMN created_at DATETIME",
-        "updated_at": "ALTER TABLE {table} ADD COLUMN updated_at DATETIME",
-        "delete_time": "ALTER TABLE {table} ADD COLUMN delete_time DATETIME",
-    } if is_sqlite else {}
+    standard_columns = (
+        {
+            "id": "ALTER TABLE {table} ADD COLUMN id INTEGER PRIMARY KEY AUTOINCREMENT",
+            "created_at": "ALTER TABLE {table} ADD COLUMN created_at DATETIME",
+            "updated_at": "ALTER TABLE {table} ADD COLUMN updated_at DATETIME",
+            "delete_time": "ALTER TABLE {table} ADD COLUMN delete_time DATETIME",
+        }
+        if is_sqlite
+        else {}
+    )
 
     # 各个表特有的缺失字段逻辑
     specific_columns = {
@@ -412,12 +410,27 @@ INDEX_DEFINITIONS: list[tuple[str, str, str, str | None]] = [
     ("ix_workflow_instance_definition_id_created_at", "workflow_instance", "definition_id, created_at", None),
     # workflow_eval：回归对比（同测试集按时间）与 P95 排序（同 run 按 latency）的复合索引（T9）
     ("ix_workflow_eval_run_test_set_id_created_at", "workflow_eval_run", "test_set_id, created_at", None),
-    ("ix_workflow_eval_case_result_eval_run_id_latency_ms", "workflow_eval_case_result", "eval_run_id, latency_ms", None),
+    (
+        "ix_workflow_eval_case_result_eval_run_id_latency_ms",
+        "workflow_eval_case_result",
+        "eval_run_id, latency_ms",
+        None,
+    ),
     ("ix_workflow_eval_case_result_eval_run_id_case_key", "workflow_eval_case_result", "eval_run_id, case_key", None),
     ("ix_workflow_eval_test_case_test_set_id_case_key", "workflow_eval_test_case", "test_set_id, case_key", None),
     # workflow_definition_version：版本历史（按定义+时间）与状态过滤（查 draft/发布版）
-    ("ix_workflow_definition_version_definition_id_created_at", "workflow_definition_version", "definition_id, created_at", None),
-    ("ix_workflow_definition_version_definition_id_status", "workflow_definition_version", "definition_id, status", None),
+    (
+        "ix_workflow_definition_version_definition_id_created_at",
+        "workflow_definition_version",
+        "definition_id, created_at",
+        None,
+    ),
+    (
+        "ix_workflow_definition_version_definition_id_status",
+        "workflow_definition_version",
+        "definition_id, status",
+        None,
+    ),
     # ai_runtime_invocation：cancel 按 task 定位 running invocation（Field(index=True) 的旧库补齐）
     ("ix_ai_runtime_invocation_task_id", "ai_runtime_invocation", "task_id", None),
 ]

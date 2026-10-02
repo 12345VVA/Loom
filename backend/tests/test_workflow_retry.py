@@ -38,6 +38,7 @@ class NodeRunnerRetryTestCase(unittest.TestCase):
 
     def test_no_retry_by_default_first_failure_raises(self):
         """全局默认 max_attempts=1：首次失败即抛 NodeExecutionError，携带 node_id。"""
+
         async def failer(inputs, config):
             raise RuntimeError("boom")
 

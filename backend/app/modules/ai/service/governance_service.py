@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -25,9 +25,9 @@ from app.modules.ai.model.ai import (
     AiRuntimeInvocation,
 )
 from app.modules.ai.service.utils import _window_bounds
-from app.modules.base.service.cache_service import cache_decr, cache_incr
 from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
+from app.modules.base.service.cache_service import cache_decr, cache_incr
 from app.modules.notification.model.notification import AudienceRule
 from app.modules.notification.service.notification_service import NotificationService
 
@@ -141,7 +141,7 @@ class AiGovernanceEventService(BaseAdminCrudService):
         return self._batch_decorate([super().info(id, current_user, relations)])[0]
 
     def stats(self, days: int = 14) -> dict:
-        since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
+        since = datetime.now(UTC) - timedelta(days=max(1, min(days, 365)))
         base_filter = AiGovernanceEvent.created_at >= since
         total = int(self.session.exec(select(func.count()).where(base_filter)).one() or 0)
         type_rows = self.session.exec(
@@ -164,7 +164,9 @@ class AiGovernanceEventService(BaseAdminCrudService):
     def _batch_decorate(self, items: list[dict]) -> list[dict]:
         rule_map = _bulk_attr_map(self.session, AiGovernanceRule, _collect_ids(items, "ruleId", "rule_id"), "name")
         user_map = _bulk_attr_map(self.session, User, _collect_ids(items, "userId", "user_id"), "username")
-        provider_map = _bulk_attr_map(self.session, AiProvider, _collect_ids(items, "providerId", "provider_id"), "name")
+        provider_map = _bulk_attr_map(
+            self.session, AiProvider, _collect_ids(items, "providerId", "provider_id"), "name"
+        )
         model_map = _bulk_attr_map(self.session, AiModel, _collect_ids(items, "modelId", "model_id"), "name")
         profile_map = _bulk_attr_map(
             self.session, AiModelProfile, _collect_ids(items, "profileId", "profile_id"), "name"
@@ -273,7 +275,7 @@ class AiGovernanceService:
             profile_id=profile.id,
             task_id=task_id,
             status="running",
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
         )
         invocation._cc_keys = concurrent_keys
         # 持久化 cc_keys：worker 被 terminate 后内存属性丢失，cancel 仍可从 DB 字段恢复并精确 decr
@@ -301,7 +303,7 @@ class AiGovernanceService:
         self._release_concurrent(invocation)
         if invocation:
             invocation.status = "success" if status_value == "success" else "error"
-            invocation.finished_at = datetime.now(timezone.utc)
+            invocation.finished_at = datetime.now(UTC)
             self.session.add(invocation)
         if status_value == "success":
             self._record_post_events(
@@ -314,7 +316,7 @@ class AiGovernanceService:
         if not invocation:
             return
         invocation.status = "blocked"
-        invocation.finished_at = datetime.now(timezone.utc)
+        invocation.finished_at = datetime.now(UTC)
         self.session.add(invocation)
         self.session.commit()
 
@@ -336,7 +338,7 @@ class AiGovernanceService:
         for inv in running:
             self._release_concurrent(inv)
             inv.status = "error"
-            inv.finished_at = datetime.now(timezone.utc)
+            inv.finished_at = datetime.now(UTC)
             self.session.add(inv)
             released += 1
         if released:
@@ -369,10 +371,7 @@ class AiGovernanceService:
                 # Redis 计数不可靠
                 if rule.mode == "enforce":
                     # cost 类规则 fail-closed：拒绝请求，避免不可靠计数下放行导致超额消耗
-                    message = (
-                        f"AI 治理规则 {rule.name} 并发计数不可用（Redis 故障），"
-                        f"为防止超额消耗已拒绝请求"
-                    )
+                    message = f"AI 治理规则 {rule.name} 并发计数不可用（Redis 故障），为防止超额消耗已拒绝请求"
                     logger.error(message)
                     # 回滚已预占的计数
                     for prev_key in acquired:

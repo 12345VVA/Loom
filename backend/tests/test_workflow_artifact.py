@@ -71,10 +71,7 @@ class ClassifyArtifactsTest(unittest.TestCase):
     def test_loop_inner_images_dict_list_extracted_as_images(self):
         output = {
             "cover_image": "/uploads/cover.jpeg",
-            "inner_images": [
-                {"image_url": "https://example.com/p1.png"},
-                {"image_url": "https://example.com/p2.png"}
-            ]
+            "inner_images": [{"image_url": "https://example.com/p1.png"}, {"image_url": "https://example.com/p2.png"}],
         }
         drafts = classify_artifacts(output)
         paths = [d.field_path for d in drafts if d.asset_type == "image"]
@@ -91,9 +88,7 @@ class ClassifyArtifactsTest(unittest.TestCase):
             "cover_image_url": "/uploads/cover.jpeg",
             "cover_image_url__src": "https://ark-content-generation.tos-cn-beijing.volces.com/tmp/u",
             "row": {"image": "/uploads/a.png", "image__src": "https://tos-x.volces.com/tmp/v"},
-            "inner_images": [
-                {"image_url": "/uploads/b.png", "image_url__src": "https://tos-x.volces.com/tmp/w"}
-            ],
+            "inner_images": [{"image_url": "/uploads/b.png", "image_url__src": "https://tos-x.volces.com/tmp/w"}],
         }
         drafts = classify_artifacts(output)
         image_paths = [d.field_path for d in drafts if d.asset_type == "image"]
@@ -193,8 +188,11 @@ class PersistArtifactsTest(unittest.TestCase):
     def test_image_resolves_media_asset_by_storage_then_original(self):
         with Session(self.engine) as s:
             by_storage = MediaAsset(
-                asset_type="image", source_type="workflow", status="success",
-                storage_url="/uploads/x.jpeg", original_url="https://v.example.com/tmp/1.png",
+                asset_type="image",
+                source_type="workflow",
+                status="success",
+                storage_url="/uploads/x.jpeg",
+                original_url="https://v.example.com/tmp/1.png",
                 created_by=7,
             )
             s.add(by_storage)
@@ -228,8 +226,13 @@ class PersistArtifactsTest(unittest.TestCase):
 
     def test_read_dto_uses_camel_alias(self):
         payload = WorkflowArtifactRead(
-            id=1, instance_id=31, definition_id=8, field_key="cover", asset_type="image",
-            created_at="2026-09-20T00:00:00Z", updated_at="2026-09-20T00:00:00Z",
+            id=1,
+            instance_id=31,
+            definition_id=8,
+            field_key="cover",
+            asset_type="image",
+            created_at="2026-09-20T00:00:00Z",
+            updated_at="2026-09-20T00:00:00Z",
         ).model_dump(by_alias=True)
         self.assertIn("instanceId", payload)
         self.assertIn("fieldKey", payload)
@@ -246,8 +249,12 @@ class ArtifactDeleteOwnershipTest(unittest.TestCase):
         for field in ("cover", "story"):
             self.session.add(
                 WorkflowArtifact(
-                    instance_id=31, definition_id=8, user_id=7, field_key=field,
-                    asset_type="text", content="x",
+                    instance_id=31,
+                    definition_id=8,
+                    user_id=7,
+                    field_key=field,
+                    asset_type="text",
+                    content="x",
                 )
             )
         self.session.commit()
@@ -257,14 +264,16 @@ class ArtifactDeleteOwnershipTest(unittest.TestCase):
 
     def _user(self, user_id: int, super_admin: bool = False) -> User:
         return User(
-            id=user_id, username=f"u{user_id}", full_name=f"u{user_id}",
-            password_hash="x", is_active=True, is_super_admin=super_admin,
+            id=user_id,
+            username=f"u{user_id}",
+            full_name=f"u{user_id}",
+            password_hash="x",
+            is_active=True,
+            is_super_admin=super_admin,
         )
 
     def _row(self, field_key: str) -> WorkflowArtifact:
-        return self.session.exec(
-            select(WorkflowArtifact).where(WorkflowArtifact.field_key == field_key)
-        ).one()
+        return self.session.exec(select(WorkflowArtifact).where(WorkflowArtifact.field_key == field_key)).one()
 
     def test_delete_other_users_artifact_forbidden(self):
         svc = WorkflowArtifactService(self.session)

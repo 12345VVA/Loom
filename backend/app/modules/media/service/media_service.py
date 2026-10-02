@@ -13,6 +13,7 @@ import mimetypes
 import re
 import struct
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -22,7 +23,8 @@ from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.framework.storage import StorageService, UploadRejectedError
-from app.framework.url_security import safe_stream, validate_remote_url as _validate_remote_url
+from app.framework.url_security import safe_stream
+from app.framework.url_security import validate_remote_url as _validate_remote_url
 from app.modules.ai.model.ai import AiGenerationTask
 from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
@@ -186,9 +188,9 @@ class MediaAssetService(BaseAdminCrudService):
         从而移出窗口——每资产至多 1~2 次尝试（厂商签名 URL 默认 24h 过期，过期后
         重试无意义）。并发双跑幂等无害（md5 去重兜底），不做 CAS 认领。
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours)))
+        cutoff = datetime.now(UTC) - timedelta(hours=max(1, int(window_hours)))
         stmt = (
             select(MediaAsset)
             .where(
@@ -284,9 +286,7 @@ class MediaAssetService(BaseAdminCrudService):
         if current_user and not is_super_admin(self.session, current_user):
             foreign = [asset for asset in assets if asset.created_by != current_user.id]
             if foreign:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="无权删除其他用户的媒体资源"
-                )
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权删除其他用户的媒体资源")
         delete_results: dict[int, bool] = {}
         failed_ids: list[int] = []
         deletable_ids: list[int] = []
@@ -743,11 +743,11 @@ def _probe_jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
         if marker == 0x01 or 0xD0 <= marker <= 0xD9:  # 无负载标记
             index += 2
             continue
-        segment_length = int.from_bytes(data[index + 2:index + 4], "big")
+        segment_length = int.from_bytes(data[index + 2 : index + 4], "big")
         # SOF0~SOF15 中只有 C4(DHT)/C8(JPG)/CC(DAC) 不是帧头
         if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
-            height = int.from_bytes(data[index + 5:index + 7], "big")
-            width = int.from_bytes(data[index + 7:index + 9], "big")
+            height = int.from_bytes(data[index + 5 : index + 7], "big")
+            width = int.from_bytes(data[index + 7 : index + 9], "big")
             return (width, height) if width and height else None
         if segment_length < 2:
             return None
@@ -802,8 +802,8 @@ def _log_size_mismatch(asset: MediaAsset, actual: tuple[int, int] | None) -> Non
         actual[1],
         extra={
             "asset_id": asset.id,
-            "requested_size": "%dx%d" % requested,
-            "actual_size": "%dx%d" % actual,
+            "requested_size": f"{requested[0]}x{requested[1]}",
+            "actual_size": f"{actual[0]}x{actual[1]}",
             "provider": asset.provider_code,
             "model": asset.model_code,
             "workflow_node_id": asset.workflow_node_id,

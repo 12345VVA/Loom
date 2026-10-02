@@ -60,9 +60,7 @@ class WorkflowVersionController(BaseController):
         session: Session = Depends(get_session),
     ) -> dict:
         """草稿→发布（一步上线）。正在运行的实例按其 version_id 继续跑旧版，不受影响。"""
-        version = WorkflowVersionService(session).publish(
-            payload.definition_id, payload.change_note, current_user
-        )
+        version = WorkflowVersionService(session).publish(payload.definition_id, payload.change_note, current_user)
         return WorkflowDefinitionVersionRead.model_validate(version).model_dump(by_alias=True)
 
     @Post("/rollback", summary="回滚到历史版本", permission="workflow:version:rollback")

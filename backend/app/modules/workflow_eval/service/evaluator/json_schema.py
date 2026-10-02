@@ -30,8 +30,7 @@ class JsonSchemaEvaluator(BaseEvaluator):
         cfg = ctx.case_config or {}
         mode = cfg.get("mode", "keys")
         expected_keys = set(
-            cfg.get("expected_keys")
-            or (ctx.expected if isinstance(ctx.expected, (list, tuple, set)) else [])
+            cfg.get("expected_keys") or (ctx.expected if isinstance(ctx.expected, (list, tuple, set)) else [])
         )
 
         try:

@@ -13,8 +13,8 @@ import base64
 import unittest
 from unittest.mock import Mock, patch
 
-from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.logging import workflow_instance_id_ctx
@@ -134,9 +134,10 @@ class MediaWorkflowAttributionTest(unittest.TestCase):
         failing.save.side_effect = RuntimeError("disk full")
         token = workflow_instance_id_ctx.set(instance.id)
         try:
-            with patch(
-                "app.modules.media.service.media_service.StorageService.get_instance", return_value=failing
-            ), self._patch_session_local():
+            with (
+                patch("app.modules.media.service.media_service.StorageService.get_instance", return_value=failing),
+                self._patch_session_local(),
+            ):
                 with self.assertRaises(ValueError):
                     _persist_image_to_media(_result(), {"prompt": "draw"}, "p1", "node_cover")
         finally:

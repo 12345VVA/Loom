@@ -14,7 +14,8 @@ import sys
 import unittest
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session as DbSession, select
+from sqlmodel import Session as DbSession
+from sqlmodel import select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -80,9 +81,9 @@ class SessionManagementTests(unittest.TestCase):
         self.assertEqual(self._person(self.client_a, a_token).status_code, 200)
         self.assertEqual(self._person(self.client_b, b_token).status_code, 200)
         # 会话列表应有 2 条
-        sessions = self.client_a.get(
-            "/admin/base/session/list", headers={"Authorization": f"Bearer {a_token}"}
-        ).json()["data"]
+        sessions = self.client_a.get("/admin/base/session/list", headers={"Authorization": f"Bearer {a_token}"}).json()[
+            "data"
+        ]
         self.assertEqual(sessions["total"], 2)
 
     def test_logout_only_current_device(self):
@@ -105,9 +106,9 @@ class SessionManagementTests(unittest.TestCase):
         a_token = self._login(self.client_a)
         b_token = self._login(self.client_b)
         # A 查看会话列表，定位 B 的会话（非当前）
-        sessions = self.client_a.get(
-            "/admin/base/session/list", headers={"Authorization": f"Bearer {a_token}"}
-        ).json()["data"]["list"]
+        sessions = self.client_a.get("/admin/base/session/list", headers={"Authorization": f"Bearer {a_token}"}).json()[
+            "data"
+        ]["list"]
         self.assertEqual(len(sessions), 2)
         other = next(s for s in sessions if not s["current"])
         # A 踢出 B 的设备
@@ -133,9 +134,9 @@ class SessionManagementTests(unittest.TestCase):
         """会话列表正确标记当前设备（仅 1 条 current=True）。"""
         a_token = self._login(self.client_a)
         self._login(self.client_b)
-        sessions = self.client_a.get(
-            "/admin/base/session/list", headers={"Authorization": f"Bearer {a_token}"}
-        ).json()["data"]["list"]
+        sessions = self.client_a.get("/admin/base/session/list", headers={"Authorization": f"Bearer {a_token}"}).json()[
+            "data"
+        ]["list"]
         current = [s for s in sessions if s["current"]]
         self.assertEqual(len(current), 1)
 

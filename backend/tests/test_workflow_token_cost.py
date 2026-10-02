@@ -27,9 +27,7 @@ class EnrichTokenCostTestCase(unittest.TestCase):
         self.session.close()
 
     def _add_definition(self):
-        d = WorkflowDefinition(
-            code="wf1", name="WF1", graph_json="{}", is_active=True, current_version_id=1, user_id=1
-        )
+        d = WorkflowDefinition(code="wf1", name="WF1", graph_json="{}", is_active=True, current_version_id=1, user_id=1)
         self.session.add(d)
         self.session.commit()
         self.session.refresh(d)

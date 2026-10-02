@@ -111,7 +111,17 @@ class BuildErrorLogPayloadTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         self.assertEqual(
             set(payload.keys()),
-            {"node_id", "node_name", "node_type", "state_data", "input_data", "output_data", "latency_ms", "status", "error_message"},
+            {
+                "node_id",
+                "node_name",
+                "node_type",
+                "state_data",
+                "input_data",
+                "output_data",
+                "latency_ms",
+                "status",
+                "error_message",
+            },
         )
         self.assertEqual(payload["node_id"], "n_img")
         self.assertEqual(payload["node_name"], "封面生图")
@@ -145,9 +155,7 @@ class PersistErrorLogTestCase(unittest.TestCase):
             session.add(definition)
             session.commit()
             session.refresh(definition)
-            instance = WorkflowInstance(
-                definition_id=definition.id, thread_id="t1", status="running", state_data="{}"
-            )
+            instance = WorkflowInstance(definition_id=definition.id, thread_id="t1", status="running", state_data="{}")
             session.add(instance)
             session.commit()
             session.refresh(instance)

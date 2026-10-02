@@ -36,10 +36,12 @@ class ByTagTestCase(unittest.TestCase):
         self.assertIn("b", by_tag)
 
     def test_no_tags_skipped(self):
-        by_tag = _aggregate_by_tag([
-            _R(None, CaseResultStatus.SUCCESS),
-            _R('["x"]', CaseResultStatus.SUCCESS),
-        ])
+        by_tag = _aggregate_by_tag(
+            [
+                _R(None, CaseResultStatus.SUCCESS),
+                _R('["x"]', CaseResultStatus.SUCCESS),
+            ]
+        )
         self.assertEqual(set(by_tag.keys()), {"x"})
 
     def test_invalid_tags_json_skipped(self):
@@ -47,11 +49,13 @@ class ByTagTestCase(unittest.TestCase):
 
     def test_avg_score_only_scored(self):
         # error 的 case 不计入 avgScore 分母（只 SUCCESS/FAIL 计入）
-        by_tag = _aggregate_by_tag([
-            _R('["x"]', CaseResultStatus.SUCCESS, 0.8),
-            _R('["x"]', CaseResultStatus.FAIL, 0.4),
-            _R('["x"]', CaseResultStatus.ERROR, 0.0),
-        ])
+        by_tag = _aggregate_by_tag(
+            [
+                _R('["x"]', CaseResultStatus.SUCCESS, 0.8),
+                _R('["x"]', CaseResultStatus.FAIL, 0.4),
+                _R('["x"]', CaseResultStatus.ERROR, 0.0),
+            ]
+        )
         self.assertAlmostEqual(by_tag["x"]["avgScore"], 0.6)
         self.assertEqual(by_tag["x"]["total"], 3)
 

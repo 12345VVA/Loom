@@ -28,6 +28,8 @@ from sqlalchemy.exc import OperationalError as DBOperationalError
 
 load_dotenv()
 
+from sqlmodel import select
+
 from app.core.config import settings
 from app.core.database import Session, engine, get_session, init_db
 from app.core.logging import configure_logging
@@ -48,7 +50,6 @@ from app.modules import (
 from app.modules.base.service.authority_service import get_user_from_download_token, is_super_admin
 from app.modules.base.service.cache_service import get_redis_client
 from app.modules.media.model.media import MediaAsset
-from sqlmodel import select
 
 configure_logging(
     log_level=settings.effective_log_level,

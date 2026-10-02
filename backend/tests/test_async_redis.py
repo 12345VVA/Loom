@@ -90,8 +90,10 @@ class SubscribeEventsTestCase(unittest.TestCase):
             await gen.aclose()
             return first
 
-        with patch.object(event_bus, "get_async_redis_client", new=AsyncMock(return_value=mock_client)), \
-                patch("asyncio.sleep", fast_sleep):
+        with (
+            patch.object(event_bus, "get_async_redis_client", new=AsyncMock(return_value=mock_client)),
+            patch("asyncio.sleep", fast_sleep),
+        ):
             first = asyncio.run(run())
         self.assertIsNone(first)
 

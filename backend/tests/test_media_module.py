@@ -416,23 +416,37 @@ class MediaModuleTestCase(unittest.TestCase):
 
     def test_proxy_image_success(self):
         from app.modules.media.controller.admin.asset import MediaAssetController
+
         controller = MediaAssetController()
         user = User(id=1, username="admin")
 
-        with patch("app.modules.media.controller.admin.asset._validate_remote_url", return_value=("https://1.2.3.4/pic.jpg", "example.com")), \
-             patch("app.modules.media.controller.admin.asset._download_remote_file", return_value=(b"fake-image-bytes", "image/jpeg")):
+        with (
+            patch(
+                "app.modules.media.controller.admin.asset._validate_remote_url",
+                return_value=("https://1.2.3.4/pic.jpg", "example.com"),
+            ),
+            patch(
+                "app.modules.media.controller.admin.asset._download_remote_file",
+                return_value=(b"fake-image-bytes", "image/jpeg"),
+            ),
+        ):
             response = controller.proxy_image(url="https://example.com/pic.jpg", current_user=user)
             self.assertEqual(response.body, b"fake-image-bytes")
             self.assertEqual(response.media_type, "image/jpeg")
             self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
 
     def test_proxy_image_handles_failure(self):
-        from app.modules.media.controller.admin.asset import MediaAssetController
         from fastapi import HTTPException
+
+        from app.modules.media.controller.admin.asset import MediaAssetController
+
         controller = MediaAssetController()
         user = User(id=1, username="admin")
 
-        with patch("app.modules.media.controller.admin.asset._validate_remote_url", side_effect=ValueError("不允许访问内网地址")):
+        with patch(
+            "app.modules.media.controller.admin.asset._validate_remote_url",
+            side_effect=ValueError("不允许访问内网地址"),
+        ):
             with self.assertRaises(HTTPException) as ctx:
                 controller.proxy_image(url="http://127.0.0.1/evil.png", current_user=user)
             self.assertEqual(ctx.exception.status_code, 400)
@@ -522,16 +536,16 @@ class MediaModuleTestCase(unittest.TestCase):
         owner = self._make_user(1)
 
         with tempfile.TemporaryDirectory() as tmp:
-            with patch("app.modules.media.controller.admin.asset.DEFAULT_UPLOAD_DIR", Path(tmp)), patch(
-                "app.modules.media.controller.admin.asset.os.path.isfile", return_value=True
-            ), patch(
-                "app.modules.media.controller.admin.asset._validate_remote_url",
-                side_effect=ValueError("不允许访问内网地址"),
+            with (
+                patch("app.modules.media.controller.admin.asset.DEFAULT_UPLOAD_DIR", Path(tmp)),
+                patch("app.modules.media.controller.admin.asset.os.path.isfile", return_value=True),
+                patch(
+                    "app.modules.media.controller.admin.asset._validate_remote_url",
+                    side_effect=ValueError("不允许访问内网地址"),
+                ),
             ):
                 with self.assertRaises(HTTPException) as ctx:
-                    controller.proxy_image(
-                        url="/uploads/../../evil.txt", current_user=owner, session=self.session
-                    )
+                    controller.proxy_image(url="/uploads/../../evil.txt", current_user=owner, session=self.session)
                 self.assertEqual(ctx.exception.status_code, 400)
 
     def test_proxy_image_forces_download_for_non_inline_mime(self):
@@ -542,23 +556,29 @@ class MediaModuleTestCase(unittest.TestCase):
         user = self._make_user(1, super_admin=True)
 
         for mime in ("text/html", "image/svg+xml", None):
-            with patch(
-                "app.modules.media.controller.admin.asset._validate_remote_url",
-                return_value=("https://1.2.3.4/p.html", "example.com"),
-            ), patch(
-                "app.modules.media.controller.admin.asset._download_remote_file",
-                return_value=(b"payload", mime),
+            with (
+                patch(
+                    "app.modules.media.controller.admin.asset._validate_remote_url",
+                    return_value=("https://1.2.3.4/p.html", "example.com"),
+                ),
+                patch(
+                    "app.modules.media.controller.admin.asset._download_remote_file",
+                    return_value=(b"payload", mime),
+                ),
             ):
                 response = controller.proxy_image(url="https://example.com/p.html", current_user=user)
                 self.assertEqual(response.media_type, "application/octet-stream")
                 self.assertTrue(response.headers.get("content-disposition", "").startswith("attachment"))
 
-        with patch(
-            "app.modules.media.controller.admin.asset._validate_remote_url",
-            return_value=("https://1.2.3.4/pic.jpg", "example.com"),
-        ), patch(
-            "app.modules.media.controller.admin.asset._download_remote_file",
-            return_value=(b"payload", "image/jpeg; charset=binary"),
+        with (
+            patch(
+                "app.modules.media.controller.admin.asset._validate_remote_url",
+                return_value=("https://1.2.3.4/pic.jpg", "example.com"),
+            ),
+            patch(
+                "app.modules.media.controller.admin.asset._download_remote_file",
+                return_value=(b"payload", "image/jpeg; charset=binary"),
+            ),
         ):
             response = controller.proxy_image(url="https://example.com/pic.jpg", current_user=user)
             self.assertEqual(response.media_type, "image/jpeg")
@@ -631,11 +651,13 @@ class MediaModuleTestCase(unittest.TestCase):
         user = User(id=2, username="regular_user")
 
         with patch.object(service, "_transfer_artifact") as mock_transfer:
+
             def side_effect(a, artifact):
                 # _transfer_artifact 契约：返回调用方应继续引用的资产实例（正常落盘返回自身）
                 a.status = "success"
                 a.storage_url = "/uploads/20260921/retried.png"
                 return a
+
             mock_transfer.side_effect = side_effect
 
             res = service.retry_single(asset.id, current_user=user)
@@ -660,6 +682,7 @@ class MediaModuleTestCase(unittest.TestCase):
         other_user = User(id=3, username="other_user")
 
         from fastapi import HTTPException
+
         with self.assertRaises(HTTPException) as ctx:
             service.retry_single(asset.id, current_user=other_user)
         self.assertEqual(ctx.exception.status_code, 403)
@@ -679,6 +702,7 @@ class MediaModuleTestCase(unittest.TestCase):
 
         with patch.object(service, "_transfer_artifact", side_effect=ValueError("403 Forbidden: Signature Expired")):
             from fastapi import HTTPException
+
             with self.assertRaises(HTTPException) as ctx:
                 service.retry_single(asset.id, current_user=user)
             self.assertIn("过期", ctx.exception.detail)
@@ -690,4 +714,3 @@ class MediaModuleTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

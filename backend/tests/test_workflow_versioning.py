@@ -34,7 +34,9 @@ def _user(uid: int, super_admin: bool = False) -> User:
 def _graph(base: int = 0, nodes: int = 1, edges: int = 0) -> str:
     return json.dumps(
         {
-            "nodes": [{"id": f"n{i}", "type": "test", "name": f"N{i}", "config": {"k": base + i}} for i in range(nodes)],
+            "nodes": [
+                {"id": f"n{i}", "type": "test", "name": f"N{i}", "config": {"k": base + i}} for i in range(nodes)
+            ],
             "edges": [{"source": f"n{i}", "target": f"n{i + 1}", "type": "default"} for i in range(edges)],
         }
     )

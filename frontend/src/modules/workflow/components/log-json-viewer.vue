@@ -198,7 +198,7 @@ const highlightedHtml = computed(() => {
 	//    <mark> 只出现在文本节点内——搜索词命中 span/class 等标记名也不会破坏标签结构
 	//    （标点/空白中的搜索词不高亮，可接受）。若先注入 mark 再跑语法正则，mark 标签
 	//    属性中的带引号字符串会被当作 JSON string 二次包装导致结构碎裂。
-	let html = escaped.replace(
+	const html = escaped.replace(
 		/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
 		match => {
 			let cls = 'json-hl-number';

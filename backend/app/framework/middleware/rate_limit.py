@@ -68,6 +68,7 @@ def _get_client_ip(request: Request) -> str:
 
 def _get_client_id(request: Request) -> str:
     import hashlib
+
     token = request.headers.get("authorization")
     if token and token.startswith("Bearer "):
         token_hash = hashlib.md5(token.encode()).hexdigest()

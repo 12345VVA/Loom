@@ -18,6 +18,8 @@ from __future__ import annotations
 import struct
 import unittest
 
+from fastapi import HTTPException
+
 from app.modules.ai.service.adapters.base import UpstreamApiError
 from app.modules.ai.service.adapters.factory import (
     _normalize_bailian_image_size,
@@ -143,13 +145,13 @@ class BaolianAndVolcengineSizeTest(unittest.TestCase):
     def test_seedream_min_pixel_enforced(self) -> None:
         _validate_seedream_4_size("2560x1440")  # 不抛错即通过
         _validate_seedream_4_size("2048x2048")
-        with self.assertRaises(Exception):
+        with self.assertRaises(HTTPException):
             _validate_seedream_4_size("1024x1024")
 
     def test_seedream_fullwidth_not_bypassed(self) -> None:
         """旧实现下全角会让 `"x" not in size` 成立并直接 return，绕过校验。"""
         _validate_seedream_4_size("2560" + FULLWIDTH_MULTIPLY + "1440")
-        with self.assertRaises(Exception):
+        with self.assertRaises(HTTPException):
             _validate_seedream_4_size("1024" + FULLWIDTH_MULTIPLY + "1024")
 
     def test_seedream_ignores_non_pixel_values(self) -> None:

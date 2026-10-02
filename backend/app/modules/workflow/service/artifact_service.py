@@ -198,9 +198,7 @@ def persist_workflow_artifacts(
     try:
         stale_refs: list[str] = []
         with Session(engine) as session:
-            for old in session.exec(
-                select(WorkflowArtifact).where(WorkflowArtifact.instance_id == instance_id)
-            ).all():
+            for old in session.exec(select(WorkflowArtifact).where(WorkflowArtifact.instance_id == instance_id)).all():
                 if old.content_ref:
                     stale_refs.append(old.content_ref)
                 session.delete(old)
@@ -215,9 +213,7 @@ def persist_workflow_artifacts(
                 StorageService.get_instance().delete(ref)
             except Exception:
                 logger.warning("旧产物载荷文件删除失败 ref=%s", ref, exc_info=True)
-        logger.info(
-            "工作流产物流转完成 instance=%d count=%d", instance_id, len(drafts)
-        )
+        logger.info("工作流产物流转完成 instance=%d count=%d", instance_id, len(drafts))
     except Exception:
         logger.warning("工作流产物流转失败 instance=%d", instance_id, exc_info=True)
 
@@ -244,11 +240,15 @@ def _build_row(
         base_where = (MediaAsset.delete_time == None, MediaAsset.status == "success")  # noqa: E711
         # 优先按永久地址命中；未命中再按厂商原始 URL（同图去重复用场景）
         asset = session.exec(
-            select(MediaAsset).where(*base_where, MediaAsset.storage_url == draft.value).order_by(MediaAsset.created_at.desc())
+            select(MediaAsset)
+            .where(*base_where, MediaAsset.storage_url == draft.value)
+            .order_by(MediaAsset.created_at.desc())
         ).first()
         if asset is None:
             asset = session.exec(
-                select(MediaAsset).where(*base_where, MediaAsset.original_url == draft.value).order_by(MediaAsset.created_at.desc())
+                select(MediaAsset)
+                .where(*base_where, MediaAsset.original_url == draft.value)
+                .order_by(MediaAsset.created_at.desc())
             ).first()
         if asset is not None and asset.storage_url:
             media_asset_id = asset.id

@@ -185,7 +185,7 @@ class UserPersonUpdateRequest(BaseModel):
 
     nick_name: str | None = None
     head_img: str | None = None
-    phone: str | None = PydanticField(default=None, pattern=r'^1[3-9]\d{9}$')
+    phone: str | None = PydanticField(default=None, pattern=r"^1[3-9]\d{9}$")
     email: EmailStr | None = None
     remark: str | None = None
     password: str | None = None
@@ -288,7 +288,7 @@ class UserCreateRequest(BaseModel):
     password: str
     head_img: str | None = None
     email: EmailStr | None = None
-    phone: str | None = PydanticField(default=None, pattern=r'^1[3-9]\d{9}$')
+    phone: str | None = PydanticField(default=None, pattern=r"^1[3-9]\d{9}$")
     remark: str | None = None
     department_id: int | None = None
     role_ids: list[int] = PydanticField(default_factory=list)
@@ -321,7 +321,7 @@ class UserUpdateRequest(BaseModel):
     nick_name: str = ""
     head_img: str | None = None
     email: EmailStr | None = None
-    phone: str | None = PydanticField(default=None, pattern=r'^1[3-9]\d{9}$')
+    phone: str | None = PydanticField(default=None, pattern=r"^1[3-9]\d{9}$")
     remark: str | None = None
     department_id: int | None = None
     role_ids: list[int] = PydanticField(default_factory=list)

@@ -3,8 +3,6 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-import httpx
-
 from app.modules.ai.model.ai import AI_ADAPTERS, AiProvider, AiProviderCreateRequest
 from app.modules.ai.service.adapters.base import UpstreamApiError
 from app.modules.ai.service.adapters.factory import ADAPTERS, build_adapter
@@ -81,8 +79,10 @@ class TestToApisAdapter(unittest.TestCase):
             "result": {"data": [{"url": "https://files.toapis.cn/gen_1.png"}]},
         }
 
-        with patch.object(adapter, "_post", return_value=(submit_data, fake_submit_resp)) as mock_post, \
-             patch.object(adapter, "_get", return_value=(poll_data, fake_poll_resp)) as mock_get:
+        with (
+            patch.object(adapter, "_post", return_value=(submit_data, fake_submit_resp)) as mock_post,
+            patch.object(adapter, "_get", return_value=(poll_data, fake_poll_resp)) as mock_get,
+        ):
             result = adapter.image(
                 model="gpt-image-2.5-flare",
                 prompt="小猫草地",
@@ -123,8 +123,10 @@ class TestToApisAdapter(unittest.TestCase):
             "usage": {"input_tokens": 50, "output_tokens": 200},
         }
 
-        with patch.object(adapter, "_post", return_value=(submit_data, fake_submit_resp)) as mock_post, \
-             patch.object(adapter, "_get", return_value=(poll_data, fake_poll_resp)):
+        with (
+            patch.object(adapter, "_post", return_value=(submit_data, fake_submit_resp)) as mock_post,
+            patch.object(adapter, "_get", return_value=(poll_data, fake_poll_resp)),
+        ):
             result = adapter.image(
                 model="gpt-image-2.5-flare-official",
                 prompt="水彩城堡",
@@ -148,9 +150,7 @@ class TestToApisAdapter(unittest.TestCase):
     def test_vip_edition_image_to_image_multipart(self):
         adapter = ToApisAdapter(self.provider)
 
-        fake_post_multipart = MagicMock(
-            return_value=({"id": "tsk_vip_edit_1", "status": "pending"}, MagicMock())
-        )
+        fake_post_multipart = MagicMock(return_value=({"id": "tsk_vip_edit_1", "status": "pending"}, MagicMock()))
         fake_poll_resp = MagicMock()
         poll_data = {
             "id": "tsk_vip_edit_1",
@@ -159,8 +159,10 @@ class TestToApisAdapter(unittest.TestCase):
             "usage": {"input_tokens": 40, "output_tokens": 150},
         }
 
-        with patch.object(adapter, "_post_vip_edits_multipart", fake_post_multipart), \
-             patch.object(adapter, "_get", return_value=(poll_data, fake_poll_resp)):
+        with (
+            patch.object(adapter, "_post_vip_edits_multipart", fake_post_multipart),
+            patch.object(adapter, "_get", return_value=(poll_data, fake_poll_resp)),
+        ):
             result = adapter.image(
                 model="gpt-image-2.5-flare-vip",
                 prompt="小狐狸戴帽子",
@@ -193,8 +195,10 @@ class TestToApisAdapter(unittest.TestCase):
             "error": "Prompt contains sensitive content",
         }
 
-        with patch.object(adapter, "_post", return_value=(submit_data, fake_submit_resp)), \
-             patch.object(adapter, "_get", return_value=(poll_data, fake_poll_resp)):
+        with (
+            patch.object(adapter, "_post", return_value=(submit_data, fake_submit_resp)),
+            patch.object(adapter, "_get", return_value=(poll_data, fake_poll_resp)),
+        ):
             with self.assertRaises(UpstreamApiError) as ctx:
                 adapter.image(model="gpt-image-2.5-flare", prompt="bad prompt", options={})
 

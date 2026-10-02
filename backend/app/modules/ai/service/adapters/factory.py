@@ -32,9 +32,7 @@ class BailianAdapter(OpenAIHttpAdapter):
             raise UpstreamApiError("百炼模型同步需要业务空间 ID，请在扩展配置中填写 workspace_id")
         if not self.api_key:
             raise UpstreamApiError("百炼模型同步需要 API Key，请先在厂商配置中填写")
-        return list_workspace_authorized_models(
-            api_key=self.api_key, workspace_id=workspace_id, timeout=self.timeout
-        )
+        return list_workspace_authorized_models(api_key=self.api_key, workspace_id=workspace_id, timeout=self.timeout)
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
         options = dict(options or {})
@@ -361,7 +359,7 @@ def _normalize_bailian_image_size(value: Any) -> Any:
     """
     parsed = parse_pixel_size(value)
     if parsed is not None:
-        return "%d*%d" % parsed
+        return f"{parsed[0]}*{parsed[1]}"
     return value
 
 

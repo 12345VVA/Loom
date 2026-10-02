@@ -77,9 +77,7 @@ class ComputeKappaTestCase(unittest.TestCase):
         from app.modules.workflow_annotation.service.annotation_service import WorkflowAnnotationService
 
         for cr_id, label in zip([1, 2, 3, 4], ["pass", "pass", "fail", "fail"]):
-            self.session.add(
-                WorkflowAnnotation(case_result_id=cr_id, label=label, is_gold=True, annotator_user_id=1)
-            )
+            self.session.add(WorkflowAnnotation(case_result_id=cr_id, label=label, is_gold=True, annotator_user_id=1))
         self.session.commit()
         result = WorkflowAnnotationService(self.session).compute_kappa(1)
         self.assertEqual(result["kappa"], 1.0)

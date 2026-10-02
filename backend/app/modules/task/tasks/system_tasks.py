@@ -5,16 +5,16 @@
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlmodel import select
 
 from app.celery_app import celery_app
 from app.core.database import Session, engine, transaction
 from app.framework.middleware.metrics import record_metric_event
+from app.modules.base.service.cache_service import cache_delete
 from app.modules.notification.service.notification_service import NotificationService
 from app.modules.task.model.task import TaskInfo, TaskLog
-from app.modules.base.service.cache_service import cache_delete
 from app.modules.task.service.task_invoker import TaskInvoker
 from app.modules.task.service.task_service import compute_next_run_time, sync_task_schedule_state
 
@@ -53,7 +53,7 @@ def execute_system_task(task_id: int):
 
         try:
             # 更新最后执行时间
-            task.last_execute_time = datetime.now(timezone.utc)
+            task.last_execute_time = datetime.now(UTC)
 
             # 执行逻辑
             result = TaskInvoker.invoke(task.service, task.data)
@@ -112,7 +112,7 @@ def dispatch_due_tasks():
         return {"success": True, "dispatched": [], "skipped": "lock_contended"}
 
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dispatched: list[int] = []
         with Session(engine) as session:
             tasks = session.exec(
@@ -209,7 +209,7 @@ def clean_expired_logs():
                 keep_days = int(DEFAULT_LOG_KEEP_DAYS)
 
             # 计算删除截止时间
-            cutoff_time = datetime.now(timezone.utc) - timedelta(days=keep_days)
+            cutoff_time = datetime.now(UTC) - timedelta(days=keep_days)
 
             # 删除过期的操作日志
             stmt_sys_log = delete(SysLog).where(SysLog.created_at < cutoff_time)

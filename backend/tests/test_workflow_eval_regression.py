@@ -15,16 +15,34 @@ from app.modules.workflow_eval.service.regression import compare_runs
 
 class RegressionTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         SQLModel.metadata.create_all(self.engine)
         # run_a(id=1, ts=1): c1=0.9, c2=0.5, c3=0.8
         # run_b(id=2, ts=1): c1=0.7(退化), c2=0.9(改善), c4=0.6(新增)
         # run_c(id=3, ts=2): 不同测试集
         with Session(self.engine) as s:
-            s.add(WorkflowEvalRun(test_set_id=1, status=EvalRunStatus.SUCCEEDED, version_label="a", avg_score=0.73, pass_rate=0.66, p95_latency_ms=100, total_cost_micro_usd=1000))
-            s.add(WorkflowEvalRun(test_set_id=1, status=EvalRunStatus.SUCCEEDED, version_label="b", avg_score=0.73, pass_rate=0.66, p95_latency_ms=120, total_cost_micro_usd=1200))
+            s.add(
+                WorkflowEvalRun(
+                    test_set_id=1,
+                    status=EvalRunStatus.SUCCEEDED,
+                    version_label="a",
+                    avg_score=0.73,
+                    pass_rate=0.66,
+                    p95_latency_ms=100,
+                    total_cost_micro_usd=1000,
+                )
+            )
+            s.add(
+                WorkflowEvalRun(
+                    test_set_id=1,
+                    status=EvalRunStatus.SUCCEEDED,
+                    version_label="b",
+                    avg_score=0.73,
+                    pass_rate=0.66,
+                    p95_latency_ms=120,
+                    total_cost_micro_usd=1200,
+                )
+            )
             s.add(WorkflowEvalRun(test_set_id=2, status=EvalRunStatus.SUCCEEDED, version_label="c"))
             s.commit()
             for run_id, items in {
@@ -32,10 +50,16 @@ class RegressionTestCase(unittest.TestCase):
                 2: [("c1", 0.7), ("c2", 0.9), ("c4", 0.6)],
             }.items():
                 for key, score in items:
-                    s.add(WorkflowEvalCaseResult(
-                        eval_run_id=run_id, case_key=key, score=score,
-                        passed=score >= 0.6, latency_ms=100, status=CaseResultStatus.SUCCESS,
-                    ))
+                    s.add(
+                        WorkflowEvalCaseResult(
+                            eval_run_id=run_id,
+                            case_key=key,
+                            score=score,
+                            passed=score >= 0.6,
+                            latency_ms=100,
+                            status=CaseResultStatus.SUCCESS,
+                        )
+                    )
             s.commit()
 
     def tearDown(self):

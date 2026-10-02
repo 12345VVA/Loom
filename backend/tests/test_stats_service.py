@@ -21,9 +21,7 @@ from app.modules.ai.service.stats_service import (
 
 class StatsAggregationTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         invalidate_summary_cache()

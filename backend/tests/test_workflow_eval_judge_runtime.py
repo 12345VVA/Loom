@@ -71,9 +71,7 @@ class BuildJudgeFnTestCase(unittest.TestCase):
             return '{"score": 0.5}'
 
         with patch(_AI_CHAT_PATH, side_effect=fake_chat):
-            build_default_judge_fn("p7", prompt_template="CUSTOM {input}/{actual}/{expected}")(
-                "I", "A", "E"
-            )
+            build_default_judge_fn("p7", prompt_template="CUSTOM {input}/{actual}/{expected}")("I", "A", "E")
         self.assertEqual(captured["profile"], "p7")
         self.assertEqual(captured["prompt"], "CUSTOM I/A/E")
 

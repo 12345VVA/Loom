@@ -200,9 +200,7 @@ class Settings(BaseSettings):
             if self.SQL_USER:
                 password = quote_plus(self.SQL_PASSWORD) if self.SQL_PASSWORD else ""
                 auth = f"{quote_plus(self.SQL_USER)}:{password}@"
-            self.DATABASE_URL = (
-                f"postgresql+psycopg://{auth}{self.SQL_HOST}:{self.SQL_PORT}/{self.SQL_DATABASE}"
-            )
+            self.DATABASE_URL = f"postgresql+psycopg://{auth}{self.SQL_HOST}:{self.SQL_PORT}/{self.SQL_DATABASE}"
         if not self.DATABASE_URL:
             raise ValueError(
                 "数据库未配置：请设置 DATABASE_URL，或通过 "

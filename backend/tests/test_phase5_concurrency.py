@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import redis
@@ -32,7 +32,6 @@ from app.modules.ai.service.governance_service import (
 from app.modules.task.model.task import TaskInfo
 from app.modules.task.tasks import system_tasks
 from app.modules.task.tasks.system_tasks import _DISPATCH_LOCK_KEY, _RELEASE_LOCK_SCRIPT
-
 
 # ==========================================
 # 5.1：dispatch_due_tasks Redis SETNX 分布式锁
@@ -85,7 +84,7 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
             name="t1",
             status=1,
             service="some.service.method",
-            next_run_time=datetime.now(timezone.utc) - timedelta(minutes=5),
+            next_run_time=datetime.now(UTC) - timedelta(minutes=5),
             cron="*/5 * * * *",
         )
         self.session.add(task)
@@ -96,11 +95,13 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
     def test_lock_contended_skips_dispatch(self):
         """锁已被其他 worker 持有时，跳过本次派发，不调用 execute_system_task.delay。"""
         self._add_due_task()
-        with patch("app.core.redis.redis_client") as rc, \
-                patch.object(system_tasks, "engine", self.engine), \
-                patch.object(system_tasks, "execute_system_task") as exec_mock, \
-                patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(timezone.utc) + timedelta(minutes=5)), \
-                patch.object(system_tasks, "record_metric_event"):
+        with (
+            patch("app.core.redis.redis_client") as rc,
+            patch.object(system_tasks, "engine", self.engine),
+            patch.object(system_tasks, "execute_system_task") as exec_mock,
+            patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(UTC) + timedelta(minutes=5)),
+            patch.object(system_tasks, "record_metric_event"),
+        ):
             rc.set.return_value = False  # SETNX 失败：锁竞争
             result = system_tasks.dispatch_due_tasks()
 
@@ -119,11 +120,13 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
     def test_lock_acquired_dispatches_and_releases(self):
         """锁获取成功时正常派发，并在结束后用 Lua 脚本释放锁（token 匹配）。"""
         task = self._add_due_task()
-        with patch("app.core.redis.redis_client") as rc, \
-                patch.object(system_tasks, "engine", self.engine), \
-                patch.object(system_tasks, "execute_system_task") as exec_mock, \
-                patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(timezone.utc) + timedelta(minutes=5)), \
-                patch.object(system_tasks, "record_metric_event"):
+        with (
+            patch("app.core.redis.redis_client") as rc,
+            patch.object(system_tasks, "engine", self.engine),
+            patch.object(system_tasks, "execute_system_task") as exec_mock,
+            patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(UTC) + timedelta(minutes=5)),
+            patch.object(system_tasks, "record_metric_event"),
+        ):
             rc.set.return_value = True  # SETNX 成功
             result = system_tasks.dispatch_due_tasks()
 
@@ -154,11 +157,13 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
     def test_redis_unavailable_falls_back_to_unlocked_dispatch(self):
         """Redis 不可用时降级为无锁派发，不阻断正常流程，且 finally 中跳过锁释放。"""
         task = self._add_due_task()
-        with patch("app.core.redis.redis_client") as rc, \
-                patch.object(system_tasks, "engine", self.engine), \
-                patch.object(system_tasks, "execute_system_task") as exec_mock, \
-                patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(timezone.utc) + timedelta(minutes=5)), \
-                patch.object(system_tasks, "record_metric_event"):
+        with (
+            patch("app.core.redis.redis_client") as rc,
+            patch.object(system_tasks, "engine", self.engine),
+            patch.object(system_tasks, "execute_system_task") as exec_mock,
+            patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(UTC) + timedelta(minutes=5)),
+            patch.object(system_tasks, "record_metric_event"),
+        ):
             rc.set.side_effect = redis.exceptions.ConnectionError("no redis")
             result = system_tasks.dispatch_due_tasks()
 
@@ -173,11 +178,13 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
         """P1-B1: token 匹配时 Lua 脚本正常删除锁（worker A 释放自己持有的锁）。"""
         fake_redis = _FakeRedis()
         task = self._add_due_task()
-        with patch("app.core.redis.redis_client", fake_redis), \
-                patch.object(system_tasks, "engine", self.engine), \
-                patch.object(system_tasks, "execute_system_task") as exec_mock, \
-                patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(timezone.utc) + timedelta(minutes=5)), \
-                patch.object(system_tasks, "record_metric_event"):
+        with (
+            patch("app.core.redis.redis_client", fake_redis),
+            patch.object(system_tasks, "engine", self.engine),
+            patch.object(system_tasks, "execute_system_task") as exec_mock,
+            patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(UTC) + timedelta(minutes=5)),
+            patch.object(system_tasks, "record_metric_event"),
+        ):
             result = system_tasks.dispatch_due_tasks()
 
         # 锁已被 worker A 自己释放（token 匹配）
@@ -205,11 +212,13 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
             # 在派发过程中模拟：worker A 持锁超过 TTL，worker B 抢到新锁
             fake_redis.store[_DISPATCH_LOCK_KEY] = worker_b_token
 
-        with patch("app.core.redis.redis_client", fake_redis), \
-                patch.object(system_tasks, "engine", self.engine), \
-                patch.object(system_tasks, "execute_system_task") as exec_mock, \
-                patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(timezone.utc) + timedelta(minutes=5)), \
-                patch.object(system_tasks, "record_metric_event"):
+        with (
+            patch("app.core.redis.redis_client", fake_redis),
+            patch.object(system_tasks, "engine", self.engine),
+            patch.object(system_tasks, "execute_system_task") as exec_mock,
+            patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(UTC) + timedelta(minutes=5)),
+            patch.object(system_tasks, "record_metric_event"),
+        ):
             # execute_system_task.delay 触发时模拟 worker B 抢占
             exec_mock.delay.side_effect = simulate_worker_b_acquires_lock_after_ttl
             result = system_tasks.dispatch_due_tasks()
@@ -241,11 +250,15 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
 
         for _ in range(3):
             self._add_due_task()
-            with patch("app.core.redis.redis_client", fake_redis), \
-                    patch.object(system_tasks, "engine", self.engine), \
-                    patch.object(system_tasks, "execute_system_task"), \
-                    patch.object(system_tasks, "compute_next_run_time", return_value=datetime.now(timezone.utc) + timedelta(minutes=5)), \
-                    patch.object(system_tasks, "record_metric_event"):
+            with (
+                patch("app.core.redis.redis_client", fake_redis),
+                patch.object(system_tasks, "engine", self.engine),
+                patch.object(system_tasks, "execute_system_task"),
+                patch.object(
+                    system_tasks, "compute_next_run_time", return_value=datetime.now(UTC) + timedelta(minutes=5)
+                ),
+                patch.object(system_tasks, "record_metric_event"),
+            ):
                 system_tasks.dispatch_due_tasks()
             # 每次派发后锁应被释放，便于下一次重新获取
             fake_redis.store.pop(_DISPATCH_LOCK_KEY, None)
@@ -254,6 +267,7 @@ class DispatchDueTasksLockTestCase(unittest.TestCase):
         self.assertEqual(len(set(tokens)), 3)  # 三个 token 互不相同
         # 每个 token 应为合法 UUID 格式
         import uuid as _uuid
+
         for t in tokens:
             _uuid.UUID(t)  # 解析失败会抛 ValueError
 
@@ -336,8 +350,10 @@ class AcquireConcurrentFailClosedTestCase(unittest.TestCase):
         provider, model, profile = self._add_provider_model_profile()
         svc = AiGovernanceService(self.session)
 
-        with patch("app.modules.ai.service.governance_service.cache_incr", return_value=2), \
-                patch("app.modules.ai.service.governance_service.cache_decr", return_value=1):
+        with (
+            patch("app.modules.ai.service.governance_service.cache_incr", return_value=2),
+            patch("app.modules.ai.service.governance_service.cache_decr", return_value=1),
+        ):
             with self.assertRaises(AiGovernanceBlocked):
                 svc._acquire_concurrent([rule], None, provider, model, profile)
 

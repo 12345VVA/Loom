@@ -30,9 +30,7 @@ def _build_logs_query(instance_id: int, since_log_id: int | None, limit: int | N
 
 class LogsIncrementalTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as s:
             s.add(WorkflowInstance(definition_id=1, thread_id="t1", status="success", state_data="{}", user_id=1))
@@ -64,24 +62,24 @@ class LogsIncrementalTestCase(unittest.TestCase):
 
     def test_full_set_when_no_params(self):
         logs = self._exec(None, None)
-        self.assertEqual([l.node_id for l in logs], ["n1", "n2", "n3", "n4", "n5"])
+        self.assertEqual([log.node_id for log in logs], ["n1", "n2", "n3", "n4", "n5"])
 
     def test_since_returns_only_newer(self):
         # 取前两条的最大 id，增量应返回 n3..n5
         first_two = self._exec(None, 2)
-        since_id = max(l.id for l in first_two)
+        since_id = max(log.id for log in first_two)
         logs = self._exec(since_id, None)
-        self.assertEqual([l.node_id for l in logs], ["n3", "n4", "n5"])
+        self.assertEqual([log.node_id for log in logs], ["n3", "n4", "n5"])
 
     def test_since_with_limit(self):
         first_two = self._exec(None, 2)
-        since_id = max(l.id for l in first_two)
+        since_id = max(log.id for log in first_two)
         logs = self._exec(since_id, 2)
-        self.assertEqual([l.node_id for l in logs], ["n3", "n4"])
+        self.assertEqual([log.node_id for log in logs], ["n3", "n4"])
 
     def test_limit_only(self):
         logs = self._exec(None, 3)
-        self.assertEqual([l.node_id for l in logs], ["n1", "n2", "n3"])
+        self.assertEqual([log.node_id for log in logs], ["n1", "n2", "n3"])
 
 
 if __name__ == "__main__":

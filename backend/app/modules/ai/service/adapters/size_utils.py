@@ -80,7 +80,7 @@ def ensure_pixel_size(value: Any, *, default: str = "1024x1024", label: str = "T
         return default
     if not _PIXEL_SIZE_RE.match(normalized):
         raise UpstreamApiError(
-            "%s 尺寸参数非法：%r（归一化后为 %r）。像素尺寸须形如 '1024x1024'，"
-            "分隔符必须是 ASCII 小写 'x'，不接受比例写法。" % (label, value, normalized)
+            f"{label} 尺寸参数非法：{value!r}（归一化后为 {normalized!r}）。像素尺寸须形如 "
+            "'1024x1024'，分隔符必须是 ASCII 小写 'x'，不接受比例写法。"
         )
     return normalized

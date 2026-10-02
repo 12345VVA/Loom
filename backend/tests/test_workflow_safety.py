@@ -46,9 +46,7 @@ class SafetyTestCase(unittest.TestCase):
         self.assertTrue(r.passed)
 
     def test_custom_regex_violation(self):
-        r = SafetyEvaluator().evaluate(
-            self._ctx("密码是 abc123", {"checks": ["regex"], "pattern": r"密码是 \w+"})
-        )
+        r = SafetyEvaluator().evaluate(self._ctx("密码是 abc123", {"checks": ["regex"], "pattern": r"密码是 \w+"}))
         self.assertFalse(r.passed)
         self.assertIn("regex", r.detail["violations"])
 

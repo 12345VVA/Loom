@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.workflow_annotation.model.annotation import WorkflowAnnotation
-from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
+from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult
 from app.modules.workflow_eval.service.eval_run_service import _assert_run_owned
 
 logger = logging.getLogger(__name__)
@@ -95,11 +95,7 @@ class WorkflowAnnotationService(BaseAdminCrudService):
     ) -> dict:
         """删除标注前校验归属：每条标注对应的 eval_run 须归属当前用户。"""
         if current_user is not None and ids:
-            anns = list(
-                self.session.exec(
-                    select(WorkflowAnnotation).where(WorkflowAnnotation.id.in_(ids))
-                ).all()
-            )
+            anns = list(self.session.exec(select(WorkflowAnnotation).where(WorkflowAnnotation.id.in_(ids))).all())
             for ann in anns:
                 cr = self.session.get(WorkflowEvalCaseResult, ann.case_result_id)
                 if cr is not None:
@@ -126,9 +122,7 @@ class WorkflowAnnotationService(BaseAdminCrudService):
         if cr_by_id:
             annotations = list(
                 self.session.exec(
-                    select(WorkflowAnnotation).where(
-                        WorkflowAnnotation.case_result_id.in_(list(cr_by_id.keys()))
-                    )
+                    select(WorkflowAnnotation).where(WorkflowAnnotation.case_result_id.in_(list(cr_by_id.keys())))
                 ).all()
             )
             for a in annotations:

@@ -18,9 +18,9 @@ from typing import Any
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+from app.celery_app import celery_app
 from app.core.config import settings
 from app.core.logging import workflow_instance_id_ctx
-from app.celery_app import celery_app
 from app.modules.workflow.tasks.workflow_tasks import _async_execute
 from app.modules.workflow_eval.model.enum import CaseResultStatus
 from app.modules.workflow_eval.service.eval_orchestrator import (
@@ -36,7 +36,7 @@ from app.modules.workflow_eval.service.eval_orchestrator import (
     write_case_error,
     write_case_result,
 )
-from app.modules.workflow_eval.service.evaluator import EvaluatorRegistry, EvalContext
+from app.modules.workflow_eval.service.evaluator import EvalContext, EvaluatorRegistry
 from app.modules.workflow_eval.service.evaluator.llm_judge import build_default_judge_fn
 
 logger = logging.getLogger(__name__)
@@ -116,14 +116,19 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
                         ),
                         timeout=CASE_TIMEOUT_SECONDS,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     await asyncio.to_thread(cancel_eval_instance, instance_id)
                     latency_ms = int((time.perf_counter() - start_t) * 1000)
                     await asyncio.to_thread(
                         write_case_result,
-                        eval_run_id, case, instance_id,
+                        eval_run_id,
+                        case,
+                        instance_id,
                         {"status": "timeout", "output": None, "error": "执行超时"},
-                        None, evaluator_type, latency_ms, CaseResultStatus.TIMEOUT,
+                        None,
+                        evaluator_type,
+                        latency_ms,
+                        CaseResultStatus.TIMEOUT,
                     )
                     return
 
@@ -133,8 +138,15 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
                 # 实例执行失败：记 error，不评估
                 if instance_result.get("status") == "failed":
                     await asyncio.to_thread(
-                        write_case_result, eval_run_id, case, instance_id, instance_result,
-                        None, evaluator_type, latency_ms, CaseResultStatus.ERROR,
+                        write_case_result,
+                        eval_run_id,
+                        case,
+                        instance_id,
+                        instance_result,
+                        None,
+                        evaluator_type,
+                        latency_ms,
+                        CaseResultStatus.ERROR,
                     )
                     return
 
@@ -165,7 +177,8 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
                     else:
                         logger.warning(
                             "评估运行 %d 用例 %s：llm_judge 未配置 judge_profile_code（用例级/全局均空），返回中性分",
-                            eval_run_id, case.case_key,
+                            eval_run_id,
+                            case.case_key,
                         )
 
                 evaluator = EvaluatorRegistry.get(evaluator_type)
@@ -203,8 +216,15 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
                     ):
                         eval_result.passed = False
                 await asyncio.to_thread(
-                    write_case_result, eval_run_id, case, instance_id, instance_result,
-                    eval_result, evaluator_type, latency_ms, node_results,
+                    write_case_result,
+                    eval_run_id,
+                    case,
+                    instance_id,
+                    instance_result,
+                    eval_result,
+                    evaluator_type,
+                    latency_ms,
+                    node_results,
                 )
             except Exception as e:
                 logger.error("评估用例 %s 异常: %s", getattr(case, "case_key", "?"), e, exc_info=True)

@@ -8,15 +8,13 @@ from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.modules.workflow_eval.model.test_set import WorkflowTestSet, WorkflowTestCaseUpdateRequest
+from app.modules.workflow_eval.model.test_set import WorkflowTestCaseUpdateRequest, WorkflowTestSet
 from app.modules.workflow_eval.service.test_case_service import WorkflowTestCaseService
 
 
 class TestCaseServiceTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as s:
             s.add(WorkflowTestSet(name="ts1", items_count=0))

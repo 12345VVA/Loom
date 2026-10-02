@@ -87,9 +87,7 @@ class BaseCommController(BaseController):
 
         file_content = await file.read()
         try:
-            path = await run_in_threadpool(
-                StorageService.get_instance().upload, file_content, file.filename
-            )
+            path = await run_in_threadpool(StorageService.get_instance().upload, file_content, file.filename)
         except UploadRejectedError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"url": path, "name": file.filename}

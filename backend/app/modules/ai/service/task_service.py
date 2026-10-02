@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
@@ -42,7 +42,7 @@ class AiGenerationTaskService(BaseAdminCrudService):
             task.status = "failed"
             task.progress = 100
             task.error_message = f"任务入队失败: {exc}"[:1000]
-            task.finished_at = datetime.now(timezone.utc)
+            task.finished_at = datetime.now(UTC)
             self.session.add(task)
             self.session.commit()
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=task.error_message) from exc
@@ -70,7 +70,7 @@ class AiGenerationTaskService(BaseAdminCrudService):
         AiGovernanceService(self.session).release_for_generation_task(task)
         task.status = "cancelled"
         task.progress = 100
-        task.finished_at = datetime.now(timezone.utc)
+        task.finished_at = datetime.now(UTC)
         self.session.add(task)
         self.session.commit()
         return {"success": True, "status": task.status}
@@ -114,7 +114,7 @@ class AiGenerationTaskService(BaseAdminCrudService):
             task.status = "failed"
             task.progress = 100
             task.error_message = f"任务入队失败: {exc}"[:1000]
-            task.finished_at = datetime.now(timezone.utc)
+            task.finished_at = datetime.now(UTC)
             self.session.add(task)
             self.session.commit()
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=task.error_message) from exc

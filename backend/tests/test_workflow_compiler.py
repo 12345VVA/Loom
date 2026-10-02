@@ -13,17 +13,16 @@ from unittest.mock import patch
 from app.modules.workflow.service import compiler as compiler_mod
 from app.modules.workflow.service.compiler import (
     CONDITIONAL_NODE_TYPES,
-    NodeExecutionError,
-    NodeExecutorRegistry,
     SUBGRAPH_NODE_TYPES,
     UNTESTABLE_NODE_TYPES,
+    NodeExecutionError,
+    NodeExecutorRegistry,
     WorkflowCompiler,
     node_registry,
     render_template,
     safe_eval,
     validate_graph,
 )
-
 
 # --- 测试图构造 helper ---
 
@@ -328,9 +327,7 @@ class CompileGraphTestCase(unittest.TestCase):
         compiled = builder.compile()
 
         with patch.object(compiler_mod.node_registry, "get", return_value=recorder):
-            asyncio.run(
-                compiled.ainvoke({"variables": {}, "messages": [], "current_node": "start_1"})
-            )
+            asyncio.run(compiled.ainvoke({"variables": {}, "messages": [], "current_node": "start_1"}))
 
         self.assertEqual(call_order, ["a", "b", "end_1"])
 
@@ -419,9 +416,7 @@ class CompileGraphTestCase(unittest.TestCase):
         compiled = builder.compile()
 
         async def _run():
-            await compiled.ainvoke(
-                {"variables": {}, "messages": [], "current_node": "start_1"}
-            )
+            await compiled.ainvoke({"variables": {}, "messages": [], "current_node": "start_1"})
 
         # node_registry.get 返回 None（未注册），node_runner 应抛 ValueError
         with self.assertRaises(ValueError) as cm:
@@ -480,7 +475,7 @@ class NodeExecutionErrorTestCase(unittest.TestCase):
     def test_is_exception_subclass(self):
         """NodeExecutionError 是 Exception 子类，可被 except Exception 捕获。"""
         err = NodeExecutionError("n", 1, RuntimeError("x"))
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 —— 测试意图即验证 except Exception 宽捕获
             raise err
 
     def test_node_id_attr_accessible_via_getattr(self):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import func, update
@@ -17,9 +17,9 @@ from sqlmodel import Session, select
 from app.core.database import engine
 from app.framework.storage import offload_payload, resolve_payload
 from app.modules.ai.model.ai import AiModelCallLog
-from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
-from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
+from app.modules.workflow.model.workflow import WorkflowInstance
 from app.modules.workflow_eval.model.enum import CaseResultStatus, EvalRunStatus
+from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult, WorkflowEvalRun
 from app.modules.workflow_eval.model.test_set import WorkflowTestCase, WorkflowTestSet
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ def mark_running(eval_run_id: int, celery_task_id: str | None) -> bool:
             )
             .values(
                 status=EvalRunStatus.RUNNING,
-                started_at=datetime.now(timezone.utc),
+                started_at=datetime.now(UTC),
                 celery_task_id=celery_task_id,
             )
         )
@@ -123,7 +123,7 @@ def mark_failed(eval_run_id: int, error_msg: str) -> bool:
             .values(
                 status=EvalRunStatus.FAILED,
                 error_message=(error_msg or "")[:1000] or None,
-                finished_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(UTC),
             )
         )
         session.commit()
@@ -206,7 +206,11 @@ def write_case_result(
         else:
             case_status = CaseResultStatus.ERROR
 
-    score = eval_result.score if (eval_result is not None and case_status in (CaseResultStatus.SUCCESS, CaseResultStatus.FAIL)) else 0.0
+    score = (
+        eval_result.score
+        if (eval_result is not None and case_status in (CaseResultStatus.SUCCESS, CaseResultStatus.FAIL))
+        else 0.0
+    )
     passed = bool(eval_result and eval_result.passed and case_status == CaseResultStatus.SUCCESS)
     # detail 含终态评估详情 + 节点级评估结果（P1-1 trace）
     detail_obj: dict = {}
@@ -218,7 +222,7 @@ def write_case_result(
     output = instance_result.get("output")
     actual_json = json.dumps(output, ensure_ascii=False, default=str) if output is not None else None
     # T8：大输出分离到对象存储，主表存引用
-    actual_inline, actual_ref = (offload_payload(actual_json) if actual_json else ("", None))
+    actual_inline, actual_ref = offload_payload(actual_json) if actual_json else ("", None)
 
     with Session(engine) as session:
         # case 级 token/cost：按该 instance 聚合其全部 LLM 调用（节点执行 + judge）
@@ -295,9 +299,7 @@ def backfill_missing_results(eval_run_id: int, cases: list[WorkflowTestCase]) ->
     with Session(engine) as session:
         written_keys = set(
             session.exec(
-                select(WorkflowEvalCaseResult.case_key).where(
-                    WorkflowEvalCaseResult.eval_run_id == eval_run_id
-                )
+                select(WorkflowEvalCaseResult.case_key).where(WorkflowEvalCaseResult.eval_run_id == eval_run_id)
             ).all()
         )
     missing = [c for c in cases if c.case_key not in written_keys]
@@ -343,9 +345,7 @@ def finalize_eval_run(eval_run_id: int) -> None:
         if not run:
             return
         results = list(
-            session.exec(
-                select(WorkflowEvalCaseResult).where(WorkflowEvalCaseResult.eval_run_id == eval_run_id)
-            ).all()
+            session.exec(select(WorkflowEvalCaseResult).where(WorkflowEvalCaseResult.eval_run_id == eval_run_id)).all()
         )
         total = len(results)
         passed = sum(1 for r in results if r.status == CaseResultStatus.SUCCESS)
@@ -359,7 +359,7 @@ def finalize_eval_run(eval_run_id: int) -> None:
         # token/cost 精确聚合：按本次 run 关联的所有 workflow_instance_id 求和
         # （case 节点执行 + judge 的 LLM 调用均经 contextvar 打标到对应 instance，
         #   替代旧版按 user_id + 时间窗的近似聚合）
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         instance_ids = [r.workflow_instance_id for r in results if r.workflow_instance_id]
         token_total = 0
         cost_total = 0
@@ -474,7 +474,11 @@ def evaluate_node_evaluators(instance_id: int, node_evaluators: dict, case_cfg: 
         io = node_io[node_id]
         # llm_judge 节点评估：注入 judge_fn（节点级 profile 优先，全局兜底）
         if ntype == "llm_judge" and "judge_fn" not in n_conf:
-            profile = n_conf.get("judge_profile_code") or case_cfg.get("judge_profile_code") or settings.WORKFLOW_EVAL_JUDGE_PROFILE
+            profile = (
+                n_conf.get("judge_profile_code")
+                or case_cfg.get("judge_profile_code")
+                or settings.WORKFLOW_EVAL_JUDGE_PROFILE
+            )
             if profile:
                 n_conf["judge_fn"] = build_default_judge_fn(
                     profile,
@@ -492,13 +496,15 @@ def evaluate_node_evaluators(instance_id: int, node_evaluators: dict, case_cfg: 
                     case_config=n_conf,
                 )
             )
-            results.append({
-                "node_id": node_id,
-                "node_type": io["node_type"],
-                "score": round(r.score, 4),
-                "passed": bool(r.passed),
-                "reason": r.detail.get("reason") if isinstance(r.detail, dict) else None,
-            })
+            results.append(
+                {
+                    "node_id": node_id,
+                    "node_type": io["node_type"],
+                    "score": round(r.score, 4),
+                    "passed": bool(r.passed),
+                    "reason": r.detail.get("reason") if isinstance(r.detail, dict) else None,
+                }
+            )
         except Exception as exc:
             logger.warning("节点 %s 评估异常: %s", node_id, exc)
             results.append({"node_id": node_id, "score": 0.0, "passed": False, "reason": f"评估异常: {exc}"})
@@ -511,7 +517,7 @@ def sweep_timed_out_runs(timeout_seconds: int) -> int:
     兜底 worker 进程级死亡（OOM kill）——run_eval_task 的 try/except 与 on_failure
     均无法捕获进程级死亡，run 会永久停在 running。由 Celery beat 周期调用。
     """
-    threshold = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+    threshold = datetime.now(UTC) - timedelta(seconds=timeout_seconds)
     with Session(engine) as session:
         stale_ids = list(
             session.exec(

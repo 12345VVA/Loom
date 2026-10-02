@@ -8,9 +8,8 @@ import re
 
 from fastapi import Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlmodel import Session, select
-
 from pydantic import BaseModel, Field
+from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.database import get_session
@@ -172,13 +171,17 @@ class MediaAssetController(BaseController):
                     inside_uploads = False
                 # 归属检查与 /uploads 路由一致：按文件级归属（storage_url+created_by）放行。
                 # 不能只看匹配行的 created_by——自造资产行可伪造归属（add/update 已收窄受控字段）。
-                owned = is_super_admin(session, current_user) or session.exec(
-                    select(MediaAsset).where(
-                        MediaAsset.storage_url == asset.storage_url,
-                        MediaAsset.created_by == current_user.id,
-                        MediaAsset.delete_time == None,  # noqa: E711
-                    )
-                ).first() is not None
+                owned = (
+                    is_super_admin(session, current_user)
+                    or session.exec(
+                        select(MediaAsset).where(
+                            MediaAsset.storage_url == asset.storage_url,
+                            MediaAsset.created_by == current_user.id,
+                            MediaAsset.delete_time == None,  # noqa: E711
+                        )
+                    ).first()
+                    is not None
+                )
                 if inside_uploads and owned and os.path.isfile(local_full_path):
                     safe_name = asset.file_name or _filename_from_url(url, asset.mime_type, "image")
                     safe_name = re.sub(r'["\r\n\\]', "_", safe_name)
@@ -215,7 +218,9 @@ class MediaAssetController(BaseController):
     ) -> dict:
         limit = payload.limit if payload else 100
         window_hours = payload.window_hours if payload else 24
-        return MediaAssetService(session).retry_failed(limit=limit, window_hours=window_hours, current_user=current_user)
+        return MediaAssetService(session).retry_failed(
+            limit=limit, window_hours=window_hours, current_user=current_user
+        )
 
 
 router = MediaAssetController.router

@@ -61,17 +61,17 @@ class M1ExtractCandidateTestCase(unittest.TestCase):
     def test_bidirectional_bracket_references(self) -> None:
         """双向反例：正文「前」或「后」多出方括号，都应取回真正的对象结果。"""
         cases = [
-            ('答案：{"a":1} 参见 [1,2]', '{"a":1}'),               # 后置引用（第 2 轮修复）
-            ('{"a":1} 参考文献 [1,2]', '{"a":1}'),                  # 后置引用
+            ('答案：{"a":1} 参见 [1,2]', '{"a":1}'),  # 后置引用（第 2 轮修复）
+            ('{"a":1} 参考文献 [1,2]', '{"a":1}'),  # 后置引用
             ('结果 {"answer": 42} 依据 [1,2,3]', '{"answer": 42}'),  # 后置引用
-            ('前缀 {"a":1} 后置 {}', '{"a":1}'),                    # 后置空对象，取更完整者
-            ('步骤 [1,2] 见下 {"a":1}', '{"a":1}'),                 # 前置引用（第 1 轮修复）
-            ('提示 [1,2,3,4] 结果 {"a":1}', '{"a":1}'),             # 前置引用
-            ('详见 [文档](http://x) 结果 {"a":1}', '{"a":1}'),       # 前置中括号 + markdown 链接
-            ('见 {}\n done', '{}'),
-            ('[{"a":1}]', '[{"a":1}]'),                             # 外层优先
-            ('[1, 2]', '[1, 2]'),
-            ('正文 [1] 结束', '[1]'),
+            ('前缀 {"a":1} 后置 {}', '{"a":1}'),  # 后置空对象，取更完整者
+            ('步骤 [1,2] 见下 {"a":1}', '{"a":1}'),  # 前置引用（第 1 轮修复）
+            ('提示 [1,2,3,4] 结果 {"a":1}', '{"a":1}'),  # 前置引用
+            ('详见 [文档](http://x) 结果 {"a":1}', '{"a":1}'),  # 前置中括号 + markdown 链接
+            ("见 {}\n done", "{}"),
+            ('[{"a":1}]', '[{"a":1}]'),  # 外层优先
+            ("[1, 2]", "[1, 2]"),
+            ("正文 [1] 结束", "[1]"),
         ]
         for src, expected in cases:
             with self.subTest(src=src):
@@ -127,7 +127,7 @@ class M1ExtractCandidateTestCase(unittest.TestCase):
         「对象优先」、不做进一步区分（详见任务报告）。本用例把该决策显式固化下来，
         防止后续被无意变更 —— 若要做 isEmpty 分层等改进，须同步更新此用例。
         """
-        self.assertEqual(ws._extract_first_json('输出 [{"id":1}] 说明 {}'), '{}')
+        self.assertEqual(ws._extract_first_json('输出 [{"id":1}] 说明 {}'), "{}")
         self.assertEqual(ws._extract_first_json('[1, 2] 说明 {"note": "x"}'), '{"note": "x"}')
 
     def test_single_empty_object_still_returned(self) -> None:

@@ -10,7 +10,7 @@ import json
 import re
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import HTTPException, Request, status
@@ -19,7 +19,6 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.security import (
     add_token_to_blacklist,
-    add_user_all_tokens_to_blacklist,
     decode_token,
     hash_password,
     password_needs_rehash,
@@ -47,12 +46,10 @@ from app.modules.base.model.auth import (
 )
 from app.modules.base.service.admin_service import MenuAdminService
 from app.modules.base.service.authority_service import (
-    build_refresh_token_cache_key,
     clear_login_caches,
     clear_login_caches_for_users,
     clear_user_sessions,
     delete_session,
-    get_refresh_token_ttl,
     get_session,
     get_user_token_version,
     list_user_sessions,
@@ -171,7 +168,7 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
         user._token_role_ids = [role.id for role in roles if role.id is not None]
 
-        user.last_login_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now(UTC)
         self.session.add(user)
         self.session.commit()
         self.session.refresh(user)
@@ -441,9 +438,7 @@ class AuthService:
         img.save(buf, format="PNG")
         return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
-    def _render_captcha_images(
-        self, width: int, height: int, target_x: int, target_y: int, puzzle_size: int
-    ):
+    def _render_captcha_images(self, width: int, height: int, target_x: int, target_y: int, puzzle_size: int):
         """生成带缺口的背景图与滑块拼图块。缺口位置即答案，但不以数值返回前端。"""
         import random
 
@@ -465,9 +460,7 @@ class AuthService:
                 width=1,
             )
         # 滑块 = 裁剪缺口位置的背景内容（真正的拼图块），用户拖它对齐缺口
-        slider = bg.crop(
-            (target_x, target_y, target_x + puzzle_size, target_y + puzzle_size)
-        ).convert("RGBA")
+        slider = bg.crop((target_x, target_y, target_x + puzzle_size, target_y + puzzle_size)).convert("RGBA")
         # 在背景挖缺口：半透明暗块 + 描边，提示拼合位置
         overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         odraw = ImageDraw.Draw(overlay)
@@ -523,9 +516,7 @@ class AuthService:
         target_x = 8 + secrets.randbelow(max_target - 8 + 1)
         target_y = (height_int - puzzle_size) // 2
 
-        bg_image, slider_image = self._render_captcha_images(
-            width_int, height_int, target_x, target_y, puzzle_size
-        )
+        bg_image, slider_image = self._render_captcha_images(width_int, height_int, target_x, target_y, puzzle_size)
 
         captcha_id = uuid4().hex
         cache_set(
@@ -668,7 +659,7 @@ class AuthService:
             validate_password_strength(payload.password)
             target.password_hash = hash_password(payload.password)
             target.password_version += 1
-            target.password_changed_at = datetime.now(timezone.utc)  # 记录密码修改时间
+            target.password_changed_at = datetime.now(UTC)  # 记录密码修改时间
 
         if payload.nick_name is not None:
             target.nick_name = payload.nick_name
@@ -681,7 +672,7 @@ class AuthService:
         if payload.remark is not None:
             target.remark = payload.remark
 
-        target.updated_at = datetime.now(timezone.utc)
+        target.updated_at = datetime.now(UTC)
         self.session.add(target)
         self.session.commit()
         self.session.refresh(target)

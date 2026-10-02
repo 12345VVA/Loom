@@ -15,8 +15,8 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
-from app.core.database import engine
 from app.core.config import settings
+from app.core.database import engine
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +128,7 @@ class TaskInvoker:
 
         # 安全校验 1：禁止调用以 _ 开头的私有/受保护方法
         if method_name.startswith("_"):
-            logger.warning(
-                "TaskInvoker rejected private method invocation: service_path=%s", service_path
-            )
+            logger.warning("TaskInvoker rejected private method invocation: service_path=%s", service_path)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"不允许调用以下划线开头的方法: {method_name}",
@@ -138,9 +136,7 @@ class TaskInvoker:
 
         # 安全校验 2：若已启用白名单（非空），则 service_path 必须在白名单中
         if cls._allowed_services and service_path not in cls._allowed_services:
-            logger.warning(
-                "TaskInvoker rejected non-whitelisted service invocation: service_path=%s", service_path
-            )
+            logger.warning("TaskInvoker rejected non-whitelisted service invocation: service_path=%s", service_path)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"该服务方法不在允许调用的白名单中: {service_path}",

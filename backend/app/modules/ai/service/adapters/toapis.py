@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import time
 from typing import Any
 
@@ -19,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TOAPIS_BASE_URL = "https://api.toapis.cn"
 DEFAULT_TOAPIS_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
 # 常见比例表 (w, h, ratio_str)
@@ -75,9 +73,8 @@ def _convert_pixel_size_to_ratio_and_resolution(size_val: str | None) -> tuple[s
     parsed = parse_pixel_size(normalized)
     if parsed is None:
         raise UpstreamApiError(
-            "ToAPIs 普通版尺寸参数非法：%r（归一化后为 %r）。仅接受标准比例"
+            f"ToAPIs 普通版尺寸参数非法：{size_val!r}（归一化后为 {normalized!r}）。仅接受标准比例"
             "（1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3）或像素尺寸（如 1024x1024）。"
-            % (size_val, normalized)
         )
 
     w, h = parsed

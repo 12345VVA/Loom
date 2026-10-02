@@ -641,7 +641,7 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                 if sh == "default" and not default_route:
                     default_route = e["target"]
                 elif sh and sh.startswith("intent_"):
-                    rest = sh[len("intent_"):]
+                    rest = sh[len("intent_") :]
                     match = next((x for x in intents if str(x.get("id")) == rest), None)
                     if match is not None:
                         match["target_route"] = e["target"]
@@ -673,7 +673,7 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                 if sh == "default" and not default_route:
                     default_route = e["target"]
                 elif sh and sh.startswith("case_"):
-                    rest = sh[len("case_"):]
+                    rest = sh[len("case_") :]
                     match = next((x for x in cases if str(x.get("id")) == rest), None)
                     if match is not None:
                         match["target_route"] = e["target"]
@@ -1109,7 +1109,11 @@ class WorkflowCompiler:
                     delay = float(backoff_base) * (2 ** (attempt - 1))
                     logger.warning(
                         "节点 '%s' 第 %d/%d 次执行失败，%.1fs 后重试: %s",
-                        node_id, attempt, max_attempts, delay, e,
+                        node_id,
+                        attempt,
+                        max_attempts,
+                        delay,
+                        e,
                     )
                     await asyncio.sleep(delay)
             if updates is None:

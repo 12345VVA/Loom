@@ -50,9 +50,7 @@ def _payload(node_id: str, input_data: str, output_data: str) -> dict:
 
 class StorageOptimizationTestCase(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         SQLModel.metadata.create_all(self.engine)
         _FAKE_STORE.clear()
         with Session(self.engine) as s:
@@ -64,15 +62,19 @@ class StorageOptimizationTestCase(unittest.TestCase):
         _FAKE_STORE.clear()
 
     def test_offload_below_threshold_inline(self):
-        with patch("app.framework.storage.StorageService.get_instance", return_value=_make_mock_storage()), \
-                patch.object(settings, "PAYLOAD_STORAGE_THRESHOLD", 100):
+        with (
+            patch("app.framework.storage.StorageService.get_instance", return_value=_make_mock_storage()),
+            patch.object(settings, "PAYLOAD_STORAGE_THRESHOLD", 100),
+        ):
             inline, ref = offload_payload("abc")
         self.assertEqual((inline, ref), ("abc", None))
 
     def test_offload_above_threshold_roundtrip(self):
         big = "x" * 500
-        with patch("app.framework.storage.StorageService.get_instance", return_value=_make_mock_storage()), \
-                patch.object(settings, "PAYLOAD_STORAGE_THRESHOLD", 100):
+        with (
+            patch("app.framework.storage.StorageService.get_instance", return_value=_make_mock_storage()),
+            patch.object(settings, "PAYLOAD_STORAGE_THRESHOLD", 100),
+        ):
             inline, ref = offload_payload(big)
             self.assertEqual(inline, "")
             self.assertIsNotNone(ref)
@@ -83,15 +85,21 @@ class StorageOptimizationTestCase(unittest.TestCase):
             _payload("n1", '{"init":1}', '{"v":1}'),
             _payload("n2", '{"v":1}', '{"v":2}'),  # n2.input == n1.output（冗余）
         ]
-        with patch("app.modules.workflow.tasks.workflow_tasks.engine", self.engine), \
-                patch("app.framework.storage.StorageService.get_instance", return_value=_make_mock_storage()), \
-                patch.object(settings, "PAYLOAD_STORAGE_THRESHOLD", 10 * 1024 * 1024):  # 大阈值，不 offload
+        with (
+            patch("app.modules.workflow.tasks.workflow_tasks.engine", self.engine),
+            patch("app.framework.storage.StorageService.get_instance", return_value=_make_mock_storage()),
+            patch.object(settings, "PAYLOAD_STORAGE_THRESHOLD", 10 * 1024 * 1024),
+        ):  # 大阈值，不 offload
             _persist_node_payloads_sync(1, payloads)
 
         with Session(self.engine) as s:
-            logs = list(s.exec(
-                select(WorkflowExecutionLog).where(WorkflowExecutionLog.instance_id == 1).order_by(WorkflowExecutionLog.id)
-            ).all())
+            logs = list(
+                s.exec(
+                    select(WorkflowExecutionLog)
+                    .where(WorkflowExecutionLog.instance_id == 1)
+                    .order_by(WorkflowExecutionLog.id)
+                ).all()
+            )
             self.assertEqual(len(logs), 2)
             # 首条 full
             self.assertEqual(logs[0].payload_type, "full")
@@ -111,14 +119,20 @@ class StorageOptimizationTestCase(unittest.TestCase):
             _payload("n1", '{"init":1}', big_output),  # output 大 → offload
             _payload("n2", big_output, '{"v":2}'),  # input == 上条 output，ref_prev
         ]
-        with patch("app.modules.workflow.tasks.workflow_tasks.engine", self.engine), \
-                patch("app.framework.storage.StorageService.get_instance", return_value=_make_mock_storage()), \
-                patch.object(settings, "PAYLOAD_STORAGE_THRESHOLD", 100):  # 小阈值，big_output 触发 offload
+        with (
+            patch("app.modules.workflow.tasks.workflow_tasks.engine", self.engine),
+            patch("app.framework.storage.StorageService.get_instance", return_value=_make_mock_storage()),
+            patch.object(settings, "PAYLOAD_STORAGE_THRESHOLD", 100),
+        ):  # 小阈值，big_output 触发 offload
             _persist_node_payloads_sync(1, payloads)
             with Session(self.engine) as s:
-                logs = list(s.exec(
-                    select(WorkflowExecutionLog).where(WorkflowExecutionLog.instance_id == 1).order_by(WorkflowExecutionLog.id)
-                ).all())
+                logs = list(
+                    s.exec(
+                        select(WorkflowExecutionLog)
+                        .where(WorkflowExecutionLog.instance_id == 1)
+                        .order_by(WorkflowExecutionLog.id)
+                    ).all()
+                )
                 # n1 output 大 → 分离
                 self.assertEqual(logs[0].output_data, "")
                 self.assertIsNotNone(logs[0].output_storage_ref)
@@ -133,10 +147,18 @@ class StorageOptimizationTestCase(unittest.TestCase):
     def test_backward_compat_legacy_log(self):
         """旧 log（payload_type 默认 full、无 storage_ref、input/output 内联）还原后原样。"""
         with Session(self.engine) as s:
-            s.add(WorkflowExecutionLog(
-                instance_id=1, node_id="legacy", node_name="L", node_type="llm",
-                input_data='{"old":1}', output_data='{"old":2}', latency_ms=5, status="success",
-            ))
+            s.add(
+                WorkflowExecutionLog(
+                    instance_id=1,
+                    node_id="legacy",
+                    node_name="L",
+                    node_type="llm",
+                    input_data='{"old":1}',
+                    output_data='{"old":2}',
+                    latency_ms=5,
+                    status="success",
+                )
+            )
             s.commit()
         with Session(self.engine) as s:
             logs = list(s.exec(select(WorkflowExecutionLog)).all())

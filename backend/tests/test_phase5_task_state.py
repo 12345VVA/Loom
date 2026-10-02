@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from sqlalchemy.pool import StaticPool
@@ -54,10 +54,10 @@ class Phase5TaskStateTestCase(unittest.TestCase):
         self.session.refresh(task)
 
         svc = AiGenerationTaskService(self.session)
-        with patch("app.celery_app.celery_app") as celery_mock, \
-                patch.object(
-                    AiGovernanceService, "release_for_generation_task", return_value=1
-                ) as release_mock:
+        with (
+            patch("app.celery_app.celery_app") as celery_mock,
+            patch.object(AiGovernanceService, "release_for_generation_task", return_value=1) as release_mock,
+        ):
             result = svc.cancel(task.id)
 
         # revoke 调用：terminate=True，确保 worker 立即停止
@@ -86,10 +86,10 @@ class Phase5TaskStateTestCase(unittest.TestCase):
         self.session.refresh(task)
 
         svc = AiGenerationTaskService(self.session)
-        with patch("app.celery_app.celery_app") as celery_mock, \
-                patch.object(
-                    AiGovernanceService, "release_for_generation_task", return_value=0
-                ) as release_mock:
+        with (
+            patch("app.celery_app.celery_app") as celery_mock,
+            patch.object(AiGovernanceService, "release_for_generation_task", return_value=0) as release_mock,
+        ):
             result = svc.cancel(task.id)
 
         celery_mock.control.revoke.assert_not_called()
@@ -119,7 +119,7 @@ class Phase5TaskStateTestCase(unittest.TestCase):
             user_id=99,
             task_id=task.id,
             status="running",
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
         )
         self.session.add(invocation)
         self.session.commit()
@@ -160,10 +160,10 @@ class Phase5TaskStateTestCase(unittest.TestCase):
         new_async = MagicMock()
         new_async.id = "new-celery-id-000"
 
-        with patch("app.celery_app.celery_app") as celery_mock, \
-                patch(
-                    "app.modules.ai.tasks.generation_tasks.execute_ai_generation_task"
-                ) as exec_task_mock:
+        with (
+            patch("app.celery_app.celery_app") as celery_mock,
+            patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task") as exec_task_mock,
+        ):
             exec_task_mock.apply_async.return_value = new_async
             result = svc.retry(task.id)
 
@@ -202,10 +202,10 @@ class Phase5TaskStateTestCase(unittest.TestCase):
         from fastapi import HTTPException
 
         svc = AiGenerationTaskService(self.session)
-        with patch("app.celery_app.celery_app") as celery_mock, \
-                patch(
-                    "app.modules.ai.tasks.generation_tasks.execute_ai_generation_task"
-                ) as exec_task_mock:
+        with (
+            patch("app.celery_app.celery_app") as celery_mock,
+            patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task") as exec_task_mock,
+        ):
             with self.assertRaises(HTTPException) as cm:
                 svc.retry(task.id)
             self.assertEqual(cm.exception.status_code, 400)
@@ -231,10 +231,10 @@ class Phase5TaskStateTestCase(unittest.TestCase):
         new_async = MagicMock()
         new_async.id = "fresh-celery-id"
 
-        with patch("app.celery_app.celery_app") as celery_mock, \
-                patch(
-                    "app.modules.ai.tasks.generation_tasks.execute_ai_generation_task"
-                ) as exec_task_mock:
+        with (
+            patch("app.celery_app.celery_app") as celery_mock,
+            patch("app.modules.ai.tasks.generation_tasks.execute_ai_generation_task") as exec_task_mock,
+        ):
             exec_task_mock.apply_async.return_value = new_async
             result = svc.retry(task.id)
 
@@ -264,13 +264,13 @@ class Phase5TaskStateTestCase(unittest.TestCase):
 
         # 模拟 SETNX：第一次成功，后续失败（key 已存在）
         nx_results = iter([True, False, False, False])
-        with patch(
-            "app.modules.base.service.cache_service.cache_set_nx",
-            side_effect=lambda *a, **kw: next(nx_results),
-        ) as nx_mock, \
-                patch(
-                    "app.modules.task.tasks.system_tasks.execute_system_task"
-                ) as exec_mock:
+        with (
+            patch(
+                "app.modules.base.service.cache_service.cache_set_nx",
+                side_effect=lambda *a, **kw: next(nx_results),
+            ) as nx_mock,
+            patch("app.modules.task.tasks.system_tasks.execute_system_task") as exec_mock,
+        ):
             results = [svc.once(task.id) for _ in range(4)]
 
         # SETNX 被调用 4 次（每次 once 都尝试获取锁）
@@ -296,10 +296,10 @@ class Phase5TaskStateTestCase(unittest.TestCase):
         self.session.refresh(task)
 
         svc = TaskInfoService(self.session)
-        with patch(
-            "app.modules.base.service.cache_service.cache_set_nx", return_value=True
-        ) as nx_mock, \
-                patch("app.modules.task.tasks.system_tasks.execute_system_task"):
+        with (
+            patch("app.modules.base.service.cache_service.cache_set_nx", return_value=True) as nx_mock,
+            patch("app.modules.task.tasks.system_tasks.execute_system_task"),
+        ):
             svc.once(task.id)
 
         nx_mock.assert_called_once()
@@ -313,8 +313,10 @@ class Phase5TaskStateTestCase(unittest.TestCase):
         from fastapi import HTTPException
 
         svc = TaskInfoService(self.session)
-        with patch("app.modules.base.service.cache_service.cache_set_nx") as nx_mock, \
-                patch("app.modules.task.tasks.system_tasks.execute_system_task") as exec_mock:
+        with (
+            patch("app.modules.base.service.cache_service.cache_set_nx") as nx_mock,
+            patch("app.modules.task.tasks.system_tasks.execute_system_task") as exec_mock,
+        ):
             with self.assertRaises(HTTPException) as cm:
                 svc.once(99999)
             self.assertEqual(cm.exception.status_code, 404)

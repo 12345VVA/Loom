@@ -57,9 +57,7 @@ logger = logging.getLogger(__name__)
 
 # 当前请求内 fallback 降级深度：跨 _fallback/_stream_fallback 递归累加，
 # 防止 fallback 链成环时 _invoke 失败→_fallback→_invoke 形成无限递归（最终 RecursionError 崩 worker）
-_fallback_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "ai_fallback_depth", default=0
-)
+_fallback_depth: contextvars.ContextVar[int] = contextvars.ContextVar("ai_fallback_depth", default=0)
 MAX_FALLBACK_DEPTH = 5
 
 
@@ -114,7 +112,9 @@ class AiModelRuntimeService:
             response_format_overridden=response_format_overridden,
         )
 
-    def embedding(self, payload: AiEmbeddingRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
+    def embedding(
+        self, payload: AiEmbeddingRequest, current_user: User | None = None, task_id: int | None = None
+    ) -> dict:
         resolved = AiModelRegistryService(self.session).resolve(
             model_type="embedding", scenario=payload.scenario, profile_code=payload.profile_code
         )
@@ -310,12 +310,32 @@ class AiModelRuntimeService:
             # Redis 故障导致 cost 类并发规则无法判定：fail-closed 返回 503（P0-17）
             governance.block_invocation(invocation)
             effective_options = kwargs.get("options") or request_options
-            self._log_call(provider, model, profile, "unavailable", start, usage, str(exc), user=current_user, options=effective_options)
+            self._log_call(
+                provider,
+                model,
+                profile,
+                "unavailable",
+                start,
+                usage,
+                str(exc),
+                user=current_user,
+                options=effective_options,
+            )
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         except AiGovernanceBlocked as exc:
             governance.block_invocation(invocation)
             effective_options = kwargs.get("options") or request_options
-            self._log_call(provider, model, profile, "blocked", start, usage, str(exc), user=current_user, options=effective_options)
+            self._log_call(
+                provider,
+                model,
+                profile,
+                "blocked",
+                start,
+                usage,
+                str(exc),
+                user=current_user,
+                options=effective_options,
+            )
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
         except UnsupportedCapabilityError as exc:
             governance.finish(
@@ -329,7 +349,17 @@ class AiModelRuntimeService:
                 cost_micro_usd=0,
             )
             effective_options = kwargs.get("options") or request_options
-            self._log_call(provider, model, profile, "unsupported", start, usage, str(exc), user=current_user, options=effective_options)
+            self._log_call(
+                provider,
+                model,
+                profile,
+                "unsupported",
+                start,
+                usage,
+                str(exc),
+                user=current_user,
+                options=effective_options,
+            )
             raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
         except Exception as exc:
             governance.finish(
@@ -343,7 +373,9 @@ class AiModelRuntimeService:
                 cost_micro_usd=0,
             )
             effective_options = kwargs.get("options") or request_options
-            self._log_call(provider, model, profile, "error", start, usage, str(exc), user=current_user, options=effective_options)
+            self._log_call(
+                provider, model, profile, "error", start, usage, str(exc), user=current_user, options=effective_options
+            )
             # 所有方法失败统一打一条结构化 ERROR（含完整 traceback）；
             # request_id 由 Formatter 自动从 contextvar 注入，无需在此重复
             logger.error(
@@ -529,14 +561,32 @@ class AiModelRuntimeService:
             governance.block_invocation(invocation)
             invocation_closed = True
             self._log_call(
-                provider, model, profile, "unavailable", start, usage, str(exc), user=current_user, request_id=request_id, options=request_options
+                provider,
+                model,
+                profile,
+                "unavailable",
+                start,
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+                options=request_options,
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 503})
         except AiGovernanceBlocked as exc:
             governance.block_invocation(invocation)
             invocation_closed = True
             self._log_call(
-                provider, model, profile, "blocked", start, usage, str(exc), user=current_user, request_id=request_id, options=request_options
+                provider,
+                model,
+                profile,
+                "blocked",
+                start,
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+                options=request_options,
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 429})
         except UnsupportedCapabilityError as exc:
@@ -630,7 +680,16 @@ class AiModelRuntimeService:
                 )
                 invocation_closed = True
                 self._log_call(
-                    provider, model, profile, "error", start, usage, str(exc), user=current_user, request_id=request_id, options=request_options
+                    provider,
+                    model,
+                    profile,
+                    "error",
+                    start,
+                    usage,
+                    str(exc),
+                    user=current_user,
+                    request_id=request_id,
+                    options=request_options,
                 )
                 yield _sse_event({"event": "error", "message": f"模型调用失败: {exc}", "status": 400})
         finally:

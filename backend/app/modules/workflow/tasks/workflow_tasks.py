@@ -16,11 +16,14 @@ from typing import Any
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+from sqlalchemy import update
+from sqlmodel import select
+
+import app.modules.workflow.service.workflow_service as _workflow_service  # noqa: F401  冗余保险：compile_graph 入口已确保注册，此处保留双保险以防漏
 from app.celery_app import celery_app
 from app.core.database import Session, engine
 from app.core.logging import workflow_instance_id_ctx
-from sqlmodel import select
-from sqlalchemy import update
+from app.framework.storage import resolve_payload
 from app.modules.ai.service.security_service import AiSecurityService
 from app.modules.workflow.model.workflow import (
     WorkflowDefinition,
@@ -33,8 +36,6 @@ from app.modules.workflow.service.checkpointer import get_async_checkpointer
 from app.modules.workflow.service.compiler import WorkflowCompiler
 from app.modules.workflow.service.error_format import friendly_error_message
 from app.modules.workflow.service.event_bus import publish_event
-from app.framework.storage import resolve_payload
-import app.modules.workflow.service.workflow_service as _workflow_service  # noqa: F401  冗余保险：compile_graph 入口已确保注册，此处保留双保险以防漏
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +164,7 @@ async def _flush_worker(instance_id: int, queue: asyncio.Queue) -> None:
         timeout = max(0.01, _FLUSH_INTERVAL_SECONDS - (time.perf_counter() - last_flush))
         try:
             item = await asyncio.wait_for(queue.get(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if batch:
                 await asyncio.to_thread(_persist_node_payloads_sync, instance_id, batch)
                 batch.clear()
@@ -187,7 +188,7 @@ async def _drain_flush(queue: asyncio.Queue, task: asyncio.Task) -> None:
     await queue.put(_FLUSH_SENTINEL)
     try:
         await asyncio.wait_for(task, timeout=_FLUSH_DRAIN_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("工作流 flush_worker 收尾超时，强制取消")
         task.cancel()
 
@@ -257,7 +258,9 @@ def _notify_workflow_failure(instance_id: int) -> None:
     max_retries=0,
     task_time_limit=30 * 60,
 )
-def execute_workflow(self, instance_id: int, definition_id: int, initial_vars_json: str, resume_val_json: str | None = None):
+def execute_workflow(
+    self, instance_id: int, definition_id: int, initial_vars_json: str, resume_val_json: str | None = None
+):
     """
     在 Celery Worker 中执行或恢复一个工作流实例。
     """
@@ -388,9 +391,7 @@ async def _async_execute(
     try:
         # 1. 编译拓扑：解析 graph_json + thread_id（实例/定义/版本缺失则提前退出）
         with Session(engine) as session:
-            resolved = _resolve_execution_graph(
-                session, instance_id, definition_id, version_id, graph_json_override
-            )
+            resolved = _resolve_execution_graph(session, instance_id, definition_id, version_id, graph_json_override)
             if resolved is None:
                 return
             graph_json, thread_id = resolved
@@ -441,7 +442,11 @@ async def _async_execute(
                                 timeout_node_id = inst.current_node
                             # current_node 是最后"完成"的节点而非超时节点（执行中节点无事件产出），
                             # 文案以"最后完成节点"表述给出定位线索，不把超时归咎该节点
-                            timeout_node_name = ((nodes_map.get(timeout_node_id, {}) or {}).get("name") or timeout_node_id) if timeout_node_id else None
+                            timeout_node_name = (
+                                ((nodes_map.get(timeout_node_id, {}) or {}).get("name") or timeout_node_id)
+                                if timeout_node_id
+                                else None
+                            )
                             timeout_msg = (
                                 f"节点执行超时（{node_timeout}秒），最后完成节点：「{timeout_node_name}」"
                                 if timeout_node_name

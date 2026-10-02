@@ -21,7 +21,7 @@
 				:loading="retryingAll"
 				@click="retryAllFailed"
 			>
-				<el-icon><Refresh /></el-icon>
+				<el-icon><refresh /></el-icon>
 				{{ $t('重试失败资源') }} ({{ stats.statusCounts.failed }})
 			</el-button>
 			<cl-flex1 />
