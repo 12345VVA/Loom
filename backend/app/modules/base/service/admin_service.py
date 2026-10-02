@@ -1035,7 +1035,9 @@ class DepartmentAdminService(BaseAdminCrudService):
                 if not delete_user:
                     fallback_department_id = department.parent_id
                     if department_id in root_ids and fallback_department_id is not None:
-                        for user in list(self.session.exec(select(User).where(User.department_id == department_id)).all()):
+                        for user in list(
+                            self.session.exec(select(User).where(User.department_id == department_id)).all()
+                        ):
                             user.department_id = fallback_department_id
                             self.session.add(user)
                 else:
