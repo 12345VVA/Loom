@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # 同分支新推送取消旧跑，节省额度
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      # 与 docker-compose 中的版本对齐；psycopg[binary] 已在 requirements.txt
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: loom
+          POSTGRES_PASSWORD: loom
+          POSTGRES_DB: loom_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U loom"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Settings 有 17 个必填无默认字段，.env.example 打底（环境变量优先于 env_file），
+      # 再覆盖 DATABASE_URL 指向 service 容器。celery/alembic 步骤不走 conftest，
+      # 故以下变量必须在 job 级注入。
+      DATABASE_URL: postgresql+psycopg://loom:loom@localhost:5432/loom_test
+      SECRET_ENCRYPTION_KEY: ci-test-secret-encryption-key
+      ADMIN_CAPTCHA_ENABLED: "false"
+      # DEBUG=true：避免生产模式强制 CSRF Origin 校验拦截 TestClient 无 Origin 请求
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 准备环境基线（17 个必填字段由 .env.example 提供）
+        run: cp .env.example .env
+
+      - name: 安装依赖
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff 检查
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Alembic 迁移链验证（全新库逐一应用）
+        run: alembic upgrade head
+
+      - name: 后端测试
+        # live 测试缺 DEEPSEEK_API_KEY 时 AssertionError 而非跳过，且真实外呼，故排除
+        run: python -m pytest --ignore=tests/test_ai_deepseek_live.py
+
+      - name: Celery 任务注册与调度完整性校验
+        run: |
+          python - <<'EOF'
+          from app.celery_app import celery_app
+
+          tasks = celery_app.tasks
+
+          # task_routes 键为任务名，值为 {"queue": ...}
+          for name in celery_app.conf.task_routes or {}:
+              assert name in tasks, f"task_routes 引用了未注册任务: {name}"
+
+          # beat_schedule 键为调度条目名，条目内 "task" 才是任务名
+          for entry_name, entry in (celery_app.conf.beat_schedule or {}).items():
+              task_name = entry.get("task") if isinstance(entry, dict) else entry.task
+              assert task_name in tasks, (
+                  f"beat_schedule[{entry_name}] 引用了未注册任务: {task_name}"
+              )
+
+          registered = {n for n in tasks if not n.startswith("celery.")}
+          print(f"OK: {len(registered)} 个任务注册，调度与路由引用有效")
+          EOF
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      # eps.d.ts 已入库（tsconfig types 引用 build/cool/eps），无需后端在线生成
+      - name: 类型检查
+        run: npm run type-check
+
+      # 用不带 --fix 的检查模式，CI 不改写文件
+      - name: ESLint 检查
+        run: npm run lint:check
+
+      - name: 单元测试
+        run: npm run test:unit
+
+      - name: 生产构建
+        run: npm run build

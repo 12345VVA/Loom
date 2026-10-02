@@ -66,3 +66,11 @@ deliverables/
 
 # Docker
 .dockerignore
+
+# 前端 EPS 类型入库（tsconfig types 引用 build/cool/eps，缺失则 type-check 失败）
+# 白名单式例外：build/ 目录规则会剪枝其内部，单行 ! 例外无效
+!frontend/build/
+frontend/build/*
+!frontend/build/cool/
+frontend/build/cool/*
+!frontend/build/cool/eps.d.ts
