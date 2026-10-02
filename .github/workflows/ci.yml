@@ -72,13 +72,19 @@ jobs:
           alembic upgrade head
           alembic check
 
+      - name: 准备自建引擎测试的独立 schema
+        # make_test_engine 通道（自建引擎类测试）与 TestClient 通道（DATABASE_URL）
+        # 同库会互相 drop 对方表——分 schema 隔离
+        run: |
+          python -c "import psycopg; psycopg.connect('postgresql://loom:loom@localhost:5432/loom_test', autocommit=True).execute('CREATE SCHEMA IF NOT EXISTS test_engines')"
+
       - name: 后端测试
         # live 测试缺 DEEPSEEK_API_KEY 时 AssertionError 而非跳过，且真实外呼，故排除。
-        # TEST_DATABASE_URL：自建引擎类测试全量走 PG service（Step 3 主 job 切 PG），
-        # make_test_engine 每用例 drop+create 保证隔离；TestClient 类走 DATABASE_URL 同库。
+        # TEST_DATABASE_URL：自建引擎类测试全量走独立 schema（Step 3 主 job 切 PG），
+        # make_test_engine 每用例 reflect+drop 保证隔离；TestClient 类走 DATABASE_URL。
         run: python -m pytest --ignore=tests/test_ai_deepseek_live.py
         env:
-          TEST_DATABASE_URL: postgresql+psycopg://loom:loom@localhost:5432/loom_test
+          TEST_DATABASE_URL: postgresql+psycopg://loom:loom@localhost:5432/loom_test?options=-csearch_path%3Dtest_engines
 
       - name: Celery 任务注册与调度完整性校验
         run: |
