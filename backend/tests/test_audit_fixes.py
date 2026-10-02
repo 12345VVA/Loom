@@ -99,12 +99,16 @@ class VerifyDownloadTokenNoDbTests(unittest.TestCase):
         tv_mock.assert_called_once_with(1)
 
     def test_wrong_token_type_rejected(self):
-        """type != download 应抛 401。"""
+        """type 既非 download 也非 access（如 refresh）应抛 401。
+
+        注：verify_download_token 自 43a3dec 起有意接受 access 类型（/uploads 高频路径
+        复用登录态），故"错误类型"以 refresh 为代表。
+        """
         from fastapi import HTTPException
 
         with mock.patch(
             "app.modules.base.service.authority_service.decode_token",
-            return_value={"sub": "1", "type": "access", "token_version": 0},
+            return_value={"sub": "1", "type": "refresh", "token_version": 0},
         ):
             with self.assertRaises(HTTPException) as ctx:
                 verify_download_token("fake.jwt.token")

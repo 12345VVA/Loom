@@ -632,8 +632,10 @@ class MediaModuleTestCase(unittest.TestCase):
 
         with patch.object(service, "_transfer_artifact") as mock_transfer:
             def side_effect(a, artifact):
+                # _transfer_artifact 契约：返回调用方应继续引用的资产实例（正常落盘返回自身）
                 a.status = "success"
                 a.storage_url = "/uploads/20260921/retried.png"
+                return a
             mock_transfer.side_effect = side_effect
 
             res = service.retry_single(asset.id, current_user=user)

@@ -178,12 +178,19 @@ class DownloadTokenTests(unittest.TestCase):
         self.assertNotIn("roleIds", payload)
         self.assertNotIn("isRefresh", payload)
 
-    def test_download_token_rejects_access_token(self):
-        """access token 不能用于下载鉴权（type 不匹配）。"""
-        access_token = create_access_token(self._fake_user(), "test-sid")
+    def test_download_token_rejects_wrong_type(self):
+        """非法令牌类型（如 refresh）不能用于下载鉴权。
+
+        注：自 43a3dec 起 access 类型被有意接受（/uploads 高频路径复用登录态），
+        故错误类型以 refresh 为代表。
+        """
+        refresh_like = create_token(
+            {"sub": "1", "type": "refresh", "token_version": 0},
+            timedelta(minutes=5),
+        )
         session = MagicMock()
         with self.assertRaises(HTTPException) as ctx:
-            get_user_from_download_token(session, access_token)
+            get_user_from_download_token(session, refresh_like)
         self.assertEqual(ctx.exception.status_code, 401)
 
     def test_download_token_rejects_expired(self):

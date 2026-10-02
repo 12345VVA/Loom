@@ -42,16 +42,19 @@ class ParseScoreTestCase(unittest.TestCase):
 class BuildJudgeFnTestCase(unittest.TestCase):
     def test_calls_run_ai_chat_and_parses(self):
         with patch(_AI_CHAT_PATH, return_value='{"score": 0.9}'):
-            score = build_default_judge_fn("profile-x")({"q": "hi"}, "actual", "expected")
-        self.assertEqual(score, 0.9)
+            result = build_default_judge_fn("profile-x")({"q": "hi"}, "actual", "expected")
+        # judge_fn 返回多维 rubric 结构 {score, dimensions, reason}（见 build_default_judge_fn docstring）
+        self.assertAlmostEqual(result["score"], 0.9)
+        self.assertEqual(result["dimensions"], {})
+        self.assertEqual(result["reason"], "")
 
     def test_clamps_above_one(self):
         with patch(_AI_CHAT_PATH, return_value='{"score": 1.5}'):
-            self.assertEqual(build_default_judge_fn("p")({}, "a", "e"), 1.0)
+            self.assertEqual(build_default_judge_fn("p")({}, "a", "e")["score"], 1.0)
 
     def test_clamps_below_zero(self):
         with patch(_AI_CHAT_PATH, return_value='{"score": -0.2}'):
-            self.assertEqual(build_default_judge_fn("p")({}, "a", "e"), 0.0)
+            self.assertEqual(build_default_judge_fn("p")({}, "a", "e")["score"], 0.0)
 
     def test_propagates_runtime_error(self):
         # 异常向上抛，交由 LLMJudgeEvaluator 兜底为 0 分

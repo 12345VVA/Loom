@@ -288,7 +288,14 @@ class AuthAlignmentTests(unittest.TestCase):
         log_menu = next(item for item in menus if item["router"] == "/base/sys/log")
         login_log_menu = next(item for item in menus if item["router"] == "/base/sys/login_log")
 
-        self.assertEqual(system_menu["parentId"], next(item["id"] for item in menus if item["name"] == "系统管理"))
+        # 菜单为三层结构（menu.json）：系统管理 → 组织与权限 → 用户/角色/菜单管理；
+        # 系统配置与维护 → 参数配置/字典管理等。断言按真实层级校验父挂载。
+        auth_group = next(item for item in menus if item["name"] == "组织与权限")
+        settings_group = next(item for item in menus if item["name"] == "系统配置与维护")
+        self.assertEqual(system_menu["parentId"], auth_group["id"])
+        self.assertEqual(role_menu["parentId"], auth_group["id"])
+        self.assertEqual(menu_menu["parentId"], auth_group["id"])
+        self.assertEqual(param_menu["parentId"], settings_group["id"])
         self.assertEqual(system_menu["viewPath"], "modules/base/views/user/index.vue")
         self.assertEqual(role_menu["viewPath"], "modules/base/views/role.vue")
         self.assertEqual(menu_menu["viewPath"], "modules/base/views/menu/index.vue")

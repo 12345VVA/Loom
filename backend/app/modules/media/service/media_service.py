@@ -145,7 +145,15 @@ class MediaAssetService(BaseAdminCrudService):
         )
 
         try:
-            self._transfer_artifact(asset, artifact)
+            merged = self._transfer_artifact(asset, artifact)
+            if merged is not asset:
+                # 命中去重：原资产已合并删除，返回既有资产信息
+                return {
+                    "id": merged.id,
+                    "status": "success",
+                    "storage_url": merged.storage_url,
+                    "message": "内容已存在于资源库，该资产已合并至既有资源",
+                }
             asset.error_message = None
             self.session.add(asset)
             self.session.commit()
@@ -209,7 +217,9 @@ class MediaAssetService(BaseAdminCrudService):
             )
             attempted += 1
             try:
-                self._transfer_artifact(asset, artifact)
+                # 命中去重时 asset 已被删除合并，不得再操作原实例
+                if self._transfer_artifact(asset, artifact) is not asset:
+                    continue
                 asset.error_message = None
                 self.session.add(asset)
                 self.session.commit()
@@ -411,7 +421,14 @@ class MediaAssetService(BaseAdminCrudService):
             assets.append(asset)
         return assets
 
-    def _transfer_artifact(self, asset: MediaAsset, artifact: MediaArtifact) -> None:
+    def _transfer_artifact(self, asset: MediaAsset, artifact: MediaArtifact) -> MediaAsset:
+        """转存媒体内容并落盘。
+
+        返回调用方应继续引用的资产实例：
+        - 正常落盘：返回 asset 本身（status=success）；
+        - 命中 md5 去重：asset 已被删除合并，返回既有的同内容资产——
+          调用方不得再操作原 asset（实例已 delete+commit，访问会抛 InvalidRequestError）。
+        """
         if artifact.original_url:
             # 使用校验后的 IP URL 发起请求，避免二次 DNS 解析导致 DNS rebinding
             safe_url, hostname = _validate_remote_url(artifact.original_url)
@@ -442,12 +459,13 @@ class MediaAssetService(BaseAdminCrudService):
             )
             self.session.delete(asset)
             self.session.commit()
-            return
+            return existing
         asset.storage_url = StorageService.get_instance().save(content, file_name)
         asset.status = "success"
         asset.error_message = None
         self.session.add(asset)
         self.session.commit()
+        return asset
 
     def _find_existing_asset(self, asset: MediaAsset) -> MediaAsset | None:
         if not asset.md5:
