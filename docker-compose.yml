@@ -14,23 +14,23 @@ services:
       timeout: 3s
       retries: 5
 
-  # PostgreSQL - 数据库（可选，也可用 SQLite）
-  # postgres:
-  #   image: postgres:16-alpine
-  #   container_name: loom-postgres
-  #   environment:
-  #     POSTGRES_USER: loom
-  #     POSTGRES_PASSWORD: loom_password
-  #     POSTGRES_DB: loom_db
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U loom"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 5
+  # PostgreSQL - 数据库
+  postgres:
+    image: postgres:16-alpine
+    container_name: loom-postgres
+    environment:
+      POSTGRES_USER: loom
+      POSTGRES_PASSWORD: loom_password
+      POSTGRES_DB: loom_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loom"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   # FastAPI 后端
   backend:
@@ -46,14 +46,14 @@ services:
       - ./data:/app/data
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=sqlite:///./data/loom.db
+      - DATABASE_URL=postgresql+psycopg://loom:loom_password@postgres:5432/loom_db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
     depends_on:
       redis:
         condition: service_healthy
-      # postgres:
-      #   condition: service_healthy
+      postgres:
+        condition: service_healthy
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   # Celery Worker - 异步任务处理器
@@ -70,11 +70,13 @@ services:
       - ./data:/app/data
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=sqlite:///./data/loom.db
+      - DATABASE_URL=postgresql+psycopg://loom:loom_password@postgres:5432/loom_db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     command: sh -c 'celery -A app.celery_app worker --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,workflow,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video'
 
@@ -127,7 +129,7 @@ services:
 
 volumes:
   redis_data:
-  # postgres_data:
+  postgres_data:
 
 networks:
   default:
