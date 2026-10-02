@@ -83,6 +83,10 @@ jobs:
           python - <<'EOF'
           from app.celery_app import celery_app
 
+          # include 声明的任务模块由 worker 启动时才 import（惰性），
+          # 校验前需显式加载，否则 tasks 注册表为空、校验必然误报
+          celery_app.loader.import_default_modules()
+
           tasks = celery_app.tasks
 
           # task_routes 键为任务名，值为 {"queue": ...}
