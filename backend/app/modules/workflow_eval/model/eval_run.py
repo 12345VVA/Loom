@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Index, UniqueConstraint
+from sqlalchemy import DateTime, Index, UniqueConstraint
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -48,8 +48,8 @@ class WorkflowEvalRun(BaseEntity, table=True):
     total_cost_micro_usd: int = Field(default=0)
 
     summary_payload: str | None = Field(default=None)  # JSON：完整指标 + 各评估器分布
-    started_at: datetime | None = Field(default=None)
-    finished_at: datetime | None = Field(default=None)
+    started_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    finished_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     error_message: str | None = Field(default=None, max_length=1000)
     celery_task_id: str | None = Field(default=None, max_length=200, index=True)
     user_id: int | None = Field(default=None, index=True)
@@ -116,8 +116,8 @@ class WorkflowEvalRunRead(BaseModel):
     max_latency_ms: int = 0
     total_tokens: int = 0
     total_cost_micro_usd: int = 0
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
+    started_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    finished_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     error_message: str | None = None
     user_id: int | None = None
     created_at: datetime

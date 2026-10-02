@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime
+from datetime import UTC, datetime
 
 from helpers import make_test_engine
 from sqlmodel import Session, SQLModel
@@ -35,7 +35,7 @@ class StatsAggregationTestCase(unittest.TestCase):
             "total_tokens": 10,
             "cost_micro_usd": 1000,
             "model_type": "chat",
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(UTC),
         }
         defaults.update(kwargs)
         self.session.add(AiModelCallLog(**defaults))
@@ -99,7 +99,7 @@ class StatsAggregationTestCase(unittest.TestCase):
         self.assertEqual(day_25["total"], 2)
 
     def test_days_filter(self):
-        self._add_log(created_at=datetime.utcnow())
+        self._add_log(created_at=datetime.now(UTC))
         self._add_log(created_at=datetime(2020, 1, 1))  # 远早于任何 days 窗口
         self.session.commit()
         invalidate_summary_cache()

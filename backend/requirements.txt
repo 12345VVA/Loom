@@ -1,9 +1,9 @@
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
-# 钉 0.0.38：之后的版本加入 DateTime 时区强校验（naive datetime 写库直接 StatementError），
-# 而 BaseEntity 等仍以 naive datetime.utcnow 作默认值。全面改 timezone-aware（含列类型
-# timestamp→timestamptz 迁移与存量数据标准化）前不能升级，详见 docs 架构评审技术债备忘。
-sqlmodel==0.0.38
+# 解禁说明（2026-10-02）：0.0.38 后的版本强制 DateTime 值带 timezone——现已完成
+# 全模型 timezone-aware 改造（BaseEntity default_factory=datetime.now(UTC) + 全部
+# 时间列 sa_type=DateTime(timezone=True)）与 timestamptz 存量迁移（0017），可跟随上游。
+sqlmodel>=0.0.47,<0.1
 psycopg[binary]>=3.1
 alembic>=1.13.0
 celery>=5.3.0

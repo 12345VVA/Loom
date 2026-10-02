@@ -3,7 +3,7 @@ import os
 import sys
 import unittest
 import warnings
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -47,7 +47,7 @@ class PlainRow(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
     status: int = 1
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # 夹具表仅供 query builder 单元测试在隔离 engine 上使用，从全局 metadata 摘除，
@@ -154,7 +154,7 @@ class FrameworkAlignmentTests(unittest.TestCase):
     def test_query_builder_keyword_filters_sort_and_page_boundaries(self):
         engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[PlainRow.__table__])
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         with Session(engine) as session:
             session.add_all(
                 [
@@ -185,7 +185,7 @@ class FrameworkAlignmentTests(unittest.TestCase):
     def test_query_builder_ignores_disallowed_order_and_uses_fallback(self):
         engine = make_test_engine()
         SQLModel.metadata.create_all(engine, tables=[PlainRow.__table__])
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         with Session(engine) as session:
             session.add_all(
                 [
@@ -247,7 +247,7 @@ class FrameworkAlignmentTests(unittest.TestCase):
         self.assertEqual(param.key_name, "siteName")
         self.assertEqual(param.data_type, 1)
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         param_read = SysParamRead(
             id=1,
             name="站点",

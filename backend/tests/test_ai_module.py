@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import httpx
@@ -1044,7 +1044,7 @@ class AiModuleTestCase(unittest.TestCase):
             adapter="deepseek",
             base_url="https://old.example.com",
             is_active=False,
-            delete_time=datetime.utcnow(),
+            delete_time=datetime.now(UTC),
         )
         self.session.add(provider)
         self.session.commit()
@@ -1055,7 +1055,7 @@ class AiModuleTestCase(unittest.TestCase):
             name="Deleted Model",
             model_type="chat",
             is_active=False,
-            delete_time=datetime.utcnow(),
+            delete_time=datetime.now(UTC),
         )
         self.session.add(model)
         self.session.commit()
@@ -2206,7 +2206,7 @@ class AiModuleTestCase(unittest.TestCase):
 
         def cancel_during_call(session: Session, running_task: AiGenerationTask, payload: dict) -> dict:
             running_task.status = "cancelled"
-            running_task.finished_at = datetime.utcnow()
+            running_task.finished_at = datetime.now(UTC)
             session.add(running_task)
             session.commit()
             return {"content": "late result"}
@@ -2564,7 +2564,7 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertFalse(model.is_active)
 
     def test_governance_cleanup_clears_payload_and_deletes_old_logs(self):
-        old = datetime.utcnow().replace(year=2020)
+        old = datetime.now(UTC).replace(year=2020)
         task = AiGenerationTask(task_type="chat", request_payload='{"x":1}', result_payload='{"y":2}', status="success")
         log = AiModelCallLog(model_type="chat", status="success")
         event = AiGovernanceEvent(event_type="blocked", metric="request")

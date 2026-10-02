@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import DateTime, UniqueConstraint
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -43,7 +43,7 @@ class WorkflowDefinitionVersion(BaseEntity, table=True):
     graph_json: str = Field(default="{}", max_length=100000)  # 全量图（从主表搬运）
     change_note: str | None = Field(default=None, max_length=500)  # 草稿/发布变更说明
     parent_version_id: int | None = Field(default=None, index=True)  # 版本链父版本（回滚溯源）
-    published_at: datetime | None = Field(default=None)
+    published_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     published_by: int | None = Field(default=None, index=True)
     user_id: int | None = Field(default=None, index=True)  # 冗余 definition owner，供 DataScope 自动过滤版本列表
 
@@ -62,7 +62,7 @@ class WorkflowDefinitionVersionRead(BaseModel):
     status: str
     change_note: str | None = None
     parent_version_id: int | None = None
-    published_at: datetime | None = None
+    published_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     published_by: int | None = None
     created_at: datetime
     updated_at: datetime

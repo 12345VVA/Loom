@@ -8,6 +8,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field as PydanticField
+from sqlalchemy import DateTime
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -25,11 +26,11 @@ class NotificationMessage(BaseEntity, table=True):
     business_key: str | None = Field(default=None, index=True)
     link_url: str | None = None
     send_status: str = Field(default="sent", index=True)
-    scheduled_at: datetime | None = None
-    expired_at: datetime | None = None
+    scheduled_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    expired_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     sender_id: int | None = Field(default=None, index=True)
     is_recalled: bool = Field(default=False, index=True)
-    recalled_at: datetime | None = None
+    recalled_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     recalled_by: int | None = Field(default=None, index=True)
 
 
@@ -42,7 +43,7 @@ class NotificationRecipient(BaseEntity, table=True):
     department_id: int | None = Field(default=None, index=True)
     tenant_id: int | None = Field(default=None, index=True)
     is_read: bool = Field(default=False, index=True)
-    read_time: datetime | None = None
+    read_time: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
 
@@ -98,11 +99,11 @@ class NotificationMessageRead(BaseModel):
     business_key: str | None = None
     link_url: str | None = None
     send_status: str
-    scheduled_at: datetime | None = None
-    expired_at: datetime | None = None
+    scheduled_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    expired_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     sender_id: int | None = None
     is_recalled: bool = False
-    recalled_at: datetime | None = None
+    recalled_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     recalled_by: int | None = None
     created_at: datetime
     updated_at: datetime
@@ -119,11 +120,11 @@ class NotificationMessageCreateRequest(BaseModel):
     business_key: str | None = None
     link_url: str | None = None
     send_status: str = "sent"
-    scheduled_at: datetime | None = None
-    expired_at: datetime | None = None
+    scheduled_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    expired_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     sender_id: int | None = None
     is_recalled: bool = False
-    recalled_at: datetime | None = None
+    recalled_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     recalled_by: int | None = None
     audience: AudienceRule = PydanticField(default_factory=AudienceRule)
 

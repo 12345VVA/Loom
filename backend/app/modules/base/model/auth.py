@@ -9,6 +9,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, field_serializer, field_validator
 from pydantic import Field as PydanticField
+from sqlalchemy import DateTime
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -72,13 +73,13 @@ class User(BaseEntity, table=True):
     remark: str | None = None
     password_hash: str
     password_version: int = Field(default=1)
-    password_changed_at: datetime | None = Field(default=None)  # 密码最后修改时间
+    password_changed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # 密码最后修改时间
     department_id: int | None = Field(default=None)
     is_super_admin: bool = Field(default=False)
     is_manager: bool = Field(default=False)
     is_department_leader: bool = Field(default=False)
     is_active: bool = Field(default=True)
-    last_login_at: datetime | None = None
+    last_login_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class UserRoleLink(BaseEntity, table=True):

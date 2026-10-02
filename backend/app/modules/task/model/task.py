@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import DateTime
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -64,14 +65,14 @@ class TaskInfoRead(BaseModel):
     every: int | None = None
     remark: str | None = None
     status: int
-    start_date: datetime | None = None
-    end_date: datetime | None = None
+    start_date: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    end_date: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     data: str | None = None
     service: str | None = None
     type: int
-    next_run_time: datetime | None = None
+    next_run_time: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     task_type: int
-    last_execute_time: datetime | None = None
+    last_execute_time: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     notify_enabled: bool = False
     notify_on_success: bool = False
     notify_on_failure: bool = True
@@ -91,8 +92,8 @@ class TaskInfoCreateRequest(BaseModel):
     every: int | None = None
     remark: str | None = None
     status: int = 1
-    start_date: datetime | None = None
-    end_date: datetime | None = None
+    start_date: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    end_date: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     data: str | None = None
     service: str | None = None
     type: int = 0

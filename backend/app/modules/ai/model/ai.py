@@ -4,12 +4,12 @@ AI 模型管理实体与 DTO。
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
-from sqlalchemy import Index
+from sqlalchemy import DateTime, Index
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -139,8 +139,8 @@ class AiGenerationTask(BaseEntity, table=True):
     error_message: str | None = Field(default=None, max_length=1000)
     celery_task_id: str | None = Field(default=None, index=True, max_length=100)
     created_by: int | None = Field(default=None, index=True)
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
+    started_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    finished_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     retry_count: int = Field(default=0)
 
 
@@ -175,8 +175,8 @@ class AiGovernanceEvent(BaseEntity, table=True):
     metric: str = Field(default="request", index=True, max_length=50)
     current_value: int = Field(default=0)
     limit_value: int = Field(default=0)
-    window_start: datetime | None = Field(default=None, index=True)
-    window_end: datetime | None = Field(default=None, index=True)
+    window_start: datetime | None = Field(default=None, index=True, sa_type=DateTime(timezone=True))
+    window_end: datetime | None = Field(default=None, index=True, sa_type=DateTime(timezone=True))
     message: str | None = Field(default=None, max_length=1000)
     notified: bool = Field(default=False, index=True)
 
@@ -190,8 +190,8 @@ class AiRuntimeInvocation(BaseEntity, table=True):
     model_id: int | None = Field(default=None, index=True)
     provider_id: int | None = Field(default=None, index=True)
     status: str = Field(default="running", index=True, max_length=50)
-    started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
-    finished_at: datetime | None = Field(default=None, index=True)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True, sa_type=DateTime(timezone=True))
+    finished_at: datetime | None = Field(default=None, index=True, sa_type=DateTime(timezone=True))
     # 关联的 AI 生成任务：cancel 时据此精确释放并发计数，避免按 user 误杀同用户其他任务
     task_id: int | None = Field(default=None, index=True)
     # 持久化本次 acquire 的并发计数 Redis key（JSON），worker 被 terminate 后仍可据此精确 decr，
@@ -517,8 +517,8 @@ class AiGenerationTaskRead(BaseModel):
     error_message: str | None = None
     celery_task_id: str | None = None
     created_by: int | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
+    started_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    finished_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     retry_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -648,8 +648,8 @@ class AiGovernanceEventRead(BaseModel):
     metric: str
     current_value: int = 0
     limit_value: int = 0
-    window_start: datetime | None = None
-    window_end: datetime | None = None
+    window_start: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    window_end: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     message: str | None = None
     notified: bool = False
     created_at: datetime
