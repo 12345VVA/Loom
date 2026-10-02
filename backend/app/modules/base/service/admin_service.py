@@ -7,13 +7,14 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from app.core.database import transaction
 from app.core.security import add_user_all_tokens_to_blacklist, hash_password, validate_password_strength
 from app.framework.controller_meta import CrudQuery, RelationConfig
 from app.modules.base.compat import get_menu_parent_code, get_resource_compat
@@ -69,6 +70,20 @@ def get_request_ip_from_request(request: Any = None) -> str | None:
     if request and hasattr(request, "client"):
         return getattr(request.client, "host", None) if request.client else None
     return None
+
+
+def get_payload_attr(payload: Any, key: str, default: Any = None) -> Any:
+    """兼容从 dict 或 Pydantic/类实例中获取属性"""
+    if isinstance(payload, dict):
+        return payload.get(key, default)
+    return getattr(payload, key, default)
+
+
+def has_payload_attr(payload: Any, key: str) -> bool:
+    """兼容判断 dict 或 Pydantic/类实例是否具有某属性或键"""
+    if isinstance(payload, dict):
+        return key in payload
+    return hasattr(payload, key)
 
 
 def compute_entity_diff(old_data: dict, new_data: dict, exclude_fields: set = None) -> dict:
@@ -311,25 +326,36 @@ class BaseAdminCrudService:
 
         return raw_data
 
-    def add(self, payload: Any) -> Any:
-        """通用新增资源 (支持单条或列表)"""
-        if isinstance(payload, list):
-            return [self.add(item) for item in payload]
-
-        data = payload.model_dump() if hasattr(payload, "model_dump") else payload
+    def _add_single_in_tx(self, item: Any) -> Any:
+        data = item.model_dump() if hasattr(item, "model_dump") else (item.copy() if isinstance(item, dict) else item)
         data = self._before_add(data)
 
         entity = self.model(**data)
         self.session.add(entity)
-        self.session.commit()
-        self.session.refresh(entity)
+        self.session.flush()
 
-        self._after_add(entity, payload)
+        self._after_add(entity, item)
+        return entity
+
+    def add(self, payload: Any) -> Any:
+        """通用新增资源 (支持单条或列表)"""
+        if isinstance(payload, list):
+            with transaction(self.session):
+                entities = [self._add_single_in_tx(item) for item in payload]
+            for entity in entities:
+                self.session.refresh(entity)
+            return entities
+
+        with transaction(self.session):
+            entity = self._add_single_in_tx(payload)
+        self.session.refresh(entity)
         return entity
 
     def update(self, payload: Any) -> Any:
         """通用更新资源"""
-        id_val = getattr(payload, "id", None)
+        id_val = payload.get("id") if isinstance(payload, dict) else getattr(payload, "id", None)
+        if id_val is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少更新实体的 id")
         entity = self.session.get(self.model, id_val)
         if not entity:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="资源不存在")
@@ -339,27 +365,34 @@ class BaseAdminCrudService:
 
         # exclude_unset：仅写入请求中实际提供的字段，支持部分更新（cl-switch 等行内编辑只传 {id, 字段}）。
         # 全量编辑表单提交时所有字段均 set，行为与原先一致；各 _before_update 已用 data.get()/"k" in data 安全访问。
-        data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload
-        data = self._before_update(data, entity)
+        data = (
+            payload.model_dump(exclude_unset=True)
+            if hasattr(payload, "model_dump")
+            else (payload.copy() if isinstance(payload, dict) else payload)
+        )
 
-        for key, value in data.items():
-            if key == "id":
-                continue
-            setattr(entity, key, value)
+        with transaction(self.session):
+            data = self._before_update(data, entity)
 
-        self.session.add(entity)
-        self.session.commit()
+            for key, value in data.items():
+                if key == "id":
+                    continue
+                setattr(entity, key, value)
+
+            self.session.add(entity)
+            self.session.flush()
+
+            # 记录变更后的数据
+            new_data = entity_to_dict(entity)
+            diff = compute_entity_diff(old_data, new_data)
+
+            # 如果有变更，记录到操作日志（在同一事务内持久化）
+            if diff:
+                self._log_entity_change(entity.id, "update", diff, payload)
+
+            self._after_update(entity, payload)
+
         self.session.refresh(entity)
-
-        # 记录变更后的数据
-        new_data = entity_to_dict(entity)
-        diff = compute_entity_diff(old_data, new_data)
-
-        # 如果有变更，记录到操作日志
-        if diff:
-            self._log_entity_change(entity.id, "update", diff, payload)
-
-        self._after_update(entity, payload)
         return entity
 
     def delete(self, ids: list[int], payload: Any = None, soft_delete: bool | None = None) -> dict:
@@ -367,44 +400,47 @@ class BaseAdminCrudService:
         if not ids:
             return {"success": True, "deleted_ids": []}
 
-        ids = self._before_delete(ids, payload)
-
-        # 使用传入参数或实例属性（来自元数据注入）
         active_soft_delete = soft_delete if soft_delete is not None else self.soft_delete
+        target_ids: set[int] = set()
 
-        target_ids = set(ids)
+        with transaction(self.session):
+            filtered_ids = self._before_delete(ids, payload)
+            target_ids = set(filtered_ids)
 
-        # 记录删除前的数据
-        entities_before_delete = {}
-        if active_soft_delete:
-            # 软删除：收集所有受影响实体的数据
-            all_ids = self._collect_descendant_ids(ids)
-            target_ids.update(all_ids)
+            # 记录删除前的数据
+            entities_before_delete = {}
+            if active_soft_delete:
+                # 软删除：收集所有受影响实体的数据
+                all_ids = self._collect_descendant_ids(filtered_ids)
+                target_ids.update(all_ids)
 
-            for entity in self.session.exec(select(self.model).where(self.model.id.in_(list(target_ids)))).all():
-                entities_before_delete[entity.id] = entity_to_dict(entity)
+                for entity in self.session.exec(select(self.model).where(self.model.id.in_(list(target_ids)))).all():
+                    entities_before_delete[entity.id] = entity_to_dict(entity)
 
-            from sqlalchemy import update
+                from sqlalchemy import update
 
-            statement = (
-                update(self.model)
-                .where(self.model.id.in_(list(target_ids)))
-                .where(self.model.delete_time == None)  # noqa: E711  避免重复软删除
-                .values(delete_time=datetime.now(timezone.utc))
-            )
-            self.session.execute(statement)
-        else:
-            # 物理删除逻辑
-            entities = list(self.session.exec(select(self.model).where(self.model.id.in_(ids))).all())
-            for entity in entities:
-                entities_before_delete[entity.id] = entity_to_dict(entity)
-                self.session.delete(entity)
+                statement = (
+                    update(self.model)
+                    .where(self.model.id.in_(list(target_ids)))
+                    .where(self.model.delete_time.is_(None))  # 避免重复软删除
+                    .values(delete_time=datetime.now(UTC))
+                )
+                self.session.execute(statement)
+            else:
+                # 物理删除逻辑
+                entities = list(self.session.exec(select(self.model).where(self.model.id.in_(filtered_ids))).all())
+                for entity in entities:
+                    entities_before_delete[entity.id] = entity_to_dict(entity)
+                    self.session.delete(entity)
 
-        self.session.commit()
+            self.session.flush()
 
-        # 记录删除操作到日志
-        for entity_id, entity_data in entities_before_delete.items():
-            self._log_entity_change(entity_id, "delete", {"deleted_data": entity_data}, payload)
+            # 记录删除操作到日志（纳入同一事务）
+            for entity_id, entity_data in entities_before_delete.items():
+                self._log_entity_change(entity_id, "delete", {"deleted_data": entity_data}, payload)
+
+            # 补齐触发后置删除钩子
+            self._after_delete(list(target_ids), payload)
 
         return {"success": True, "deleted_ids": sorted(list(target_ids))}
 
@@ -480,10 +516,14 @@ class BaseAdminCrudService:
 
             # 获取当前用户信息（如果有）
             current_user_id = None
-            if payload and hasattr(payload, "_current_user"):
-                current_user_id = getattr(payload._current_user, "id", None)
-            elif payload and hasattr(payload, "current_user"):
-                current_user_id = getattr(payload.current_user, "id", None)
+            if payload:
+                user_obj = get_payload_attr(payload, "_current_user") or get_payload_attr(payload, "current_user")
+                if user_obj:
+                    current_user_id = (
+                        getattr(user_obj, "id", None)
+                        if hasattr(user_obj, "id")
+                        else (user_obj.get("id") if isinstance(user_obj, dict) else None)
+                    )
 
             # 构建日志消息
             model_name = self.model.__name__ if hasattr(self.model, "__name__") else "Entity"
@@ -517,13 +557,13 @@ class UserAdminService(BaseAdminCrudService):
         super().__init__(session, User)
 
     def _after_add(self, entity: User, payload: Any) -> None:
-        """用户创建后记录安全审计日志"""
+        """用户创建后记录安全审计日志并绑定角色"""
         try:
             from app.modules.base.service.sys_manage_service import SysSecurityLogService
 
             # 获取当前操作者信息
-            operator_id = getattr(payload, "_operator_id", None) or getattr(payload, "current_user_id", None)
-            operator_name = getattr(payload, "_operator_name", None) or "system"
+            operator_id = get_payload_attr(payload, "_operator_id") or get_payload_attr(payload, "current_user_id")
+            operator_name = get_payload_attr(payload, "_operator_name") or "system"
             operator_ip = get_request_ip_from_payload(payload)
 
             # 记录安全审计日志
@@ -548,8 +588,9 @@ class UserAdminService(BaseAdminCrudService):
         except Exception as exc:
             logger.warning(f"记录用户创建审计日志失败 - user_id: {entity.id}", exc_info=exc)
 
-        if hasattr(payload, "role_ids"):
-            self._replace_user_roles(entity.id, payload.role_ids)
+        role_ids = get_payload_attr(payload, "role_ids")
+        if role_ids is not None:
+            self._replace_user_roles(entity.id, role_ids)
 
     def list(
         self,
@@ -597,17 +638,13 @@ class UserAdminService(BaseAdminCrudService):
         data.pop("role_ids", None)
         return data
 
-    def _after_add(self, entity: User, payload: Any) -> None:
-        if hasattr(payload, "role_ids"):
-            self._replace_user_roles(entity.id, payload.role_ids)
-
     def _before_update(self, data: dict, entity: User) -> dict:
         if data.get("password"):
             # 验证密码强度
             validate_password_strength(data["password"])
             data["password_hash"] = hash_password(data.pop("password"))
             entity.password_version += 1
-            entity.password_changed_at = datetime.now(timezone.utc)  # 记录密码修改时间
+            entity.password_changed_at = datetime.now(UTC)  # 记录密码修改时间
         else:
             data.pop("password", None)
         data["nick_name"] = data.get("nick_name", "") or data.get("full_name", entity.full_name)
@@ -687,33 +724,25 @@ class UserAdminService(BaseAdminCrudService):
         return ids
 
     def _after_delete(self, ids: list[int], payload: Any = None) -> None:
-        """用户删除后记录安全审计日志"""
+        """用户删除后记录安全审计日志及外部状态同步"""
         try:
             from app.modules.base.service.sys_manage_service import SysSecurityLogService
 
-            # 获取被删除的用户信息（在删除前获取）
-            users = list(self.session.exec(select(User).where(User.id.in_(ids))).all())
+            operator_id = get_payload_attr(payload, "_operator_id") or get_payload_attr(payload, "current_user_id") or 0
+            operator_name = get_payload_attr(payload, "_operator_name") or "system"
+            operator_ip = get_request_ip_from_payload(payload)
 
-            for user in users:
-                # 获取当前操作者信息
-                operator_id = getattr(self, "_operator_id", None) or 0
-                operator_name = getattr(self, "_operator_name", None) or "system"
-
-                # 记录删除审计日志
+            for user_id in ids:
                 SysSecurityLogService(self.session).create_entry(
                     operator_id=operator_id,
                     operator_name=operator_name,
-                    operator_ip=None,
+                    operator_ip=operator_ip,
                     target_type="user",
-                    target_id=user.id,
-                    target_name=user.username,
+                    target_id=user_id,
+                    target_name=str(user_id),
                     operation="delete",
                     module="user",
-                    resource_path=f"/admin/base/sys/user/{user.id}",
-                    old_value=json.dumps(
-                        {"username": user.username, "full_name": user.full_name, "email": user.email},
-                        ensure_ascii=False,
-                    ),
+                    resource_path=f"/admin/base/sys/user/{user_id}",
                     business_type="user_management",
                     status=1,
                     remark="删除用户",
@@ -721,7 +750,7 @@ class UserAdminService(BaseAdminCrudService):
         except Exception as exc:
             logger.warning(f"记录用户删除审计日志失败 - user_ids: {ids}", exc_info=exc)
 
-        # 将被删除用户的所有Token加入黑名单
+        # 外部副作用：Token 加黑名单及清理登录缓存
         for user_id in ids:
             add_user_all_tokens_to_blacklist(user_id)
         clear_login_caches_for_users(ids)
@@ -735,17 +764,17 @@ class UserAdminService(BaseAdminCrudService):
             found_role_ids = {role.id for role in roles if role.id is not None}
             missing_ids = sorted(set(role_ids) - found_role_ids)
             if missing_ids:
-                self.session.rollback()
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"角色不存在: {missing_ids}")
             for role_id in role_ids:
                 self.session.add(UserRoleLink(user_id=user_id, role_id=role_id))
-        self.session.commit()
+        self.session.flush()
 
     def assign_roles(self, payload: UserRoleAssignRequest) -> UserListItem:
         user = self.session.get(User, payload.user_id)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
-        self._replace_user_roles(payload.user_id, payload.role_ids)
+        with transaction(self.session):
+            self._replace_user_roles(payload.user_id, payload.role_ids)
         clear_login_caches(payload.user_id)
         self.session.refresh(user)
         return UserListItem.model_validate(self._row_to_dict(user))
@@ -757,10 +786,10 @@ class UserAdminService(BaseAdminCrudService):
         if not department:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="部门不存在")
         users = list(self.session.exec(select(User).where(User.id.in_(payload.user_ids))).all())
-        for user in users:
-            user.department_id = payload.department_id
-            self.session.add(user)
-        self.session.commit()
+        with transaction(self.session):
+            for user in users:
+                user.department_id = payload.department_id
+                self.session.add(user)
         for user in users:
             clear_login_caches(user.id)
         return {"success": True}
@@ -801,27 +830,29 @@ class RoleAdminService(BaseAdminCrudService):
         except Exception as exc:
             logger.warning(f"记录角色创建审计日志失败 - role_id: {entity.id}", exc_info=exc)
 
-        if hasattr(payload, "menu_ids"):
-            self._replace_role_menus(entity.id, payload.menu_ids)
-        if hasattr(payload, "department_ids"):
-            self._replace_role_departments(entity.id, payload.department_ids)
+        menu_ids = get_payload_attr(payload, "menu_ids")
+        if menu_ids is not None:
+            self._replace_role_menus(entity.id, menu_ids)
+        department_ids = get_payload_attr(payload, "department_ids")
+        if department_ids is not None:
+            self._replace_role_departments(entity.id, department_ids)
 
     def _after_update(self, entity: Role, payload: Any) -> None:
         """角色更新后记录安全审计日志"""
         try:
             from app.modules.base.service.sys_manage_service import SysSecurityLogService
 
-            operator_id = getattr(payload, "_operator_id", None) or getattr(payload, "current_user_id", None)
-            operator_name = getattr(payload, "_operator_name", None) or "system"
+            operator_id = get_payload_attr(payload, "_operator_id") or get_payload_attr(payload, "current_user_id")
+            operator_name = get_payload_attr(payload, "_operator_name") or "system"
             operator_ip = get_request_ip_from_payload(payload)
 
             # 检查权限调整操作
             sensitive_operations = []
-            if hasattr(payload, "menu_ids"):
+            if has_payload_attr(payload, "menu_ids"):
                 sensitive_operations.append("update_permissions")
-            if hasattr(payload, "department_ids"):
+            if has_payload_attr(payload, "department_ids"):
                 sensitive_operations.append("update_data_scope")
-            if hasattr(payload, "data_scope"):
+            if has_payload_attr(payload, "data_scope"):
                 sensitive_operations.append("update_data_scope")
 
             if sensitive_operations:
@@ -842,10 +873,12 @@ class RoleAdminService(BaseAdminCrudService):
         except Exception as exc:
             logger.warning(f"记录角色更新审计日志失败 - role_id: {entity.id}", exc_info=exc)
 
-        if hasattr(payload, "menu_ids"):
-            self._replace_role_menus(entity.id, payload.menu_ids)
-        if hasattr(payload, "department_ids"):
-            self._replace_role_departments(entity.id, payload.department_ids)
+        menu_ids = get_payload_attr(payload, "menu_ids")
+        if menu_ids is not None:
+            self._replace_role_menus(entity.id, menu_ids)
+        department_ids = get_payload_attr(payload, "department_ids")
+        if department_ids is not None:
+            self._replace_role_departments(entity.id, department_ids)
         clear_login_caches_for_roles(self.session, [entity.id])
         self._clear_role_related_caches([entity.id])
 
@@ -854,23 +887,20 @@ class RoleAdminService(BaseAdminCrudService):
         try:
             from app.modules.base.service.sys_manage_service import SysSecurityLogService
 
-            roles = list(self.session.exec(select(Role).where(Role.id.in_(ids))).all())
+            operator_id = get_payload_attr(payload, "_operator_id") or get_payload_attr(payload, "current_user_id") or 0
+            operator_name = get_payload_attr(payload, "_operator_name") or "system"
 
-            for role in roles:
-                operator_id = getattr(self, "_operator_id", None) or 0
-                operator_name = getattr(self, "_operator_name", None) or "system"
-
+            for role_id in ids:
                 SysSecurityLogService(self.session).create_entry(
                     operator_id=operator_id,
                     operator_name=operator_name,
                     operator_ip=None,
                     target_type="role",
-                    target_id=role.id,
-                    target_name=role.name,
+                    target_id=role_id,
+                    target_name=str(role_id),
                     operation="delete",
                     module="role",
-                    resource_path=f"/admin/base/sys/role/{role.id}",
-                    old_value=json.dumps({"name": role.name, "code": role.code}, ensure_ascii=False),
+                    resource_path=f"/admin/base/sys/role/{role_id}",
                     business_type="role_management",
                     status=1,
                     remark="删除角色",
@@ -904,7 +934,6 @@ class RoleAdminService(BaseAdminCrudService):
         data["data_scope"] = "department" if data.get("department_ids") else "self"
         return data
 
-
     def _before_update(self, data: dict, entity: Role) -> dict:
         label = data.get("label") or entity.label
         code = data.get("code") or data.get("label") or entity.code
@@ -918,7 +947,6 @@ class RoleAdminService(BaseAdminCrudService):
         if "department_ids" in data:
             data["data_scope"] = "department" if data["department_ids"] else "self"
         return data
-
 
     def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
         roles = list(self.session.exec(select(Role).where(Role.id.in_(ids))).all())
@@ -941,7 +969,8 @@ class RoleAdminService(BaseAdminCrudService):
         role = self.session.get(Role, payload.role_id)
         if not role:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="角色不存在")
-        self._replace_role_menus(payload.role_id, payload.menu_ids)
+        with transaction(self.session):
+            self._replace_role_menus(payload.role_id, payload.menu_ids)
         self._clear_role_related_caches([payload.role_id])
         return {"success": True, "role_id": payload.role_id, "menu_ids": payload.menu_ids}
 
@@ -953,11 +982,10 @@ class RoleAdminService(BaseAdminCrudService):
             found_menu_ids = {menu.id for menu in menus if menu.id is not None}
             missing_ids = sorted(set(menu_ids) - found_menu_ids)
             if missing_ids:
-                self.session.rollback()
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"菜单不存在: {missing_ids}")
             for menu_id in menu_ids:
                 self.session.add(RoleMenuLink(role_id=role_id, menu_id=menu_id))
-        self.session.commit()
+        self.session.flush()
 
     def _replace_role_departments(self, role_id: int, department_ids: list[int]) -> None:
         for link in list(
@@ -969,11 +997,10 @@ class RoleAdminService(BaseAdminCrudService):
             found_ids = {item.id for item in departments if item.id is not None}
             missing_ids = sorted(set(department_ids) - found_ids)
             if missing_ids:
-                self.session.rollback()
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"部门不存在: {missing_ids}")
             for department_id in department_ids:
                 self.session.add(RoleDepartmentLink(role_id=role_id, department_id=department_id))
-        self.session.commit()
+        self.session.flush()
 
     def _clear_role_related_caches(self, role_ids: list[int]) -> None:
         clear_login_caches_for_roles(self.session, role_ids)
@@ -995,43 +1022,50 @@ class DepartmentAdminService(BaseAdminCrudService):
     def delete(self, ids: list[int], payload: Any = None, soft_delete: bool | None = None) -> dict:
         if not ids:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少待删除的部门 ID")
-        delete_user = bool(payload.delete_user) if payload else False
+        delete_user = bool(get_payload_attr(payload, "delete_user", False)) if payload else False
         department_ids = self._collect_descendant_department_ids(ids)
         root_ids = set(ids)
-        for department_id in sorted(department_ids, reverse=True):
-            department = self.session.get(Department, department_id)
-            if not department:
-                continue
-            if not delete_user:
-                fallback_department_id = department.parent_id
-                if department_id in root_ids and fallback_department_id is not None:
+        users_to_clear_cache: list[int] = []
+
+        with transaction(self.session):
+            for department_id in sorted(department_ids, reverse=True):
+                department = self.session.get(Department, department_id)
+                if not department:
+                    continue
+                if not delete_user:
+                    fallback_department_id = department.parent_id
+                    if department_id in root_ids and fallback_department_id is not None:
+                        for user in list(self.session.exec(select(User).where(User.department_id == department_id)).all()):
+                            user.department_id = fallback_department_id
+                            self.session.add(user)
+                else:
                     for user in list(self.session.exec(select(User).where(User.department_id == department_id)).all()):
-                        user.department_id = fallback_department_id
-                        self.session.add(user)
-            else:
-                for user in list(self.session.exec(select(User).where(User.department_id == department_id)).all()):
-                    clear_login_caches(user.id)
-                    self.session.delete(user)
-            for link in list(
-                self.session.exec(
-                    select(RoleDepartmentLink).where(RoleDepartmentLink.department_id == department_id)
-                ).all()
-            ):
-                self.session.delete(link)
-            self.session.delete(department)
-        self.session.commit()
+                        users_to_clear_cache.append(user.id)
+                        self.session.delete(user)
+                for link in list(
+                    self.session.exec(
+                        select(RoleDepartmentLink).where(RoleDepartmentLink.department_id == department_id)
+                    ).all()
+                ):
+                    self.session.delete(link)
+                self.session.delete(department)
+
+        # 事务成功后清理外部用户缓存
+        for uid in users_to_clear_cache:
+            clear_login_caches(uid)
+
         return {"success": True, "deleted_ids": department_ids}
 
     def order(self, payload: list[dict] | list[DepartmentOrderItem]) -> dict:
-        for item in payload:
-            data = item if isinstance(item, DepartmentOrderItem) else DepartmentOrderItem(**item)
-            department = self.session.get(Department, data.id)
-            if not department:
-                continue
-            department.parent_id = data.parent_id
-            department.sort_order = data.sort_order
-            self.session.add(department)
-        self.session.commit()
+        with transaction(self.session):
+            for item in payload:
+                data = item if isinstance(item, DepartmentOrderItem) else DepartmentOrderItem(**item)
+                department = self.session.get(Department, data.id)
+                if not department:
+                    continue
+                department.parent_id = data.parent_id
+                department.sort_order = data.sort_order
+                self.session.add(department)
         return {"success": True}
 
     def _row_to_dict(self, row: Any) -> dict:
@@ -1084,9 +1118,7 @@ class MenuAdminService(BaseAdminCrudService):
             )
 
         # 父菜单必须存在（且未软删除：session.get 不过滤 delete_time）
-        parent = self.session.exec(
-            select(Menu).where(Menu.id == parent_id, Menu.delete_time.is_(None))
-        ).first()
+        parent = self.session.exec(select(Menu).where(Menu.id == parent_id, Menu.delete_time.is_(None))).first()
         if not parent:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1112,9 +1144,7 @@ class MenuAdminService(BaseAdminCrudService):
                     detail="父级菜单设置将形成环路",
                 )
             visited.add(current_id)
-            ancestor = self.session.exec(
-                select(Menu).where(Menu.id == current_id, Menu.delete_time.is_(None))
-            ).first()
+            ancestor = self.session.exec(select(Menu).where(Menu.id == current_id, Menu.delete_time.is_(None))).first()
             if not ancestor:
                 break
             current_id = ancestor.parent_id
@@ -1180,19 +1210,23 @@ class MenuAdminService(BaseAdminCrudService):
     def import_menu(self, payload: MenuImportRequest | dict) -> dict:
         if isinstance(payload, dict):
             payload = MenuImportRequest(**payload)
-        for item in payload.menus:
-            self._upsert_import_node(item, None)
-        self.session.commit()
+        with transaction(self.session):
+            for item in payload.menus:
+                self._upsert_import_node(item, None)
         self._clear_menu_related_caches(list(self.session.exec(select(Menu.id)).all()))
         return {"success": True}
 
     def create_auto(self, payload: MenuCreateAutoRequest | dict) -> list[MenuRead]:
         if isinstance(payload, dict):
             payload = MenuCreateAutoRequest(**payload)
-        created: list[MenuRead] = []
-        for item in payload.items:
-            created.append(self._build_menu_read(self._upsert_auto_menu(item)))
-        return created
+        created_menus: list[Menu] = []
+        with transaction(self.session):
+            for item in payload.items:
+                created_menus.append(self._upsert_auto_menu(item))
+        for menu in created_menus:
+            self.session.refresh(menu)
+            self._clear_menu_related_caches([menu.id])
+        return [self._build_menu_read(menu) for menu in created_menus]
 
     def parse_menu_candidates(self, payload: MenuParseRequest, eps_catalog: dict[str, list[dict[str, Any]]]) -> dict:
         prefixes = set(payload.prefixes)
@@ -1429,10 +1463,9 @@ class MenuAdminService(BaseAdminCrudService):
         menu.is_show = True
         menu.sort_order = item.sort_order
         menu.is_active = True
-        menu.updated_at = datetime.now(timezone.utc)
+        menu.updated_at = datetime.now(UTC)
         self.session.add(menu)
-        self.session.commit()
-        self.session.refresh(menu)
+        self.session.flush()
 
         for index, api in enumerate(item.api, start=1):
             perms = api.get("permission") or self._build_auto_permission(item, api.get("path") or "")
@@ -1455,10 +1488,9 @@ class MenuAdminService(BaseAdminCrudService):
             button.permission = perms
             button.sort_order = index
             button.is_active = True
-            button.updated_at = datetime.now(timezone.utc)
+            button.updated_at = datetime.now(UTC)
             self.session.add(button)
-        self.session.commit()
-        self._clear_menu_related_caches([menu.id])
+        self.session.flush()
         return menu
 
     def _next_unique_code(self, base: str) -> str:
