@@ -12,17 +12,33 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.config import settings
 from app.framework.models.entity import BaseEntity
-from app.modules.ai.model import ai as _ai_models  # noqa: F401
-from app.modules.base.model import auth as _base_auth_models  # noqa: F401
-from app.modules.base.model import sys as _base_sys_models  # noqa: F401
-from app.modules.dict.model import dict as _dict_models  # noqa: F401
-from app.modules.media.model import media as _media_models  # noqa: F401
-from app.modules.notification.model import notification as _notification_models  # noqa: F401
-from app.modules.task.model import task as _task_models  # noqa: F401
-from app.modules.workflow.model import workflow as _workflow_models  # noqa: F401
-from app.modules.workflow.model import workflow_artifact as _workflow_artifact_models  # noqa: F401
-from app.modules.workflow_eval.model import eval_run as _workflow_eval_eval_run_models  # noqa: F401
-from app.modules.workflow_eval.model import test_set as _workflow_eval_test_set_models  # noqa: F401
+
+
+def _autodiscover_models() -> None:
+    """自动导入 app.modules 下所有业务模块的 model，确保 metadata 收录全量表。"""
+    from importlib import import_module
+    from pathlib import Path
+
+    modules_root = Path(__file__).resolve().parents[1] / "modules"
+    if not modules_root.exists():
+        return
+
+    for module_dir in sorted(
+        path for path in modules_root.iterdir() if path.is_dir() and not path.name.startswith("__")
+    ):
+        model_root = module_dir / "model"
+        if not model_root.exists() or not model_root.is_dir():
+            continue
+
+        for py_file in sorted(model_root.rglob("*.py")):
+            if py_file.name == "__init__.py":
+                continue
+            relative_parts = py_file.relative_to(model_root).with_suffix("").parts
+            module_path = ".".join(("app", "modules", module_dir.name, "model", *relative_parts))
+            import_module(module_path)
+
+
+_autodiscover_models()
 
 
 @event.listens_for(BaseEntity, "before_update", propagate=True)
