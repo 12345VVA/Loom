@@ -571,7 +571,7 @@ def upgrade() -> None:
 	provider_code VARCHAR(100), 
 	model_code VARCHAR(150), 
 	profile_code VARCHAR(100), 
-	original_url VARCHAR(1000), 
+	original_url TEXT, 
 	storage_url VARCHAR(1000), 
 	file_name VARCHAR(255), 
 	mime_type VARCHAR(100), 

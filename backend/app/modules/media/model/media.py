@@ -8,6 +8,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field as PydanticField
+from sqlalchemy import Column, Text
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -27,7 +28,9 @@ class MediaAsset(BaseEntity, table=True):
     provider_code: str | None = Field(default=None, index=True, max_length=100)
     model_code: str | None = Field(default=None, index=True, max_length=150)
     profile_code: str | None = Field(default=None, index=True, max_length=100)
-    original_url: str | None = Field(default=None, max_length=1000)
+    # Text 无长度上限：原始 URL 可能是 data URI（如生成失败时保留的 base64 preview，可达数 KB），
+    # VARCHAR(1000) 在 PG 强制截断会直接入库失败（SQLite 无长度校验掩盖了该缺陷）
+    original_url: str | None = Field(default=None, sa_column=Column(Text))
     storage_url: str | None = Field(default=None, index=True, max_length=1000)
     file_name: str | None = Field(default=None, index=True, max_length=255)
     mime_type: str | None = Field(default=None, index=True, max_length=100)
