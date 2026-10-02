@@ -19,6 +19,8 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from datetime import datetime
+
 from app.modules.base.model.auth import Menu, Role, RoleMenuLink, User, UserRoleLink  # noqa: E402
 from app.modules.base.model.sys import SysLog, SysSecurityLog  # noqa: E402
 from app.modules.base.service.admin_service import (  # noqa: E402
@@ -27,8 +29,6 @@ from app.modules.base.service.admin_service import (  # noqa: E402
     UserAdminService,
 )
 
-
-from datetime import datetime
 
 class DummyEntity(SQLModel, table=True):
     __tablename__ = "test_dummy_crud_entity"
