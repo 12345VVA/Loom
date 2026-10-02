@@ -59,8 +59,14 @@ jobs:
           ruff check .
           ruff format --check .
 
-      - name: Alembic 迁移链验证（全新库逐一应用）
-        run: alembic upgrade head
+      - name: Alembic 迁移链与模型 drift 校验
+        # baseline(0001) 为空壳迁移（既有 schema 的版本戳，表由应用 create_all 建表），
+        # 迁移链不支持空库 upgrade——按项目真实部署路径验证：
+        # init_db 建表 → stamp head 标记迁移链终点 → alembic check 检测"改模型未写迁移"的 drift。
+        run: |
+          python -c "from app.core.database import init_db; init_db()"
+          alembic stamp head
+          alembic check
 
       - name: 后端测试
         # live 测试缺 DEEPSEEK_API_KEY 时 AssertionError 而非跳过，且真实外呼，故排除
