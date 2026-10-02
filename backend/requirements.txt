@@ -1,6 +1,9 @@
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
-sqlmodel>=0.0.14
+# 钉 0.0.38：之后的版本加入 DateTime 时区强校验（naive datetime 写库直接 StatementError），
+# 而 BaseEntity 等仍以 naive datetime.utcnow 作默认值。全面改 timezone-aware（含列类型
+# timestamp→timestamptz 迁移与存量数据标准化）前不能升级，详见 docs 架构评审技术债备忘。
+sqlmodel==0.0.38
 psycopg[binary]>=3.1
 alembic>=1.13.0
 celery>=5.3.0
