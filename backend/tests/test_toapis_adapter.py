@@ -205,10 +205,16 @@ class TestToApisAdapter(unittest.TestCase):
             self.assertIn("Prompt contains sensitive content", str(ctx.exception))
 
     def test_validate_toapis_remote_url_allowed_under_proxy_network(self):
+        from app.core.config import settings
         from app.framework.url_security import validate_remote_url
 
-        # 模拟本地开启 Clash/TUN 模式，DNS 返回 198.18.x.x 代理网段 Fake-IP
-        with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("198.18.0.88", 0))]):
+        # 模拟本地开启 Clash/TUN 模式，DNS 返回 198.18.x.x 代理网段 Fake-IP。
+        # 允许列表显式锚定，不依赖环境配置（.env/.env.example 覆盖
+        # MEDIA_REMOTE_ALLOWED_HOSTS 时 config 默认全集即失效，CI 曾因此翻红）
+        with (
+            patch.object(settings, "MEDIA_REMOTE_ALLOWED_HOSTS", "*.toapis.cn"),
+            patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("198.18.0.88", 0))]),
+        ):
             safe_url, hostname = validate_remote_url("https://files.toapis.cn/generated/1789973567_e25a8d56.png")
 
         self.assertEqual(hostname, "files.toapis.cn")

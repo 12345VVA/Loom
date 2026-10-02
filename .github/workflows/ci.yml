@@ -37,9 +37,11 @@ jobs:
       # 故以下变量必须在 job 级注入。
       DATABASE_URL: postgresql+psycopg://loom:loom@localhost:5432/loom_test
       SECRET_ENCRYPTION_KEY: ci-test-secret-encryption-key
-      ADMIN_CAPTCHA_ENABLED: "false"
       # DEBUG=true：避免生产模式强制 CSRF Origin 校验拦截 TestClient 无 Origin 请求
       DEBUG: "true"
+      # 注意：不要在这里设 ADMIN_CAPTCHA_ENABLED——conftest setdefault "True" 是
+      # 滑块验证码测试的前提（job 级环境变量优先级高于 conftest 的 setdefault，
+      # 一旦覆盖会让 captcha_check 整体跳过，期望 401 的用例全部翻红）
     steps:
       - uses: actions/checkout@v4
 
