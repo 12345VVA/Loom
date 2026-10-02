@@ -128,6 +128,47 @@ class NodeRunnerRetryTestCase(unittest.TestCase):
                 self._run(runner)
         self.assertEqual(calls, 1)
 
+    def test_graph_interrupt_not_retried(self):
+        """GraphInterrupt（人工审批中断）必须原样上抛：不重试、不包装为 NodeExecutionError。
+
+        回归守护：create_node_runner 的 except Exception 曾吞掉该控制流信号，
+        导致 human_input 节点永远无法进入 paused，实例被误判为 failed。
+        """
+        from langgraph.errors import GraphInterrupt
+
+        calls = 0
+
+        async def interrupter(inputs, config):
+            nonlocal calls
+            calls += 1
+            raise GraphInterrupt()
+
+        p1, p2 = self._patch_helpers()
+        with p1, p2, patch.object(compiler_mod.node_registry, "get", return_value=interrupter):
+            # 即使配了 3 次重试，也不得重试控制流信号
+            runner = self._make_runner({"retry_max_attempts": 3, "retry_backoff_base": 0.0})
+            with self.assertRaises(GraphInterrupt):
+                self._run(runner)
+        self.assertEqual(calls, 1)
+
+    def test_graph_drained_not_retried(self):
+        """GraphDrained（优雅停机信号，同为 GraphBubbleUp 子类）同样不得被重试或包装。"""
+        from langgraph.errors import GraphDrained
+
+        calls = 0
+
+        async def drainer(inputs, config):
+            nonlocal calls
+            calls += 1
+            raise GraphDrained("shutdown")
+
+        p1, p2 = self._patch_helpers()
+        with p1, p2, patch.object(compiler_mod.node_registry, "get", return_value=drainer):
+            runner = self._make_runner({"retry_max_attempts": 3, "retry_backoff_base": 0.0})
+            with self.assertRaises(GraphDrained):
+                self._run(runner)
+        self.assertEqual(calls, 1)
+
 
 class FailedNodeIdPersistTestCase(unittest.TestCase):
     """failed_node_id 字段持久化 + NodeExecutionError 携带 node_id。"""

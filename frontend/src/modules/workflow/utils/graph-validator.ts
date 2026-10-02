@@ -7,6 +7,8 @@
  * 原先内联在 useSaveFlow 中，因其为无副作用纯函数，独立到 utils 与 edge-label /
  * group-hit-test 等纯函数保持一致，useSaveFlow 通过 import 复用。
  */
+import { resolveOutputVar } from '../utils';
+
 export function validateGraph(
 	nodes: any[],
 	edges: any[],
@@ -156,7 +158,7 @@ export function validateGraph(
 	}
 	const varNameToNodes = new Map<string, string[]>();
 	for (const n of nodes) {
-		const outVar = (n.data?.config as any)?.outputVariable?.trim();
+		const outVar = resolveOutputVar(n.data?.config as any);
 		if (outVar) {
 			const list = varNameToNodes.get(outVar) || [];
 			// 检查已有的同名节点是否与当前节点互斥

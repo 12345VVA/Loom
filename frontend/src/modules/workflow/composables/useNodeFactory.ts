@@ -1,9 +1,9 @@
 import { type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { getNodeMeta } from '../utils/node-type-registry';
-import { buildDefaultConfig } from '../utils/node-default-configs';
+import { NODE_DEFAULT_CONFIGS, buildDefaultConfig } from '../utils/node-default-configs';
 import { hitTestGroup } from '../utils/group-hit-test';
-import { genId } from '../utils';
+import { genId, resolveOutputVar } from '../utils';
 import type { FlowNode } from '../types/editor';
 
 /**
@@ -63,7 +63,7 @@ export function useNodeFactory(
 		const existingVars = new Set<string>();
 		for (const el of elements.value) {
 			if ('source' in el) continue;
-			const outVar = (el as FlowNode).data?.config?.outputVariable;
+			const outVar = resolveOutputVar((el as FlowNode).data?.config);
 			if (outVar) existingVars.add(outVar);
 		}
 		if (!existingVars.has(candidate)) return candidate;
@@ -209,10 +209,16 @@ export function useNodeFactory(
 			position: { x: newX, y: newY }
 		};
 
-		// 处理变量名去重
-		if (newNode.data?.config?.outputVariable) {
-			const baseVarName = newNode.data.config.outputVariable.replace(/_\d+$/, '');
-			newNode.data.config.outputVariable = getUniqueOutputVar(newLabel, baseVarName);
+		// 处理变量名去重。必须按该节点类型的权威字段名回写：仅 variable_transform 使用
+		// output_variable，其余节点用 outputVariable。字段名以 NODE_DEFAULT_CONFIGS 的
+		// outputVarKey 为准（与 buildDefaultConfig 写入侧同源），不再按现有 config 是否含
+		// 某键做启发式推断 —— 那会在缺失权威键（历史数据/导入）时写下划线「影子字段」（UI 不显示），
+		// 或在两字段并存时显示旧值而运行时用新值。
+		if (newNode.data?.config) {
+			const cfg = newNode.data.config as Record<string, any>;
+			const key = NODE_DEFAULT_CONFIGS[newNode.type]?.outputVarKey || 'outputVariable';
+			const current = resolveOutputVar(cfg);
+			if (current) cfg[key] = getUniqueOutputVar(newLabel, current.replace(/_\d+$/, ''));
 		}
 
 		// 复制出的节点不保留 parentNode（放在主画布）

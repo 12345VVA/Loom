@@ -65,6 +65,18 @@ export function genId(prefix = ''): string {
 }
 
 /**
+ * 读取节点输出变量名（兼容两种历史字段名）。
+ *
+ * 仅 variable_transform 使用下划线字段 output_variable，其余节点为驼峰 outputVariable
+ * （写入侧见 node-default-configs.ts 的 outputVarKey）。任何只读驼峰的地方都会漏掉
+ * 「数据转换」节点的输出变量，导致其在下游变量选择器不可见、重名去重失效。
+ */
+export function resolveOutputVar(cfg: Record<string, any> | undefined | null): string {
+	if (!cfg) return '';
+	return String(cfg.outputVariable || cfg.output_variable || '').trim();
+}
+
+/**
  * 校验节点 inputs 变量名合法性：非空、符合标识符规则、不重名。
  * 返回首个非法项 { label, error }；全部合法返回 null。供保存/测试前阻断使用。
  */

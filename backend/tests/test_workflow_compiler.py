@@ -19,6 +19,8 @@ from app.modules.workflow.service.compiler import (
     UNTESTABLE_NODE_TYPES,
     WorkflowCompiler,
     node_registry,
+    render_template,
+    safe_eval,
     validate_graph,
 )
 
@@ -515,6 +517,61 @@ class ConstantsTestCase(unittest.TestCase):
     def test_conditional_disjoint_from_subgraph(self):
         """条件节点与子图节点类型互斥（语义不同）。"""
         self.assertTrue(CONDITIONAL_NODE_TYPES.isdisjoint(SUBGRAPH_NODE_TYPES))
+
+
+class RenderTemplateUnicodeTestCase(unittest.TestCase):
+    """模板渲染中文变量名（前端 sanitizeLabel 会保留中文，后端必须同样识别）。"""
+
+    def test_render_template_unicode_var(self):
+        """中文变量名可被插值；ASCII 与点号路径行为不变。"""
+        variables = {"意图分类_output": "分类结果A", "llm_output": {"text": "hello"}, "甲": {"乙": [9]}}
+
+        # 中文变量名：曾因正则字符类不含 CJK 而被静默跳过
+        self.assertEqual(
+            render_template("请根据 {意图分类_output} 生成内容", variables),
+            "请根据 分类结果A 生成内容",
+        )
+        # 中文 + 点号深层路径
+        self.assertEqual(render_template("{甲.乙}", variables), "[9]")
+        # 回归：ASCII 与嵌套字典不受影响
+        self.assertEqual(render_template("v={llm_output.text}", variables), "v=hello")
+        # 未定义变量 → 空串（既有语义）
+        self.assertEqual(render_template("x={不存在的变量}", variables), "x=")
+
+
+class SafeEvalTestCase(unittest.TestCase):
+    """SafeEvaluator 表达式能力（条件路由 / 变量赋值 / 数据转换 三处共用）。"""
+
+    def test_safe_eval_container_literals(self):
+        """集合/序列/字典字面量：`in [...]`、`not in (...)`、`== {...}` 等常用判定不再报错。
+
+        回归守护：曾因缺 ast.List/Tuple/Set/Dict 分支而抛
+        「不支持的 AST 节点类型」，条件路由静默回落 false。
+        """
+        ctx = {"status": "success", "user_type": 3, "tags": ["a", "b"], "d": {"k": 1}}
+        self.assertTrue(safe_eval("status in ['success','approved']", ctx))
+        self.assertTrue(safe_eval("user_type not in (1, 2)", ctx))
+        self.assertTrue(safe_eval("tags == ['a','b']", ctx))
+        self.assertTrue(safe_eval("d == {'k': 1}", ctx))
+        self.assertTrue(safe_eval("status in {'success', 'ok'}", ctx))
+        # 回归：既有能力不受影响
+        self.assertTrue(safe_eval("len(tags) == 2 and status == 'success'", ctx))
+
+    def test_safe_eval_ifexp_joinedstr(self):
+        """三元表达式与 f-string（同为原兜底分支的缺口）。"""
+        ctx = {"count": 3, "name": "阿苏"}
+        self.assertEqual(safe_eval("'a' if count > 1 else 'b'", ctx), "a")
+        self.assertEqual(safe_eval("'b' if count > 5 else 'a'", ctx), "a")
+        self.assertEqual(safe_eval('f"v={count}"', ctx), "v=3")
+        self.assertEqual(safe_eval('f"{name} 有 {count} 条"', ctx), "阿苏 有 3 条")
+        self.assertEqual(safe_eval('f"{count:.2f}"', ctx), "3.00")
+
+    def test_safe_eval_keeps_security_boundary(self):
+        """能力扩展不得放宽安全边界：未登记函数调用与字典解包仍被拒绝。"""
+        with self.assertRaises(ValueError):
+            safe_eval("__import__('os').system('ls')", {})
+        with self.assertRaises(ValueError):
+            safe_eval("{**{'a': 1}}", {})
 
 
 if __name__ == "__main__":

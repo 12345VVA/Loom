@@ -1,6 +1,7 @@
 import { type Ref } from 'vue';
 
 import type { FlowNode, FlowEdge } from '../types/editor';
+import { resolveOutputVar } from '../utils';
 
 export interface UpstreamVariable {
 	nodeId: string;
@@ -67,7 +68,7 @@ export function useUpstreamVariables(elements: Ref<any[]>) {
 					}
 				} else {
 					const cfg = src.data?.config || {};
-					const outputVar = (cfg as any).outputVariable || '';
+					const outputVar = resolveOutputVar(cfg as any);
 					if (outputVar) {
 						const entry: UpstreamVariable = {
 							nodeId: src.id,

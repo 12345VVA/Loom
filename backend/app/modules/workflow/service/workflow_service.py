@@ -26,6 +26,7 @@ from app.modules.workflow.model.workflow import (
     WorkflowInstance,
 )
 from app.modules.workflow.service.compiler import (
+    _deep_get,
     node_registry,
     render_template,
     safe_eval,
@@ -310,17 +311,119 @@ def _build_llm_response_format(output_format: str, json_fields: list) -> tuple[d
     return response_format, format_instructions
 
 
+# _extract_first_json 对每个 `{`/`[` 位置各调一次 raw_decode（用 raw_decode(raw, idx) 免去 raw[idx:] 切片）。
+# 性能要点（两处，均已实测分离）：
+#   - 畸形深嵌套（如 "[" * n）：每次 raw_decode 都要递归到 Python 递归上限才抛 RecursionError，
+#     代价 ≈ 位置数 × 深度 —— 用 _MAX_JSON_RECURSION_FAILURES 作失败预算，命中即停。
+#   - 成功候选多时：**旧的「包含判断」是 O(n²) 两两比对**，候选 10000 时约 1 亿次比较（可达秒级）。
+#     已改为「按 start 升序、end 降序排序 + 单遍 max_end 扫描」的 O(n log n) 等价算法（见步骤 2）。
+# _MAX_JSON_CANDIDATE_ATTEMPTS 为总体尝试上限（防病态洪泛，正常输入远达不到），命中任一上限即视为
+# 扫描被截断 —— 宁可回落原文（返回 None），也不返回截断点之前可能残缺的片段（fail-safe）。
+_MAX_JSON_CANDIDATE_ATTEMPTS = 10000
+_MAX_JSON_RECURSION_FAILURES = 32
+
+
+def _extract_first_json(raw: str) -> str | None:
+    """定位文本中最可能的 JSON 片段（兼容前置引导词与说明性文字）。
+
+    从每个 `{` / `[` 位置用 raw_decode 逐点尝试，而非贪婪正则匹配最外层括号 ——
+    后者在文本含多个花括号片段时会吞掉过长区间，必然解析失败。
+
+    候选选择三步：
+      1. 收集所有可解析候选（尝试次数受两道上限约束，超限则整体回落原文）；
+      2. 剔除被其他候选完全包含的片段，只留最外层（O(n log n) 排序 + 单遍扫描）——
+         否则 `[{"a":1}]` 的内层 `{"a":1}` 会顶掉外层数组；
+      3. 排序：**对象优先于数组**（治正文里 `[1,2]` 这类噪声：`步骤 [1,2] 见下 {"a":1}`
+         取对象）；同类取最长，长度平手取位置最前。
+
+    已知取舍（对象/数组混合场景的固有歧义）：当结果本身是数组、而正文另含对象片段时，
+    「对象优先」会取对象（如 `输出 [{"id":1}] 说明 {}` 取 `{}`）。按类型或按长度选都必然
+    在另一方向出错，故此处保留「对象优先」，不做进一步区分 —— 详见任务报告。
+    """
+    decoder = json.JSONDecoder()
+    candidates: list[tuple[int, int, str, bool]] = []  # (start, end, text, is_obj)
+    attempts = 0
+    recursion_failures = 0
+    truncated = False
+    for idx, ch in enumerate(raw):
+        if ch not in "{[":
+            continue
+        if attempts >= _MAX_JSON_CANDIDATE_ATTEMPTS or recursion_failures >= _MAX_JSON_RECURSION_FAILURES:
+            truncated = True
+            break
+        attempts += 1
+        try:
+            # raw_decode(raw, idx) 从 idx 起解析，返回的 end 已是**原字符串绝对下标**，省去 raw[idx:] 拷贝
+            value, end = decoder.raw_decode(raw, idx)
+        except RecursionError:
+            # 畸形深嵌套（如 "[" * 3000）：每次都要递归到上限才抛，须计入预算并同等降级
+            recursion_failures += 1
+            continue
+        except json.JSONDecodeError:
+            continue
+        candidates.append((idx, end, raw[idx:end], isinstance(value, dict)))
+
+    # 扫描被截断 → 结果可能在截断点之后，回落原文（fail-safe）
+    if truncated or not candidates:
+        return None
+
+    # 步骤 2：剔除被其他候选完全包含的片段，仅保留最外层。
+    # 语义：cand 被 other 完全包含 ⟺ other.start <= cand.start 且 cand.end <= other.end
+    #       且至少一侧严格（起点更早或终点更远）。包含者起点必 <= cand 起点，故按
+    #       (start 升序, end 降序) 排序后单遍扫描：维护已见最大 end，若 cand.end <= max_end
+    #       则存在更早起点、更远终点的候选吸收它 → 丢弃；否则保留并更新 max_end。
+    # 该变换与旧 O(n²) 两两比对严格等价，但代价降到排序主导（候选 10000 由秒级降到毫秒级）。
+    ordered = sorted(candidates, key=lambda c: (c[0], -c[1]))
+    outermost: list[tuple[int, int, str, bool]] = []
+    max_end = -1
+    for cand in ordered:
+        if cand[1] <= max_end:
+            continue
+        outermost.append(cand)
+        max_end = cand[1]
+
+    # 步骤 3：对象优先于数组；同类取最长，长度平手取最前
+    def _rank(c: tuple[int, int, str, bool]) -> tuple[int, int, int]:
+        _, _, _, is_obj = c
+        return (0 if is_obj else 1, -(c[1] - c[0]), c[0])
+
+    return min(outermost, key=_rank)[2]
+
+
 def _parse_llm_output(content: str, output_format: str, output_variable: str) -> dict[str, Any]:
-    """解析 LLM 输出：JSON 模式去 markdown 后 json.loads，失败保留原始文本。"""
+    """解析 LLM 输出。
+
+    JSON 模式按三级降级：直接解析 → markdown 代码块 → 首个候选 JSON 片段
+    （对象优先、剔除内层被包含片段，见 `_extract_first_json`）；
+    全部失败才保留原始文本，保证下游拿到可读内容而不是异常。
+    """
     if output_format in ("json", "json_object"):
         stripped = content.strip()
-        if stripped.startswith("```"):
-            stripped = re.sub(r"^```\w*\n?", "", stripped)
-            stripped = re.sub(r"\n?```\s*$", "", stripped)
+
+        # Tier 1：本身即合法 JSON（最快路径）
         try:
             return {output_variable: json.loads(stripped)}
-        except json.JSONDecodeError:
-            logger.warning("LLM JSON 输出解析失败，保留原始文本")
+        except (json.JSONDecodeError, RecursionError):
+            # RecursionError：畸形深嵌套（如 "[" * 3000）会击穿 JSON 解析器，
+            # 必须与解析失败同等降级，否则异常穿透节点、下游拿不到可读内容
+            pass
+
+        # Tier 2/3：代码块 → 首个 JSON 片段
+        candidates: list[str] = []
+        block = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", stripped)
+        if block:
+            candidates.append(block.group(1))
+        extracted = _extract_first_json(stripped)
+        if extracted:
+            candidates.append(extracted)
+
+        for candidate in candidates:
+            try:
+                return {output_variable: json.loads(candidate.strip())}
+            except (json.JSONDecodeError, RecursionError):
+                continue
+
+        logger.warning("LLM JSON 输出解析失败，保留原始文本")
     return {output_variable: content}
 
 
@@ -403,6 +506,17 @@ node_registry.register("human_input", execute_human_input_node)
 # --- 2. 高级节点执行函数定义与注册 ---
 
 
+def _normalize_intent_label(text: str) -> str:
+    """归一化意图标签：剔除空白、markdown 强调符与中英文标点。
+
+    大模型常输出「咨询。」「**咨询**」这类带装饰的答案，精确 == 比较会全部落到默认分支。
+    注意：只做归一化后的等值比较，**不做子串包含匹配** —— 那会让「咨询」误命中
+    「咨询退款」；路由误判（走错分支）的代价高于漏判（漏判有 default_route 兜底）。
+    """
+    cleaned = re.sub(r"[*_`\s]", "", text or "")
+    return cleaned.strip("。．.,，、；;：:！!？?\"'“”‘’()（）[]【】")
+
+
 async def execute_intent_classifier_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     意图识别与语义分流节点执行逻辑
@@ -446,13 +560,31 @@ async def execute_intent_classifier_node(variables: dict[str, Any], config: dict
         matched_intent_name = "其他"
 
     # 3. 匹配目标跳转路由
+    #    3.1 先做原样精确匹配：优先命中配置里的权威意图名，避免归一化把不同标签
+    #        （如 VIP_用户 / VIP用户）折叠成同一 key 后误路由。
+    #    3.2 无精确命中再归一化匹配（容忍模型输出的标点/markdown 强调符）；若归一化后
+    #        出现多个候选，说明标签存在歧义，不静默取首个，记 warning 并保持 default_route 兜底。
     selected_route = default_route
-    for intent in intents:
-        if intent.get("name") == matched_intent_name:
-            selected_route = intent.get("target_route")
-            break
+    exact_hits = [i for i in intents if str(i.get("name") or "") == matched_intent_name]
+    if exact_hits:
+        selected_route = exact_hits[0].get("target_route")
+    else:
+        matched_label = _normalize_intent_label(matched_intent_name)
+        norm_hits = [
+            i
+            for i in intents
+            if matched_label and _normalize_intent_label(str(i.get("name") or "")) == matched_label
+        ]
+        if len(norm_hits) > 1:
+            logger.warning(
+                "意图标签归一化后存在多个候选，路由存在歧义，回落 default_route：matched=%r candidates=%s",
+                matched_intent_name,
+                [str(i.get("name")) for i in norm_hits],
+            )
+        elif norm_hits:
+            selected_route = norm_hits[0].get("target_route")
 
-    if matched_intent_name == "其他" or not selected_route:
+    if _normalize_intent_label(matched_intent_name) == "其他" or not selected_route:
         selected_route = default_route
 
     return {f"{node_id}_selected_route": selected_route}
@@ -473,7 +605,9 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
     output_var = config.get("output_variable", "loop_results")
     stop_on_error = config.get("stop_on_error", True)
 
-    items = variables.get(list_var) or []
+    # 走 _deep_get：list_variable 可能被填成跨节点深层路径（如 llm_output.user_list），
+    # 直接用 variables.get() 会因键不存在而静默返回空列表，导致循环/批处理空转
+    items = _deep_get(variables, list_var) or []
     if not isinstance(items, list) or not items:
         return {output_var: []}
     if len(items) > 200:
@@ -517,7 +651,9 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
     output_var = config.get("output_variable", "batch_results")
     concurrency_limit = min(max(int(config.get("concurrency_limit", 5) or 5), 1), 20)
 
-    items = variables.get(list_var) or []
+    # 走 _deep_get：list_variable 可能被填成跨节点深层路径（如 llm_output.user_list），
+    # 直接用 variables.get() 会因键不存在而静默返回空列表，导致循环/批处理空转
+    items = _deep_get(variables, list_var) or []
     if not isinstance(items, list) or not items:
         return {output_var: []}
     if len(items) > 200:

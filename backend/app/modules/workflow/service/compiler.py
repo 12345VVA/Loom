@@ -11,6 +11,9 @@ from collections.abc import Callable
 from typing import Annotated, Any, TypedDict
 
 logger = logging.getLogger(__name__)
+# GraphBubbleUp 自 langgraph 0.2.54 起才在 langgraph.errors 中定义（0.2.53 及更早无此类，
+# 该版本以下此行为模块顶层硬导入，会导致整个 workflow 模块 ImportError）。下限见 requirements.txt。
+from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END, START, StateGraph
 
 
@@ -125,6 +128,39 @@ class SafeEvaluator:
             if isinstance(value, dict):
                 return value.get(node.attr)
             raise TypeError("不支持的属性访问。仅支持对字典(dict)内的键进行属性读取。")
+        elif isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            # 集合/序列字面量：支持 `status in ['a', 'b']`、`x not in (1, 2)` 这类常见判定
+            items = [self.evaluate(elt) for elt in node.elts]
+            if isinstance(node, ast.Tuple):
+                return tuple(items)
+            if isinstance(node, ast.Set):
+                return set(items)
+            return items
+        elif isinstance(node, ast.Dict):
+            # 字典字面量：支持 `d == {'k': 1}`。解包（**）无键可求值，显式拒绝
+            if any(k is None for k in node.keys):
+                raise ValueError("安全求值不支持字典解包（**）")
+            return {self.evaluate(k): self.evaluate(v) for k, v in zip(node.keys, node.values)}
+        elif isinstance(node, ast.IfExp):
+            # 三元表达式：a if cond else b
+            return self.evaluate(node.body) if self.evaluate(node.test) else self.evaluate(node.orelse)
+        elif isinstance(node, ast.FormattedValue):
+            # f-string 的插值段：先应用 conversion（!r/!s/!a），再应用 format_spec ——
+            # 这是 Python 的求值顺序（conversion 在前，format_spec 作用在转换结果上）。
+            # node.conversion 为 int：-1 表示未指定、'r'/'s'/'a' 对应其 ASCII 码。
+            val = self.evaluate(node.value)
+            if node.conversion == ord("r"):
+                val = repr(val)
+            elif node.conversion == ord("s"):
+                val = str(val)
+            elif node.conversion == ord("a"):
+                val = ascii(val)
+            if node.format_spec is not None:
+                return format(val, self.evaluate(node.format_spec))
+            return val
+        elif isinstance(node, ast.JoinedStr):
+            # f-string 整体：逐段拼接（内部 Constant 段本身已是 str）
+            return "".join(str(self.evaluate(v)) for v in node.values)
         raise TypeError(f"不支持的 AST 节点类型: {type(node)}")
 
 
@@ -148,6 +184,12 @@ def _deep_get(val: Any, path: str) -> Any:
         else:
             return None
     return val
+
+
+# 变量引用字符集必须与前端 sanitizeLabel（useNodeFactory.ts 的 [^a-zA-Z0-9_一-鿿]）
+# 严格一致 —— U+4E00–U+9FFF（CJK 统一汉字）。否则前端能生成中文变量名（如「意图分类_output」），
+# 后端却不识别，导致模板插值被静默跳过。
+_VAR_REF_PATTERN = re.compile(r"\{([a-zA-Z0-9_.\u4e00-\u9fff]+)\}(?!\s*[:,}])")
 
 
 def render_template(template: str, variables: dict) -> str:
@@ -185,7 +227,7 @@ def render_template(template: str, variables: dict) -> str:
     # `}` 后跟 冒号(dict)、逗号(集合/数组)、右花括号(嵌套结尾) 的不视为变量引用，
     # 避免模板里的 `{a:1}`/`{a,b}`/`{"k":1}}` 等字面量片段被当变量吞成空串。
     # （带引号 JSON `{"a":1}` 因 `"` 不在字符类本就不匹配，此处仅补防裸键字面量。）
-    return re.sub(r"\{([a-zA-Z0-9_.]+)\}(?!\s*[:,}])", _resolve, template)
+    return _VAR_REF_PATTERN.sub(_resolve, template)
 
 
 def strip_braces(val: str) -> str:
@@ -1055,6 +1097,11 @@ class WorkflowCompiler:
                 try:
                     updates = await executor(node_inputs, executor_config)
                     break
+                except GraphBubbleUp:
+                    # 控制流信号：interrupt 中断（人工审批挂起）/ drain 优雅停机。
+                    # 必须原样冒泡给 LangGraph —— 既不重试，也不包装为 NodeExecutionError，
+                    # 否则 human_input 永远无法进入 paused，停机信号也会被误判为节点失败。
+                    raise
                 except Exception as e:
                     if attempt >= max_attempts:
                         # 重试耗尽：抛 NodeExecutionError 携带 node_id，供上层写 failed_node_id
@@ -1102,8 +1149,14 @@ class WorkflowCompiler:
                 result = safe_eval(expression, eval_context)
                 return true_route if result else (false_route or END)
             except Exception as e:
-                # 如果求值失败，默认走向 false 路由并记录错误
-                logger.error(f"[Workflow Router Error] Safe evaluate '{expression}' failed: {e}")
+                # 求值失败仍按既有语义回落 false 路由，但日志必须能定位到具体节点：
+                # 否则用户只会看到「分支莫名走错」，排查成本极高
+                logger.error(
+                    "[Workflow Router Error] 节点 '%s' 条件表达式 '%s' 求值失败，已回落 false 路由: %s",
+                    node_id,
+                    expression,
+                    e,
+                )
                 return false_route or END
 
         return conditional_router
