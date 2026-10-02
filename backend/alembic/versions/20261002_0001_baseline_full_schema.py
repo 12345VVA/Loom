@@ -1,7 +1,7 @@
 """baseline: 全量 schema（squash 重建）
 
 历史链（0001 空壳 + 0002-0017 增量）squash 为单一全量 baseline：
-表结构 DDL 直接自 SQLModel.metadata 按 PostgreSQL 方言编译（36 表，
+表结构 DDL 直接自 SQLModel.metadata 按 PostgreSQL 方言编译（38 表，
 timestamptz 时间列，模型声明索引随表/独立语句）。从零部署自此走
 `alembic upgrade head` 一步到位；存量库执行 `alembic stamp head`。
 
@@ -45,7 +45,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_generation_task_celery_task_id ON ai_generation_task (celery_task_id)
+            """CREATE INDEX ix_ai_generation_task_scenario ON ai_generation_task (scenario)
         """
         )
         op.execute(
@@ -53,15 +53,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_generation_task_created_by ON ai_generation_task (created_by)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_ai_generation_task_delete_time ON ai_generation_task (delete_time)
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_generation_task_scenario ON ai_generation_task (scenario)
+            """CREATE INDEX ix_ai_generation_task_created_by ON ai_generation_task (created_by)
         """
         )
         op.execute(
@@ -70,6 +66,10 @@ def upgrade() -> None:
         )
         op.execute(
             """CREATE INDEX ix_ai_generation_task_status ON ai_generation_task (status)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_generation_task_celery_task_id ON ai_generation_task (celery_task_id)
         """
         )
         op.execute(
@@ -96,15 +96,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_governance_event_window_start ON ai_governance_event (window_start)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_ai_governance_event_profile_id ON ai_governance_event (profile_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_governance_event_model_id ON ai_governance_event (model_id)
         """
         )
         op.execute(
@@ -112,15 +104,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_governance_event_delete_time ON ai_governance_event (delete_time)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_ai_governance_event_user_id ON ai_governance_event (user_id)
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_governance_event_metric ON ai_governance_event (metric)
+            """CREATE INDEX ix_ai_governance_event_delete_time ON ai_governance_event (delete_time)
         """
         )
         op.execute(
@@ -128,15 +116,27 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_governance_event_provider_id ON ai_governance_event (provider_id)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_ai_governance_event_notified ON ai_governance_event (notified)
         """
         )
         op.execute(
+            """CREATE INDEX ix_ai_governance_event_provider_id ON ai_governance_event (provider_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_governance_event_model_id ON ai_governance_event (model_id)
+        """
+        )
+        op.execute(
             """CREATE INDEX ix_ai_governance_event_rule_id ON ai_governance_event (rule_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_governance_event_metric ON ai_governance_event (metric)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_governance_event_window_start ON ai_governance_event (window_start)
         """
         )
         op.execute(
@@ -168,15 +168,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_governance_rule_user_id ON ai_governance_rule (user_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_governance_rule_sort_order ON ai_governance_rule (sort_order)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_ai_governance_rule_notify_enabled ON ai_governance_rule (notify_enabled)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_governance_rule_user_id ON ai_governance_rule (user_id)
         """
         )
         op.execute(
@@ -184,11 +180,15 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_ai_governance_rule_is_active ON ai_governance_rule (is_active)
+        """
+        )
+        op.execute(
             """CREATE INDEX ix_ai_governance_rule_scope_type ON ai_governance_rule (scope_type)
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_governance_rule_is_active ON ai_governance_rule (is_active)
+            """CREATE INDEX ix_ai_governance_rule_mode ON ai_governance_rule (mode)
         """
         )
         op.execute(
@@ -196,7 +196,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_governance_rule_mode ON ai_governance_rule (mode)
+            """CREATE INDEX ix_ai_governance_rule_sort_order ON ai_governance_rule (sort_order)
         """
         )
         op.execute(
@@ -229,19 +229,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_model_code ON ai_model (code)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_ai_model_model_type ON ai_model (model_type)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_provider_id ON ai_model (provider_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_is_active ON ai_model (is_active)
         """
         )
         op.execute(
@@ -249,11 +237,23 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_ai_model_name ON ai_model (name)
+        """
+        )
+        op.execute(
             """CREATE INDEX ix_ai_model_delete_time ON ai_model (delete_time)
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_model_name ON ai_model (name)
+            """CREATE INDEX ix_ai_model_code ON ai_model (code)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_is_active ON ai_model (is_active)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_provider_id ON ai_model (provider_id)
         """
         )
         op.execute(
@@ -284,7 +284,43 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_ai_model_call_log_profile_id ON ai_model_call_log (profile_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_call_log_scenario ON ai_model_call_log (scenario)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_call_log_workflow_instance_id ON ai_model_call_log (workflow_instance_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_call_log_created_at ON ai_model_call_log (created_at)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_call_log_model_type ON ai_model_call_log (model_type)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_call_log_request_id ON ai_model_call_log (request_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_call_log_status_created_at ON ai_model_call_log (status, created_at)
+        """
+        )
+        op.execute(
             """CREATE INDEX ix_ai_model_call_log_model_id ON ai_model_call_log (model_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_call_log_model_id_created_at ON ai_model_call_log (model_id, created_at)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_call_log_user_id_created_at ON ai_model_call_log (user_id, created_at)
         """
         )
         op.execute(
@@ -300,43 +336,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_model_call_log_scenario ON ai_model_call_log (scenario)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_call_log_request_id ON ai_model_call_log (request_id)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_ai_model_call_log_provider_id ON ai_model_call_log (provider_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_call_log_workflow_instance_id ON ai_model_call_log (workflow_instance_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_call_log_profile_id ON ai_model_call_log (profile_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_call_log_created_at ON ai_model_call_log (created_at)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_call_log_status_created_at ON ai_model_call_log (status, created_at)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_call_log_model_id_created_at ON ai_model_call_log (model_id, created_at)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_call_log_model_type ON ai_model_call_log (model_type)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_call_log_user_id_created_at ON ai_model_call_log (user_id, created_at)
         """
         )
         op.execute(
@@ -366,23 +366,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_model_profile_delete_time ON ai_model_profile (delete_time)
-        """
-        )
-        op.execute(
-            """CREATE UNIQUE INDEX ix_ai_model_profile_code ON ai_model_profile (code)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_profile_is_default ON ai_model_profile (is_default)
+            """CREATE INDEX ix_ai_model_profile_model_id ON ai_model_profile (model_id)
         """
         )
         op.execute(
             """CREATE INDEX ix_ai_model_profile_scenario ON ai_model_profile (scenario)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_model_profile_model_id ON ai_model_profile (model_id)
         """
         )
         op.execute(
@@ -399,6 +387,18 @@ def upgrade() -> None:
         )
         op.execute(
             """CREATE INDEX ix_ai_model_profile_sort_order ON ai_model_profile (sort_order)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_profile_is_default ON ai_model_profile (is_default)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_model_profile_delete_time ON ai_model_profile (delete_time)
+        """
+        )
+        op.execute(
+            """CREATE UNIQUE INDEX ix_ai_model_profile_code ON ai_model_profile (code)
         """
         )
         op.execute(
@@ -432,7 +432,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_provider_delete_time ON ai_provider (delete_time)
+            """CREATE INDEX ix_ai_provider_sort_order ON ai_provider (sort_order)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_provider_name ON ai_provider (name)
         """
         )
         op.execute(
@@ -440,11 +444,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_provider_sort_order ON ai_provider (sort_order)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_provider_name ON ai_provider (name)
+            """CREATE INDEX ix_ai_provider_delete_time ON ai_provider (delete_time)
         """
         )
         op.execute(
@@ -480,7 +480,15 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_ai_runtime_invocation_profile_id ON ai_runtime_invocation (profile_id)
+        """
+        )
+        op.execute(
             """CREATE INDEX ix_ai_runtime_invocation_provider_id ON ai_runtime_invocation (provider_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_ai_runtime_invocation_status ON ai_runtime_invocation (status)
         """
         )
         op.execute(
@@ -500,14 +508,6 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_ai_runtime_invocation_profile_id ON ai_runtime_invocation (profile_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_ai_runtime_invocation_status ON ai_runtime_invocation (status)
-        """
-        )
-        op.execute(
             """CREATE TABLE dict_info (
 	id SERIAL NOT NULL, 
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
@@ -524,7 +524,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_dict_info_delete_time ON dict_info (delete_time)
+            """CREATE INDEX ix_dict_info_parent_id ON dict_info (parent_id)
         """
         )
         op.execute(
@@ -532,7 +532,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_dict_info_parent_id ON dict_info (parent_id)
+            """CREATE INDEX ix_dict_info_delete_time ON dict_info (delete_time)
         """
         )
         op.execute(
@@ -548,11 +548,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_dict_type_delete_time ON dict_type (delete_time)
+            """CREATE UNIQUE INDEX ix_dict_type_key ON dict_type (key)
         """
         )
         op.execute(
-            """CREATE UNIQUE INDEX ix_dict_type_key ON dict_type (key)
+            """CREATE INDEX ix_dict_type_delete_time ON dict_type (delete_time)
         """
         )
         op.execute(
@@ -593,11 +593,35 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_media_asset_mime_type ON media_asset (mime_type)
+            """CREATE INDEX ix_media_asset_created_by ON media_asset (created_by)
         """
         )
         op.execute(
-            """CREATE INDEX ix_media_asset_profile_code ON media_asset (profile_code)
+            """CREATE INDEX ix_media_asset_workflow_instance_id ON media_asset (workflow_instance_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_media_asset_status ON media_asset (status)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_media_asset_provider_code ON media_asset (provider_code)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_media_asset_source_task_id ON media_asset (source_task_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_media_asset_delete_time ON media_asset (delete_time)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_media_asset_source_type ON media_asset (source_type)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_media_asset_model_code ON media_asset (model_code)
         """
         )
         op.execute(
@@ -609,19 +633,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_media_asset_status ON media_asset (status)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_media_asset_created_by ON media_asset (created_by)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_media_asset_workflow_instance_id ON media_asset (workflow_instance_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_media_asset_provider_code ON media_asset (provider_code)
+            """CREATE INDEX ix_media_asset_asset_type ON media_asset (asset_type)
         """
         )
         op.execute(
@@ -629,23 +641,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_media_asset_source_task_id ON media_asset (source_task_id)
+            """CREATE INDEX ix_media_asset_mime_type ON media_asset (mime_type)
         """
         )
         op.execute(
-            """CREATE INDEX ix_media_asset_source_type ON media_asset (source_type)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_media_asset_delete_time ON media_asset (delete_time)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_media_asset_model_code ON media_asset (model_code)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_media_asset_asset_type ON media_asset (asset_type)
+            """CREATE INDEX ix_media_asset_profile_code ON media_asset (profile_code)
         """
         )
         op.execute(
@@ -673,10 +673,6 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_notification_message_is_recalled ON notification_message (is_recalled)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_notification_message_source_module ON notification_message (source_module)
         """
         )
@@ -697,7 +693,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_notification_message_delete_time ON notification_message (delete_time)
+            """CREATE INDEX ix_notification_message_level ON notification_message (level)
         """
         )
         op.execute(
@@ -705,11 +701,15 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_notification_message_level ON notification_message (level)
+            """CREATE INDEX ix_notification_message_recalled_by ON notification_message (recalled_by)
         """
         )
         op.execute(
-            """CREATE INDEX ix_notification_message_recalled_by ON notification_message (recalled_by)
+            """CREATE INDEX ix_notification_message_is_recalled ON notification_message (is_recalled)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_notification_message_delete_time ON notification_message (delete_time)
         """
         )
         op.execute(
@@ -732,26 +732,6 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_notification_recipient_message_id ON notification_recipient (message_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_notification_recipient_is_archived ON notification_recipient (is_archived)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_notification_recipient_is_deleted ON notification_recipient (is_deleted)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_notification_recipient_is_read ON notification_recipient (is_read)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_notification_recipient_delete_time ON notification_recipient (delete_time)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_notification_recipient_department_id ON notification_recipient (department_id)
         """
         )
@@ -765,6 +745,26 @@ def upgrade() -> None:
         )
         op.execute(
             """CREATE INDEX ix_notification_recipient_user_id ON notification_recipient (user_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_notification_recipient_message_id ON notification_recipient (message_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_notification_recipient_is_deleted ON notification_recipient (is_deleted)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_notification_recipient_is_archived ON notification_recipient (is_archived)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_notification_recipient_is_read ON notification_recipient (is_read)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_notification_recipient_delete_time ON notification_recipient (delete_time)
         """
         )
         op.execute(
@@ -788,15 +788,15 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_notification_rule_name ON notification_rule (name)
-        """
-        )
-        op.execute(
             """CREATE UNIQUE INDEX ix_notification_rule_code ON notification_rule (code)
         """
         )
         op.execute(
             """CREATE INDEX ix_notification_rule_delete_time ON notification_rule (delete_time)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_notification_rule_name ON notification_rule (name)
         """
         )
         op.execute(
@@ -825,11 +825,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_notification_template_name ON notification_template (name)
+            """CREATE INDEX ix_notification_template_delete_time ON notification_template (delete_time)
         """
         )
         op.execute(
-            """CREATE INDEX ix_notification_template_delete_time ON notification_template (delete_time)
+            """CREATE INDEX ix_notification_template_name ON notification_template (name)
         """
         )
         op.execute(
@@ -847,11 +847,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE UNIQUE INDEX ix_sys_department_name ON sys_department (name)
+            """CREATE INDEX ix_sys_department_delete_time ON sys_department (delete_time)
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_department_delete_time ON sys_department (delete_time)
+            """CREATE UNIQUE INDEX ix_sys_department_name ON sys_department (name)
         """
         )
         op.execute(
@@ -911,11 +911,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_login_log_account ON sys_login_log (account)
+            """CREATE INDEX ix_sys_login_log_delete_time ON sys_login_log (delete_time)
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_login_log_delete_time ON sys_login_log (delete_time)
+            """CREATE INDEX ix_sys_login_log_account ON sys_login_log (account)
         """
         )
         op.execute(
@@ -949,15 +949,15 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE UNIQUE INDEX ix_sys_menu_code ON sys_menu (code)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_sys_menu_delete_time ON sys_menu (delete_time)
         """
         )
         op.execute(
             """CREATE INDEX ix_sys_menu_permission ON sys_menu (permission)
+        """
+        )
+        op.execute(
+            """CREATE UNIQUE INDEX ix_sys_menu_code ON sys_menu (code)
         """
         )
         op.execute(
@@ -980,11 +980,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_param_name ON sys_param (name)
+            """CREATE UNIQUE INDEX ix_sys_param_key_name ON sys_param (key_name)
         """
         )
         op.execute(
-            """CREATE UNIQUE INDEX ix_sys_param_key_name ON sys_param (key_name)
+            """CREATE INDEX ix_sys_param_name ON sys_param (name)
         """
         )
         op.execute(
@@ -1032,7 +1032,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_role_department_role_id ON sys_role_department (role_id)
+            """CREATE INDEX ix_sys_role_department_delete_time ON sys_role_department (delete_time)
         """
         )
         op.execute(
@@ -1040,7 +1040,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_role_department_delete_time ON sys_role_department (delete_time)
+            """CREATE INDEX ix_sys_role_department_role_id ON sys_role_department (role_id)
         """
         )
         op.execute(
@@ -1056,15 +1056,15 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_role_menu_menu_id ON sys_role_menu (menu_id)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_sys_role_menu_delete_time ON sys_role_menu (delete_time)
         """
         )
         op.execute(
             """CREATE INDEX ix_sys_role_menu_role_id ON sys_role_menu (role_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_sys_role_menu_menu_id ON sys_role_menu (menu_id)
         """
         )
         op.execute(
@@ -1092,10 +1092,6 @@ def upgrade() -> None:
 	remark VARCHAR, 
 	PRIMARY KEY (id)
 )
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_sys_security_log_delete_time ON sys_security_log (delete_time)
         """
         )
         op.execute(
@@ -1131,6 +1127,10 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_sys_security_log_delete_time ON sys_security_log (delete_time)
+        """
+        )
+        op.execute(
             """CREATE TABLE sys_user (
 	id SERIAL NOT NULL, 
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
@@ -1157,15 +1157,15 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_sys_user_delete_time ON sys_user (delete_time)
+        """
+        )
+        op.execute(
             """CREATE UNIQUE INDEX ix_sys_user_username ON sys_user (username)
         """
         )
         op.execute(
             """CREATE UNIQUE INDEX ix_sys_user_email ON sys_user (email)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_sys_user_delete_time ON sys_user (delete_time)
         """
         )
         op.execute(
@@ -1181,7 +1181,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_user_role_delete_time ON sys_user_role (delete_time)
+            """CREATE INDEX ix_sys_user_role_role_id ON sys_user_role (role_id)
         """
         )
         op.execute(
@@ -1189,7 +1189,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_sys_user_role_role_id ON sys_user_role (role_id)
+            """CREATE INDEX ix_sys_user_role_delete_time ON sys_user_role (delete_time)
         """
         )
         op.execute(
@@ -1226,11 +1226,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_task_info_name ON task_info (name)
+            """CREATE INDEX ix_task_info_delete_time ON task_info (delete_time)
         """
         )
         op.execute(
-            """CREATE INDEX ix_task_info_delete_time ON task_info (delete_time)
+            """CREATE INDEX ix_task_info_name ON task_info (name)
         """
         )
         op.execute(
@@ -1260,6 +1260,38 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE TABLE workflow_annotation (
+	id SERIAL NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	delete_time TIMESTAMP WITH TIME ZONE, 
+	case_result_id INTEGER NOT NULL, 
+	annotator_user_id INTEGER, 
+	label VARCHAR(20) NOT NULL, 
+	score FLOAT, 
+	reason VARCHAR(500), 
+	is_gold BOOLEAN NOT NULL, 
+	PRIMARY KEY (id)
+)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_annotation_delete_time ON workflow_annotation (delete_time)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_annotation_is_gold ON workflow_annotation (is_gold)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_annotation_case_result_id ON workflow_annotation (case_result_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_annotation_annotator_user_id ON workflow_annotation (annotator_user_id)
+        """
+        )
+        op.execute(
             """CREATE TABLE workflow_artifact (
 	id SERIAL NOT NULL, 
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
@@ -1283,19 +1315,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_artifact_user_id ON workflow_artifact (user_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_workflow_artifact_definition_id ON workflow_artifact (definition_id)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_workflow_artifact_instance_id ON workflow_artifact (instance_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_workflow_artifact_asset_type ON workflow_artifact (asset_type)
         """
         )
         op.execute(
@@ -1303,7 +1323,19 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_workflow_artifact_asset_type ON workflow_artifact (asset_type)
+        """
+        )
+        op.execute(
             """CREATE INDEX ix_workflow_artifact_media_asset_id ON workflow_artifact (media_asset_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_artifact_user_id ON workflow_artifact (user_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_artifact_definition_id ON workflow_artifact (definition_id)
         """
         )
         op.execute(
@@ -1324,7 +1356,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_definition_is_active ON workflow_definition (is_active)
+            """CREATE INDEX ix_workflow_definition_user_id ON workflow_definition (user_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_definition_draft_version_id ON workflow_definition (draft_version_id)
         """
         )
         op.execute(
@@ -1336,7 +1372,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_definition_draft_version_id ON workflow_definition (draft_version_id)
+            """CREATE INDEX ix_workflow_definition_is_active ON workflow_definition (is_active)
         """
         )
         op.execute(
@@ -1348,7 +1384,47 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_definition_user_id ON workflow_definition (user_id)
+            """CREATE TABLE workflow_definition_version (
+	id SERIAL NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	delete_time TIMESTAMP WITH TIME ZONE, 
+	definition_id INTEGER NOT NULL, 
+	version_no INTEGER NOT NULL, 
+	status VARCHAR(20) NOT NULL, 
+	graph_json VARCHAR(100000) NOT NULL, 
+	change_note VARCHAR(500), 
+	parent_version_id INTEGER, 
+	published_at TIMESTAMP WITH TIME ZONE, 
+	published_by INTEGER, 
+	user_id INTEGER, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_workflow_def_version_def_no UNIQUE (definition_id, version_no)
+)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_definition_version_user_id ON workflow_definition_version (user_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_definition_version_published_by ON workflow_definition_version (published_by)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_definition_version_delete_time ON workflow_definition_version (delete_time)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_definition_version_definition_id ON workflow_definition_version (definition_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_definition_version_status ON workflow_definition_version (status)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_definition_version_parent_version_id ON workflow_definition_version (parent_version_id)
         """
         )
         op.execute(
@@ -1381,15 +1457,19 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_workflow_eval_case_result_latency_ms ON workflow_eval_case_result (latency_ms)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_eval_case_result_eval_run_id_latency_ms ON workflow_eval_case_result (eval_run_id, latency_ms)
+        """
+        )
+        op.execute(
             """CREATE INDEX ix_workflow_eval_case_result_score ON workflow_eval_case_result (score)
         """
         )
         op.execute(
             """CREATE INDEX ix_workflow_eval_case_result_workflow_instance_id ON workflow_eval_case_result (workflow_instance_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_workflow_eval_case_result_eval_run_id ON workflow_eval_case_result (eval_run_id)
         """
         )
         op.execute(
@@ -1401,11 +1481,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_eval_case_result_delete_time ON workflow_eval_case_result (delete_time)
+            """CREATE INDEX ix_workflow_eval_case_result_eval_run_id_case_key ON workflow_eval_case_result (eval_run_id, case_key)
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_eval_case_result_eval_run_id_case_key ON workflow_eval_case_result (eval_run_id, case_key)
+            """CREATE INDEX ix_workflow_eval_case_result_delete_time ON workflow_eval_case_result (delete_time)
         """
         )
         op.execute(
@@ -1417,11 +1497,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_eval_case_result_latency_ms ON workflow_eval_case_result (latency_ms)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_workflow_eval_case_result_eval_run_id_latency_ms ON workflow_eval_case_result (eval_run_id, latency_ms)
+            """CREATE INDEX ix_workflow_eval_case_result_eval_run_id ON workflow_eval_case_result (eval_run_id)
         """
         )
         op.execute(
@@ -1464,19 +1540,23 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_eval_run_definition_id ON workflow_eval_run (definition_id)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_workflow_eval_run_definition_version_id ON workflow_eval_run (definition_version_id)
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_eval_run_status ON workflow_eval_run (status)
+            """CREATE INDEX ix_workflow_eval_run_definition_id ON workflow_eval_run (definition_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_eval_run_test_set_id_created_at ON workflow_eval_run (test_set_id, created_at)
         """
         )
         op.execute(
             """CREATE INDEX ix_workflow_eval_run_delete_time ON workflow_eval_run (delete_time)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_eval_run_status ON workflow_eval_run (status)
         """
         )
         op.execute(
@@ -1485,10 +1565,6 @@ def upgrade() -> None:
         )
         op.execute(
             """CREATE INDEX ix_workflow_eval_run_test_set_id ON workflow_eval_run (test_set_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_workflow_eval_run_test_set_id_created_at ON workflow_eval_run (test_set_id, created_at)
         """
         )
         op.execute(
@@ -1511,19 +1587,19 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_eval_test_case_test_set_id ON workflow_eval_test_case (test_set_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_workflow_eval_test_case_test_set_id_case_key ON workflow_eval_test_case (test_set_id, case_key)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_workflow_eval_test_case_case_key ON workflow_eval_test_case (case_key)
         """
         )
         op.execute(
             """CREATE INDEX ix_workflow_eval_test_case_delete_time ON workflow_eval_test_case (delete_time)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_eval_test_case_test_set_id ON workflow_eval_test_case (test_set_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_eval_test_case_test_set_id_case_key ON workflow_eval_test_case (test_set_id, case_key)
         """
         )
         op.execute(
@@ -1543,11 +1619,7 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_eval_test_set_name ON workflow_eval_test_set (name)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_workflow_eval_test_set_delete_time ON workflow_eval_test_set (delete_time)
+            """CREATE INDEX ix_workflow_eval_test_set_user_id ON workflow_eval_test_set (user_id)
         """
         )
         op.execute(
@@ -1555,7 +1627,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_eval_test_set_user_id ON workflow_eval_test_set (user_id)
+            """CREATE INDEX ix_workflow_eval_test_set_delete_time ON workflow_eval_test_set (delete_time)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_eval_test_set_name ON workflow_eval_test_set (name)
         """
         )
         op.execute(
@@ -1594,11 +1670,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_execution_log_diff_base_log_id ON workflow_execution_log (diff_base_log_id)
+            """CREATE INDEX ix_workflow_execution_log_instance_id_created_at ON workflow_execution_log (instance_id, created_at)
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_execution_log_instance_id_created_at ON workflow_execution_log (instance_id, created_at)
+            """CREATE INDEX ix_workflow_execution_log_diff_base_log_id ON workflow_execution_log (diff_base_log_id)
         """
         )
         op.execute(
@@ -1623,6 +1699,14 @@ def upgrade() -> None:
         """
         )
         op.execute(
+            """CREATE INDEX ix_workflow_instance_user_id ON workflow_instance (user_id)
+        """
+        )
+        op.execute(
+            """CREATE INDEX ix_workflow_instance_version_id ON workflow_instance (version_id)
+        """
+        )
+        op.execute(
             """CREATE INDEX ix_workflow_instance_celery_task_id ON workflow_instance (celery_task_id)
         """
         )
@@ -1639,19 +1723,11 @@ def upgrade() -> None:
         """
         )
         op.execute(
-            """CREATE INDEX ix_workflow_instance_version_id ON workflow_instance (version_id)
-        """
-        )
-        op.execute(
             """CREATE INDEX ix_workflow_instance_delete_time ON workflow_instance (delete_time)
         """
         )
         op.execute(
             """CREATE INDEX ix_workflow_instance_definition_id ON workflow_instance (definition_id)
-        """
-        )
-        op.execute(
-            """CREATE INDEX ix_workflow_instance_user_id ON workflow_instance (user_id)
         """
         )
 
