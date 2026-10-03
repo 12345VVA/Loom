@@ -23,6 +23,16 @@ export declare namespace Eps {
 						type: string;
 					};
 				}[];
+				requestBody?: unknown;
+				responses?: {
+					[code: string]: {
+						content?: {
+							[mime: string]: {
+								schema?: { [key: string]: any };
+							};
+						};
+					};
+				};
 			};
 			name: string;
 			method: string;

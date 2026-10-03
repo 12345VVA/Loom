@@ -11,6 +11,13 @@ export async function virtual(): Promise<Plugin> {
 		"virtual:svg-icons",
 	];
 
+	/**
+	 * 剥离 dts（运行时只用 path/method/search），避免 EPS 元数据撑大产物
+	 */
+	function slimEps<T>(data: T): T {
+		return JSON.parse(JSON.stringify(data, (key, value) => (key === "dts" ? undefined : value)));
+	}
+
 	createEps();
 
 	return {
@@ -47,7 +54,7 @@ export async function virtual(): Promise<Plugin> {
 						(server.hot || server.ws).send({
 							type: "custom",
 							event: "eps-update",
-							data,
+							data: slimEps(data),
 						});
 					}
 				});
@@ -63,7 +70,7 @@ export async function virtual(): Promise<Plugin> {
 				const eps = await createEps();
 
 				return `
-					export const eps = ${JSON.stringify(eps)}
+					export const eps = ${JSON.stringify(slimEps(eps))}
 				`;
 			}
 			if (id === "\0virtual:ctx") {

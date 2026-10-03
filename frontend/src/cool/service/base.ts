@@ -32,7 +32,7 @@ export class BaseService {
 	}
 
 	// 获取列表
-	async list(data: any) {
+	async list(data: unknown) {
 		return this.request({
 			url: '/list',
 			method: 'POST',
@@ -41,7 +41,7 @@ export class BaseService {
 	}
 
 	// 分页查询
-	async page(data: any) {
+	async page(data: unknown) {
 		return this.request({
 			url: '/page',
 			method: 'POST',
@@ -50,7 +50,7 @@ export class BaseService {
 	}
 
 	// 获取信息
-	async info(params: any) {
+	async info(params: unknown) {
 		return this.request({
 			url: '/info',
 			params
@@ -58,7 +58,7 @@ export class BaseService {
 	}
 
 	// 更新数据
-	async update(data: any) {
+	async update(data: unknown) {
 		return this.request({
 			url: '/update',
 			method: 'POST',
@@ -67,7 +67,7 @@ export class BaseService {
 	}
 
 	// 删除数据
-	async delete(data: any) {
+	async delete(data: unknown) {
 		return this.request({
 			url: '/delete',
 			method: 'POST',
@@ -76,7 +76,7 @@ export class BaseService {
 	}
 
 	// 添加数据
-	async add(data: any) {
+	async add(data: unknown) {
 		return this.request({
 			url: '/add',
 			method: 'POST',

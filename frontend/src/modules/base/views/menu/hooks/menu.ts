@@ -5,7 +5,7 @@ import { service } from '/@/cool';
 export function useMenu() {
 	async function del(router: string) {
 		const menus = await service.base.sys.menu.list();
-		const item = menus.find((e: { router: string; id: number }) => e.router == router);
+		const item = menus.find(e => e.router == router);
 		if (item) {
 			await service.base.sys.menu.delete({ ids: [item.id] });
 		}
@@ -30,10 +30,13 @@ export function useMenu() {
 					code: undefined
 				})
 				.then(res => {
+					// add 返回 MenuRead | MenuRead[]（批量），取首项作为父级
+					const parent = Array.isArray(res) ? res[0] : res;
+
 					const perms = data.api?.map(e => {
 						const d = {
 							type: 2,
-							parentId: res.id,
+							parentId: parent.id,
 							name: e.summary || e.path,
 							perms: [e.path]
 						};

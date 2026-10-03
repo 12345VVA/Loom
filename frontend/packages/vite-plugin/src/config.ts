@@ -41,6 +41,11 @@ export const config = {
 				type: "any",
 				test: ["json"],
 			},
+			{
+				// EPS scanner 的枚举列类型（Python Enum → select）
+				type: "string | number",
+				test: ["select"],
+			},
 		],
 	},
 	svg: {

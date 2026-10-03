@@ -34,11 +34,6 @@
       "count": 4
     }
   },
-  "src/cool/service/base.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    }
-  },
   "src/cool/service/request.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -891,7 +886,7 @@
   },
   "src/shims-vue.d.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 79
+      "count": 1
     }
   },
   "tests/unit/ai/image-utils.test.ts": {

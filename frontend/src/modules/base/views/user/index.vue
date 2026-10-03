@@ -303,7 +303,7 @@ const Upsert: Ref<ClUpsert.Ref> = useUpsert({
 		service.base.sys.role.list().then(res => {
 			Upsert.value?.setOptions(
 				'roleIdList',
-				res.map((e: { name: string; id: number }) => {
+				res.map(e => {
 					return {
 						label: e.name || '',
 						value: e.id

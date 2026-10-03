@@ -1,7 +1,7 @@
 import { createDir, error, firstUpperCase, readFile, rootDir, toCamel } from "../utils";
 import { join } from "path";
 import axios from "axios";
-import { compact, isEmpty, last, uniqBy, values } from "lodash";
+import { compact, isArray, isEmpty, last, uniq, uniqBy, values } from "lodash";
 import { createWriteStream } from "fs";
 import prettier from "prettier";
 import { config } from "../config";
@@ -80,6 +80,88 @@ function getType({ propertyName, type }: any) {
  */
 function formatName(name: string) {
 	return (name || "").replace(/[:,\s,\/,-]/g, "");
+}
+
+/**
+ * 提取对象 schema 的字段体（"prop?: type;" 列表），非对象 schema 返回 null
+ * @param schema OpenAPI schema（后端已解引用 $ref）
+ * @param depth 递归深度
+ */
+function objectBody(schema: any, depth: number): string | null {
+	if (!schema || typeof schema !== "object") {
+		return null;
+	}
+
+	if (schema.anyOf || schema.oneOf || schema.enum) {
+		return null;
+	}
+
+	if (schema.type !== "object" && !schema.properties) {
+		return null;
+	}
+
+	const props = schema.properties || {};
+	const keys = Object.keys(props);
+
+	if (!keys.length) {
+		return null;
+	}
+
+	const required: string[] = isArray(schema.required) ? schema.required : [];
+
+	return keys
+		.map((k) => {
+			const p = props[k] || {};
+			const key = checkName(k) ? k : `"${k}"`;
+			return `/** ${p.description || k} */ ${key}${required.includes(k) ? "" : "?"}: ${schemaToTs(p, depth + 1)};`;
+		})
+		.join("\n");
+}
+
+/**
+ * OpenAPI schema 转 TS 类型（防御式，异常一律兜底 any）
+ * @param schema OpenAPI schema（后端已解引用 $ref）
+ * @param depth 递归深度限制
+ */
+function schemaToTs(schema: any, depth = 0): string {
+	try {
+		if (!schema || typeof schema !== "object" || depth > 6) {
+			return "any";
+		}
+
+		// 对象 → 内联类型
+		const body = objectBody(schema, depth);
+		if (body !== null) {
+			return `{ ${body} }`;
+		}
+
+		// 联合类型 anyOf/oneOf
+		const union = schema.anyOf || schema.oneOf;
+		if (isArray(union)) {
+			const parts = uniq(union.map((e: any) => schemaToTs(e, depth + 1)));
+			return parts.length ? parts.join(" | ") : "any";
+		}
+
+		// 枚举字面量
+		if (isArray(schema.enum) && schema.enum.length) {
+			return schema.enum.map((e: any) => (typeof e === "string" ? `"${e}"` : String(e))).join(" | ");
+		}
+
+		// 数组
+		if (schema.type === "array") {
+			return `${schemaToTs(schema.items, depth + 1)}[]`;
+		}
+
+		// 标量（integer 已由后端归一为 number，此处兜底兼容）
+		if (schema.type === "number" || schema.type === "integer") return "number";
+		if (schema.type === "string") return "string";
+		if (schema.type === "boolean") return "boolean";
+		if (schema.type === "null") return "null";
+
+		return "any";
+	} catch {
+		return "any";
+	}
 }
 
 /**
@@ -201,8 +283,12 @@ function createJson(): boolean {
 					name: apiItem.name,
 					method: apiItem.method,
 					path: apiItem.path,
+					// 持久化 dts/columns，后端不可达时重生成不降级
+					dts: apiItem.dts,
 				})),
 				search: e.search,
+				columns: e.columns,
+				pageColumns: e.pageColumns,
 			};
 		});
 	} else {
@@ -238,10 +324,6 @@ async function createDescribe({ list, service }: { list: Eps.Entity[]; service: 
 
 		for (const item of list) {
 			if (!checkName(item.name)) continue;
-
-			if (formatName(item.name) == "BusinessInterface") {
-				console.log(111);
-			}
 
 			let t = `interface ${formatName(item.name)} {`;
 
@@ -288,6 +370,40 @@ async function createDescribe({ list, service }: { list: Eps.Entity[]; service: 
 		let chain = "";
 		let pageResponse = "";
 
+		// 已提升的具名 Response 接口（去重）
+		const namedResponses = new Set<string>();
+
+		/**
+		 * 非标准 CRUD 路径的返回类型：优先从 OpenAPI responses 推导
+		 * （响应经拦截器解包，此处描述的是解包后的 data 载荷）
+		 * @param name 控制器接口名
+		 * @param action 方法名（驼峰）
+		 * @param dts OpenAPI 元数据
+		 */
+		function actionResponse(name: string, action: string, dts: any): string {
+			const schema = dts?.responses?.["200"]?.content?.["application/json"]?.schema;
+
+			if (!schema || typeof schema !== "object") {
+				return "any";
+			}
+
+			// 顶层对象提升为具名接口（与 PageResponse 并排声明），标量/数组/联合内联
+			const body = objectBody(schema, 1);
+
+			if (body !== null) {
+				const tsName = `${name}${firstUpperCase(action)}Response`;
+
+				if (!namedResponses.has(tsName)) {
+					namedResponses.add(tsName);
+					pageResponse += `\ninterface ${tsName} {\n${body}\n}\n`;
+				}
+
+				return tsName;
+			}
+
+			return schemaToTs(schema);
+		}
+
 		/**
 		 * 递归处理 service 树，生成接口定义
 		 * @param d 当前节点
@@ -329,28 +445,41 @@ async function createDescribe({ list, service }: { list: Eps.Entity[]; service: 
 									// 参数列表
 									const { parameters = [] } = a.dts || {};
 
-									parameters.forEach((p) => {
-										if (p.description) {
-											q.push(`\n/** ${p.description}  */\n`);
-										}
+									// POST/PUT 有请求体：query 参数冒充 body 会过度约束调用侧，参数侧保持 any
+									const hasBody =
+										["post", "put", "patch"].includes(String(a.method || "").toLowerCase()) ||
+										a.dts?.requestBody;
 
-										// 检查参数名
-										if (!checkName(p.name)) {
-											return false;
-										}
-
-										const a = `${p.name}${p.required ? "" : "?"}`;
-										const b = `${p.schema.type || "string"}`;
-
-										q.push(`${a}: ${b};`);
-									});
-
-									if (isEmpty(q)) {
+									if (hasBody) {
 										q = ["any"];
 									} else {
-										q.unshift("{");
-										q.push("}");
+										parameters.forEach((p) => {
+											if (p.description) {
+												q.push(`\n/** ${p.description}  */\n`);
+											}
+
+											// 检查参数名
+											if (!checkName(p.name)) {
+												return false;
+											}
+
+											const a = `${p.name}${p.required ? "" : "?"}`;
+											const b = `${p.schema?.type || "string"}`;
+
+											q.push(`${a}: ${b};`);
+										});
+
+										if (isEmpty(q)) {
+											q = ["any"];
+										} else {
+											q.unshift("{");
+											q.push("}");
+										}
 									}
+
+									// 全部参数可选时 data 可省略，保持无参调用兼容
+									const dataOptional =
+										q.length == 1 || (parameters.length > 0 && parameters.every((p) => !p.required));
 
 									// 返回类型
 									let res = "";
@@ -377,7 +506,7 @@ async function createDescribe({ list, service }: { list: Eps.Entity[]; service: 
 											res = en;
 											break;
 										default:
-											res = "any";
+											res = actionResponse(name, n, a.dts);
 											break;
 									}
 
@@ -387,14 +516,14 @@ async function createDescribe({ list, service }: { list: Eps.Entity[]; service: 
 											/**
 											 * ${a.summary || n}
 											 */
-											${n}(data${q.length == 1 ? "?" : ""}: ${q.join("")}): Promise<any>;
+											${n}(data${dataOptional ? "?" : ""}: ${q.join("")}): Promise<any>;
 										`;
 									} else {
 										t += `
 											/**
 											 * ${a.summary || n}
 											 */
-											${n}(data${q.length == 1 ? "?" : ""}: ${q.join("")}): Promise<${res}>;
+											${n}(data${dataOptional ? "?" : ""}: ${q.join("")}): Promise<${res}>;
 										`;
 									}
 
@@ -748,7 +877,8 @@ async function createDict(): Promise<string> {
 			error(`[cool-eps] Error：${url}`);
 		});
 
-	return text || "";
+	// 后端不可达时兜底，避免 DictKey 引用悬空
+	return text || "type DictKey = string;";
 }
 
 /**

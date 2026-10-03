@@ -13,6 +13,32 @@ from app.framework.eps.scanner import scan_model_columns
 from app.modules.base.compat import get_resource_compat
 
 
+_REF_PREFIX = "#/components/schemas/"
+
+
+def _deref_node(node: Any, schemas: dict[str, Any], seen: frozenset[str]) -> Any:
+    """递归解引用 OpenAPI $ref 节点（构建新对象，不改写入参）"""
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith(_REF_PREFIX):
+            name = ref[len(_REF_PREFIX) :]
+            target = schemas.get(name)
+            # 悬空引用或循环引用（如 menu tree 的 children 自引用）退化为普通对象
+            if not isinstance(target, dict) or name in seen:
+                return {"type": "object"}
+            return _deref_node(target, schemas, seen | {name})
+        return {k: _deref_node(v, schemas, seen) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_deref_node(item, schemas, seen) for item in node]
+    return node
+
+
+def _inline_response_refs(openapi: dict[str, Any], responses: Any) -> Any:
+    """将 dts.responses 中的 $ref 内联展开（EPS 导出不含 components，前端无法解析引用）"""
+    schemas = (openapi.get("components") or {}).get("schemas") or {}
+    return _deref_node(responses, schemas, frozenset())
+
+
 def _fix_dts_types(data: Any) -> Any:
     """递归修复 OpenAPI 中的类型，将 integer 替换为 number"""
     if isinstance(data, dict):
@@ -95,7 +121,9 @@ class EpsService:
                     "dts": {
                         "parameters": _fix_dts_types(openapi_meta.get("parameters", [])),
                         "requestBody": _fix_dts_types(openapi_meta.get("requestBody")),
-                        "responses": _fix_dts_types(openapi_meta.get("responses", {})),
+                        "responses": _fix_dts_types(
+                            _inline_response_refs(openapi, openapi_meta.get("responses", {}))
+                        ),
                     },
                 }
             )

@@ -2516,9 +2516,53 @@ declare namespace Eps {
 		list: governance_event[];
 	}
 
+	interface AiGovernance_ruleAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** scopeType */ scopeType: string;
+		/** userId */ userId?: number | null;
+		/** username */ username?: string | null;
+		/** profileId */ profileId?: number | null;
+		/** profileName */ profileName?: string | null;
+		/** period */ period: string;
+		/** maxRequests */ maxRequests?: number | null;
+		/** maxTokens */ maxTokens?: number | null;
+		/** maxCostMicroUsd */ maxCostMicroUsd?: number | null;
+		/** maxConcurrent */ maxConcurrent?: number | null;
+		/** mode */ mode: string;
+		/** notifyEnabled */ notifyEnabled: boolean;
+		/** status */ status: boolean;
+		/** orderNum */ orderNum?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface AiGovernance_rulePageResponse {
 		pagination: PagePagination;
 		list: governance_rule[];
+	}
+
+	interface AiGovernance_ruleUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** scopeType */ scopeType: string;
+		/** userId */ userId?: number | null;
+		/** username */ username?: string | null;
+		/** profileId */ profileId?: number | null;
+		/** profileName */ profileName?: string | null;
+		/** period */ period: string;
+		/** maxRequests */ maxRequests?: number | null;
+		/** maxTokens */ maxTokens?: number | null;
+		/** maxCostMicroUsd */ maxCostMicroUsd?: number | null;
+		/** maxConcurrent */ maxConcurrent?: number | null;
+		/** mode */ mode: string;
+		/** notifyEnabled */ notifyEnabled: boolean;
+		/** status */ status: boolean;
+		/** orderNum */ orderNum?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface AiLogPageResponse {
@@ -2526,9 +2570,75 @@ declare namespace Eps {
 		list: AiLog[];
 	}
 
+	interface AiModelAddResponse {
+		/** id */ id: number;
+		/** providerId */ providerId: number;
+		/** providerName */ providerName?: string | null;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** modelType */ modelType: string;
+		/** capabilities */ capabilities?: string | null;
+		/** contextWindow */ contextWindow?: number | null;
+		/** maxOutputTokens */ maxOutputTokens?: number | null;
+		/** pricingConfig */ pricingConfig?: string | null;
+		/** defaultConfig */ defaultConfig?: string | null;
+		/** status */ status: boolean;
+		/** orderNum */ orderNum?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface AiModelPageResponse {
 		pagination: PagePagination;
 		list: model[];
+	}
+
+	interface AiModelUpdateResponse {
+		/** id */ id: number;
+		/** providerId */ providerId: number;
+		/** providerName */ providerName?: string | null;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** modelType */ modelType: string;
+		/** capabilities */ capabilities?: string | null;
+		/** contextWindow */ contextWindow?: number | null;
+		/** maxOutputTokens */ maxOutputTokens?: number | null;
+		/** pricingConfig */ pricingConfig?: string | null;
+		/** defaultConfig */ defaultConfig?: string | null;
+		/** status */ status: boolean;
+		/** orderNum */ orderNum?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AiProfileAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** modelId */ modelId: number;
+		/** modelName */ modelName?: string | null;
+		/** modelType */ modelType?: string | null;
+		/** modelCode */ modelCode?: string | null;
+		/** modelCapabilities */ modelCapabilities?: string | null;
+		/** providerName */ providerName?: string | null;
+		/** providerCode */ providerCode?: string | null;
+		/** providerAdapter */ providerAdapter?: string | null;
+		/** modelDefaultConfig */ modelDefaultConfig?: string | null;
+		/** scenario */ scenario: string;
+		/** temperature */ temperature?: number | null;
+		/** topP */ topP?: number | null;
+		/** maxTokens */ maxTokens?: number | null;
+		/** responseFormat */ responseFormat?: string | null;
+		/** toolsConfig */ toolsConfig?: string | null;
+		/** timeout */ timeout?: number | null;
+		/** retryCount */ retryCount?: number;
+		/** retryDelaySeconds */ retryDelaySeconds?: number;
+		/** fallbackProfileId */ fallbackProfileId?: number | null;
+		/** isDefault */ isDefault: boolean;
+		/** status */ status: boolean;
+		/** orderNum */ orderNum?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface AiProfilePageResponse {
@@ -2536,9 +2646,75 @@ declare namespace Eps {
 		list: profile[];
 	}
 
+	interface AiProfileUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** modelId */ modelId: number;
+		/** modelName */ modelName?: string | null;
+		/** modelType */ modelType?: string | null;
+		/** modelCode */ modelCode?: string | null;
+		/** modelCapabilities */ modelCapabilities?: string | null;
+		/** providerName */ providerName?: string | null;
+		/** providerCode */ providerCode?: string | null;
+		/** providerAdapter */ providerAdapter?: string | null;
+		/** modelDefaultConfig */ modelDefaultConfig?: string | null;
+		/** scenario */ scenario: string;
+		/** temperature */ temperature?: number | null;
+		/** topP */ topP?: number | null;
+		/** maxTokens */ maxTokens?: number | null;
+		/** responseFormat */ responseFormat?: string | null;
+		/** toolsConfig */ toolsConfig?: string | null;
+		/** timeout */ timeout?: number | null;
+		/** retryCount */ retryCount?: number;
+		/** retryDelaySeconds */ retryDelaySeconds?: number;
+		/** fallbackProfileId */ fallbackProfileId?: number | null;
+		/** isDefault */ isDefault: boolean;
+		/** status */ status: boolean;
+		/** orderNum */ orderNum?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AiProviderAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** adapter */ adapter: string;
+		/** baseUrl */ baseUrl?: string | null;
+		/** apiKeyMask */ apiKeyMask?: string | null;
+		/** hasApiKey */ hasApiKey?: boolean;
+		/** adminAccessKeyMask */ adminAccessKeyMask?: string | null;
+		/** hasAdminAccessKey */ hasAdminAccessKey?: boolean;
+		/** hasAdminSecretKey */ hasAdminSecretKey?: boolean;
+		/** extraConfig */ extraConfig?: string | null;
+		/** status */ status: boolean;
+		/** orderNum */ orderNum?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface AiProviderPageResponse {
 		pagination: PagePagination;
 		list: provider[];
+	}
+
+	interface AiProviderUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** adapter */ adapter: string;
+		/** baseUrl */ baseUrl?: string | null;
+		/** apiKeyMask */ apiKeyMask?: string | null;
+		/** hasApiKey */ hasApiKey?: boolean;
+		/** adminAccessKeyMask */ adminAccessKeyMask?: string | null;
+		/** hasAdminAccessKey */ hasAdminAccessKey?: boolean;
+		/** hasAdminSecretKey */ hasAdminSecretKey?: boolean;
+		/** extraConfig */ extraConfig?: string | null;
+		/** status */ status: boolean;
+		/** orderNum */ orderNum?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface AiTaskPageResponse {
@@ -2546,9 +2722,113 @@ declare namespace Eps {
 		list: task[];
 	}
 
+	interface BaseCommPersonResponse {
+		/** id */ id: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** departmentId */ departmentId?: number | null;
+		/** name */ name: string;
+		/** username */ username: string;
+		/** passwordVersion */ passwordVersion?: number;
+		/** nickName */ nickName?: string | null;
+		/** headImg */ headImg?: string | null;
+		/** phone */ phone?: string | null;
+		/** email */ email?: string | null;
+		/** remark */ remark?: string | null;
+		/** status */ status?: number;
+		/** isSuperAdmin */ isSuperAdmin?: number;
+		/** isManager */ isManager?: number;
+		/** isDepartmentLeader */ isDepartmentLeader?: number;
+		/** orderNum */ orderNum?: number;
+		/** openId */ openId?: string | null;
+		/** unionId */ unionId?: string | null;
+		/** socketId */ socketId?: string | null;
+	}
+
+	interface BaseOpenCaptchaResponse {
+		/** captchaId */ captchaId: string;
+		/** data */ data: any;
+	}
+
+	interface BaseOpenLoginResponse {
+		/** token */ token: string;
+		/** refreshToken */ refreshToken?: string | null;
+		/** expire */ expire: number;
+		/** refreshExpire */ refreshExpire: number;
+		/** Loom 兼容用户信息 */ userInfo: {
+			/** userId */ userId: number;
+			/** username */ username: string;
+			/** nickName */ nickName?: string | null;
+			/** departmentId */ departmentId: number | null;
+			/** roleCodes */ roleCodes: string[];
+			/** perms */ perms: string[];
+			/** isSuperAdmin */ isSuperAdmin: boolean;
+			/** forcePasswordChange */ forcePasswordChange?: boolean;
+		};
+		/** perms */ perms: string[];
+	}
+
+	interface BaseOpenRefreshResponse {
+		/** token */ token: string;
+		/** refreshToken */ refreshToken?: string | null;
+		/** expire */ expire: number;
+		/** refreshExpire */ refreshExpire: number;
+		/** Loom 兼容用户信息 */ userInfo: {
+			/** userId */ userId: number;
+			/** username */ username: string;
+			/** nickName */ nickName?: string | null;
+			/** departmentId */ departmentId: number | null;
+			/** roleCodes */ roleCodes: string[];
+			/** perms */ perms: string[];
+			/** isSuperAdmin */ isSuperAdmin: boolean;
+			/** forcePasswordChange */ forcePasswordChange?: boolean;
+		};
+		/** perms */ perms: string[];
+	}
+
+	interface BaseOpenRefreshTokenResponse {
+		/** token */ token: string;
+		/** refreshToken */ refreshToken?: string | null;
+		/** expire */ expire: number;
+		/** refreshExpire */ refreshExpire: number;
+		/** Loom 兼容用户信息 */ userInfo: {
+			/** userId */ userId: number;
+			/** username */ username: string;
+			/** nickName */ nickName?: string | null;
+			/** departmentId */ departmentId: number | null;
+			/** roleCodes */ roleCodes: string[];
+			/** perms */ perms: string[];
+			/** isSuperAdmin */ isSuperAdmin: boolean;
+			/** forcePasswordChange */ forcePasswordChange?: boolean;
+		};
+		/** perms */ perms: string[];
+	}
+
+	interface BaseSysDepartmentAddResponse {
+		/** id */ id: number;
+		/** parentId */ parentId?: number | null;
+		/** name */ name: string;
+		/** parentName */ parentName?: string | null;
+		/** orderNum */ orderNum: number;
+		/** status */ status?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface BaseSysDepartmentPageResponse {
 		pagination: PagePagination;
 		list: department[];
+	}
+
+	interface BaseSysDepartmentUpdateResponse {
+		/** id */ id: number;
+		/** parentId */ parentId?: number | null;
+		/** name */ name: string;
+		/** parentName */ parentName?: string | null;
+		/** orderNum */ orderNum: number;
+		/** status */ status?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface BaseSysLogPageResponse {
@@ -2556,9 +2836,45 @@ declare namespace Eps {
 		list: log[];
 	}
 
+	interface BaseSysLogin_logAddResponse {
+		/** id */ id: number;
+		/** userId */ userId?: number | null;
+		/** name */ name?: string | null;
+		/** account */ account?: string | null;
+		/** loginType */ loginType: string;
+		/** status */ status: number;
+		/** ip */ ip?: string | null;
+		/** riskHit */ riskHit?: number;
+		/** reason */ reason?: string | null;
+		/** clientType */ clientType?: string | null;
+		/** deviceId */ deviceId?: string | null;
+		/** sourceSystem */ sourceSystem?: string | null;
+		/** userAgent */ userAgent?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface BaseSysLogin_logPageResponse {
 		pagination: PagePagination;
 		list: login_log[];
+	}
+
+	interface BaseSysLogin_logUpdateResponse {
+		/** id */ id: number;
+		/** userId */ userId?: number | null;
+		/** name */ name?: string | null;
+		/** account */ account?: string | null;
+		/** loginType */ loginType: string;
+		/** status */ status: number;
+		/** ip */ ip?: string | null;
+		/** riskHit */ riskHit?: number;
+		/** reason */ reason?: string | null;
+		/** clientType */ clientType?: string | null;
+		/** deviceId */ deviceId?: string | null;
+		/** sourceSystem */ sourceSystem?: string | null;
+		/** userAgent */ userAgent?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface BaseSysMenuPageResponse {
@@ -2566,9 +2882,79 @@ declare namespace Eps {
 		list: menu[];
 	}
 
+	interface BaseSysMenuParseResponse {
+		/** list */ list?: {
+			/** module */ module: string;
+			/** resource */ resource: string;
+			/** prefix */ prefix: string;
+			/** controller */ controller: string;
+			/** name */ name: string;
+			/** router */ router: string;
+			/** viewPath */ viewPath?: string | null;
+			/** icon */ icon?: string | null;
+			/** parentCode */ parentCode?: string | null;
+			/** api */ api?: any[];
+		}[];
+	}
+
+	interface BaseSysMenuUpdateResponse {
+		/** id */ id: number;
+		/** parentId */ parentId?: number | null;
+		/** parentName */ parentName?: string | null;
+		/** name */ name: string;
+		/** code */ code: string;
+		/** type */ type: number;
+		/** router */ router?: string | null;
+		/** viewPath */ viewPath?: string | null;
+		/** icon */ icon?: string | null;
+		/** keepAlive */ keepAlive?: boolean;
+		/** isShow */ isShow?: boolean;
+		/** perms */ perms?: string | null;
+		/** orderNum */ orderNum: number;
+		/** status */ status?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface BaseSysParamAddResponse {
+		/** id */ id: number;
+		/** name */ name: string;
+		/** keyName */ keyName: string;
+		/** data */ data?: string | null;
+		/** dataType */ dataType?: number;
+		/** remark */ remark?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface BaseSysParamPageResponse {
 		pagination: PagePagination;
 		list: param[];
+	}
+
+	interface BaseSysParamUpdateResponse {
+		/** id */ id: number;
+		/** name */ name: string;
+		/** keyName */ keyName: string;
+		/** data */ data?: string | null;
+		/** dataType */ dataType?: number;
+		/** remark */ remark?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface BaseSysRoleAddResponse {
+		/** id */ id: number;
+		/** name */ name: string;
+		/** label */ label: string;
+		/** code */ code: string;
+		/** remark */ remark?: string | null;
+		/** status */ status?: number;
+		/** relevance */ relevance?: number;
+		/** menuIdList */ menuIdList?: number[];
+		/** departmentIdList */ departmentIdList?: number[];
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface BaseSysRolePageResponse {
@@ -2576,9 +2962,70 @@ declare namespace Eps {
 		list: role[];
 	}
 
+	interface BaseSysRoleUpdateResponse {
+		/** id */ id: number;
+		/** name */ name: string;
+		/** label */ label: string;
+		/** code */ code: string;
+		/** remark */ remark?: string | null;
+		/** status */ status?: number;
+		/** relevance */ relevance?: number;
+		/** menuIdList */ menuIdList?: number[];
+		/** departmentIdList */ departmentIdList?: number[];
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface BaseSysSecurity_logPageResponse {
 		pagination: PagePagination;
 		list: security_log[];
+	}
+
+	interface BaseSysUserAddResponse {
+		/** id */ id: number;
+		/** username */ username: string;
+		/** name */ name: string;
+		/** nickName */ nickName?: string | null;
+		/** headImg */ headImg?: string | null;
+		/** email */ email?: string | null;
+		/** phone */ phone?: string | null;
+		/** remark */ remark?: string | null;
+		/** departmentId */ departmentId?: number | null;
+		/** departmentName */ departmentName?: string | null;
+		/** roleIdList */ roleIdList?: number[];
+		/** roleName */ roleName?: string | null;
+		/** status */ status?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface BaseSysUserAssignRolesResponse {
+		/** id */ id: number;
+		/** username */ username: string;
+		/** name */ name: string;
+		/** nickName */ nickName?: string | null;
+		/** headImg */ headImg?: string | null;
+		/** email */ email?: string | null;
+		/** phone */ phone?: string | null;
+		/** remark */ remark?: string | null;
+		/** departmentId */ departmentId?: number | null;
+		/** departmentName */ departmentName?: string | null;
+		/** roleIdList */ roleIdList?: number[];
+		/** roleName */ roleName?: string | null;
+		/** status */ status?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface BaseSysUserMeResponse {
+		/** userId */ userId: number;
+		/** username */ username: string;
+		/** nickName */ nickName?: string | null;
+		/** departmentId */ departmentId: number | null;
+		/** roleCodes */ roleCodes: string[];
+		/** perms */ perms: string[];
+		/** isSuperAdmin */ isSuperAdmin: boolean;
+		/** forcePasswordChange */ forcePasswordChange?: boolean;
 	}
 
 	interface BaseSysUserPageResponse {
@@ -2586,9 +3033,59 @@ declare namespace Eps {
 		list: user[];
 	}
 
+	interface BaseSysUserUpdateResponse {
+		/** id */ id: number;
+		/** username */ username: string;
+		/** name */ name: string;
+		/** nickName */ nickName?: string | null;
+		/** headImg */ headImg?: string | null;
+		/** email */ email?: string | null;
+		/** phone */ phone?: string | null;
+		/** remark */ remark?: string | null;
+		/** departmentId */ departmentId?: number | null;
+		/** departmentName */ departmentName?: string | null;
+		/** roleIdList */ roleIdList?: number[];
+		/** roleName */ roleName?: string | null;
+		/** status */ status?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface DictInfoAddResponse {
+		/** id */ id: number;
+		/** typeId */ typeId: number;
+		/** parentId */ parentId?: number | null;
+		/** name */ name: string;
+		/** value */ value?: string | null;
+		/** orderNum */ orderNum?: number;
+		/** remark */ remark?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface DictInfoPageResponse {
 		pagination: PagePagination;
 		list: DictInfo[];
+	}
+
+	interface DictInfoUpdateResponse {
+		/** id */ id: number;
+		/** typeId */ typeId: number;
+		/** parentId */ parentId?: number | null;
+		/** name */ name: string;
+		/** value */ value?: string | null;
+		/** orderNum */ orderNum?: number;
+		/** remark */ remark?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface DictTypeAddResponse {
+		/** id */ id: number;
+		/** name */ name: string;
+		/** key */ key: string;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface DictTypePageResponse {
@@ -2596,9 +3093,95 @@ declare namespace Eps {
 		list: DictType[];
 	}
 
+	interface DictTypeUpdateResponse {
+		/** id */ id: number;
+		/** name */ name: string;
+		/** key */ key: string;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface MediaAssetAddResponse {
+		/** id */ id: number;
+		/** assetType */ assetType: string;
+		/** sourceType */ sourceType: string;
+		/** sourceTaskId */ sourceTaskId?: number | null;
+		/** providerCode */ providerCode?: string | null;
+		/** modelCode */ modelCode?: string | null;
+		/** profileCode */ profileCode?: string | null;
+		/** originalUrl */ originalUrl?: string | null;
+		/** storageUrl */ storageUrl?: string | null;
+		/** fileName */ fileName?: string | null;
+		/** mimeType */ mimeType?: string | null;
+		/** md5 */ md5?: string | null;
+		/** sizeBytes */ sizeBytes?: number;
+		/** width */ width?: number | null;
+		/** height */ height?: number | null;
+		/** durationSeconds */ durationSeconds?: number | null;
+		/** prompt */ prompt?: string | null;
+		/** paramsPayload */ paramsPayload?: string | null;
+		/** status */ status: string;
+		/** errorMessage */ errorMessage?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** workflowInstanceId */ workflowInstanceId?: number | null;
+		/** workflowDefinitionId */ workflowDefinitionId?: number | null;
+		/** workflowNodeId */ workflowNodeId?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface MediaAssetPageResponse {
 		pagination: PagePagination;
 		list: asset[];
+	}
+
+	interface MediaAssetUpdateResponse {
+		/** id */ id: number;
+		/** assetType */ assetType: string;
+		/** sourceType */ sourceType: string;
+		/** sourceTaskId */ sourceTaskId?: number | null;
+		/** providerCode */ providerCode?: string | null;
+		/** modelCode */ modelCode?: string | null;
+		/** profileCode */ profileCode?: string | null;
+		/** originalUrl */ originalUrl?: string | null;
+		/** storageUrl */ storageUrl?: string | null;
+		/** fileName */ fileName?: string | null;
+		/** mimeType */ mimeType?: string | null;
+		/** md5 */ md5?: string | null;
+		/** sizeBytes */ sizeBytes?: number;
+		/** width */ width?: number | null;
+		/** height */ height?: number | null;
+		/** durationSeconds */ durationSeconds?: number | null;
+		/** prompt */ prompt?: string | null;
+		/** paramsPayload */ paramsPayload?: string | null;
+		/** status */ status: string;
+		/** errorMessage */ errorMessage?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** workflowInstanceId */ workflowInstanceId?: number | null;
+		/** workflowDefinitionId */ workflowDefinitionId?: number | null;
+		/** workflowNodeId */ workflowNodeId?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface NotificationMessageAddResponse {
+		/** id */ id: number;
+		/** title */ title: string;
+		/** content */ content: string;
+		/** messageType */ messageType: string;
+		/** level */ level: string;
+		/** sourceModule */ sourceModule?: string | null;
+		/** businessKey */ businessKey?: string | null;
+		/** linkUrl */ linkUrl?: string | null;
+		/** sendStatus */ sendStatus: string;
+		/** scheduledAt */ scheduledAt?: string | null;
+		/** expiredAt */ expiredAt?: string | null;
+		/** senderId */ senderId?: number | null;
+		/** isRecalled */ isRecalled?: boolean;
+		/** recalledAt */ recalledAt?: string | null;
+		/** recalledBy */ recalledBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface NotificationMessagePageResponse {
@@ -2606,9 +3189,74 @@ declare namespace Eps {
 		list: message[];
 	}
 
+	interface NotificationMessageUpdateResponse {
+		/** id */ id: number;
+		/** title */ title: string;
+		/** content */ content: string;
+		/** messageType */ messageType: string;
+		/** level */ level: string;
+		/** sourceModule */ sourceModule?: string | null;
+		/** businessKey */ businessKey?: string | null;
+		/** linkUrl */ linkUrl?: string | null;
+		/** sendStatus */ sendStatus: string;
+		/** scheduledAt */ scheduledAt?: string | null;
+		/** expiredAt */ expiredAt?: string | null;
+		/** senderId */ senderId?: number | null;
+		/** isRecalled */ isRecalled?: boolean;
+		/** recalledAt */ recalledAt?: string | null;
+		/** recalledBy */ recalledBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface NotificationRuleAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** users */ users?: string | null;
+		/** roles */ roles?: string | null;
+		/** departments */ departments?: string | null;
+		/** tenants */ tenants?: string | null;
+		/** includeChildDepartments */ includeChildDepartments: boolean;
+		/** allAdmins */ allAdmins: boolean;
+		/** condition */ condition?: string | null;
+		/** status */ status: boolean;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface NotificationRulePageResponse {
 		pagination: PagePagination;
 		list: rule[];
+	}
+
+	interface NotificationRuleUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** users */ users?: string | null;
+		/** roles */ roles?: string | null;
+		/** departments */ departments?: string | null;
+		/** tenants */ tenants?: string | null;
+		/** includeChildDepartments */ includeChildDepartments: boolean;
+		/** allAdmins */ allAdmins: boolean;
+		/** condition */ condition?: string | null;
+		/** status */ status: boolean;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface NotificationTemplateAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** titleTemplate */ titleTemplate: string;
+		/** contentTemplate */ contentTemplate: string;
+		/** defaultLevel */ defaultLevel: string;
+		/** defaultLinkUrl */ defaultLinkUrl?: string | null;
+		/** status */ status: boolean;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface NotificationTemplatePageResponse {
@@ -2616,9 +3264,76 @@ declare namespace Eps {
 		list: template[];
 	}
 
+	interface NotificationTemplateUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** titleTemplate */ titleTemplate: string;
+		/** contentTemplate */ contentTemplate: string;
+		/** defaultLevel */ defaultLevel: string;
+		/** defaultLinkUrl */ defaultLinkUrl?: string | null;
+		/** status */ status: boolean;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface TaskInfoAddResponse {
+		/** id */ id: number;
+		/** jobId */ jobId?: string | null;
+		/** name */ name: string;
+		/** cron */ cron?: string | null;
+		/** every */ every?: number | null;
+		/** remark */ remark?: string | null;
+		/** status */ status: number;
+		/** startDate */ startDate?: string | null;
+		/** endDate */ endDate?: string | null;
+		/** data */ data?: string | null;
+		/** service */ service?: string | null;
+		/** type */ type: number;
+		/** nextRunTime */ nextRunTime?: string | null;
+		/** taskType */ taskType: number;
+		/** lastExecuteTime */ lastExecuteTime?: string | null;
+		/** notifyEnabled */ notifyEnabled?: boolean;
+		/** notifyOnSuccess */ notifyOnSuccess?: boolean;
+		/** notifyOnFailure */ notifyOnFailure?: boolean;
+		/** notifyOnTimeout */ notifyOnTimeout?: boolean;
+		/** notifyRecipients */ notifyRecipients?: string | null;
+		/** notifyTemplateCode */ notifyTemplateCode?: string | null;
+		/** notifyTimeoutMs */ notifyTimeoutMs?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface TaskInfoPageResponse {
 		pagination: PagePagination;
 		list: TaskInfo[];
+	}
+
+	interface TaskInfoUpdateResponse {
+		/** id */ id: number;
+		/** jobId */ jobId?: string | null;
+		/** name */ name: string;
+		/** cron */ cron?: string | null;
+		/** every */ every?: number | null;
+		/** remark */ remark?: string | null;
+		/** status */ status: number;
+		/** startDate */ startDate?: string | null;
+		/** endDate */ endDate?: string | null;
+		/** data */ data?: string | null;
+		/** service */ service?: string | null;
+		/** type */ type: number;
+		/** nextRunTime */ nextRunTime?: string | null;
+		/** taskType */ taskType: number;
+		/** lastExecuteTime */ lastExecuteTime?: string | null;
+		/** notifyEnabled */ notifyEnabled?: boolean;
+		/** notifyOnSuccess */ notifyOnSuccess?: boolean;
+		/** notifyOnFailure */ notifyOnFailure?: boolean;
+		/** notifyOnTimeout */ notifyOnTimeout?: boolean;
+		/** notifyRecipients */ notifyRecipients?: string | null;
+		/** notifyTemplateCode */ notifyTemplateCode?: string | null;
+		/** notifyTimeoutMs */ notifyTimeoutMs?: number;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface WorkflowArtifactPageResponse {
@@ -2626,9 +3341,41 @@ declare namespace Eps {
 		list: artifact[];
 	}
 
+	interface WorkflowDefinitionAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** description */ description?: string | null;
+		/** status */ status: number;
+		/** userId */ userId?: number | null;
+		/** currentVersionId */ currentVersionId?: number | null;
+		/** draftVersionId */ draftVersionId?: number | null;
+		/** currentVersionNo */ currentVersionNo?: number | null;
+		/** currentPublishedAt */ currentPublishedAt?: string | null;
+		/** draftGraphJson */ draftGraphJson?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface WorkflowDefinitionPageResponse {
 		pagination: PagePagination;
 		list: definition[];
+	}
+
+	interface WorkflowDefinitionUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** description */ description?: string | null;
+		/** status */ status: number;
+		/** userId */ userId?: number | null;
+		/** currentVersionId */ currentVersionId?: number | null;
+		/** draftVersionId */ draftVersionId?: number | null;
+		/** currentVersionNo */ currentVersionNo?: number | null;
+		/** currentPublishedAt */ currentPublishedAt?: string | null;
+		/** draftGraphJson */ draftGraphJson?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface WorkflowInstancePageResponse {
@@ -2636,9 +3383,28 @@ declare namespace Eps {
 		list: instance[];
 	}
 
+	interface WorkflowInstanceTestNodeResponse {
+		/** output */ output: any;
+		/** latencyMs */ latencyMs: number;
+		/** error */ error?: string | null;
+		/** isTimeout */ isTimeout?: boolean;
+	}
+
 	interface WorkflowVersionPageResponse {
 		pagination: PagePagination;
 		list: version[];
+	}
+
+	interface Workflow_annotationAnnotationAddResponse {
+		/** id */ id: number;
+		/** caseResultId */ caseResultId: number;
+		/** annotatorUserId */ annotatorUserId?: number | null;
+		/** label */ label: string;
+		/** score */ score?: number | null;
+		/** reason */ reason?: string | null;
+		/** isGold */ isGold?: boolean;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface Workflow_annotationAnnotationPageResponse {
@@ -2646,9 +3412,34 @@ declare namespace Eps {
 		list: annotation[];
 	}
 
+	interface Workflow_annotationAnnotationUpdateResponse {
+		/** id */ id: number;
+		/** caseResultId */ caseResultId: number;
+		/** annotatorUserId */ annotatorUserId?: number | null;
+		/** label */ label: string;
+		/** score */ score?: number | null;
+		/** reason */ reason?: string | null;
+		/** isGold */ isGold?: boolean;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface Workflow_evalEval_runPageResponse {
 		pagination: PagePagination;
 		list: eval_run[];
+	}
+
+	interface Workflow_evalTest_caseAddResponse {
+		/** id */ id: number;
+		/** testSetId */ testSetId: number;
+		/** caseKey */ caseKey: string;
+		/** inputData */ inputData: string;
+		/** expectedOutput */ expectedOutput?: string | null;
+		/** expectedText */ expectedText?: string | null;
+		/** evaluatorConfig */ evaluatorConfig?: string | null;
+		/** weight */ weight?: number;
+		/** orderNum */ orderNum?: number;
+		/** tags */ tags?: string | null;
 	}
 
 	interface Workflow_evalTest_casePageResponse {
@@ -2656,9 +3447,46 @@ declare namespace Eps {
 		list: test_case[];
 	}
 
+	interface Workflow_evalTest_caseUpdateResponse {
+		/** id */ id: number;
+		/** testSetId */ testSetId: number;
+		/** caseKey */ caseKey: string;
+		/** inputData */ inputData: string;
+		/** expectedOutput */ expectedOutput?: string | null;
+		/** expectedText */ expectedText?: string | null;
+		/** evaluatorConfig */ evaluatorConfig?: string | null;
+		/** weight */ weight?: number;
+		/** orderNum */ orderNum?: number;
+		/** tags */ tags?: string | null;
+	}
+
+	interface Workflow_evalTest_setAddResponse {
+		/** id */ id: number;
+		/** name */ name: string;
+		/** description */ description?: string | null;
+		/** definitionId */ definitionId?: number | null;
+		/** itemsCount */ itemsCount?: number;
+		/** tags */ tags?: string | null;
+		/** userId */ userId?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface Workflow_evalTest_setPageResponse {
 		pagination: PagePagination;
 		list: test_set[];
+	}
+
+	interface Workflow_evalTest_setUpdateResponse {
+		/** id */ id: number;
+		/** name */ name: string;
+		/** description */ description?: string | null;
+		/** definitionId */ definitionId?: number | null;
+		/** itemsCount */ itemsCount?: number;
+		/** tags */ tags?: string | null;
+		/** userId */ userId?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
 	}
 
 	interface AiDashboard {
@@ -2689,24 +3517,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<governance_event[]>;
+		list(data?: any): Promise<governance_event[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<AiGovernance_eventPageResponse>;
+		page(data?: any): Promise<AiGovernance_eventPageResponse>;
 
 		/**
 		 * AI 治理事件统计
@@ -2730,12 +3546,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<AiGovernance_ruleAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -2745,12 +3561,7 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<governance_rule[]>;
+		list(data?: any): Promise<governance_rule[]>;
 
 		/**
 		 * 测试 AI 治理规则匹配
@@ -2760,14 +3571,7 @@ declare namespace Eps {
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<AiGovernance_rulePageResponse>;
+		page(data?: any): Promise<AiGovernance_rulePageResponse>;
 
 		/**
 		 * 启停 AI 治理规则
@@ -2777,7 +3581,7 @@ declare namespace Eps {
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<AiGovernance_ruleUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -2819,24 +3623,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<AiLog[]>;
+		list(data?: any): Promise<AiLog[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<AiLogPageResponse>;
+		page(data?: any): Promise<AiLogPageResponse>;
 
 		/**
 		 * AI 调用日志统计
@@ -2860,12 +3652,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<AiModelAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -2875,29 +3667,17 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<model[]>;
+		list(data?: any): Promise<model[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<AiModelPageResponse>;
+		page(data?: any): Promise<AiModelPageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<AiModelUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -2930,12 +3710,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<AiProfileAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -2945,24 +3725,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<profile[]>;
+		list(data?: any): Promise<profile[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<AiProfilePageResponse>;
+		page(data?: any): Promise<AiProfilePageResponse>;
 
 		/**
 		 * 设为默认调用配置
@@ -2977,7 +3745,7 @@ declare namespace Eps {
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<AiProfileUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -3014,7 +3782,7 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<AiProviderAddResponse>;
 
 		/**
 		 * 获取模型厂商预设清单
@@ -3024,7 +3792,7 @@ declare namespace Eps {
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 导入模型厂商预设
@@ -3039,24 +3807,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<provider[]>;
+		list(data?: any): Promise<provider[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<AiProviderPageResponse>;
+		page(data?: any): Promise<AiProviderPageResponse>;
 
 		/**
 		 * 同步厂商模型列表
@@ -3071,7 +3827,7 @@ declare namespace Eps {
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<AiProviderUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -3122,24 +3878,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<task[]>;
+		list(data?: any): Promise<task[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<AiTaskPageResponse>;
+		page(data?: any): Promise<AiTaskPageResponse>;
 
 		/**
 		 * 重试 AI 生成任务
@@ -3199,7 +3943,7 @@ declare namespace Eps {
 		/**
 		 * 获取当前用户个人信息
 		 */
-		person(data?: any): Promise<any>;
+		person(data?: any): Promise<BaseCommPersonResponse>;
 
 		/**
 		 * 修改当前用户信息
@@ -3209,7 +3953,7 @@ declare namespace Eps {
 		/**
 		 * 编程语言
 		 */
-		program(data?: any): Promise<any>;
+		program(data?: any): Promise<string>;
 
 		/**
 		 * 文件上传
@@ -3273,7 +4017,11 @@ declare namespace Eps {
 		/**
 		 * 验证码
 		 */
-		captcha(data: { width?: number; height?: number; color?: string }): Promise<any>;
+		captcha(data?: {
+			width?: number;
+			height?: number;
+			color?: string;
+		}): Promise<BaseOpenCaptchaResponse>;
 
 		/**
 		 * 登录页公开配置
@@ -3288,7 +4036,7 @@ declare namespace Eps {
 		/**
 		 * 账号密码登录
 		 */
-		login(data?: any): Promise<any>;
+		login(data?: any): Promise<BaseOpenLoginResponse>;
 
 		/**
 		 * 退出登录并清理服务端登录态
@@ -3298,12 +4046,12 @@ declare namespace Eps {
 		/**
 		 * 刷新访问令牌
 		 */
-		refresh(data?: any): Promise<any>;
+		refresh(data?: any): Promise<BaseOpenRefreshResponse>;
 
 		/**
 		 * 刷新访问令牌
 		 */
-		refreshToken(data?: any): Promise<any>;
+		refreshToken(data?: any): Promise<BaseOpenRefreshTokenResponse>;
 
 		/**
 		 * 登出清理（仅凭 refresh cookie，无需有效 access token）
@@ -3369,12 +4117,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<BaseSysDepartmentAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -3384,12 +4132,7 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<department[]>;
+		list(data?: any): Promise<department[]>;
 
 		/**
 		 * 部门排序
@@ -3399,19 +4142,12 @@ declare namespace Eps {
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<BaseSysDepartmentPageResponse>;
+		page(data?: any): Promise<BaseSysDepartmentPageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<BaseSysDepartmentUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -3451,19 +4187,12 @@ declare namespace Eps {
 		/**
 		 * 获得日志保存时间
 		 */
-		getKeep(data?: any): Promise<any>;
+		getKeep(data?: any): Promise<string>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<BaseSysLogPageResponse>;
+		page(data?: any): Promise<BaseSysLogPageResponse>;
 
 		/**
 		 * 日志保存时间
@@ -3487,12 +4216,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<BaseSysLogin_logAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -3502,29 +4231,17 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<login_log[]>;
+		list(data?: any): Promise<login_log[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<BaseSysLogin_logPageResponse>;
+		page(data?: any): Promise<BaseSysLogin_logPageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<BaseSysLogin_logUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -3557,27 +4274,109 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(
+			data?: any
+		): Promise<
+			| {
+					/** id */ id: number;
+					/** parentId */ parentId?: number | null;
+					/** parentName */ parentName?: string | null;
+					/** name */ name: string;
+					/** code */ code: string;
+					/** type */ type: number;
+					/** router */ router?: string | null;
+					/** viewPath */ viewPath?: string | null;
+					/** icon */ icon?: string | null;
+					/** keepAlive */ keepAlive?: boolean;
+					/** isShow */ isShow?: boolean;
+					/** perms */ perms?: string | null;
+					/** orderNum */ orderNum: number;
+					/** status */ status?: number;
+					/** createTime */ createTime: string;
+					/** updateTime */ updateTime: string;
+			  }
+			| {
+					/** id */ id: number;
+					/** parentId */ parentId?: number | null;
+					/** parentName */ parentName?: string | null;
+					/** name */ name: string;
+					/** code */ code: string;
+					/** type */ type: number;
+					/** router */ router?: string | null;
+					/** viewPath */ viewPath?: string | null;
+					/** icon */ icon?: string | null;
+					/** keepAlive */ keepAlive?: boolean;
+					/** isShow */ isShow?: boolean;
+					/** perms */ perms?: string | null;
+					/** orderNum */ orderNum: number;
+					/** status */ status?: number;
+					/** createTime */ createTime: string;
+					/** updateTime */ updateTime: string;
+			  }[]
+		>;
 
 		/**
 		 * 快速创建菜单
 		 */
-		create(data?: any): Promise<any>;
+		create(
+			data?: any
+		): Promise<
+			{
+				/** id */ id: number;
+				/** parentId */ parentId?: number | null;
+				/** parentName */ parentName?: string | null;
+				/** name */ name: string;
+				/** code */ code: string;
+				/** type */ type: number;
+				/** router */ router?: string | null;
+				/** viewPath */ viewPath?: string | null;
+				/** icon */ icon?: string | null;
+				/** keepAlive */ keepAlive?: boolean;
+				/** isShow */ isShow?: boolean;
+				/** perms */ perms?: string | null;
+				/** orderNum */ orderNum: number;
+				/** status */ status?: number;
+				/** createTime */ createTime: string;
+				/** updateTime */ updateTime: string;
+			}[]
+		>;
 
 		/**
 		 * 获取当前用户菜单树
 		 */
-		currentTree(data?: any): Promise<any>;
+		currentTree(
+			data?: any
+		): Promise<
+			{
+				/** id */ id: number;
+				/** parentId */ parentId?: number | null;
+				/** parentName */ parentName?: string | null;
+				/** name */ name: string;
+				/** code */ code: string;
+				/** type */ type: number;
+				/** router */ router?: string | null;
+				/** viewPath */ viewPath?: string | null;
+				/** icon */ icon?: string | null;
+				/** keepAlive */ keepAlive?: boolean;
+				/** isShow */ isShow?: boolean;
+				/** perms */ perms?: string | null;
+				/** orderNum */ orderNum: number;
+				/** status */ status?: number;
+				/** createTime */ createTime: string;
+				/** updateTime */ updateTime: string;
+				/** children */ children?: any[];
+			}[]
+		>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 导出菜单
 		 */
-		export(data?: any): Promise<any>;
+		export(data?: any): Promise<any[]>;
 
 		/**
 		 * 导入菜单
@@ -3592,44 +4391,54 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<menu[]>;
+		list(data?: any): Promise<menu[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<BaseSysMenuPageResponse>;
+		page(data?: any): Promise<BaseSysMenuPageResponse>;
 
 		/**
 		 * 解析菜单候选
 		 */
-		parse(data?: any): Promise<any>;
+		parse(data?: any): Promise<BaseSysMenuParseResponse>;
 
 		/**
 		 * 获取角色菜单 ID 列表
 		 */
-		roleMenuIds(data: { role_id: number }): Promise<any>;
+		roleMenuIds(data: { role_id: number }): Promise<number[]>;
 
 		/**
 		 * 获取菜单树
 		 */
-		tree(data?: any): Promise<any>;
+		tree(
+			data?: any
+		): Promise<
+			{
+				/** id */ id: number;
+				/** parentId */ parentId?: number | null;
+				/** parentName */ parentName?: string | null;
+				/** name */ name: string;
+				/** code */ code: string;
+				/** type */ type: number;
+				/** router */ router?: string | null;
+				/** viewPath */ viewPath?: string | null;
+				/** icon */ icon?: string | null;
+				/** keepAlive */ keepAlive?: boolean;
+				/** isShow */ isShow?: boolean;
+				/** perms */ perms?: string | null;
+				/** orderNum */ orderNum: number;
+				/** status */ status?: number;
+				/** createTime */ createTime: string;
+				/** updateTime */ updateTime: string;
+				/** children */ children?: any[];
+			}[]
+		>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<BaseSysMenuUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -3676,17 +4485,17 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<BaseSysParamAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获得网页内容的参数值
 		 */
-		html(data: { key: string }): Promise<any>;
+		html(data: { key: string }): Promise<string>;
 
 		/**
 		 * 获取详情
@@ -3696,19 +4505,12 @@ declare namespace Eps {
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<BaseSysParamPageResponse>;
+		page(data?: any): Promise<BaseSysParamPageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<BaseSysParamUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -3741,7 +4543,7 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<BaseSysRoleAddResponse>;
 
 		/**
 		 * 分配角色菜单
@@ -3751,7 +4553,7 @@ declare namespace Eps {
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -3761,29 +4563,17 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<role[]>;
+		list(data?: any): Promise<role[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<BaseSysRolePageResponse>;
+		page(data?: any): Promise<BaseSysRolePageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<BaseSysRoleUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -3823,24 +4613,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<security_log[]>;
+		list(data?: any): Promise<security_log[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<BaseSysSecurity_logPageResponse>;
+		page(data?: any): Promise<BaseSysSecurity_logPageResponse>;
 
 		/**
 		 * 权限标识
@@ -3859,17 +4637,17 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<BaseSysUserAddResponse>;
 
 		/**
 		 * 分配用户角色
 		 */
-		assignRoles(data?: any): Promise<any>;
+		assignRoles(data?: any): Promise<BaseSysUserAssignRolesResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -3879,17 +4657,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<user[]>;
+		list(data?: any): Promise<user[]>;
 
 		/**
 		 * 获取当前登录用户信息
 		 */
-		me(data?: any): Promise<any>;
+		me(data?: any): Promise<BaseSysUserMeResponse>;
 
 		/**
 		 * 移动部门
@@ -3899,19 +4672,12 @@ declare namespace Eps {
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<BaseSysUserPageResponse>;
+		page(data?: any): Promise<BaseSysUserPageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<BaseSysUserUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -3950,7 +4716,7 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<DictInfoAddResponse>;
 
 		/**
 		 * 获得字典数据
@@ -3960,7 +4726,7 @@ declare namespace Eps {
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -3970,34 +4736,22 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<DictInfo[]>;
+		list(data?: any): Promise<DictInfo[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<DictInfoPageResponse>;
+		page(data?: any): Promise<DictInfoPageResponse>;
 
 		/**
 		 * 获得所有字典类型
 		 */
-		types(data?: any): Promise<any>;
+		types(data?: any): Promise<any[]>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<DictInfoUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -4034,12 +4788,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<DictTypeAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4049,29 +4803,17 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<DictType[]>;
+		list(data?: any): Promise<DictType[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<DictTypePageResponse>;
+		page(data?: any): Promise<DictTypePageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<DictTypeUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -4104,12 +4846,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<MediaAssetAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 签发短期下载令牌
@@ -4124,24 +4866,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<asset[]>;
+		list(data?: any): Promise<asset[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<MediaAssetPageResponse>;
+		page(data?: any): Promise<MediaAssetPageResponse>;
 
 		/**
 		 * 远程媒体安全代理下载
@@ -4166,7 +4896,7 @@ declare namespace Eps {
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<MediaAssetUpdateResponse>;
 
 		/**
 		 * 上传媒体资源
@@ -4216,7 +4946,7 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<NotificationMessageAddResponse>;
 
 		/**
 		 * 归档通知
@@ -4226,7 +4956,7 @@ declare namespace Eps {
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4236,17 +4966,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<message[]>;
+		list(data?: any): Promise<message[]>;
 
 		/**
 		 * 我的通知
 		 */
-		mine(data: {
+		mine(data?: {
 			includeArchived?: boolean;
 			messageType?: string;
 			readStatus?: string;
@@ -4260,14 +4985,7 @@ declare namespace Eps {
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<NotificationMessagePageResponse>;
+		page(data?: any): Promise<NotificationMessagePageResponse>;
 
 		/**
 		 * 预览通知接收人
@@ -4317,7 +5035,7 @@ declare namespace Eps {
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<NotificationMessageUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -4374,12 +5092,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<NotificationRuleAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4389,29 +5107,17 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<rule[]>;
+		list(data?: any): Promise<rule[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<NotificationRulePageResponse>;
+		page(data?: any): Promise<NotificationRulePageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<NotificationRuleUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -4444,12 +5150,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<NotificationTemplateAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4459,24 +5165,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<template[]>;
+		list(data?: any): Promise<template[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<NotificationTemplatePageResponse>;
+		page(data?: any): Promise<NotificationTemplatePageResponse>;
 
 		/**
 		 * 预览通知模板
@@ -4486,7 +5180,7 @@ declare namespace Eps {
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<NotificationTemplateUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -4521,12 +5215,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<TaskInfoAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4536,12 +5230,7 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<TaskInfo[]>;
+		list(data?: any): Promise<TaskInfo[]>;
 
 		/**
 		 * 任务日志
@@ -4556,14 +5245,7 @@ declare namespace Eps {
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<TaskInfoPageResponse>;
+		page(data?: any): Promise<TaskInfoPageResponse>;
 
 		/**
 		 * 开始任务
@@ -4578,7 +5260,7 @@ declare namespace Eps {
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<TaskInfoUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -4619,7 +5301,7 @@ declare namespace Eps {
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4629,14 +5311,7 @@ declare namespace Eps {
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<WorkflowArtifactPageResponse>;
+		page(data?: any): Promise<WorkflowArtifactPageResponse>;
 
 		/**
 		 * 权限标识
@@ -4655,12 +5330,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<WorkflowDefinitionAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4670,24 +5345,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<definition[]>;
+		list(data?: any): Promise<definition[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<WorkflowDefinitionPageResponse>;
+		page(data?: any): Promise<WorkflowDefinitionPageResponse>;
 
 		/**
 		 * 保存草稿
@@ -4697,7 +5360,7 @@ declare namespace Eps {
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<WorkflowDefinitionUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -4737,7 +5400,7 @@ declare namespace Eps {
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4747,12 +5410,7 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<instance[]>;
+		list(data?: any): Promise<instance[]>;
 
 		/**
 		 * 获取执行日志步骤列表
@@ -4763,19 +5421,26 @@ declare namespace Eps {
 			sinceLogId?: string;
 			/** 最多返回条数，缺省全量  */
 			limit?: string;
-		}): Promise<any>;
+		}): Promise<
+			{
+				/** id */ id: number;
+				/** instanceId */ instanceId: number;
+				/** nodeId */ nodeId: string;
+				/** nodeName */ nodeName: string;
+				/** nodeType */ nodeType: string;
+				/** inputData */ inputData: string;
+				/** outputData */ outputData: string;
+				/** latencyMs */ latencyMs: number;
+				/** status */ status: string;
+				/** errorMessage */ errorMessage?: string | null;
+				/** createTime */ createTime: string;
+			}[]
+		>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<WorkflowInstancePageResponse>;
+		page(data?: any): Promise<WorkflowInstancePageResponse>;
 
 		/**
 		 * 提供人工确认恢复执行
@@ -4795,7 +5460,7 @@ declare namespace Eps {
 		/**
 		 * 单节点测试运行
 		 */
-		testNode(data?: any): Promise<any>;
+		testNode(data?: any): Promise<WorkflowInstanceTestNodeResponse>;
 
 		/**
 		 * 试运行工作流（草稿版）
@@ -4853,24 +5518,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<version[]>;
+		list(data?: any): Promise<version[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<WorkflowVersionPageResponse>;
+		page(data?: any): Promise<WorkflowVersionPageResponse>;
 
 		/**
 		 * 发布草稿
@@ -4913,12 +5566,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<Workflow_annotationAnnotationAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -4933,29 +5586,17 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<annotation[]>;
+		list(data?: any): Promise<annotation[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<Workflow_annotationAnnotationPageResponse>;
+		page(data?: any): Promise<Workflow_annotationAnnotationPageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<Workflow_annotationAnnotationUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -5005,7 +5646,7 @@ declare namespace Eps {
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -5015,24 +5656,12 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<eval_run[]>;
+		list(data?: any): Promise<eval_run[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<Workflow_evalEval_runPageResponse>;
+		page(data?: any): Promise<Workflow_evalEval_runPageResponse>;
 
 		/**
 		 * 轮询评估运行结果（CI 门禁用）
@@ -5094,12 +5723,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<Workflow_evalTest_caseAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 获取详情
@@ -5109,29 +5738,17 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<test_case[]>;
+		list(data?: any): Promise<test_case[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<Workflow_evalTest_casePageResponse>;
+		page(data?: any): Promise<Workflow_evalTest_casePageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<Workflow_evalTest_caseUpdateResponse>;
 
 		/**
 		 * 权限标识
@@ -5164,12 +5781,12 @@ declare namespace Eps {
 		/**
 		 * 新增
 		 */
-		add(data: { _action_name?: string }): Promise<any>;
+		add(data?: any): Promise<Workflow_evalTest_setAddResponse>;
 
 		/**
 		 * 删除
 		 */
-		delete(data: { _action_name?: string }): Promise<any>;
+		delete(data?: any): Promise<any>;
 
 		/**
 		 * 批量导入测试用例
@@ -5184,29 +5801,17 @@ declare namespace Eps {
 		/**
 		 * 获取列表
 		 */
-		list(data: {
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<test_set[]>;
+		list(data?: any): Promise<test_set[]>;
 
 		/**
 		 * 获取分页
 		 */
-		page(data: {
-			page?: number;
-			size?: number;
-			keyword?: string;
-			order?: string;
-			sort?: string;
-			_action_name?: string;
-		}): Promise<Workflow_evalTest_setPageResponse>;
+		page(data?: any): Promise<Workflow_evalTest_setPageResponse>;
 
 		/**
 		 * 更新
 		 */
-		update(data: { _action_name?: string }): Promise<any>;
+		update(data?: any): Promise<Workflow_evalTest_setUpdateResponse>;
 
 		/**
 		 * 权限标识

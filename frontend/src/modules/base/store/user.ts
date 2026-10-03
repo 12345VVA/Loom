@@ -22,7 +22,7 @@ export const useUserStore = defineStore('user', function () {
 		expire: number;
 		// refreshToken 现通过 HttpOnly cookie 传递，前端不再存储
 		// 保留字段以兼容旧调用方（如 dev-tools），但不再持久化
-		refreshToken?: string;
+		refreshToken?: string | null;
 		refreshExpire?: number;
 	}) {
 		// 请求的唯一标识
