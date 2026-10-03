@@ -24,11 +24,9 @@ FRAMEWORK_DIR = APP_DIR / "framework"
 # 扩白名单属有意决策，请更新此快照并在注释说明理由。
 FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST = frozenset(
     {
-        ("cache.py", "app.modules.base.service.cache_service"),
         ("controller_meta.py", "app.modules.base.model.auth"),
         ("controller_meta.py", "app.modules.base.service.security_service"),
         ("controller_meta.py", "app.modules.module_config"),
-        ("events.py", "app.modules.base.service.cache_service"),
         ("middleware/admin_authority.py", "app.modules.base.service.authority_service"),
         ("middleware/operation_log.py", "app.modules.base.model.sys"),
         ("middleware/rate_limit.py", "app.modules.base.service.cache_service"),
