@@ -7,6 +7,10 @@ os.environ.setdefault("ADMIN_CAPTCHA_ENABLED", "True")
 # （AdminCsrfOriginMiddleware 会拦截无 Origin 头的 TestClient 请求）。
 # 生产环境 CSRF 强制逻辑由 test_startup_settings_reports_production_risks 等用例独立验证。
 os.environ.setdefault("DEBUG", "True")
+# 关闭全局限流：登录等 open 接口上限 30 次/分钟，而 lifespan class 级化后测试提速，
+# 多文件组合跑时登录请求会挤进同一 60s 窗口触发 429（test_session_management 首当其冲）。
+# 无限流专项测试；限流行为本身由中间件单测覆盖（_get_client_ip 等）。
+os.environ.setdefault("RATE_LIMIT_ENABLED", "False")
 # 测试库防护：本地 .env 已切 PostgreSQL 时，避免 TestClient(app) 类用例在 lifespan
 # 中 init_db/bootstrap 写入真实业务库。环境变量优先于 .env 文件（pydantic-settings），
 # 故此处兜底后业务 PG 不再被触碰；CI 显式注入 DATABASE_URL 指向 service 容器时不触发。
