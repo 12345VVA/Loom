@@ -44,6 +44,17 @@ def upgrade() -> None:
         "ON workflow_execution_log (diff_base_log_id)"
     )
 
+    # 2.1) 版本表复合索引：真库历史手工建、baseline 无——补进新建库路径
+    # （真库 IF NOT EXISTS 跳过；模型侧已补元数据定义）
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_workflow_definition_version_definition_id_created_at "
+        "ON workflow_definition_version (definition_id, created_at)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_workflow_definition_version_definition_id_status "
+        "ON workflow_definition_version (definition_id, status)"
+    )
+
     # 3) 类型对齐：TEXT -> 无限长 VARCHAR（AutoString 的 PG 形态，存储等价）
     op.alter_column(
         "ai_model_call_log",
