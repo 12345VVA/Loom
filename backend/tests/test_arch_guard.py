@@ -1,6 +1,9 @@
 """架构守卫测试：防止反向依赖恶化、防止元数据缺表、防止循环依赖引入。"""
 
 import ast
+import os
+import subprocess
+import sys
 import unittest
 from collections import defaultdict
 from pathlib import Path
@@ -21,16 +24,11 @@ FRAMEWORK_DIR = APP_DIR / "framework"
 # 快照保留为空集合——如未来确需引入，属于架构级决策，须重开白名单并更新此注释。
 FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST = frozenset()
 
-# core/ 的函数内延迟 import 冻结（core 顶层静态 import 由独立守卫全面禁止）。
-# 现状：security.py 3 处延迟导入（cache_set/cache_get/increment_user_token_version），
-# 按模块去重后 2 个二元组；database.py 的 _autodiscover_models 走 import_module 动态
-# 导入，AST 静态不可见，天然不在扫描范围。
-CORE_LAZY_MODULES_IMPORTS_WHITELIST = frozenset(
-    {
-        ("security.py", "app.modules.base.service.cache_service"),
-        ("security.py", "app.modules.base.service.authority_service"),
-    }
-)
+# core/ 的函数内延迟 import 已 DI 清零（security.py 经 framework runtime 注册表
+# 解析缓存/令牌版本实现）。守卫语义升级为「core 全面禁止 app.modules」：
+# database.py 的 _autodiscover_models 走 import_module 动态导入，AST 静态不可见，
+# 天然不在扫描范围。
+CORE_LAZY_MODULES_IMPORTS_WHITELIST = frozenset()
 
 
 def _get_top_level_app_imports(file_path: Path) -> set[str]:
@@ -230,6 +228,45 @@ class ArchitectureGuardTests(unittest.TestCase):
             [],
             f"检测到真实循环依赖 (SCC size > 1):\n{sccs}",
         )
+
+    def test_framework_independence(self):
+        """框架独立性证明：framework 全部模块与 core.security 可完整导入（零 ImportError），
+        运行时注册表对未注册依赖显式报错（DI 契约）。
+
+        子进程内裸 import，模拟 framework 被抽取独立分发的最小场景。
+        注：sys.modules 断言不适用——app.core.database 的 _autodiscover_models 是
+        设计允许的模型注册权威（core→modules），会合法拉入业务模型模块；框架独立性
+        的判据是「零 ImportError 可完整导入」+ DI 未装配显式失败。
+        """
+        code = (
+            "import importlib, pkgutil\n"
+            "import app.framework\n"
+            "for m in pkgutil.walk_packages(app.framework.__path__, 'app.framework.'):\n"
+            "    importlib.import_module(m.name)\n"
+            "import app.core.security\n"
+            "from app.framework.runtime import registry, FrameworkRuntimeError\n"
+            "try:\n"
+            "    registry.resolve('current_user')\n"
+            "except FrameworkRuntimeError:\n"
+            "    pass\n"
+            "else:\n"
+            "    raise AssertionError('未注册依赖应显式抛 FrameworkRuntimeError')\n"
+            "print('INDEPENDENT-OK')\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            cwd=BACKEND_ROOT,
+            env={**os.environ, "SECRET_ENCRYPTION_KEY": "independence-probe-key"},
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"框架独立性验证失败:\nstdout: {result.stdout}\nstderr: {result.stderr[-2000:]}",
+        )
+        self.assertIn("INDEPENDENT-OK", result.stdout)
 
 
 if __name__ == "__main__":

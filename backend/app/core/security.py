@@ -15,6 +15,7 @@ import jwt
 from fastapi import HTTPException, status
 
 from app.core.config import settings
+from app.framework.runtime import registry
 
 # 常见弱密码黑名单
 COMMON_WEAK_PASSWORDS = {
@@ -155,18 +156,14 @@ def add_token_to_blacklist(jti: str, expires_at: int) -> None:
         jti: JWT ID (Token唯一标识)
         expires_at: Token过期时间戳(秒)，用于设置黑名单TTL
     """
-    from app.modules.base.service.cache_service import cache_set
-
     # 计算剩余有效时间作为TTL，最少保留60秒避免时序问题
     ttl = max(expires_at - int(datetime.now(UTC).timestamp()), 60)
-    cache_set(build_token_blacklist_key(jti), "1", ttl_seconds=ttl)
+    registry.resolve("cache_set")(build_token_blacklist_key(jti), "1", ttl_seconds=ttl)
 
 
 def is_token_blacklisted(jti: str) -> bool:
     """检查Token是否在黑名单中"""
-    from app.modules.base.service.cache_service import cache_get
-
-    return cache_get(build_token_blacklist_key(jti)) is not None
+    return registry.resolve("cache_get")(build_token_blacklist_key(jti)) is not None
 
 
 def add_user_all_tokens_to_blacklist(user_id: int, current_token_jti: str | None = None) -> None:
@@ -177,7 +174,5 @@ def add_user_all_tokens_to_blacklist(user_id: int, current_token_jti: str | None
         user_id: 用户ID
         current_token_jti: 当前Token的JTI（可选，未使用，保留以兼容未来扩展）
     """
-    from app.modules.base.service.authority_service import increment_user_token_version
-
     # 递增Token版本号，使该用户所有已签发的Token失效
-    increment_user_token_version(user_id)
+    registry.resolve("increment_user_token_version")(user_id)
