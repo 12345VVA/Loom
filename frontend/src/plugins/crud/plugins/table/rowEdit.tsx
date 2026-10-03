@@ -10,8 +10,20 @@ import { useRefs } from '/@/cool';
  * 行编辑
  * @returns
  */
+/** cl-table 组件实例中本插件触达的最小面（类型化过渡，深链待 crud 包类型化收敛） */
+interface RowEditExposed {
+	config: Partial<ClTable.Config> & { on: Record<string, unknown> };
+}
+
+/** 单行编辑态：data 为行数据快照，show_* 动态键控制该行编辑开关 */
+interface RowEditEntry {
+	data: Record<string, unknown>;
+	loading: boolean;
+	[key: string]: unknown;
+}
+
 export function rowEdit() {
-	return ({ exposed }) => {
+	return ({ exposed }: { exposed: RowEditExposed }) => {
 		const Crud = useCrud();
 		const { t } = useI18n();
 		const { refs, setRefs } = useRefs();
@@ -26,7 +38,7 @@ export function rowEdit() {
 		const op = columns.find(e => e.type === 'op');
 
 		// 编辑信息
-		const edit = reactive({});
+		const edit = reactive<Record<string | number, RowEditEntry>>({});
 
 		// 列点击
 		exposed.config.on.onCellClick = (

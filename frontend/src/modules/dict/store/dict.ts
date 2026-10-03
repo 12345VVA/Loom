@@ -28,7 +28,7 @@ const useDictStore = defineStore('dict', () => {
 				types: types?.filter(e => !isEmpty(e))
 			})
 			.then((res: Dict.Data) => {
-				const d = {};
+				const d: Record<string, unknown> = {};
 
 				for (const [i, arr] of Object.entries(res)) {
 					arr.forEach(e => {

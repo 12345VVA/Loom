@@ -133,6 +133,10 @@ jobs:
       - name: 类型检查
         run: npm run type-check
 
+      # 框架核心复合单元（cool+config+base）noImplicitAny 严格试点
+      - name: 类型检查（cool 严格）
+        run: npm run type-check:cool
+
       # 用不带 --fix 的检查模式，CI 不改写文件
       - name: ESLint 检查
         run: npm run lint:check

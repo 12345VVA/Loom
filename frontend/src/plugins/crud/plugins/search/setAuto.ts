@@ -71,7 +71,7 @@ export function setAuto(
 		}
 	}
 
-	return ({ exposed }) => {
+	return ({ exposed }: { exposed: { config: unknown } }) => {
 		const { t } = useI18n();
 		const Crud = useCrud();
 		const { items, inline } = exposed.config as ClSearch.Config;

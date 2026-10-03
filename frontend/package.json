@@ -10,6 +10,7 @@
 		"build:analyze": "vite build --mode analyze",
 		"preview": "vite preview",
 		"type-check": "vue-tsc --build --force",
+		"type-check:cool": "vue-tsc -p tsconfig.cool.json --noEmit",
 		"test:unit": "vitest run",
 		"test:unit:watch": "vitest",
 		"test:e2e": "playwright test",

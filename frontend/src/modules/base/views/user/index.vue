@@ -63,6 +63,7 @@ defineOptions({
 });
 
 import { useTable, useUpsert, useCrud } from '@cool-vue/crud';
+import type { Ref } from 'vue';
 import { useCool } from '/@/cool';
 import DeptList from './components/dept-list.vue';
 import UserMove from './components/user-move.vue';
@@ -163,7 +164,7 @@ const Table = useTable({
 });
 
 // cl-upsert
-const Upsert = useUpsert({
+const Upsert: Ref<ClUpsert.Ref> = useUpsert({
 	dialog: {
 		width: '800px'
 	},
@@ -302,7 +303,7 @@ const Upsert = useUpsert({
 		service.base.sys.role.list().then(res => {
 			Upsert.value?.setOptions(
 				'roleIdList',
-				res.map(e => {
+				res.map((e: { name: string; id: number }) => {
 					return {
 						label: e.name || '',
 						value: e.id

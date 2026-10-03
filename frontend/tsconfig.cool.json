@@ -1,0 +1,14 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noImplicitAny": true
+	},
+	"include": [
+		"src/cool/**/*",
+		"src/config/**/*",
+		"src/modules/base/**/*",
+		"src/modules/dict/types/**/*",
+		"src/plugins/view/types/**/*",
+		"src/shims-vue.d.ts"
+	]
+}

@@ -8,6 +8,19 @@ interface Item extends Eps.BaseSysMenuEntity {
 	hasChildren?: boolean;
 }
 
+/** cl-table 组件实例中本插件触达的最小面（类型化过渡，深链待 crud 包类型化收敛） */
+interface ToTreeExposed {
+	Table: {
+		value: {
+			store: {
+				loadOrToggle: (row: Item) => void;
+				states: { lazyTreeNodeMap: { value: { [key: number]: Item[] } } };
+			};
+		};
+	};
+	config: { props: Record<string, unknown>; on: Record<string, unknown> };
+}
+
 /**
  * 树形表格
  * @param options.lazy 是否懒加载，数据过多时开启
@@ -17,7 +30,8 @@ interface Item extends Eps.BaseSysMenuEntity {
 export function toTree(
 	options: { lazy?: boolean; onRefresh?: (params: any) => Promise<any[]> } = {}
 ) {
-	return ({ exposed }) => {
+	return ({ exposed }: { exposed: unknown }) => {
+		const t = exposed as ToTreeExposed;
 		const Crud = useCrud();
 
 		// 设置刷新方法
@@ -65,7 +79,7 @@ export function toTree(
 			const deep = (arr: Item[]) => {
 				arr.forEach(e => {
 					const nodes: { [key: number]: Item[] } =
-						exposed.Table.value?.store.states.lazyTreeNodeMap.value || {};
+						t.Table.value?.store.states.lazyTreeNodeMap.value || {};
 
 					if (nodes[e.id!]) {
 						nodes[e.id!] = e.children || [];
@@ -90,15 +104,15 @@ export function toTree(
 		};
 
 		// 层级参数
-		exposed.config.props.lazy = true;
-		exposed.config.props['row-key'] = 'id';
-		exposed.config.props['tree-props'] = {
+		t.config.props.lazy = true;
+		t.config.props['row-key'] = 'id';
+		t.config.props['tree-props'] = {
 			children: 'children',
 			hasChildren: 'hasChildren'
 		};
 
 		// 层级事件
-		exposed.config.on.load = (
+		t.config.on.load = (
 			row: Item,
 			treeNode: unknown,
 			resolve: (data: Item[]) => void
@@ -107,9 +121,9 @@ export function toTree(
 		};
 
 		// 行点击
-		exposed.config.on.onRowClick = (row: Item) => {
+		t.config.on.onRowClick = (row: Item) => {
 			if (row._children) {
-				exposed.Table.value?.store.loadOrToggle(row);
+				t.Table.value?.store.loadOrToggle(row);
 			}
 		};
 	};

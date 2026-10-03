@@ -16,7 +16,7 @@ export function createEps() {
 				if (path) {
 					a.request = a.request;
 
-					a[i] = function (data?: any) {
+					(a as unknown as Record<string, unknown>)[i] = function (this: BaseService, data?: any) {
 						return this.request({
 							url: path,
 							method,
@@ -27,7 +27,9 @@ export function createEps() {
 			}
 
 			for (const i in a) {
-				d[i] = a[i];
+				(d as unknown as Record<string, unknown>)[i] = (
+					a as unknown as Record<string, unknown>
+				)[i];
 			}
 		} else {
 			for (const i in d) {
