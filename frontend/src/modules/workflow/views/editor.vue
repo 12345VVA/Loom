@@ -242,11 +242,12 @@ import {
 	onBeforeUnmount,
 	computed,
 	watch,
-	provide
+	provide,
+	type Ref
 } from 'vue';
-import { useRoute, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { useCool } from '/@/cool';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 
 // 导入 Vue Flow
@@ -266,11 +267,9 @@ import '@vue-flow/controls/dist/style.css';
 
 import { formatJson, isRequiredConfigMissing } from '../utils';
 import type { FlowNode, FlowEdge } from '../types/editor';
-import { migrateLoadedElements } from '../utils/graph-migration';
-import { hitTestGroup } from '../utils/group-hit-test';
+import { nodeTypes, edgeTypes } from '../utils/node-types';
 import LogDrawer from '../components/log-drawer.vue';
 import { OPEN_NODE_TEST_DIALOG_KEY } from '../components/constants';
-import dayjs from 'dayjs';
 
 import { useWorkflowTest } from '../composables/useWorkflowTest';
 import { useAlignmentGuides } from '../composables/useAlignmentGuides';
@@ -283,26 +282,13 @@ import { useContextMenu } from '../composables/useContextMenu';
 import { useNodeFactory } from '../composables/useNodeFactory';
 import { useEdgeConnect } from '../composables/useEdgeConnect';
 import { planNodeRemoval } from '../composables/useNodeOps';
+import { useCanvasDrop } from '../composables/useCanvasDrop';
+import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts';
+import { useWorkflowIO } from '../composables/useWorkflowIO';
 
 // 导入重构的子组件
 import NodeConfigPanel from '../components/node-config-panel.vue';
 import EditorBottomToolbar from '../components/editor-bottom-toolbar.vue';
-import StartNode from '../components/custom-nodes/start-node.vue';
-import EndNode from '../components/custom-nodes/end-node.vue';
-import LlmNode from '../components/custom-nodes/llm-node.vue';
-import ToolNode from '../components/custom-nodes/tool-node.vue';
-import ConditionNode from '../components/custom-nodes/condition-node.vue';
-import SwitchNode from '../components/custom-nodes/switch-node.vue';
-import HumanInputNode from '../components/custom-nodes/human-input-node.vue';
-import IntentClassifierNode from '../components/custom-nodes/intent-classifier-node.vue';
-import LoopControllerNode from '../components/custom-nodes/loop-controller-node.vue';
-import BatchProcessorNode from '../components/custom-nodes/batch-processor-node.vue';
-import ImageGeneratorNode from '../components/custom-nodes/image-generator-node.vue';
-import ToolExecutorNode from '../components/custom-nodes/tool-executor-node.vue';
-import LoopBodyGroupNode from '../components/custom-nodes/loop-body-group-node.vue';
-import VariableAssignmentNode from '../components/custom-nodes/variable-assignment-node.vue';
-import VariableTransformNode from '../components/custom-nodes/variable-transform-node.vue';
-import LabelEdge from '../components/custom-edges/label-edge.vue';
 import ContextMenu from '../components/context-menu.vue';
 
 const { service } = useCool();
@@ -313,27 +299,7 @@ const { project, getSelectedNodes } = useVueFlow();
 
 const { guides, computeGuides, clearGuides } = useAlignmentGuides();
 
-// 注册自定义节点组件
-const nodeTypes = {
-	start: StartNode,
-	end: EndNode,
-	llm: LlmNode,
-	tool: ToolNode,
-	condition: ConditionNode,
-	switch: SwitchNode,
-	human_input: HumanInputNode,
-	intent_classifier: IntentClassifierNode,
-	loop_controller: LoopControllerNode,
-	batch_processor: BatchProcessorNode,
-	image_generator: ImageGeneratorNode,
-	tool_executor: ToolExecutorNode,
-	loop_body_group: LoopBodyGroupNode,
-	variable_assignment: VariableAssignmentNode,
-	variable_transform: VariableTransformNode
-};
-
-// 注册自定义边组件
-const edgeTypes = { label: LabelEdge };
+// 自定义节点/边组件注册表见 utils/node-types.ts
 
 // 提供获取 elements 的方法给子组件
 provide('getElements', () => elements.value);
@@ -386,6 +352,24 @@ const { handleAddNode, duplicateNode: duplicateNodeImpl } = useNodeFactory(
 // 画布连线校验与边生成（标签推导见 utils/edge-label.ts）
 const { onConnect } = useEdgeConnect(elements, t, pushSnapshot);
 
+// 画布拖放（侧边栏拖入/点击添加、group 拖入高亮）与节点等距分布
+const {
+	onDragStart,
+	onAddNodeClick,
+	onDrop,
+	onCanvasDragOver,
+	onCanvasDragLeave,
+	distributeHorizontal,
+	distributeVertical
+} = useCanvasDrop({
+	elements,
+	project,
+	handleAddNode,
+	getSelectedNodes: getSelectedNodes as unknown as Ref<FlowNode[]>,
+	pushSnapshot,
+	closeContextMenu
+});
+
 // 图构建（buildGraphPayload / persistSignature）抽离为 composable，便于单元测试
 const { persistSignature, buildGraphPayload } = useGraphBuilder(elements);
 
@@ -405,6 +389,35 @@ const { saveWorkflow } = useSaveFlow({
 	onSaved: sig => {
 		_persistSig = sig;
 	}
+});
+
+// 键盘快捷键与未保存离开守卫（onBeforeRouteLeave/Update 在 composable 内注册）
+const { handleKeyDown } = useKeyboardShortcuts({
+	selectedNodeId,
+	isDirty,
+	closeContextMenu,
+	saveWorkflow,
+	undo,
+	redo,
+	deleteSelectedElements
+});
+
+// 工作流加载 / 发布 / 导出（fetchWorkflowData/fetchAiProfiles/publishWorkflow/exportWorkflow）
+const { fetchWorkflowData, fetchAiProfiles, publishWorkflow, exportWorkflow } = useWorkflowIO({
+	service,
+	workflowId,
+	workflowName,
+	workflowCode,
+	workflowDescription,
+	elements,
+	aiProfiles,
+	buildGraphPayload,
+	persistSignature,
+	initUndoRedo,
+	onLoaded: sig => {
+		_persistSig = sig;
+	},
+	saveWorkflow
 });
 
 // 测试运行相关方法使用 composable
@@ -558,69 +571,7 @@ onDeactivated(() => {
 	stopLogPolling();
 });
 
-// 未保存修改时，离开编辑器或切换工作流前提示，避免误丢编辑
-async function confirmDiscardIfDirty(): Promise<boolean> {
-	if (!isDirty.value) return true;
-	try {
-		await ElMessageBox.confirm(
-			t('当前工作流有未保存的修改，继续将丢弃这些修改。'),
-			t('未保存提示'),
-			{ type: 'warning', confirmButtonText: t('放弃修改'), cancelButtonText: t('取消') }
-		);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-// 离开编辑器到其他页面
-onBeforeRouteLeave(async () => {
-	if (!(await confirmDiscardIfDirty())) return false;
-});
-
-// 同组件切换工作流（/editor?id=A → /editor?id=B）
-onBeforeRouteUpdate(async to => {
-	if (String(to.query.id ?? '') !== String(route.query.id ?? '')) {
-		if (!(await confirmDiscardIfDirty())) return false;
-	}
-});
-
-// 全局键盘快捷键：Esc 关闭面板/菜单、Ctrl+S 保存、Ctrl+Z/Shift+Z 撤销/重做、Delete/Backspace 删除选中元素
-function handleKeyDown(event: KeyboardEvent) {
-	// 如果用户正在输入框/文本域中打字，则忽略快捷键删除
-	const activeEl = document.activeElement;
-	if (
-		activeEl &&
-		(activeEl.tagName === 'INPUT' ||
-			activeEl.tagName === 'TEXTAREA' ||
-			activeEl.hasAttribute('contenteditable'))
-	) {
-		return;
-	}
-
-	if (event.key === 'Escape') {
-		selectedNodeId.value = null;
-		closeContextMenu();
-	}
-
-	if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-		event.preventDefault();
-		saveWorkflow();
-	}
-
-	if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-		event.preventDefault();
-		if (event.shiftKey) {
-			if (redo()) ElMessage.info(t('已重做'));
-		} else {
-			if (undo()) ElMessage.info(t('已撤销'));
-		}
-	}
-
-	if (event.key === 'Delete' || event.key === 'Backspace') {
-		deleteSelectedElements();
-	}
-}
+// 未保存离开守卫与键盘快捷键已在 useKeyboardShortcuts 中注册
 
 // 统一删除入口：级联清理关联 group + 子节点坐标转换、清理测试缓存、选中态复位、记录撤销快照。
 // 供多选删除 / 右键删除 / 配置面板删除复用，确保所有删除路径都进入撤销栈。
@@ -662,109 +613,14 @@ watch(
 	{ deep: true, flush: 'post' }
 );
 
-// 拉取工作流详情并还原画布拓扑：解析草稿 JSON、兼容旧版字段/handle 格式迁移；无草稿时初始化默认开始-结束节点
-async function fetchWorkflowData() {
-	try {
-		const res = await (service as any).workflow.definition.info({ id: workflowId.value });
-		workflowName.value = res.name;
-		workflowCode.value = res.code;
-		workflowDescription.value = res.description || '';
-
-		// 加载草稿拓扑（纯版本表模型：graph 存版本表，info 回填 draftGraphJson）
-		if (res.draftGraphJson && res.draftGraphJson !== '{}') {
-			const graph = JSON.parse(res.draftGraphJson);
-
-			// 加载后字段迁移/适配（纯函数，见 utils/graph-migration.ts）：
-			// 仅保留 tool_executor arguments→argumentsJson 编辑态适配、switch/intent 稳定 id 补全。
-			// 旧版本兼容（默认值补全、sourceHandle 下标/反向重建）已激进清理。
-			const loadedElements = migrateLoadedElements(graph.elements || []);
-
-			elements.value = loadedElements;
-		} else {
-			// 初始化一个"开始"和"结束"的默认节点
-			elements.value = [
-				{
-					id: 'node_start',
-					type: 'start',
-					label: t('开始'),
-					position: { x: 100, y: 150 },
-					data: { config: { inputVariables: ['query'] } }
-				},
-				{
-					id: 'node_end',
-					type: 'end',
-					label: t('结束'),
-					position: { x: 600, y: 150 },
-					data: { config: { outputFormat: 'json', outputFields: [] } }
-				}
-			];
-		}
-		loaded.value = true;
-		initUndoRedo();
-		// 加载/新建完成：以当前拓扑签名（已剥离运行态字段）作为 isDirty 比较基线
-		_persistSig = persistSignature(elements.value);
-	} catch (e) {
-		ElMessage.error(t('获取工作流详情失败'));
-	}
-}
-
-// 拉取可配置的大模型列表，供 LLM/图像生成等节点选择模型
-async function fetchAiProfiles() {
-	try {
-		const list = await (service as any).ai.profile.list({});
-		aiProfiles.value = list;
-	} catch (e) {
-		console.error('Fetch AI profiles failed', e);
-	}
-}
-
-// 侧边栏拖拽开始记录节点类型
-function onDragStart(event: DragEvent, type: string) {
-	if (event.dataTransfer) {
-		event.dataTransfer.setData('application/vueflow', type);
-		event.dataTransfer.effectAllowed = 'move';
-	}
-}
+// 加载/发布/导出与模型配置列表拉取已迁移至 useWorkflowIO composable
 
 // handleAddNode 与默认 config 构建已迁移至 useNodeFactory composable
 
-// 通过点击面板添加节点
-function onAddNodeClick(type: string) {
-	// 获取画布中心
-	const wrapper = document.querySelector('.vue-flow');
-	if (!wrapper) return;
-	const rect = wrapper.getBoundingClientRect();
-
-	const centerX = rect.width / 2;
-	const centerY = rect.height / 2;
-
-	// 投影到 vue-flow 坐标系
-	const pos = project({ x: centerX, y: centerY });
-	handleAddNode(type, pos.x - 50, pos.y - 20);
-}
-
-// 画布放置时实例化新节点
-function onDrop(event: DragEvent) {
-	const type = event.dataTransfer?.getData('application/vueflow');
-	if (!type) return;
-
-	// 计算在画布内的放置坐标
-	const react = event.currentTarget as HTMLElement;
-	const bounds = react.getBoundingClientRect();
-
-	// 首先投影鼠标所在的真实屏幕相对坐标
-	const projected = project({
-		x: event.clientX - bounds.left,
-		y: event.clientY - bounds.top
-	});
-
-	// 在 VueFlow 坐标系中减去节点的半宽和半高，使其在鼠标居中
-	handleAddNode(type, projected.x - 50, projected.y - 20);
-}
-
-// getTypeName / getNextLabel / sanitizeLabel / getUniqueOutputVar 已迁移至 useNodeFactory composable
-
 // onConnect / getEdgeLabel 已迁移至 useEdgeConnect composable 与 utils/edge-label.ts
+
+// 画布拖放（onDragStart/onDrop/onAddNodeClick/onCanvasDragOver/onCanvasDragLeave）
+// 与等距分布（distributeHorizontal/Vertical）已迁移至 useCanvasDrop composable
 
 // 画布就绪：自适应缩放使全部节点可见
 function onPaneReady(instance: any) {
@@ -781,35 +637,6 @@ function onNodeClick(event: { node: any }) {
 function onPaneClick() {
 	selectedNodeId.value = null;
 	contextMenu.visible = false;
-}
-
-// 画布 dragover：group 容器拖入高亮
-function onCanvasDragOver(event: DragEvent) {
-	document
-		.querySelectorAll('.loop-body-group-node.is-drag-over')
-		.forEach(el => el.classList.remove('is-drag-over'));
-	const type = event.dataTransfer?.getData('application/vueflow');
-	if (!type || type === 'loop_body_group') return;
-
-	const canvasEl = document.querySelector('.canvas-wrapper');
-	if (!canvasEl) return;
-	const bounds = canvasEl.getBoundingClientRect();
-	const flowX = event.clientX - bounds.left;
-	const flowY = event.clientY - bounds.top;
-
-	// 命中判定见 utils/group-hit-test.ts
-	const hit = hitTestGroup(elements.value, flowX, flowY);
-	if (hit) {
-		const domNode = document.querySelector(`[data-id="${hit.id}"] .loop-body-group-node`);
-		if (domNode) domNode.classList.add('is-drag-over');
-	}
-}
-
-// 拖拽离开画布：清除所有 group 容器的高亮态
-function onCanvasDragLeave() {
-	document
-		.querySelectorAll('.loop-body-group-node.is-drag-over')
-		.forEach(el => el.classList.remove('is-drag-over'));
 }
 
 // 节点拖动对齐辅助线
@@ -854,40 +681,6 @@ function editContextNode() {
 
 // canTestContextNode / canDistribute 已迁移至 useContextMenu composable
 
-// 水平等距分布：以最左/最右节点为界，等间距重排中间节点的 x 坐标
-function distributeHorizontal() {
-	const selected = getSelectedNodes.value as FlowNode[];
-	if (selected.length < 3) return;
-	selected.sort((a, b) => a.position.x - b.position.x);
-	const minX = selected[0].position.x;
-	const maxX = selected[selected.length - 1].position.x;
-	const step = (maxX - minX) / (selected.length - 1);
-	selected.forEach((node, i) => {
-		if (i > 0 && i < selected.length - 1) {
-			node.position.x = minX + step * i;
-		}
-	});
-	pushSnapshot();
-	closeContextMenu();
-}
-
-// 垂直等距分布：以最上/最下节点为界，等间距重排中间节点的 y 坐标
-function distributeVertical() {
-	const selected = getSelectedNodes.value as FlowNode[];
-	if (selected.length < 3) return;
-	selected.sort((a, b) => a.position.y - b.position.y);
-	const minY = selected[0].position.y;
-	const maxY = selected[selected.length - 1].position.y;
-	const step = (maxY - minY) / (selected.length - 1);
-	selected.forEach((node, i) => {
-		if (i > 0 && i < selected.length - 1) {
-			node.position.y = minY + step * i;
-		}
-	});
-	pushSnapshot();
-	closeContextMenu();
-}
-
 // 向子组件（base-node、node-config-panel 等）提供单节点测试弹窗的打开方法
 provide(OPEN_NODE_TEST_DIALOG_KEY, openNodeTestDialog);
 
@@ -922,59 +715,7 @@ function deleteSelectedNode() {
 }
 
 // saveWorkflow + 拓扑校验（validateGraph）已抽离至 composables/useSaveFlow.ts
-
-// 发布草稿：先保存最新草稿，再 publish（一步上线；运行中实例按其版本继续跑、不受影响）
-async function publishWorkflow() {
-	if (!workflowId.value) return;
-	try {
-		await ElMessageBox.confirm(
-			t(
-				'发布后新启动的实例将使用此版本，正在运行的实例按其版本继续跑、不受影响。是否先保存并发布？'
-			),
-			t('发布'),
-			{ type: 'warning' }
-		);
-	} catch {
-		return; // 用户取消
-	}
-	const saved = await saveWorkflow();
-	if (!saved) return;
-	try {
-		await (service as any).workflow.version.publish({ definitionId: Number(workflowId.value) });
-		ElMessage.success(t('发布成功'));
-		await fetchWorkflowData();
-	} catch (err: any) {
-		ElMessage.error(t('发布失败: ') + (err.message || err));
-	}
-}
-
-// 导出工作流
-function exportWorkflow() {
-	if (!workflowId.value) return;
-
-	const exportData = {
-		version: '1.0',
-		type: 'LoomWorkflow',
-		metadata: {
-			name: workflowName.value,
-			description: workflowDescription.value
-		},
-		graph_json: JSON.stringify(buildGraphPayload())
-	};
-
-	const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-	const url = URL.createObjectURL(blob);
-	const a = document.createElement('a');
-	a.href = url;
-	const dateStr = dayjs().format('YYYYMMDD');
-	a.download = `LoomWorkflow_${workflowName.value || 'Untitled'}_${dateStr}.json`;
-	document.body.appendChild(a);
-	a.click();
-	document.body.removeChild(a);
-	URL.revokeObjectURL(url);
-
-	ElMessage.success(t('导出成功'));
-}
+// 发布/导出已抽离至 composables/useWorkflowIO.ts
 </script>
 
 <style lang="scss" scoped>
