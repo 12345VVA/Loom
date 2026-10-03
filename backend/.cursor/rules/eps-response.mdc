@@ -21,10 +21,9 @@ GET /admin/base/open/eps
 
 关键实现：
 
-- `app.framework.eps.builder.build_eps_data`
+- `app.modules.base.service.eps_service.EpsService`（唯一导出实现，仅 DEBUG 可用，非 DEBUG 返回 403）
 - `app.framework.eps.scanner.scan_model_columns`
 - `app.framework.controller_meta.get_registered_exported_routes`
-- `app.modules.base.service.eps_service.EpsService`
 
 规则：
 
@@ -33,6 +32,24 @@ GET /admin/base/open/eps
 - `resolve_alias` 决定前端 `prop/propertyName`。
 - EPS columns 保留 `source`，表示后端 snake_case 源字段。
 - 后端 controller/resource 命名会影响前端 `service.{module}.{controller}` 路径，不要随意改动。
+
+## dts 响应类型（前端返回类型的源头）
+
+每个 api 条目携带 `dts: { parameters, requestBody, responses }`（来自 OpenAPI，`integer` 已归一为 `number`）。前端 `build/cool/eps.d.ts` 的方法返回类型由它推导：
+
+- **自定义端点（`@Post`/`@Get`）和 CRUD 变更动作（add/update）想被前端类型化，必须声明 response model**——`CoolControllerMeta` 的 `*_response_model` 字段或装饰器的 response_model。未声明时 OpenAPI schema 为空，前端只能生成 `Promise<any>`。
+- `responses` 中的 `$ref` 由 `EpsService._inline_response_refs` 内联解引用后输出（EPS 导出不含 OpenAPI components，悬空引用前端无法解析）。解引用带 visited 栈防环（自引用模型如 menu tree 退化为 `object`），悬空 `$ref` 同样退化为 `object`。
+- 只对 `responses` 解引用；`parameters`/`requestBody` 保持 OpenAPI 原样输出。
+- OpenAPI `responses` 描述的是解包后的内层 data（统一信封由中间件包装，不在 schema 内）。`/page` 的 OpenAPI schema 是 `PageResult` 字段名（items/total），与线上结构（list/pagination）不一致——前端按 path 约定特判，不要试图让前端直接消费 PageResult schema。
+- 联合返回（如 `MenuRead | list[MenuRead]`）以 `anyOf` 输出，前端转换为联合类型。
+
+修改 EPS 导出结构（dts/columns 形状）时的验证：
+
+```bash
+python -m pytest tests/test_eps_deref.py tests/test_framework_alignment.py
+```
+
+并通知前端重新生成 `build/cool/eps.d.ts`（后端 DEBUG 在线时运行 `npm run build` 或 dev server）。
 
 ## 统一响应
 
@@ -88,3 +105,5 @@ Service 返回 `PageResult(items, total, page, page_size)` 后，中间件会转
 - [ ] 分页使用 `PageResult`
 - [ ] 字段别名通过 `resolve_alias` 输出
 - [ ] 文件/流响应不走普通 JSON 约定
+- [ ] 需要前端获得返回类型的端点已声明 response model
+- [ ] response model 中避免递归自引用（会被解引用降级为 `object`）

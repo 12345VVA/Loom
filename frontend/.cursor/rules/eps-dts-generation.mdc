@@ -1,0 +1,96 @@
+---
+description: EPS d.ts 生成链规范（vendored vite-plugin、返回类型生成、重生成流程与陷阱）
+globs: packages/vite-plugin/**/*.ts,build/cool/eps.d.ts,src/cool/service/**/*.ts,src/shims-vue.d.ts,eslint-suppressions.json
+---
+
+# EPS d.ts 生成链规范
+
+`build/cool/eps.d.ts` 是前端 service 调用侧类型的唯一来源（`Eps.Service` 全局命名空间）。它由 `@cool-vue/vite-plugin` 在 dev/build 启动时从后端 EPS 元数据生成，已入库作为 CI 基线（CI 无后端，不重新生成）。
+
+## 生成链全景
+
+```text
+后端 /admin/base/open/eps（仅 DEBUG）
+  → packages/vite-plugin getData()（远程优先，eps.json 缓存兜底）
+  → createDescribe() 渲染 → build/cool/eps.d.ts + build/cool/eps.json
+  → tsconfig.json types 引用 → service 调用侧类型
+```
+
+关键位置：
+
+- 生成器主体：`packages/vite-plugin/src/eps/index.ts`（返回类型 switch、schemaToTs、createJson）
+- 插件默认配置（getType 映射表）：`packages/vite-plugin/src/config.ts`
+- 运行时序列化：`packages/vite-plugin/src/virtual.ts`
+- 运行时装配：`src/cool/bootstrap/eps.ts`（方法绑定，类型来自 Eps.Service）
+- 实体别名：`src/shims-vue.d.ts`（只允许 `type XxxEntity = xxx` 形式的别名，禁止手写控制器/实体 interface——会与生成文件声明合并冲突）
+
+## 修改 vendored 插件的流程（必须）
+
+`packages/vite-plugin` 是 npm 包 `@cool-vue/vite-plugin` 的 vendored 源码副本，**vite 实际加载的是 `node_modules` 安装副本**。只改 `packages/vite-plugin/src` 不生效。
+
+```bash
+cd frontend/packages/vite-plugin
+node ../../node_modules/typescript/bin/tsc -p tsconfig.json   # 构建（仓库内 rollup 管线不可用）
+cp -r dist/* ../../node_modules/@cool-vue/vite-plugin/dist/
+cp types/index.d.ts ../../node_modules/@cool-vue/vite-plugin/types/
+```
+
+注意：
+
+- node_modules 同步是临时的，`npm install` 会还原官方版本导致新生成器丢失（CI 不受影响，只依赖入库的 eps.d.ts）。
+- dist/ 被 gitignore，不入库；入库的是 `src/` + `types/` + `tsconfig.json`。
+
+## 返回类型与参数类型约定
+
+返回类型（`createController` 内）：
+
+- `/page` `/list` `/info` 走 path 约定：`${Name}PageResponse` / `${entity}[]` / `${entity}`——它们编码了信封解包语义（拦截器解包 data，分页运行时是 `{list, pagination}`），不要改成消费 OpenAPI 的 PageResult schema（字段名不一致）。
+- 其余路径消费 `dts.responses["200"].content["application/json"].schema`，经 `schemaToTs` 转换（标量/数组/anyOf 联合/enum/嵌套对象内联，顶层对象提升为具名 `${Name}${Action}Response` 接口）。转换器必须防御式：任何异常/空 schema 兜底 `any`，不允许生成期抛错。
+- 无 response model 的端点保持 `any`，不要虚构类型。
+
+参数类型：
+
+- **POST/PUT/PATCH 保持 `data?: any`**——OpenAPI 的 query 参数会冒充 body 类型（含全局注入的 `_action_name`），而真正的 body 字段不在 parameters 里，渲染它会大面积炸调用侧（TS2353）。
+- GET 渲染 query 参数；**parameters 全部 optional 时 `data` 必须可省略**（`data?: {...}`），否则存量无参调用（`list()`）全部报 TS2554。
+
+实体接口：
+
+- 必须保留 `[key: string]: any` 索引签名——它是调用侧兼容的关键（未知属性访问不报错，已知字段获得类型提示）。删除它会把全仓属性访问变成编译错误。
+
+## 缓存与产物
+
+- `createJson()` 必须持久化 `dts`/`columns`/`pageColumns`——否则后端停机后 dev server 重启会用瘦缓存**把已入库的 eps.d.ts 降级覆盖成空壳**（历史上全部实体空壳即此成因）。
+- `virtual.ts` 序列化 `virtual:eps` 前必须剥离 `dts` 键（运行时只用 path/method/search），防止缓存加胖撑大产物。
+- `createDict()` 后端不可达时兜底 `type DictKey = string;`——`src/modules/dict/types/index.d.ts` 引用了 `Eps.DictKey`，缺失即悬空。
+- `config.ts` 的 mapping 表需覆盖后端 scanner 类型（string/number/boolean/datetime/select）；漏映射的类型会原样漏进 d.ts 生成非法 TS（如 `fieldName?: select`）。
+
+## 重生成与验证流程
+
+1. 后端 DEBUG 在线（`uvicorn main:app --reload`，8000 端口）
+2. `npm run build`（或启动 dev server）触发重生成
+3. 检查产物：实体接口有字段且保留索引签名、具名 Response 存在、`type DictKey` 存在、无非法类型字面量
+4. 五道闸：`npm run type-check` → `type-check:cool` → `lint:check` → `test:unit` → `build`
+
+陷阱：
+
+- **dev server 覆盖陷阱**：dev server 存活期间，任何 src 文件变动都会触发其 HMR 用**当前加载的（旧）插件代码**重新生成并覆盖 eps.d.ts/eps.json。改完插件必须重启 dev server，否则产物会被旧代码反复降级，制造"改动不生效"的假象。
+- build 时远程拉取若撞上后端 uvicorn reload 重启窗口，会静默回退瘦缓存——产物行数骤减是信号，重跑即可。
+- build/ 被 ESLint 忽略，eps.d.ts 里的 any 无计数约束；但手改的 src 文件受 `eslint-suppressions.json` 计数制约束——any 字面量的增减必须 lockstep 更新计数，**减少而不更新计数同样会挂**（unused suppression）。
+
+## 调用侧收窄规律
+
+返回类型从 any 收紧后，历史代码的典型错误与修法：
+
+- 回调注解手写了窄类型（`(e: { name: string; id: number }) =>`）与实体的 optional/nullable 字段不兼容 → 去掉注解交给 TS 推断。
+- 联合返回值（`MenuRead | MenuRead[]`）直接属性访问 → `Array.isArray` 收窄。
+- 手写参数类型缺 `| null` 而生成类型含 nullable → 对齐生成类型，不要反向收紧生成器。
+- 修改后若 eps.d.ts 需要重生成，先完成所有 src 改动再统一重生成一次，避免中间态。
+
+## 检查清单
+
+- [ ] 改动只落在 `packages/vite-plugin/src`，且已 tsc 构建 + 同步 node_modules
+- [ ] dev server 已重启（或确认无存活的旧 dev server）
+- [ ] 生成器新分支有兜底路径（异常 → any，不抛错）
+- [ ] 实体接口索引签名未移除；POST 参数保持 `data?: any`
+- [ ] 重生成后五道闸全绿
+- [ ] suppressions 计数与 any 字面量增减一致
