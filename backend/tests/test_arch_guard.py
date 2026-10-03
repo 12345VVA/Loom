@@ -118,8 +118,7 @@ class ArchitectureGuardTests(unittest.TestCase):
         self.assertEqual(
             stale,
             set(),
-            "白名单快照存在已不存在的条目，请同步收窄快照：\n"
-            + "\n".join(f"  {f} -> {m}" for f, m in sorted(stale)),
+            "白名单快照存在已不存在的条目，请同步收窄快照：\n" + "\n".join(f"  {f} -> {m}" for f, m in sorted(stale)),
         )
 
     def test_no_circular_dependencies(self):
