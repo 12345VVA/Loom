@@ -16,11 +16,12 @@ CORE_DIR = APP_DIR / "core"
 FRAMEWORK_DIR = APP_DIR / "framework"
 
 # framework/ 对业务模块的反向依赖执行「存量容忍、增量冻结」决议
-# （deliverables/框架倒挂依赖核实-2026-10-02.md §四"明确不做"保留的 9 文件 11 处顶层 import）。
+# （deliverables/框架倒挂依赖核实-2026-10-02.md §四"明确不做"保留的存量）。
 # 条目级快照：(相对 framework/ 的 posix 路径, 导入的 app.modules 模块)。
-# 白名单外任何新增——新文件引入、既有文件新增 import、更换子模块路径——一律失败；
+# 口径为全 AST import（顶层 11 处 + 函数内延迟 1 处 = 12 条二元组）；
+# compat_aliases.py 映射表/auto_router.py docstring 里的字符串路径不是 import，不入快照。
+# 白名单外任何新增——新文件引入、既有文件新增 import（含函数体内）、更换子模块路径——一律失败；
 # 扩白名单属有意决策，请更新此快照并在注释说明理由。
-# 口径与 SCC 守卫一致只看顶层：函数内延迟 import（compat_aliases.py 内 1 处）不在扫描范围。
 FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST = frozenset(
     {
         ("cache.py", "app.modules.base.service.cache_service"),
@@ -33,7 +34,19 @@ FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST = frozenset(
         ("middleware/rate_limit.py", "app.modules.base.service.cache_service"),
         ("middleware/scope_authority.py", "app.modules.base.service.authority_service"),
         ("router/compat_aliases.py", "app.modules.base.compat"),
+        ("router/compat_aliases.py", "app.modules.base.model.sys"),
         ("router/query_builder.py", "app.modules.base.service.data_scope_service"),
+    }
+)
+
+# core/ 的函数内延迟 import 冻结（core 顶层静态 import 由独立守卫全面禁止）。
+# 现状：security.py 3 处延迟导入（cache_set/cache_get/increment_user_token_version），
+# 按模块去重后 2 个二元组；database.py 的 _autodiscover_models 走 import_module 动态
+# 导入，AST 静态不可见，天然不在扫描范围。
+CORE_LAZY_MODULES_IMPORTS_WHITELIST = frozenset(
+    {
+        ("security.py", "app.modules.base.service.cache_service"),
+        ("security.py", "app.modules.base.service.authority_service"),
     }
 )
 
@@ -47,6 +60,25 @@ def _get_top_level_app_imports(file_path: Path) -> set[str]:
 
     imports = set()
     for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("app"):
+                    imports.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if not node.level and node.module and node.module.startswith("app"):
+                imports.add(node.module)
+    return imports
+
+
+def _get_all_app_imports(file_path: Path) -> set[str]:
+    """提取文件全 AST（含函数体内延迟 import）导入的 app.* 模块。"""
+    try:
+        tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+    except SyntaxError:
+        return set()
+
+    imports = set()
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.startswith("app"):
@@ -92,16 +124,46 @@ class ArchitectureGuardTests(unittest.TestCase):
             "发现 app/core 存在顶层静态依赖业务模块 app.modules:\n" + "\n".join(violations),
         )
 
+    def test_core_lazy_modules_imports_frozen(self):
+        """断言 app/core 的函数内延迟 import app.modules 不超过「存量容忍」快照。
+
+        顶层静态 import 由 test_core_has_no_static_modules_imports 全面禁止；
+        本守卫冻结延迟导入增量（security.py 的缓存/权限调用），防止借函数体
+        逃避静态检查的新增反向依赖。
+        """
+        current: set = set()
+        for py_file in CORE_DIR.glob("*.py"):
+            for imp in _get_all_app_imports(py_file):
+                if imp.startswith("app.modules"):
+                    current.add((py_file.name, imp))
+
+        unexpected = current - CORE_LAZY_MODULES_IMPORTS_WHITELIST
+        self.assertEqual(
+            unexpected,
+            set(),
+            "app/core 出现白名单外的延迟导入业务模块（存量容忍、增量冻结）：\n"
+            + "\n".join(f"  {f} -> {m}" for f, m in sorted(unexpected)),
+        )
+
+        stale = CORE_LAZY_MODULES_IMPORTS_WHITELIST - current
+        self.assertEqual(
+            stale,
+            set(),
+            "core 延迟导入白名单快照存在已不存在的条目，请同步收窄快照：\n"
+            + "\n".join(f"  {f} -> {m}" for f, m in sorted(stale)),
+        )
+
     def test_framework_reverse_dependency_whitelist(self):
-        """断言 app/framework 对 app.modules 的顶层反向依赖不超过「存量容忍」快照。
+        """断言 app/framework 对 app.modules 的反向依赖（含函数内延迟 import）不超过「存量容忍」快照。
 
         与 test_no_circular_dependencies 互补：SCC 守卫拦"已成环"（启动失败风险），
         本守卫拦"未成环的增量侵蚀"（framework 引叶子模块不会成环，SCC 检测不到）。
+        口径为全 AST：函数体内延迟 import 同样冻结（顶层之外的盲区不再放行新增）。
         """
         current: set = set()
         for py_file in FRAMEWORK_DIR.rglob("*.py"):
             rel = py_file.relative_to(FRAMEWORK_DIR).as_posix()
-            for imp in _get_top_level_app_imports(py_file):
+            for imp in _get_all_app_imports(py_file):
                 if imp.startswith("app.modules"):
                     current.add((rel, imp))
 
