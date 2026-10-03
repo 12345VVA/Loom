@@ -480,25 +480,6 @@ class BaseAdminCrudService:
 
         return list(result)
 
-    # 生命周期钩子 (Lifecycle Hooks)
-    def _before_add(self, data: dict) -> dict:
-        return data
-
-    def _after_add(self, entity: Any, payload: Any = None) -> None:
-        pass
-
-    def _before_update(self, data: dict, entity: Any) -> dict:
-        return data
-
-    def _after_update(self, entity: Any, payload: Any = None) -> None:
-        pass
-
-    def _before_delete(self, ids: list[int], payload: Any = None) -> list[int]:
-        return ids
-
-    def _after_delete(self, ids: list[int], payload: Any = None) -> None:
-        pass
-
     def _log_entity_change(self, entity_id: int, operation: str, diff: dict, payload: Any = None) -> None:
         """
         记录实体变更到操作日志
