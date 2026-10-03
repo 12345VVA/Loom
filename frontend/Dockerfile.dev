@@ -1,0 +1,18 @@
+# 开发模式镜像：配合 docker-compose 的 frontend 服务使用
+# （volume 挂载 ./frontend:/app + command: npm run dev 热更新）。
+# 生产镜像见同目录 Dockerfile（npm build → nginx 托管 dist）。
+FROM node:lts-alpine
+
+WORKDIR /app
+
+# 设置npm镜像
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY package.json ./
+RUN npm install
+
+COPY ./ ./
+
+EXPOSE 5173
+
+# CMD 由 docker-compose 的 command 提供（npm run dev -- --host）
