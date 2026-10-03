@@ -121,9 +121,8 @@ class ProductionHardeningTests(unittest.TestCase):
 
     def test_eps_export_allowed_in_debug(self):
         """DEBUG 下 EPS 导出保持原行为（回归锚：防止条件被改成一律拒绝）。"""
-        from main import app as fastapi_app
-
         from app.modules.base.controller.admin.open import BaseOpenController
+        from main import app as fastapi_app
 
         self.assertTrue(settings.DEBUG)  # conftest 兜底 DEBUG=True
         result = BaseOpenController.eps(None, request=types.SimpleNamespace(app=fastapi_app))
