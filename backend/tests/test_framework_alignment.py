@@ -60,14 +60,22 @@ with warnings.catch_warnings():
 
 
 class FrameworkAlignmentTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # lifespan（init_db/bootstrap）每类只跑一次：单次 ~10s（PG），
+        # 逐用例重复是 CI 测试时长的主导项
+        cls.client = TestClient(app)
+        cls.client.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
+
     def setUp(self):
         cache_delete_pattern("login:fail:*")
         cache_delete_pattern("login:lock:*")
-        self.client = TestClient(app)
-        self.client.__enter__()
-
-    def tearDown(self):
-        self.client.__exit__(None, None, None)
+        # 共享 client 必须清 cookie：登录响应会 Set-Cookie refresh_token（HttpOnly）
+        self.client.cookies.clear()
 
     def _slider_verify_code(self, captcha_data: dict) -> str:
         # 图像滑块不返回答案，从服务端缓存读取 target_x 构造合法轨迹

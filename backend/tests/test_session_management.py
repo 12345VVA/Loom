@@ -46,6 +46,21 @@ def _admin_user_id() -> int | None:
 class SessionManagementTests(unittest.TestCase):
     """多设备会话：登录并存 / 退出仅当前 / 踢出指定 / 各自刷新 / 列表标记。"""
 
+    @classmethod
+    def setUpClass(cls):
+        # lifespan（init_db/bootstrap）每类只跑一次：本类原为每用例 2 次
+        # （client_a + client_b），是 CI 测试时长的最大单点；单次 ~10s（PG）
+        # 不同 X-Device-Id 模拟两台不同设备（后端按 device_id 聚合）
+        cls.client_a = TestClient(app, headers={"X-Device-Id": "device-a"})
+        cls.client_b = TestClient(app, headers={"X-Device-Id": "device-b"})
+        cls.client_a.__enter__()
+        cls.client_b.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client_a.__exit__(None, None, None)
+        cls.client_b.__exit__(None, None, None)
+
     def setUp(self):
         # 关闭验证码，聚焦会话逻辑（DEBUG=True 时 captcha_enabled 由本开关决定）
         self._old_captcha = settings.ADMIN_CAPTCHA_ENABLED
@@ -54,15 +69,11 @@ class SessionManagementTests(unittest.TestCase):
         admin_id = _admin_user_id()
         if admin_id:
             clear_user_sessions(admin_id)
-        # 不同 X-Device-Id 模拟两台不同设备（后端按 device_id 聚合）
-        self.client_a = TestClient(app, headers={"X-Device-Id": "device-a"})
-        self.client_b = TestClient(app, headers={"X-Device-Id": "device-b"})
-        self.client_a.__enter__()
-        self.client_b.__enter__()
+        # 共享 client 必须清 cookie：登录响应会 Set-Cookie refresh_token（HttpOnly）
+        self.client_a.cookies.clear()
+        self.client_b.cookies.clear()
 
     def tearDown(self):
-        self.client_a.__exit__(None, None, None)
-        self.client_b.__exit__(None, None, None)
         settings.ADMIN_CAPTCHA_ENABLED = self._old_captcha
 
     def _login(self, client: TestClient) -> str:

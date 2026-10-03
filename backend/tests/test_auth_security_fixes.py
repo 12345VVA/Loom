@@ -52,12 +52,16 @@ def _slider_verify_code(captcha_data: dict) -> str:
 class CaptchaValidationTests(unittest.TestCase):
     """Task 1.10: captcha 参数校验"""
 
-    def setUp(self):
-        self.client = TestClient(app)
-        self.client.__enter__()
+    @classmethod
+    def setUpClass(cls):
+        # lifespan（init_db/bootstrap）每类只跑一次：单次 ~10s（PG），
+        # 逐用例重复是 CI 测试时长的主导项
+        cls.client = TestClient(app)
+        cls.client.__enter__()
 
-    def tearDown(self):
-        self.client.__exit__(None, None, None)
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
 
     def test_captcha_rejects_width_below_min(self):
         res = self.client.get(
@@ -117,15 +121,24 @@ class CaptchaValidationTests(unittest.TestCase):
 class RefreshTokenCacheTests(unittest.TestCase):
     """Task 1.2: refresh_token 服务端缓存校验 + logout 删除缓存"""
 
+    @classmethod
+    def setUpClass(cls):
+        # lifespan（init_db/bootstrap）每类只跑一次：单次 ~10s（PG），
+        # 逐用例重复是 CI 测试时长的主导项
+        cls.client = TestClient(app)
+        cls.client.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
+
     def setUp(self):
         cache_delete_pattern("login:fail:*")
         cache_delete_pattern("login:lock:*")
         cache_delete_pattern("admin:token:refresh:*")
-        self.client = TestClient(app)
-        self.client.__enter__()
-
-    def tearDown(self):
-        self.client.__exit__(None, None, None)
+        # 共享 client 必须清 cookie：登录响应会 Set-Cookie refresh_token（HttpOnly），
+        # 旧值会抢先于用例 body 里的显式 refresh_token
+        self.client.cookies.clear()
 
     def _do_login(self) -> dict:
         captcha_res = self.client.get("/admin/base/open/captcha")

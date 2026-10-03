@@ -14,14 +14,23 @@ from main import app  # noqa: E402
 
 
 class AuthAlignmentTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # lifespan（init_db/bootstrap）每类只跑一次：单次 ~10s（PG），
+        # 逐用例重复是 CI 测试时长的主导项
+        cls.client = TestClient(app)
+        cls.client.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
+
     def setUp(self):
         cache_delete_pattern("login:fail:*")
         cache_delete_pattern("login:lock:*")
-        self.client = TestClient(app)
-        self.client.__enter__()
-
-    def tearDown(self):
-        self.client.__exit__(None, None, None)
+        # 共享 client 必须清 cookie：登录响应会 Set-Cookie refresh_token（HttpOnly），
+        # 无 cookie/无 body 的 refresh 拒绝用例依赖空 jar
+        self.client.cookies.clear()
 
     def _captcha_target_x(self, captcha_data: dict) -> int:
         """图像滑块不再返回答案，从服务端缓存读取 target_x 供测试构造合法轨迹。"""
