@@ -27,8 +27,9 @@ USER appuser
 
 EXPOSE 8000
 
-# /health 恒返回 200（依赖不可达时 body 为 degraded），故解析 body 判定健康
+# /health 恒返回 200 且 body 被 ResponseEnvelopeMiddleware 包装（真实状态在 data.status），
+# 故解析 body 判定健康；get('data', d) 兼容未来响应包装豁免的形态变化
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD ["python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4))['status'] == 'healthy'"]
+    CMD ["python", "-c", "import json,urllib.request; b=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)); d=b.get('data') or b; assert d.get('status') == 'healthy'"]
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
