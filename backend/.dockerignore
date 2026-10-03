@@ -1,0 +1,24 @@
+# 构建上下文排除：防止本地产物与密钥进入镜像层
+# （Dockerfile 的 COPY . . 会无差别打包上下文，.env 含 PG 密码与 SECRET_ENCRYPTION_KEY）
+
+# 本地虚拟环境与缓存
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# 本地数据与日志（容器内由 Dockerfile mkdir + compose volume 提供）
+data/
+logs/
+
+# 密钥与本地私有配置（运行时由 compose environment 注入，不得烧进镜像）
+.env
+.env.*
+!.env.example
+
+# 临时调试脚本
+scratch/
+scratch_*.py
