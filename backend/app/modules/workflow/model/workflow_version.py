@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import DateTime, UniqueConstraint
+from sqlalchemy import DateTime, Index, UniqueConstraint
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
@@ -35,7 +35,17 @@ class WorkflowDefinitionVersion(BaseEntity, table=True):
     # (definition_id, version_no) 联合唯一：防并发分配重复版本号。
     # draft 唯一性（每 definition 至多一条 draft）由 service 层事务保证，不加 status 唯一约束
     # （published/archived 会有多条）。
-    __table_args__ = (UniqueConstraint("definition_id", "version_no", name="uq_workflow_def_version_def_no"),)
+    # 两个复合索引对应版本列表的高频查询（按定义取时间序/状态筛选）——真库历史已有，
+    # 此处补回元数据定义与实际对齐（20261002_0019 已清除改名前的旧名冗余对）。
+    __table_args__ = (
+        UniqueConstraint("definition_id", "version_no", name="uq_workflow_def_version_def_no"),
+        Index(
+            "ix_workflow_definition_version_definition_id_created_at",
+            "definition_id",
+            "created_at",
+        ),
+        Index("ix_workflow_definition_version_definition_id_status", "definition_id", "status"),
+    )
 
     definition_id: int = Field(index=True)
     version_no: int = Field(default=1)  # 定义内递增，存量迁移从 1 起
