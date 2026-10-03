@@ -5,7 +5,7 @@ Base 模块认证与权限相关模型
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, field_serializer, field_validator
 from pydantic import Field as PydanticField
@@ -230,22 +230,8 @@ class CoolUserInfo(BaseModel):
     force_password_change: bool = False  # 是否强制修改密码
 
 
-T = TypeVar("T")
-
-
-class PageResult(BaseModel, Generic[T]):
-    """分页响应"""
-
-    items: list[T]
-    total: int
-    page: int
-    page_size: int
-
-
-class DeleteRequest(BaseModel):
-    """批量删除请求"""
-
-    ids: list[int] = PydanticField(default_factory=list)
+# PageResult / DeleteRequest 已下沉 app.framework.models.schemas（依赖方向正转）
+from app.framework.models.schemas import DeleteRequest, PageResult  # noqa: F401,E402
 
 
 class UserListItem(BaseModel):

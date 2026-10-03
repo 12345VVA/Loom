@@ -39,6 +39,7 @@ from app.framework.middleware.admin_csrf import assert_cors_configuration
 from app.framework.middleware.metrics import render_metrics
 from app.framework.middleware.module_runtime import PrefixScopedMiddleware
 from app.framework.router import create_api_router
+from app.framework.runtime import registry
 from app.framework.storage import DEFAULT_UPLOAD_DIR
 from app.modules import (
     bootstrap_modules,
@@ -47,8 +48,15 @@ from app.modules import (
     load_module_runtime_infos,
     load_scope_whitelists,
 )
-from app.modules.base.service.authority_service import get_user_from_download_token, is_super_admin
-from app.modules.base.service.cache_service import get_redis_client
+from app.modules.base.service import audit
+from app.modules.base.service.authority_service import (
+    authorize_request,
+    get_user_from_download_token,
+    increment_user_token_version,
+    is_super_admin,
+)
+from app.modules.base.service.cache_service import cache_get, cache_incr, cache_set, get_redis_client
+from app.modules.base.service.security_service import get_current_user
 from app.modules.media.model.media import MediaAsset
 
 configure_logging(
@@ -99,6 +107,19 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
+
+# 框架运行时装配：base 向框架注册认证/鉴权/缓存/审计实现（DI）。
+# 必须早于 create_api_router——路由构建固定 framework 委托符号，实现请求时经
+# registry 解析；main 顶层是唯一合法的 modules→framework 装配点（架构守卫只限
+# framework/core 自身不得反向 import）。
+registry.register("current_user", get_current_user)
+registry.register("authorize_request", authorize_request)
+registry.register("increment_user_token_version", increment_user_token_version)
+registry.register("cache_incr", cache_incr)
+registry.register("cache_set", cache_set)
+registry.register("cache_get", cache_get)
+registry.register("audit_write", audit.write_operation_log)
+
 api_router = create_api_router()
 app.include_router(api_router)
 if settings.API_VERSION_PREFIX_ENABLED:

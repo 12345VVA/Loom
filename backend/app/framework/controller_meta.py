@@ -7,17 +7,26 @@ from __future__ import annotations
 import inspect
 import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
 from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_session
+from app.framework.models.schemas import DeleteRequest, PageResult
+from app.framework.module_config import PermissionConfig
 from app.framework.router.route_meta import CoolRouteMeta, TagTypes, cool_tag, get_route_meta
-from app.modules.base.model.auth import DeleteRequest, PageResult, User
-from app.modules.base.service.security_service import get_current_user
-from app.modules.module_config import PermissionConfig
+from app.framework.runtime import get_current_user
+
+
+class CurrentUserProtocol(Protocol):
+    """当前用户对象的鸭子形态（DI 委托注入，具体属性由 base 的 User ORM 满足）。"""
+
+    id: int
+    username: str
+    is_super_admin: bool
+    department_id: int | None
 
 
 @dataclass(frozen=True)
@@ -302,7 +311,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 session: Session = Depends(get_session),
                 request: Request = None,
                 background_tasks: BackgroundTasks = None,
-                current_user: User = Depends(get_current_user),
+                current_user: CurrentUserProtocol = Depends(get_current_user),
                 _action_name: str = action.name,
             ):
                 service = meta.service(session)
@@ -369,7 +378,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 session: Session = Depends(get_session),
                 request: Request = None,
                 background_tasks: BackgroundTasks = None,
-                current_user: User = Depends(get_current_user),
+                current_user: CurrentUserProtocol = Depends(get_current_user),
                 _action_name: str = action.name,
             ):
                 service = meta.service(session)
@@ -438,7 +447,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     session: Session = Depends(get_session),
                     request: Request = None,
                     background_tasks: BackgroundTasks = None,
-                    current_user: User = Depends(get_current_user),
+                    current_user: CurrentUserProtocol = Depends(get_current_user),
                     _action_name: str = action.name,
                 ):
                     service = meta.service(session)
@@ -461,7 +470,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                     session: Session = Depends(get_session),
                     request: Request = None,
                     background_tasks: BackgroundTasks = None,
-                    current_user: User = Depends(get_current_user),
+                    current_user: CurrentUserProtocol = Depends(get_current_user),
                     _action_name: str = action.name,
                 ):
                     service = meta.service(session)
@@ -492,7 +501,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 session: Session = Depends(get_session),
                 request: Request = None,
                 background_tasks: BackgroundTasks = None,
-                current_user: User = Depends(get_current_user),
+                current_user: CurrentUserProtocol = Depends(get_current_user),
                 _action_name: str = action.name,
             ):
                 service = meta.service(session)
@@ -524,7 +533,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 session: Session = Depends(get_session),
                 request: Request = None,
                 background_tasks: BackgroundTasks = None,
-                current_user: User = Depends(get_current_user),
+                current_user: CurrentUserProtocol = Depends(get_current_user),
                 _action_name: str = action.name,
             ):
                 service = meta.service(session)
@@ -555,7 +564,7 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
                 session: Session = Depends(get_session),
                 request: Request = None,
                 background_tasks: BackgroundTasks = None,
-                current_user: User = Depends(get_current_user),
+                current_user: CurrentUserProtocol = Depends(get_current_user),
                 _action_name: str = action.name,
             ):
                 service = meta.service(session)
@@ -670,7 +679,7 @@ def _register_service_routes(router: APIRouter, meta: CoolControllerMeta) -> Non
             session: Session = Depends(get_session),
             request: Request = None,
             background_tasks: BackgroundTasks = None,
-            current_user: User = Depends(get_current_user),
+            current_user: CurrentUserProtocol = Depends(get_current_user),
             _service_method: str = config.method,
         ):
             service = meta.service(session)
