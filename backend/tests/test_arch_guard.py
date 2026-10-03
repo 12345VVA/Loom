@@ -13,6 +13,29 @@ import app.core.database  # noqa: F401
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = BACKEND_ROOT / "app"
 CORE_DIR = APP_DIR / "core"
+FRAMEWORK_DIR = APP_DIR / "framework"
+
+# framework/ 对业务模块的反向依赖执行「存量容忍、增量冻结」决议
+# （deliverables/框架倒挂依赖核实-2026-10-02.md §四"明确不做"保留的 9 文件 11 处顶层 import）。
+# 条目级快照：(相对 framework/ 的 posix 路径, 导入的 app.modules 模块)。
+# 白名单外任何新增——新文件引入、既有文件新增 import、更换子模块路径——一律失败；
+# 扩白名单属有意决策，请更新此快照并在注释说明理由。
+# 口径与 SCC 守卫一致只看顶层：函数内延迟 import（compat_aliases.py 内 1 处）不在扫描范围。
+FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST = frozenset(
+    {
+        ("cache.py", "app.modules.base.service.cache_service"),
+        ("controller_meta.py", "app.modules.base.model.auth"),
+        ("controller_meta.py", "app.modules.base.service.security_service"),
+        ("controller_meta.py", "app.modules.module_config"),
+        ("events.py", "app.modules.base.service.cache_service"),
+        ("middleware/admin_authority.py", "app.modules.base.service.authority_service"),
+        ("middleware/operation_log.py", "app.modules.base.model.sys"),
+        ("middleware/rate_limit.py", "app.modules.base.service.cache_service"),
+        ("middleware/scope_authority.py", "app.modules.base.service.authority_service"),
+        ("router/compat_aliases.py", "app.modules.base.compat"),
+        ("router/query_builder.py", "app.modules.base.service.data_scope_service"),
+    }
+)
 
 
 def _get_top_level_app_imports(file_path: Path) -> set[str]:
@@ -67,6 +90,36 @@ class ArchitectureGuardTests(unittest.TestCase):
             violations,
             [],
             "发现 app/core 存在顶层静态依赖业务模块 app.modules:\n" + "\n".join(violations),
+        )
+
+    def test_framework_reverse_dependency_whitelist(self):
+        """断言 app/framework 对 app.modules 的顶层反向依赖不超过「存量容忍」快照。
+
+        与 test_no_circular_dependencies 互补：SCC 守卫拦"已成环"（启动失败风险），
+        本守卫拦"未成环的增量侵蚀"（framework 引叶子模块不会成环，SCC 检测不到）。
+        """
+        current: set = set()
+        for py_file in FRAMEWORK_DIR.rglob("*.py"):
+            rel = py_file.relative_to(FRAMEWORK_DIR).as_posix()
+            for imp in _get_top_level_app_imports(py_file):
+                if imp.startswith("app.modules"):
+                    current.add((rel, imp))
+
+        unexpected = current - FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST
+        self.assertEqual(
+            unexpected,
+            set(),
+            "app/framework 出现白名单外的业务模块反向依赖（存量容忍、增量冻结）：\n"
+            + "\n".join(f"  {f} -> {m}" for f, m in sorted(unexpected)),
+        )
+
+        # 反向对账：存量依赖被理顺移除是好事，但快照必须同步收窄，防止白名单变成失真的死角
+        stale = FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST - current
+        self.assertEqual(
+            stale,
+            set(),
+            "白名单快照存在已不存在的条目，请同步收窄快照：\n"
+            + "\n".join(f"  {f} -> {m}" for f, m in sorted(stale)),
         )
 
     def test_no_circular_dependencies(self):
