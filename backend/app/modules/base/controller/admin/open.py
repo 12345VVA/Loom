@@ -2,7 +2,7 @@
 Base 模块开放接口
 """
 
-from fastapi import Depends, Request, Response
+from fastapi import Depends, HTTPException, Request, Response
 from sqlmodel import Session
 
 from app.core.config import settings
@@ -160,6 +160,10 @@ class BaseOpenController(BaseController):
 
     @Get("/eps", summary="导出 EPS 扫描元数据", anonymous=True)
     def eps(self, request: Request) -> dict:
+        # EPS 元数据含全部管理端 API 路径与入参模型，仅开发环境匿名可用——
+        # 前端 eps.d.ts 已静态入库，生产运行时前端不再调用本接口。
+        if not settings.DEBUG:
+            raise HTTPException(status_code=403, detail="EPS metadata export is only available in DEBUG mode")
         return EpsService(request.app).export_admin()
 
 

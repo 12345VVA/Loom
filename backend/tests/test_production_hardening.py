@@ -1,8 +1,10 @@
 import os
 import sys
+import types
 import unittest
 import warnings
 from datetime import datetime
+from unittest.mock import patch
 
 from sqlmodel import Field, Session, SQLModel, select
 
@@ -93,8 +95,8 @@ class ProductionHardeningTests(unittest.TestCase):
 
     def test_production_config_forces_csrf_enabled(self):
         """生产环境（DEBUG=False）model_validator 强制 ADMIN_CSRF_ORIGIN_CHECK_ENABLED=True。"""
-        prod = settings.model_copy(update={"DEBUG": False, "ADMIN_CSRF_ORIGIN_CHECK_ENABLED": False})
         # model_copy 不触发 model_validator，模拟 .env 显式关闭
+        prod = settings.model_copy(update={"DEBUG": False, "ADMIN_CSRF_ORIGIN_CHECK_ENABLED": False})
         self.assertFalse(prod.ADMIN_CSRF_ORIGIN_CHECK_ENABLED)
         # 通过 Settings 重新构造触发 model_validator
         forced = prod.model_validate(prod.model_dump())
@@ -105,6 +107,27 @@ class ProductionHardeningTests(unittest.TestCase):
         dev = settings.model_copy(update={"DEBUG": True, "ADMIN_CSRF_ORIGIN_CHECK_ENABLED": False})
         forced = dev.model_validate(dev.model_dump())
         self.assertFalse(forced.ADMIN_CSRF_ORIGIN_CHECK_ENABLED)
+
+    def test_eps_export_blocked_outside_debug(self):
+        """EPS 元数据含全部管理端 API 路径与入参模型：非 DEBUG 环境一律 403（含匿名）。"""
+        from fastapi import HTTPException
+
+        from app.modules.base.controller.admin.open import BaseOpenController
+
+        with patch.object(settings, "DEBUG", False):
+            with self.assertRaises(HTTPException) as ctx:
+                BaseOpenController.eps(None, request=None)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_eps_export_allowed_in_debug(self):
+        """DEBUG 下 EPS 导出保持原行为（回归锚：防止条件被改成一律拒绝）。"""
+        from main import app as fastapi_app
+
+        from app.modules.base.controller.admin.open import BaseOpenController
+
+        self.assertTrue(settings.DEBUG)  # conftest 兜底 DEBUG=True
+        result = BaseOpenController.eps(None, request=types.SimpleNamespace(app=fastapi_app))
+        self.assertIsInstance(result, dict)
 
     def test_assert_cors_configuration_rejects_wildcard_with_credentials(self):
         """allow_credentials=True + allow_origins=['*'] 抛 ConfigurationError。"""
