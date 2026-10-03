@@ -16,7 +16,7 @@ import asyncio
 import json
 import unittest
 
-from app.modules.workflow.service import workflow_service as ws
+from app.modules.workflow.service import node_executors as ne
 from app.modules.workflow.service.compiler import safe_eval
 from app.modules.workflow.service.workflow_service import (
     _extract_first_json,
@@ -64,9 +64,10 @@ class M2IntentClassifierTestCase(unittest.TestCase):
     """M2：意图路由匹配（不依赖真实大模型）。"""
 
     def _route(self, intents, default_route, model_return, query="hi"):
-        original = ws.run_ai_chat
+        # 执行器经定义模块（node_executors）全局查找 run_ai_chat，patch 必须落在定义处
+        original = ne.run_ai_chat
         try:
-            ws.run_ai_chat = lambda profile, prompt: model_return
+            ne.run_ai_chat = lambda profile, prompt: model_return
             cfg = {
                 "id": "ic",
                 "input_variable": "",
@@ -76,7 +77,7 @@ class M2IntentClassifierTestCase(unittest.TestCase):
             }
             return asyncio.run(execute_intent_classifier_node({"query": query}, cfg))["ic_selected_route"]
         finally:
-            ws.run_ai_chat = original
+            ne.run_ai_chat = original
 
     def test_exact_match_preferred_over_normalized(self):
         """精确命中优先：VIP_用户 / VIP用户 不得因归一化被折叠误路由。"""
@@ -87,7 +88,7 @@ class M2IntentClassifierTestCase(unittest.TestCase):
     def test_normalization_collision_falls_back_with_warning(self):
         """归一化后多候选：回落 default_route 并记 warning（不静默取首个）。"""
         intents = [{"name": "VIP_用户", "target_route": "A"}, {"name": "VIP用户", "target_route": "B"}]
-        with self.assertLogs(ws.logger, level="WARNING") as cm:
+        with self.assertLogs(ne.logger, level="WARNING") as cm:
             route = self._route(intents, "DEF", "VIP 用户")
         self.assertEqual(route, "DEF")
         self.assertTrue(any("歧义" in m for m in cm.output))

@@ -14,10 +14,12 @@ from __future__ import annotations
 import asyncio
 import unittest
 
+import app.modules.workflow.service.node_executors as ne
 import app.modules.workflow.service.workflow_service as ws  # noqa: F401  触发执行器注册
 from app.modules.workflow.service.compiler import safe_eval
 
-_LOGGER_NAME = "app.modules.workflow.service.workflow_service"
+# 执行器已迁至 node_executors：patch 与日志锚点均指向定义模块
+_LOGGER_NAME = "app.modules.workflow.service.node_executors"
 
 
 class H1RecursionDegradeTestCase(unittest.TestCase):
@@ -164,8 +166,8 @@ class M2IntentRoutingTestCase(unittest.TestCase):
 
     @staticmethod
     def _route(matched: str, intents: list[dict], default: str = "default") -> str:
-        original = ws.run_ai_chat
-        ws.run_ai_chat = lambda *a, **k: matched  # type: ignore[assignment]
+        original = ne.run_ai_chat
+        ne.run_ai_chat = lambda *a, **k: matched  # type: ignore[assignment]
         try:
             config = {
                 "id": "ic",
@@ -175,7 +177,7 @@ class M2IntentRoutingTestCase(unittest.TestCase):
             }
             result = asyncio.run(ws.execute_intent_classifier_node({}, config))
         finally:
-            ws.run_ai_chat = original  # type: ignore[assignment]
+            ne.run_ai_chat = original  # type: ignore[assignment]
         return result["ic_selected_route"]
 
     _COLLIDING = [
