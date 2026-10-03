@@ -16,7 +16,7 @@ from app.core.database import engine
 from app.framework.api.response import FORBIDDEN_CODE, UNAUTHORIZED_CODE, error
 from app.framework.router.grouping import get_group_config
 from app.framework.router.route_meta import get_route_tags, get_scope_tag, resolve_request_route
-from app.modules.base.service.authority_service import authorize_request
+from app.framework.runtime import registry
 
 
 class ScopeAuthorityMiddleware(BaseHTTPMiddleware):
@@ -41,7 +41,9 @@ class ScopeAuthorityMiddleware(BaseHTTPMiddleware):
 
         def _authorize():
             with Session(engine) as session:
-                authorize_request(session, request, effective_scope, route_tags, scope_whitelist, matched_route)
+                registry.resolve("authorize_request")(
+                    session, request, effective_scope, route_tags, scope_whitelist, matched_route
+                )
 
         try:
             # 同步 DB 权限校验 offload 到线程池，避免阻塞事件循环

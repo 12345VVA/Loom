@@ -4,8 +4,6 @@ Loom 兼容配置
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 DEFAULT_AUTHENTICATED_PERMISSIONS: tuple[str, ...] = (
     "base:sys:user:me",
     "base:session:logout",
@@ -49,30 +47,11 @@ SYSTEM_MANAGED_CODE_PREFIXES: tuple[str, ...] = (
 )
 
 
-@dataclass(frozen=True)
-class ResourceCompat:
-    source_module: str
-    source_resource: str
-    compat_module: str
-    compat_name: str
-    compat_prefix: str
-    menu_parent_code: str | None = None
-    route_aliases: tuple[str, ...] = field(default_factory=tuple)
-
-
-RESOURCE_COMPATS: tuple[ResourceCompat, ...] = (
-    ResourceCompat("base", "sys/user", "base", "user", "/admin/base/sys/user", "nav_system_users"),
-    ResourceCompat("base", "sys/role", "base", "role", "/admin/base/sys/role", "nav_system_roles"),
-    ResourceCompat("base", "sys/menu", "base", "menu", "/admin/base/sys/menu", "nav_system_menus"),
-    ResourceCompat("base", "sys/department", "base", "department", "/admin/base/sys/department", "nav_system_users"),
-    ResourceCompat("base", "sys/param", "base", "param", "/admin/base/sys/param", "nav_system_params"),
-    ResourceCompat("base", "sys/log", "base", "log", "/admin/base/sys/log", "nav_monitor_logs"),
-    ResourceCompat("base", "sys/login_log", "base", "login_log", "/admin/base/sys/login_log", "nav_monitor_login_logs"),
-    ResourceCompat("base", "comm", "base", "comm", "/admin/base/comm"),
-    ResourceCompat("base", "open", "base", "open", "/admin/base/open"),
-    ResourceCompat("dict", "type", "dict", "type", "/admin/dict/type", "nav_data_dict"),
-    ResourceCompat("dict", "info", "dict", "info", "/admin/dict/info", "nav_data_dict"),
-    ResourceCompat("task", "info", "task", "info", "/admin/task/info", "nav_task_list"),
+# ResourceCompat / RESOURCE_COMPATS 已下沉 app.framework.router.compat_aliases
+# （纯数据零 import 依赖，依赖方向正转），此处 re-export 兼容既有引用。
+from app.framework.router.compat_aliases import (  # noqa: E402,F401
+    RESOURCE_COMPATS,
+    ResourceCompat,
 )
 
 

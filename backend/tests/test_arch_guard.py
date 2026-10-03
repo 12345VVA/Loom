@@ -15,24 +15,11 @@ APP_DIR = BACKEND_ROOT / "app"
 CORE_DIR = APP_DIR / "core"
 FRAMEWORK_DIR = APP_DIR / "framework"
 
-# framework/ 对业务模块的反向依赖执行「存量容忍、增量冻结」决议
-# （deliverables/框架倒挂依赖核实-2026-10-02.md §四"明确不做"保留的存量）。
-# 条目级快照：(相对 framework/ 的 posix 路径, 导入的 app.modules 模块)。
-# 口径为全 AST import（顶层 11 处 + 函数内延迟 1 处 = 12 条二元组）；
-# compat_aliases.py 映射表/auto_router.py docstring 里的字符串路径不是 import，不入快照。
-# 白名单外任何新增——新文件引入、既有文件新增 import（含函数体内）、更换子模块路径——一律失败；
-# 扩白名单属有意决策，请更新此快照并在注释说明理由。
-FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST = frozenset(
-    {
-        ("middleware/admin_authority.py", "app.modules.base.service.authority_service"),
-        ("middleware/operation_log.py", "app.modules.base.model.sys"),
-        ("middleware/rate_limit.py", "app.modules.base.service.cache_service"),
-        ("middleware/scope_authority.py", "app.modules.base.service.authority_service"),
-        ("router/compat_aliases.py", "app.modules.base.compat"),
-        ("router/compat_aliases.py", "app.modules.base.model.sys"),
-        ("router/query_builder.py", "app.modules.base.service.data_scope_service"),
-    }
-)
+# framework/ 对业务模块的反向依赖已 DI 清零（runtime 注册表 + 定义下沉），
+# 守卫语义从「存量容忍、增量冻结」升级为「全面禁止」：
+# framework/ 下任何文件（含函数体内）出现 app.modules import 一律失败。
+# 快照保留为空集合——如未来确需引入，属于架构级决策，须重开白名单并更新此注释。
+FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST = frozenset()
 
 # core/ 的函数内延迟 import 冻结（core 顶层静态 import 由独立守卫全面禁止）。
 # 现状：security.py 3 处延迟导入（cache_set/cache_get/increment_user_token_version），

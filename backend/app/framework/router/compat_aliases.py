@@ -1,22 +1,51 @@
 """
 Loom-vue 兼容路由别名
+
+RESOURCE_COMPATS 数据自 base/compat.py 下沉至此（纯字符串数据、零 import 依赖，
+依赖方向正转）；原 _build_dict_compat_router 兼容端点引用了不存在的 SysDict/
+SysDictData 模型（请求即 ImportError，前端亦无调用），已删除。
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable  # noqa: F401  （别名消费方兼容保留）
+from dataclasses import dataclass, field
 from importlib import import_module
 
-from fastapi import APIRouter, Depends, Query
-from sqlmodel import Session, select
-
-from app.modules.base.compat import RESOURCE_COMPATS
+from fastapi import APIRouter
 
 ROUTER_ALIASES: tuple[tuple[str, str], ...] = (
     ("app.modules.base.controller.admin.user", "/admin/base/sys/user"),
     ("app.modules.base.controller.admin.role", "/admin/base/sys/role"),
     ("app.modules.base.controller.admin.menu", "/admin/base/sys/menu"),
     ("app.modules.base.controller.admin.department", "/admin/base/sys/department"),
+)
+
+
+@dataclass(frozen=True)
+class ResourceCompat:
+    source_module: str
+    source_resource: str
+    compat_module: str
+    compat_name: str
+    compat_prefix: str
+    menu_parent_code: str | None = None
+    route_aliases: tuple[str, ...] = field(default_factory=tuple)
+
+
+RESOURCE_COMPATS: tuple[ResourceCompat, ...] = (
+    ResourceCompat("base", "sys/user", "base", "user", "/admin/base/sys/user", "nav_system_users"),
+    ResourceCompat("base", "sys/role", "base", "role", "/admin/base/sys/role", "nav_system_roles"),
+    ResourceCompat("base", "sys/menu", "base", "menu", "/admin/base/sys/menu", "nav_system_menus"),
+    ResourceCompat("base", "sys/department", "base", "department", "/admin/base/sys/department", "nav_system_users"),
+    ResourceCompat("base", "sys/param", "base", "param", "/admin/base/sys/param", "nav_system_params"),
+    ResourceCompat("base", "sys/log", "base", "log", "/admin/base/sys/log", "nav_monitor_logs"),
+    ResourceCompat("base", "sys/login_log", "base", "login_log", "/admin/base/sys/login_log", "nav_monitor_login_logs"),
+    ResourceCompat("base", "comm", "base", "comm", "/admin/base/comm"),
+    ResourceCompat("base", "open", "base", "open", "/admin/base/open"),
+    ResourceCompat("dict", "type", "dict", "type", "/admin/dict/type", "nav_data_dict"),
+    ResourceCompat("dict", "info", "dict", "info", "/admin/dict/info", "nav_data_dict"),
+    ResourceCompat("task", "info", "task", "info", "/admin/task/info", "nav_task_list"),
 )
 
 
@@ -42,63 +71,3 @@ def register_compat_aliases(api_router: APIRouter) -> None:
             continue
         for alias in compat.route_aliases:
             api_router.include_router(router, prefix=alias)
-
-    api_router.include_router(_build_dict_compat_router())
-
-
-def _build_dict_compat_router() -> APIRouter:
-    router = APIRouter(prefix="/admin/dict/info", tags=["admin", "dict", "info"])
-
-    @router.get("/data", summary="批量获取字典数据")
-    async def dict_data_get(
-        types: list[str] = Query(default_factory=list),
-        session: Session = Depends(_get_session),
-    ) -> dict[str, list[dict]]:
-        return _build_dict_data_payload(session, types)
-
-    return router
-
-
-def _build_dict_data_payload(session: Session, raw_types: Iterable[str]) -> dict[str, list[dict]]:
-    from app.modules.base.model.sys import SysDict, SysDictData
-
-    types = [item for item in raw_types if item]
-    if not types:
-        dict_rows = list(session.exec(select(SysDict).order_by(SysDict.name.asc())).all())
-        types = [item.type for item in dict_rows]
-
-    if not types:
-        return {}
-
-    dict_rows = list(session.exec(select(SysDict).where(SysDict.type.in_(types))).all())
-    dict_map = {item.id: item.type for item in dict_rows if item.id is not None}
-    if not dict_map:
-        return {}
-
-    data_rows = list(
-        session.exec(
-            select(SysDictData).where(SysDictData.type_id.in_(dict_map.keys())).order_by(SysDictData.sort_order.asc())
-        ).all()
-    )
-    result: dict[str, list[dict]] = {dict_type: [] for dict_type in types}
-    for row in data_rows:
-        dict_type = dict_map.get(row.type_id)
-        if not dict_type:
-            continue
-        result.setdefault(dict_type, []).append(
-            {
-                "id": row.id,
-                "parentId": None,
-                "name": row.label,
-                "label": row.label,
-                "value": row.value,
-                "orderNum": row.sort_order,
-            }
-        )
-    return result
-
-
-def _get_session():
-    from app.core.database import get_session
-
-    yield from get_session()

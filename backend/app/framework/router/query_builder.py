@@ -4,12 +4,22 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy import asc, desc, or_
 
 from app.framework.controller_meta import CrudQuery, RelationConfig
-from app.modules.base.service.data_scope_service import DataScopeContext
+
+if TYPE_CHECKING:
+    pass
+
+
+class DataScopeContext(Protocol):
+    """数据权限上下文的鸭子形态（实现由 base/data_scope_service 提供）。"""
+
+    allow_all: bool
+    allowed_department_ids: frozenset[int]
+    self_only: bool
 
 
 class QueryBuilder:

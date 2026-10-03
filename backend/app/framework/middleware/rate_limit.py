@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.framework.api.error_codes import ErrorCode
 from app.framework.middleware.metrics import record_metric_event
 from app.framework.request_utils import get_client_ip
-from app.modules.base.service.cache_service import cache_incr
+from app.framework.runtime import registry
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window = int(time.time()) // 60
         cache_key = f"ratelimit:{client_id}:{window}:{path}"
 
-        current = cache_incr(cache_key, ttl_seconds=90)
+        current = registry.resolve("cache_incr")(cache_key, ttl_seconds=90)
 
         if current is None:
             # Redis 计数不可靠：fail-open 放行，跳过限流判断（避免不可靠计数误拒正常请求）

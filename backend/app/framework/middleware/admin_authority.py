@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse
 from app.core.database import engine
 from app.framework.router.grouping import get_group_config
 from app.framework.router.route_meta import get_route_tags, get_scope_tag, resolve_request_route
-from app.modules.base.service.authority_service import authorize_request
+from app.framework.runtime import registry
 
 SUPPORTED_SCOPES = ("admin", "app", "aiapi")
 
@@ -35,7 +35,7 @@ class AdminAuthorityMiddleware(BaseHTTPMiddleware):
 
         try:
             with Session(engine) as session:
-                authorize_request(session, request, effective_scope, route_tags, scope_whitelist)
+                registry.resolve("authorize_request")(session, request, effective_scope, route_tags, scope_whitelist)
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 

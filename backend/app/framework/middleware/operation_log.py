@@ -5,11 +5,9 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import Request
-from sqlmodel import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.core.database import engine
-from app.modules.base.model.sys import SysLog
+from app.framework.runtime import registry
 
 logger = logging.getLogger(__name__)
 
@@ -182,10 +180,8 @@ class OperationLogMiddleware(BaseHTTPMiddleware):
 
 def _write_operation_log(payload: dict[str, Any]) -> None:
     try:
-        with Session(engine) as session:
-            log = SysLog(**payload)
-            session.add(log)
-            session.commit()
+        # SysLog ORM 依赖收敛于 base（DI 注册 "audit_write"），框架层只交付 payload
+        registry.resolve("audit_write")(payload)
     except Exception as exc:
         logger.error(
             "操作日志写入失败 - path: %s, method: %s, user_id: %s",
