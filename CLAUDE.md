@@ -62,7 +62,7 @@ Loom 是一个全栈 AI 内容生成平台，基于 Vue 3 + FastAPI + Celery。�
 - `storage.py` — 本地/S3-compatible 文件存储
 - `cache.py` — Redis 缓存（开发环境自动降级为进程内缓存）
 
-**业务模块** (`app/modules/`): `base`（权限/认证）、`ai`（AI 模型）、`dict`（字典）、`media`（媒体资源）、`notification`（通知）、`task`（异步任务）、`workflow`（工作流编排）。每个模块包含 `config.py`、`controller/`、`service/`、`model/`、可选 `menu.json`。
+**业务模块** (`app/modules/`): `base`（权限/认证）、`ai`（AI 模型）、`dict`（字典）、`media`（媒体资源）、`notification`（通知）、`task`（异步任务）、`workflow`（工作流编排）、`workflow_annotation`（工作流标注）、`workflow_eval`（工作流评测）。每个模块包含 `config.py`、`controller/`、`service/`、`model/`、可选 `menu.json`。
 
 **模块加载** (`app/modules/loader.py`): 启动时扫描模块目录，注册路由、中间件、白名单和菜单。
 
@@ -87,7 +87,7 @@ Loom 是一个全栈 AI 内容生成平台，基于 Vue 3 + FastAPI + Celery。�
 - `service/` — `BaseService` 提供 CRUD 方法，EPS 自动注入接口路径和类型
 - `hooks/` — `useCool()` 获取 `service`、`router`、`mitt` 等
 
-**业务模块** (`src/modules/`): `ai`、`base`、`dict`、`media`、`notification`、`task`、`workflow`。每个模块含 `config.ts`、`index.ts`、`views/`。
+**业务模块** (`src/modules/`): `ai`、`base`、`dict`、`media`、`notification`、`task`、`workflow`、`workflow_annotation`、`workflow_eval`。每个模块含 `config.ts`、`index.ts`、`views/`。
 
 **路径别名**:
 | 别名 | 路径 |

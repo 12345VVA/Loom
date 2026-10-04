@@ -7,8 +7,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 _VERSION = "v2"
 _LEGACY_VERSION = "v1"
@@ -54,7 +57,12 @@ def mask_secret(value: str | None) -> str | None:
 
 
 def _derive_key() -> bytes:
-    raw = settings.SECRET_ENCRYPTION_KEY or settings.JWT_SECRET_KEY
+    raw = settings.SECRET_ENCRYPTION_KEY
+    if not raw:
+        # 显式告警：回退 JWT 密钥派生会弱化两密钥隔离，仅限开发环境便利；
+        # 生产环境 startup_checks 已对缺失配置报错阻断
+        logger.warning("SECRET_ENCRYPTION_KEY 未配置，回退使用 JWT_SECRET_KEY 派生加密密钥（仅限开发环境）")
+        raw = settings.JWT_SECRET_KEY
     return hashlib.sha256(raw.encode("utf-8")).digest()
 
 
