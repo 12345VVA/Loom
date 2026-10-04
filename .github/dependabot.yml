@@ -7,11 +7,17 @@ updates:
   # dependabot 提升下限后若与手维护的 requirements.lock 冲突（lock 钉版低于新下限），
   # CI 会红——流程是在同一 PR 内补提交 lock 再生：
   #   backend venv: python -m pip freeze | grep -v -E ' @ |^-e' > requirements.lock
+  # groups 把全部 pip 更新合成单 PR（2026-10-04 决策）：lock 再生与全量测试一次做完，
+  # 避免逐 PR 重复劳动（首批 5 个散 PR 即因此关闭）
   - package-ecosystem: pip
     directory: /backend
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      pip-all:
+        patterns:
+          - "*"
 
   - package-ecosystem: npm
     directory: /frontend
