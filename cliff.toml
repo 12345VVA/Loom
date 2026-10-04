@@ -1,0 +1,47 @@
+# git-cliff 配置（G3/H2 发布基线）
+# 用途：`git cliff -o CHANGELOG.md` 从 conventional commits 自动生成/更新 CHANGELOG。
+# 现状：开发机 pip 安装 git-cliff 受代理环境阻碍（2026-10-04），首版 CHANGELOG
+# 由一次性脚本按同一分组规则生成；本配置待工具可用后接管，分组保持一致。
+# 校验：python -c "import tomllib; tomllib.load(open('cliff.toml','rb'))"
+
+[changelog]
+header = "# Changelog\n\n"
+# 模板：keepachangelog 风格，分组名与首版手工生成保持一致
+body = """
+{% if version %}\
+## [{{ version }}] - {{ timestamp | date(format="%Y-%m-%d") }}\
+{% else %}\
+## 未发布\
+{% endif %}\
+
+{% for group, commits in commits | group_by(attribute="group") %}\
+\n### {{ group }}\n\
+{% for commit in commits %}\
+- {{ commit.message | split(pat="\n") | first | upper_first }}\
+{% endfor %}\n\
+{% endfor %}\n\
+"""
+footer = "<!-- git-cliff ~> conventional commits -->\n"
+
+[git]
+conventional_commits = true
+# 历史中个别非规范条目不丢弃，落入"其他"组
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
+
+commit_parsers = [
+    { message = "^feat", group = "新增" },
+    { message = "^fix", group = "修复" },
+    { message = "^perf", group = "性能" },
+    { message = "^refactor", group = "重构" },
+    { message = "^test", group = "测试" },
+    { message = "^docs", group = "文档" },
+    { message = "^ci", group = "CI" },
+    { message = "^build", group = "构建" },
+    { message = "^style", group = "样式" },
+    { message = "^chore", group = "杂项" },
+    { message = ".*", group = "其他" },
+]

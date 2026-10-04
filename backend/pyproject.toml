@@ -1,3 +1,10 @@
+[project]
+# 版本唯一源（G3/H2）：与 backend/.env.example 的 APP_VERSION、frontend/package.json 保持一致；
+# 发布以 git tag v0.1.0 形态为准，CHANGELOG 见仓库根
+name = "loom-backend"
+version = "0.1.0"
+requires-python = ">=3.11"
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120
