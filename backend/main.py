@@ -70,7 +70,8 @@ configure_logging(
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 调大 anyio 线程池上限：承载 offload 的同步阻塞调用（同步 DB/HTTP service、同步 def 路由）
-    anyio.to_thread.current_default_thread_limiter().total = settings.ASYNC_THREAD_POOL_SIZE
+    # anyio >= 4.15 移除了旧名 total，统一为 total_tokens（随 pip-all 依赖刷新一并切换）
+    anyio.to_thread.current_default_thread_limiter().total_tokens = settings.ASYNC_THREAD_POOL_SIZE
     # 启动时执行
     assert_cors_configuration(allow_credentials=True, allow_origins=settings.cors_origins_list)
     assert_startup_settings()
