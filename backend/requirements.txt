@@ -1,4 +1,4 @@
-fastapi>=0.104.0
+fastapi>=0.142.2
 uvicorn[standard]>=0.24.0
 # 解禁说明（2026-10-02）：0.0.38 后的版本强制 DateTime 值带 timezone——现已完成
 # 全模型 timezone-aware 改造（BaseEntity default_factory=datetime.now(UTC) + 全部
