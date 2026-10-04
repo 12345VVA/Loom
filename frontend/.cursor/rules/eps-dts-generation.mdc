@@ -28,17 +28,16 @@ globs: packages/vite-plugin/**/*.ts,build/cool/eps.d.ts,src/cool/service/**/*.ts
 
 `packages/vite-plugin` 是 npm 包 `@cool-vue/vite-plugin` 的 vendored 源码副本，**vite 实际加载的是 `node_modules` 安装副本**。只改 `packages/vite-plugin/src` 不生效。
 
-```bash
-cd frontend/packages/vite-plugin
-node ../../node_modules/typescript/bin/tsc -p tsconfig.json   # 构建（仓库内 rollup 管线不可用）
-cp -r dist/* ../../node_modules/@cool-vue/vite-plugin/dist/
-cp types/index.d.ts ../../node_modules/@cool-vue/vite-plugin/types/
+```powershell
+# 在 frontend/ 下运行；等价于手工「tsc 构建 → cp dist → cp types」三步
+./scripts/sync-vite-plugin.ps1
 ```
 
 注意：
 
-- node_modules 同步是临时的，`npm install` 会还原官方版本导致新生成器丢失（CI 不受影响，只依赖入库的 eps.d.ts）。
+- 同步到 node_modules 的定制在 `npm install` 后会被官方版本还原，**install 后重跑该脚本**（CI 不受影响，只依赖入库的 eps.d.ts）。
 - dist/ 被 gitignore，不入库；入库的是 `src/` + `types/` + `tsconfig.json`。
+- 同步后必须重启 dev server（存活的旧 dev server 会用旧插件代码覆盖 eps.d.ts）。
 
 ## 返回类型与参数类型约定
 
