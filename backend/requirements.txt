@@ -19,7 +19,7 @@ email-validator>=2.0.0
 PyJWT>=2.10.0
 typer>=0.9.0
 boto3>=1.34.0
-cryptography>=42.0.0
+cryptography>=50.0.2
 Pillow>=10.0.0
 # langgraph 下限由 compiler.py 的顶层硬导入 `from langgraph.errors import GraphBubbleUp` 决定：
 # 该类自 0.2.54 起才存在（0.2.53 及更早的 errors.py 无此类），低于此版本整个 workflow 模块 ImportError。
