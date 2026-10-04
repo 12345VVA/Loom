@@ -13,6 +13,8 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # 兜底截断：当前全量约 10 分钟量级；不设超时则挂死步骤默认可耗 6 小时额度 (M1)
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -112,8 +114,18 @@ jobs:
           print(f"OK: {len(registered)} 个任务注册，调度与路由引用有效")
           EOF
 
+      - name: 依赖漏洞审计（pip-audit，报告模式）
+        # D2 决策：先报告不阻断（continue-on-error），清完存量高危后翻转为硬门禁（G7 期）。
+        # 审计对象是 requirements.lock 的钉版集合——即实际随镜像发布的内容，
+        # 与测试环境解耦（安装在测试跑完之后，不污染被锁定的依赖树）。
+        continue-on-error: true
+        run: |
+          pip install --quiet pip-audit
+          pip-audit -r requirements.lock --progress-spinner off
+
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -128,6 +140,11 @@ jobs:
 
       - name: 安装依赖
         run: npm ci
+
+      - name: 依赖漏洞审计（npm audit，报告模式）
+        # D2 决策：先报告不阻断，清完存量高危后翻转为硬门禁（G7 期）；只看 high+critical
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
       # eps.d.ts 已入库（tsconfig types 引用 build/cool/eps），无需后端在线生成
       - name: 类型检查

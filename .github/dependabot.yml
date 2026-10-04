@@ -1,0 +1,27 @@
+# 依赖自动更新（治理方案 G1 / 评审 H1）
+# 首轮会产生一批版本升级 PR，按 ecosystem 分批合并。
+version: 2
+
+updates:
+  # 后端直接依赖：requirements.txt 只含语义化下限（>=），
+  # dependabot 提升下限后若与手维护的 requirements.lock 冲突（lock 钉版低于新下限），
+  # CI 会红——流程是在同一 PR 内补提交 lock 再生：
+  #   backend venv: python -m pip freeze | grep -v -E ' @ |^-e' > requirements.lock
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # CI 自身使用的 actions 版本（checkout/setup-python/setup-node）
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
