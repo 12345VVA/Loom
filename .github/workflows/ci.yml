@@ -45,7 +45,7 @@ jobs:
       # 滑块验证码测试的前提（job 级环境变量优先级高于 conftest 的 setdefault，
       # 一旦覆盖会让 captcha_check 整体跳过，期望 401 的用例全部翻红）
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -135,7 +135,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
