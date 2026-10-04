@@ -477,6 +477,7 @@ import LogContentPreview from './log-content-preview.vue';
 import { useLogImages } from '../composables/use-log-images';
 import { useLogFilter } from '../composables/use-log-filter';
 import { useLogExpand } from '../composables/use-log-expand';
+import { useLogStats } from '../composables/use-log-stats';
 import {
 	createNodeMetaMap,
 	formatLatency,
@@ -585,71 +586,26 @@ function inferErrorCategory(msg: string): string {
 	return inferErrorCategoryRaw(msg, t);
 }
 
-// 统计指标
-const successCount = computed(() => {
-	return props.items.filter(i => i.status === 'success').length;
-});
-
-const failCount = computed(() => {
-	return props.items.filter(i => i.status === 'error' || i.status === 'failed').length;
-});
-
-const totalLatencyMs = computed(() => {
-	return props.items.reduce((acc, cur) => acc + (cur.latencyMs || 0), 0);
-});
-
-// AI 运行时关键观测指标：大模型调用总数与工具执行总数
-const llmCount = computed(() => {
-	return props.items.filter(i => i.nodeType === 'llm').length;
-});
-
-const toolCount = computed(() => {
-	return props.items.filter(
-		i =>
-			i.nodeType === 'tool' ||
-			i.nodeType === 'tool_executor' ||
-			i.nodeType === 'batch_processor'
-	).length;
+// 统计指标 / 运行状态映射 / 执行摘要（composable，见 use-log-stats.ts）
+const {
+	failCount,
+	totalLatencyMs,
+	llmCount,
+	toolCount,
+	statusTagType,
+	statusLabel,
+	buildSummaryText
+} = useLogStats({
+	items: computed(() => props.items),
+	status: computed(() => props.status),
+	title: computed(() => props.title),
+	imageCount: computed(() => allWorkflowImages.value.length),
+	t
 });
 
 function handleCopyRunSummary() {
-	const total = props.items.length;
-	const succ = successCount.value;
-	const fail = failCount.value;
-	const totalTime = formatLatency(totalLatencyMs.value);
-	const llm = llmCount.value;
-	const tool = toolCount.value;
-	const imgs = allWorkflowImages.value.length;
-
-	let summary = `【${props.title || t('工作流执行摘要')}】\n`;
-	summary += `· ${t('步骤总数')}：${total}（${t('成功')} ${succ}，${t('失败')} ${fail}）\n`;
-	summary += `· ${t('总耗时')}：${totalTime}\n`;
-	summary += `· ${t('大模型调用')}：${llm} ${t('次')}\n`;
-	if (tool > 0) summary += `· ${t('工具调用')}：${tool} ${t('次')}\n`;
-	if (imgs > 0) summary += `· ${t('图片产物')}：${imgs} ${t('张')}\n`;
-	summary += `· ${t('执行状态')}：${props.status || (fail > 0 ? t('失败') : t('成功'))}\n`;
-
-	copyToClipboard(summary, t('执行摘要已复制'), t('复制失败'));
+	copyToClipboard(buildSummaryText(), t('执行摘要已复制'), t('复制失败'));
 }
-
-const statusTagType = computed<'success' | 'danger' | 'primary' | 'warning'>(() => {
-	if (props.status === 'success') return 'success';
-	if (props.status === 'failed' || props.status === 'error') return 'danger';
-	if (props.status === 'paused') return 'warning';
-	return 'primary';
-});
-
-const statusLabel = computed(() => {
-	if (!props.status) return t('准备中');
-	const map: Record<string, string> = {
-		pending: t('待运行'),
-		running: t('运行中'),
-		paused: t('已挂起'),
-		success: t('成功'),
-		failed: t('失败')
-	};
-	return map[props.status] || props.status;
-});
 
 function getStepIndex(item: WorkflowLogItem, fallbackIndex: number): number {
 	const realIndex = props.items.indexOf(item);
