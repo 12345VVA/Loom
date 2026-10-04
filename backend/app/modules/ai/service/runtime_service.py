@@ -8,6 +8,7 @@ import logging
 import time
 import time as time_module
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -78,9 +79,148 @@ def _make_absolute_url(path: str) -> str:
     return path
 
 
+@dataclass
+class _InvocationState:
+    """单次模型调用的治理/审计上下文（_invoke 与 _stream_invoke 共用前置流程）。
+
+    `closed` 标记治理收尾（finish/block）是否已发生：流式路径的 finally 兜底
+    依赖它避免双重收尾；非流式路径忽略。
+    """
+
+    provider: AiProvider
+    model: AiModel
+    profile: AiModelProfile
+    governance: AiGovernanceService
+    start: float
+    invocation: AiRuntimeInvocation | None = None
+    closed: bool = False
+
+    @classmethod
+    def from_resolved(cls, session: Session, resolved: dict, start: float) -> _InvocationState:
+        return cls(
+            provider=resolved["provider"],
+            model=resolved["model"],
+            profile=resolved["profile"],
+            governance=AiGovernanceService(session),
+            invocation=None,
+            closed=False,
+            start=start,
+        )
+
+
 class AiModelRuntimeService:
     def __init__(self, session: Session):
         self.session = session
+
+    def _resolve_with_options(self, model_type: str, payload) -> tuple[dict, dict[str, Any]]:
+        """公共前置流程：按 model_type 解析 profile，并把请求级 options 叠加在 profile 默认之上。"""
+        resolved = AiModelRegistryService(self.session).resolve(
+            model_type=model_type, scenario=payload.scenario, profile_code=payload.profile_code
+        )
+        return resolved, {**resolved["options"], **payload.options}
+
+    def _begin_invocation(self, st: _InvocationState, user: User | None, task_id: int | None = None):
+        st.invocation = st.governance.begin(
+            user=user, provider=st.provider, model=st.model, profile=st.profile, task_id=task_id
+        )
+
+    def _audit_success(
+        self,
+        st: _InvocationState,
+        usage: dict[str, Any],
+        *,
+        user: User | None,
+        cost_micro_usd: int,
+        request_id: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> None:
+        """治理收尾（success）+ 成功审计日志，并标记 closed。"""
+        st.governance.finish(
+            st.invocation,
+            status_value="success",
+            user=user,
+            provider=st.provider,
+            model=st.model,
+            profile=st.profile,
+            usage=usage,
+            cost_micro_usd=cost_micro_usd,
+        )
+        st.closed = True
+        self._log_call(
+            st.provider,
+            st.model,
+            st.profile,
+            "success",
+            st.start,
+            usage,
+            user=user,
+            cost_micro_usd=cost_micro_usd,
+            request_id=request_id,
+            options=options,
+        )
+
+    def _audit_failure(
+        self,
+        st: _InvocationState,
+        status_value: str,
+        usage: dict[str, Any],
+        detail: str | None,
+        *,
+        user: User | None,
+        request_id: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> None:
+        """治理收尾（指定状态，cost=0）+ 失败审计日志，并标记 closed。"""
+        st.governance.finish(
+            st.invocation,
+            status_value=status_value,
+            user=user,
+            provider=st.provider,
+            model=st.model,
+            profile=st.profile,
+            usage=usage,
+            cost_micro_usd=0,
+        )
+        st.closed = True
+        self._log_call(
+            st.provider,
+            st.model,
+            st.profile,
+            status_value,
+            st.start,
+            usage,
+            detail,
+            user=user,
+            request_id=request_id,
+            options=options,
+        )
+
+    def _block_invocation(
+        self,
+        st: _InvocationState,
+        status_value: str,
+        usage: dict[str, Any],
+        detail: str,
+        *,
+        user: User | None,
+        request_id: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> None:
+        """治理阻断（block_invocation，用于 Redis 故障 fail-closed / 规则拦截）+ 审计日志。"""
+        st.governance.block_invocation(st.invocation)
+        st.closed = True
+        self._log_call(
+            st.provider,
+            st.model,
+            st.profile,
+            status_value,
+            st.start,
+            usage,
+            detail,
+            user=user,
+            request_id=request_id,
+            options=options,
+        )
 
     def chat(self, payload: AiChatRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
         AiSecurityService.check_input_safety(payload.messages)
@@ -115,10 +255,7 @@ class AiModelRuntimeService:
     def embedding(
         self, payload: AiEmbeddingRequest, current_user: User | None = None, task_id: int | None = None
     ) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(
-            model_type="embedding", scenario=payload.scenario, profile_code=payload.profile_code
-        )
-        options = {**resolved["options"], **payload.options}
+        resolved, options = self._resolve_with_options("embedding", payload)
         return self._invoke(
             resolved,
             "embedding",
@@ -130,10 +267,7 @@ class AiModelRuntimeService:
         )
 
     def image(self, payload: AiImageRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(
-            model_type="image", scenario=payload.scenario, profile_code=payload.profile_code
-        )
-        options = {**resolved["options"], **payload.options}
+        resolved, options = self._resolve_with_options("image", payload)
         if payload.image:
             image_val = payload.image
             if isinstance(image_val, str):
@@ -167,10 +301,7 @@ class AiModelRuntimeService:
         )
 
     def rerank(self, payload: AiRerankRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(
-            model_type="rerank", scenario=payload.scenario, profile_code=payload.profile_code
-        )
-        options = {**resolved["options"], **payload.options}
+        resolved, options = self._resolve_with_options("rerank", payload)
         return self._invoke(
             resolved,
             "rerank",
@@ -183,10 +314,7 @@ class AiModelRuntimeService:
         )
 
     def audio(self, payload: AiAudioRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(
-            model_type="audio", scenario=payload.scenario, profile_code=payload.profile_code
-        )
-        options = {**resolved["options"], **payload.options}
+        resolved, options = self._resolve_with_options("audio", payload)
         return self._invoke(
             resolved,
             "audio",
@@ -198,10 +326,7 @@ class AiModelRuntimeService:
         )
 
     def video(self, payload: AiVideoRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
-        resolved = AiModelRegistryService(self.session).resolve(
-            model_type="video", scenario=payload.scenario, profile_code=payload.profile_code
-        )
-        options = {**resolved["options"], **payload.options}
+        resolved, options = self._resolve_with_options("video", payload)
         return self._invoke(
             resolved,
             "video",
@@ -224,14 +349,13 @@ class AiModelRuntimeService:
         skip_masking: bool = False,
         **kwargs: Any,
     ) -> dict:
-        provider: AiProvider = resolved["provider"]
-        model: AiModel = resolved["model"]
-        profile: AiModelProfile = resolved["profile"]
         start = time.perf_counter()
+        st = _InvocationState.from_resolved(self.session, resolved, start)
+        provider, model, profile = st.provider, st.model, st.profile
         usage: dict[str, Any] = {}
         request_options = request_options or {}
-        governance = AiGovernanceService(self.session)
-        invocation: AiRuntimeInvocation | None = None
+        # kwargs 里的 options 优先于 payload 级 request_options（各分支共用同一口径）
+        effective_options = kwargs.get("options") or request_options
         log_context = {
             "method": method,
             "provider": provider.code,
@@ -241,9 +365,7 @@ class AiModelRuntimeService:
             "scenario": profile.scenario,
         }
         try:
-            invocation = governance.begin(
-                user=current_user, provider=provider, model=model, profile=profile, task_id=task_id
-            )
+            self._begin_invocation(st, current_user, task_id)
             adapter = build_adapter(provider)
             if method == "image":
                 logger.info(
@@ -257,23 +379,8 @@ class AiModelRuntimeService:
             result = self._invoke_with_retry(adapter, method, profile, model.code, kwargs)
             usage = result.get("usage") or {}
             cost_micro_usd = _calculate_cost_micro_usd(model, usage)
-            governance.finish(
-                invocation,
-                status_value="success",
-                user=current_user,
-                provider=provider,
-                model=model,
-                profile=profile,
-                usage=usage,
-                cost_micro_usd=cost_micro_usd,
-            )
-            effective_options = kwargs.get("options") or request_options
-            self._log_call(
-                provider,
-                model,
-                profile,
-                "success",
-                start,
+            self._audit_success(
+                st,
                 usage,
                 user=current_user,
                 cost_micro_usd=cost_micro_usd,
@@ -308,74 +415,16 @@ class AiModelRuntimeService:
             return {"success": True, "provider": provider.code, "model": model.code, "profile": profile.code, **result}
         except AiGovernanceUnavailable as exc:
             # Redis 故障导致 cost 类并发规则无法判定：fail-closed 返回 503（P0-17）
-            governance.block_invocation(invocation)
-            effective_options = kwargs.get("options") or request_options
-            self._log_call(
-                provider,
-                model,
-                profile,
-                "unavailable",
-                start,
-                usage,
-                str(exc),
-                user=current_user,
-                options=effective_options,
-            )
+            self._block_invocation(st, "unavailable", usage, str(exc), user=current_user, options=effective_options)
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         except AiGovernanceBlocked as exc:
-            governance.block_invocation(invocation)
-            effective_options = kwargs.get("options") or request_options
-            self._log_call(
-                provider,
-                model,
-                profile,
-                "blocked",
-                start,
-                usage,
-                str(exc),
-                user=current_user,
-                options=effective_options,
-            )
+            self._block_invocation(st, "blocked", usage, str(exc), user=current_user, options=effective_options)
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
         except UnsupportedCapabilityError as exc:
-            governance.finish(
-                invocation,
-                status_value="unsupported",
-                user=current_user,
-                provider=provider,
-                model=model,
-                profile=profile,
-                usage=usage,
-                cost_micro_usd=0,
-            )
-            effective_options = kwargs.get("options") or request_options
-            self._log_call(
-                provider,
-                model,
-                profile,
-                "unsupported",
-                start,
-                usage,
-                str(exc),
-                user=current_user,
-                options=effective_options,
-            )
+            self._audit_failure(st, "unsupported", usage, str(exc), user=current_user, options=effective_options)
             raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
         except Exception as exc:
-            governance.finish(
-                invocation,
-                status_value="error",
-                user=current_user,
-                provider=provider,
-                model=model,
-                profile=profile,
-                usage=usage,
-                cost_micro_usd=0,
-            )
-            effective_options = kwargs.get("options") or request_options
-            self._log_call(
-                provider, model, profile, "error", start, usage, str(exc), user=current_user, options=effective_options
-            )
+            self._audit_failure(st, "error", usage, str(exc), user=current_user, options=effective_options)
             # 所有方法失败统一打一条结构化 ERROR（含完整 traceback）；
             # request_id 由 Formatter 自动从 contextvar 注入，无需在此重复
             logger.error(
@@ -455,22 +504,18 @@ class AiModelRuntimeService:
         response_format_overridden: bool = False,
         skip_masking: bool = False,
     ) -> Iterable[str]:
-        provider: AiProvider = resolved["provider"]
-        model: AiModel = resolved["model"]
-        profile: AiModelProfile = resolved["profile"]
         start = time.perf_counter()
+        st = _InvocationState.from_resolved(self.session, resolved, start)
+        provider, model, profile = st.provider, st.model, st.profile
         content_parts: list[str] = []
         usage: dict[str, Any] = {}
         request_id: str | None = None
         emitted_delta = False
         done_sent = False
         request_options = request_options or {}
-        governance = AiGovernanceService(self.session)
-        invocation: AiRuntimeInvocation | None = None
-        invocation_closed = False
 
         try:
-            invocation = governance.begin(user=current_user, provider=provider, model=model, profile=profile)
+            self._begin_invocation(st, current_user)
             yield _sse_event(
                 {"event": "start", "provider": provider.code, "model": model.code, "profile": profile.code}
             )
@@ -493,28 +538,7 @@ class AiModelRuntimeService:
                         continue
                     if event_name == "error":
                         message = event.get("content") or "模型流式调用失败"
-                        governance.finish(
-                            invocation,
-                            status_value="error",
-                            user=current_user,
-                            provider=provider,
-                            model=model,
-                            profile=profile,
-                            usage=usage,
-                            cost_micro_usd=0,
-                        )
-                        invocation_closed = True
-                        self._log_call(
-                            provider,
-                            model,
-                            profile,
-                            "error",
-                            start,
-                            usage,
-                            str(message),
-                            user=current_user,
-                            request_id=request_id,
-                        )
+                        self._audit_failure(st, "error", usage, str(message), user=current_user, request_id=request_id)
                         yield _sse_event({"event": "error", "message": str(message), "status": 400})
                         return
                     if event_name == "done":
@@ -531,23 +555,8 @@ class AiModelRuntimeService:
                 parsed = _parse_content(content)
                 done_payload.update(parsed)
             cost_micro_usd = _calculate_cost_micro_usd(model, usage)
-            governance.finish(
-                invocation,
-                status_value="success",
-                user=current_user,
-                provider=provider,
-                model=model,
-                profile=profile,
-                usage=usage,
-                cost_micro_usd=cost_micro_usd,
-            )
-            invocation_closed = True
-            self._log_call(
-                provider,
-                model,
-                profile,
-                "success",
-                start,
+            self._audit_success(
+                st,
                 usage,
                 user=current_user,
                 cost_micro_usd=cost_micro_usd,
@@ -558,60 +567,18 @@ class AiModelRuntimeService:
             yield _sse_event(done_payload)
         except AiGovernanceUnavailable as exc:
             # Redis 故障导致 cost 类并发规则无法判定：fail-closed 返回 503（P0-17）
-            governance.block_invocation(invocation)
-            invocation_closed = True
-            self._log_call(
-                provider,
-                model,
-                profile,
-                "unavailable",
-                start,
-                usage,
-                str(exc),
-                user=current_user,
-                request_id=request_id,
-                options=request_options,
+            self._block_invocation(
+                st, "unavailable", usage, str(exc), user=current_user, request_id=request_id, options=request_options
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 503})
         except AiGovernanceBlocked as exc:
-            governance.block_invocation(invocation)
-            invocation_closed = True
-            self._log_call(
-                provider,
-                model,
-                profile,
-                "blocked",
-                start,
-                usage,
-                str(exc),
-                user=current_user,
-                request_id=request_id,
-                options=request_options,
+            self._block_invocation(
+                st, "blocked", usage, str(exc), user=current_user, request_id=request_id, options=request_options
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 429})
         except UnsupportedCapabilityError as exc:
-            governance.finish(
-                invocation,
-                status_value="unsupported",
-                user=current_user,
-                provider=provider,
-                model=model,
-                profile=profile,
-                usage=usage,
-                cost_micro_usd=0,
-            )
-            invocation_closed = True
-            self._log_call(
-                provider,
-                model,
-                profile,
-                "unsupported",
-                start,
-                usage,
-                str(exc),
-                user=current_user,
-                request_id=request_id,
-                options=request_options,
+            self._audit_failure(
+                st, "unsupported", usage, str(exc), user=current_user, request_id=request_id, options=request_options
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 501})
         except Exception as exc:
@@ -642,60 +609,20 @@ class AiModelRuntimeService:
                     current_user=current_user,
                 )
                 if fallback is not None:
-                    governance.finish(
-                        invocation,
-                        status_value="error",
-                        user=current_user,
-                        provider=provider,
-                        model=model,
-                        profile=profile,
-                        usage=usage,
-                        cost_micro_usd=0,
-                    )
-                    invocation_closed = True
-                    self._log_call(
-                        provider,
-                        model,
-                        profile,
-                        "error",
-                        start,
-                        usage,
-                        str(exc),
-                        user=current_user,
-                        request_id=request_id,
-                        options=request_options,
+                    self._audit_failure(
+                        st, "error", usage, str(exc), user=current_user, request_id=request_id, options=request_options
                     )
                     yield from fallback
                     return
             if not done_sent:
-                governance.finish(
-                    invocation,
-                    status_value="error",
-                    user=current_user,
-                    provider=provider,
-                    model=model,
-                    profile=profile,
-                    usage=usage,
-                    cost_micro_usd=0,
-                )
-                invocation_closed = True
-                self._log_call(
-                    provider,
-                    model,
-                    profile,
-                    "error",
-                    start,
-                    usage,
-                    str(exc),
-                    user=current_user,
-                    request_id=request_id,
-                    options=request_options,
+                self._audit_failure(
+                    st, "error", usage, str(exc), user=current_user, request_id=request_id, options=request_options
                 )
                 yield _sse_event({"event": "error", "message": f"模型调用失败: {exc}", "status": 400})
         finally:
-            if invocation is not None and not invocation_closed:
-                governance.finish(
-                    invocation,
+            if st.invocation is not None and not st.closed:
+                st.governance.finish(
+                    st.invocation,
                     status_value="error",
                     user=current_user,
                     provider=provider,
