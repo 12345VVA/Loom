@@ -256,7 +256,7 @@ import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { copyToClipboard, formatJson } from '../utils';
-import { useAssetUrl } from '/$/media/composables/use-asset-url';
+import { useAssetUrl } from '/$/media';
 import { downloadSingleImage, downloadImagesAsZip } from '../utils/download';
 
 defineOptions({ name: 'workflow-artifact-drawer' });

@@ -435,9 +435,12 @@ export default (): ModuleConfig => {
 
 因此新增模块时，最少应保证：
 
-- 存在 `config.ts`
+- **最小骨架 = `config.ts` + `index.ts`，两者缺一不可**（即使内容很薄）：
+  - `config.ts`：模块本体的注册凭证——缺失则 `bootstrap/module.ts` 的 glob 扫不到该模块，模块不进 `module.list`，`order`/`install`/`onLoad`/`toolbar`/全局组件等能力全部失效（`views/` 由 router glob 独立扫描、`locales/` 由 vite i18n 插件扫描，不依赖 config.ts，但不要据此省略它）
+  - `index.ts`：模块对外 API 出口——跨模块引用一律走 `import { xxx } from '/$/模块名'`，不直接 import 模块内部深层路径；暂无对外 API 时放占位导出（如 `export const useDemo = () => ({})`）并注明占位原因
 - 页面放在 `views` 或 `pages`
 - 自定义 service 放在 `service/` 目录下，才能自动注入 `useCool().service`
+  - 注意：`service/**` 以 `import: 'default'` 扫描，文件必须有 default 导出，否则运行时报 SyntaxError
 
 若模块只是纯页面承载层，`config.ts` 可以很薄，例如仅保留 `order` 或基础元信息，由后端菜单控制具体页面挂载。
 

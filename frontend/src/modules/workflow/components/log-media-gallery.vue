@@ -122,7 +122,7 @@ import { computed, ref } from 'vue';
 import WorkflowIcon from './workflow-icon.vue';
 import { copyToClipboard } from '../utils';
 import { downloadSingleImage, downloadImagesAsZip } from '../utils/download';
-import { useAssetUrl } from '/$/media/composables/use-asset-url';
+import { useAssetUrl } from '/$/media';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
 

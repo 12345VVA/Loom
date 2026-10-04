@@ -7,7 +7,7 @@ import { computed, ref, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { WorkflowLogItem } from '../utils';
 import { downloadImagesAsZip, type ImageDownloadItem } from '../utils/download';
-import { useAssetUrl } from '/$/media/composables/use-asset-url';
+import { useAssetUrl } from '/$/media';
 import type { TranslateFn } from '../utils/log-format';
 
 export function useLogImages(options: { items: Ref<WorkflowLogItem[]>; t: TranslateFn }) {
