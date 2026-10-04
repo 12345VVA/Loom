@@ -361,12 +361,12 @@
   },
   "src/modules/task/views/list.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 15
+      "count": 1
     }
   },
   "src/modules/workflow/components/artifact-drawer.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 5
+      "count": 3
     }
   },
   "src/modules/workflow/components/cl-json-tree-editor.vue": {

@@ -117,267 +117,35 @@ defineOptions({
 	name: 'task-list'
 });
 
-import { onActivated, ref, markRaw } from 'vue';
+import { onActivated, markRaw } from 'vue';
 import { useBrowser, useCool } from '/@/cool';
 import { VideoPlay, VideoPause, Plus, Tickets, Delete, CaretRight } from '@element-plus/icons-vue';
 import { ContextMenu, useForm } from '@cool-vue/crud';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import TaskLogs from '../components/logs.vue';
 import CronInput from '../components/cron-input.vue';
 import NotificationAudienceEditor from '/$/notification/components/audience-editor.vue';
 import { useI18n } from 'vue-i18n';
+import { useTaskActions } from '../composables/use-task-actions';
+import { buildTaskFormItems } from '../utils/task-form';
 
 const { service, refs, setRefs } = useCool();
 const { browser } = useBrowser();
 const Form = useForm();
 const { t } = useI18n();
 
-const list = ref<Eps.TaskInfoEntity[]>([]);
-
-// 刷新
-function refresh() {
-	service.task.info.page({ size: 100, page: 1 }).then(res => {
-		list.value = res.list.map(e => {
-			if (e.every) {
-				e._every = parseInt(String(e.every / 1000));
-			}
-
-			return e;
-		});
-	});
-}
-
-// 统一操作处理器
-async function handleAction(item: Eps.TaskInfoEntity, actionName: string, run: () => Promise<any>) {
-	try {
-		await ElMessageBox.confirm(
-			t('此操作将{action}任务（{name}），是否继续？', {
-				action: actionName,
-				name: item.name
-			}),
-			t('提示'),
-			{
-				type: 'warning'
-			}
-		);
-		await run();
-		ElMessage.success(t('{action}成功', { action: actionName }));
-		refresh();
-	} catch (err: any) {
-		if (err !== 'cancel') {
-			ElMessage.error(err.message || t('操作失败'));
-		}
-	}
-}
-
-// 启用任务
-function start(item: Eps.TaskInfoEntity) {
-	console.log(t('启用任务'), item);
-	handleAction(item, t('启用'), () => service.task.info.start({ id: item.id, type: item.type }));
-}
-
-// 停用任务
-function stop(item: Eps.TaskInfoEntity) {
-	console.log(t('停止任务'), item);
-	handleAction(item, t('停用'), () => service.task.info.stop({ id: item.id }));
-}
-
-// 删除任务
-function remove(item: Eps.TaskInfoEntity) {
-	handleAction(item, t('删除'), () => service.task.info.delete({ ids: [item.id] }));
-}
+const { list, refresh, start, stop, remove, once } = useTaskActions<Eps.TaskInfoEntity>(service.task.info, t);
 
 // 任务日志
 function log(item: Eps.TaskInfoEntity) {
 	refs.log.open(item);
 }
 
-// 表单配置
-const items: any[] = [
-	{
-		label: t('名称'),
-		prop: 'name',
-		component: {
-			name: 'el-input',
-			props: {
-				placeholder: t('请输入名称')
-			}
-		},
-		required: true
-	},
-	{
-		label: t('类型'),
-		prop: 'taskType',
-		value: 0,
-		component: {
-			name: 'el-radio-group',
-			options: [
-				{
-					label: 'cron',
-					value: 0
-				},
-				{
-					label: t('时间间隔'),
-					value: 1
-				}
-			]
-		},
-		required: true
-	},
-	{
-		label: 'cron',
-		prop: 'cron',
-		hidden: ({ scope }: any) => scope.taskType == 1,
-		component: {
-			name: 'cron-input',
-			vm: markRaw(CronInput),
-			props: {
-				placeholder: '* * * * * *'
-			}
-		},
-		required: true
-	},
-	{
-		label: t('间隔(秒)'),
-		prop: 'every',
-		hidden: ({ scope }: any) => scope.taskType == 0,
-		hook: {
-			bind(value: number) {
-				return value / 1000;
-			},
-			submit(value: number) {
-				return value * 1000;
-			}
-		},
-		component: {
-			name: 'el-input-number',
-			props: {
-				min: 1,
-				max: 100000000
-			}
-		},
-		required: true
-	},
-	{
-		label: 'service',
-		prop: 'service',
-		component: {
-			name: 'el-input',
-			props: {
-				placeholder: 'taskDemoService.test([1, 2])'
-			}
-		}
-	},
-	{
-		label: t('开始时间'),
-		prop: 'startDate',
-		hidden: ({ scope }: any) => scope.taskType == 1,
-		component: {
-			name: 'el-date-picker',
-			props: {
-				type: 'datetime',
-				'value-format': 'YYYY-MM-DD HH:mm:ss'
-			}
-		}
-	},
-	{
-		label: t('备注'),
-		prop: 'remark',
-		component: {
-			name: 'el-input',
-			props: {
-				type: 'textarea',
-				rows: 3
-			}
-		}
-	},
-	{
-		label: t('通知设置'),
-		prop: 'notifyEnabled',
-		value: false,
-		component: {
-			name: 'el-switch'
-		}
-	},
-	{
-		label: t('成功通知'),
-		prop: 'notifyOnSuccess',
-		value: false,
-		hidden: ({ scope }: any) => !scope.notifyEnabled,
-		component: {
-			name: 'el-switch'
-		}
-	},
-	{
-		label: t('失败通知'),
-		prop: 'notifyOnFailure',
-		value: true,
-		hidden: ({ scope }: any) => !scope.notifyEnabled,
-		component: {
-			name: 'el-switch'
-		}
-	},
-	{
-		label: t('超时通知'),
-		prop: 'notifyOnTimeout',
-		value: false,
-		hidden: ({ scope }: any) => !scope.notifyEnabled,
-		component: {
-			name: 'el-switch'
-		}
-	},
-	{
-		label: t('超时阈值(ms)'),
-		prop: 'notifyTimeoutMs',
-		value: 30000,
-		hidden: ({ scope }: any) => !scope.notifyEnabled || !scope.notifyOnTimeout,
-		component: {
-			name: 'el-input-number',
-			props: {
-				min: 1,
-				'controls-position': 'right'
-			}
-		}
-	},
-	{
-		label: t('通知模板'),
-		prop: 'notifyTemplateCode',
-		hidden: ({ scope }: any) => !scope.notifyEnabled,
-		component: {
-			name: 'el-input',
-			props: {
-				placeholder: t('为空时使用默认任务通知模板')
-			}
-		}
-	},
-	{
-		label: t('通知接收人'),
-		prop: 'notifyRecipients',
-		hidden: ({ scope }: any) => !scope.notifyEnabled,
-		hook: {
-			bind(value: any) {
-				if (!value) {
-					return { allAdmins: true };
-				}
-				if (typeof value === 'string') {
-					try {
-						return JSON.parse(value);
-					} catch {
-						return { allAdmins: true };
-					}
-				}
-				return value;
-			},
-			submit(value: any) {
-				return JSON.stringify(value || { allAdmins: true });
-			}
-		},
-		component: {
-			name: 'notification-audience-editor',
-			vm: markRaw(NotificationAudienceEditor)
-		}
-	}
-];
+// 表单配置（组件 vm 由视图注入，配置本体在 utils/task-form.ts 可单测）
+const items = buildTaskFormItems(t, {
+	cronInput: markRaw(CronInput),
+	audienceEditor: markRaw(NotificationAudienceEditor)
+});
 
 // 新增、编辑
 async function edit(item?: Eps.TaskInfoEntity) {
@@ -414,18 +182,6 @@ async function edit(item?: Eps.TaskInfoEntity) {
 			}
 		}
 	});
-}
-
-// 执行一次
-function once(item: Eps.TaskInfoEntity) {
-	service.task.info
-		.once({ id: item.id })
-		.then(() => {
-			refresh();
-		})
-		.catch(err => {
-			ElMessage.error(err.message);
-		});
 }
 
 // 右键菜单
