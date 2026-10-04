@@ -251,7 +251,309 @@ def CoolController(meta: CoolControllerMeta):
     return decorator
 
 
+def _register_action_meta(meta: CoolControllerMeta, action: CrudAction, controller_name: str) -> None:
+    """注册单个 CRUD action 的权限配置与 EPS 导出元数据（路由注册的公共前导）。"""
+    permission = f"{meta.module}:{meta.resource.replace('/', ':')}:{action.permission_suffix}"
+    full_path = f"/{meta.scope}/{meta.module}/{meta.resource}{action.path}"
+    # 确定该资源对应的核心模型，用于 EPS 扫描列
+    core_model = meta.page_item_model or meta.list_response_model or meta.info_response_model
+
+    method_patterns = tuple(f"{method} {full_path}" for method in _crud_route_methods(action))
+    _register_permission_config(
+        PermissionConfig(
+            name=f"{meta.name_prefix}{action.summary}",
+            code=f"{meta.code_prefix}_{action.permission_suffix}",
+            permission=permission,
+            admin_patterns=method_patterns,
+            role_codes=meta.role_codes,
+        )
+    )
+    _register_exported_route(
+        ExportedRouteMeta(
+            scope=meta.scope,
+            module=meta.module,
+            resource=meta.resource,
+            controller_name=controller_name,
+            method=action.method,
+            path=full_path,
+            summary=action.summary,
+            permission=permission,
+            source="crud",
+            query_meta=_export_query_meta(meta.page_query if action.name == "page" else meta.list_query),
+            model=core_model,
+            ignore_token=False,
+        )
+    )
+
+
+def _finalize_endpoint(endpoint, meta: CoolControllerMeta, action: CrudAction) -> None:
+    """生成的 endpoint 统一收尾：命名 + scope 标记（供 OpenAPI/文档辨识）。"""
+    endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
+    _tag_generated_endpoint(endpoint, meta.scope)
+
+
+async def _read_body_params(request: Request | None) -> dict[str, Any]:
+    """读取 JSON 请求体参数（支持前端以 POST body 传查询条件）；不可解析时返回空。"""
+    if request and request.method == "POST":
+        try:
+            return await request.json() or {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _register_list_route(router: APIRouter, meta: CoolControllerMeta, action: CrudAction) -> None:
+    response_model = list[meta.list_response_model] if meta.list_response_model is not None else None
+
+    async def endpoint(
+        keyword: str | None = Query(default=None),
+        order: str | None = Query(default=None),
+        sort: str | None = Query(default=None),
+        session: Session = Depends(get_session),
+        request: Request = None,
+        background_tasks: BackgroundTasks = None,
+        current_user: CurrentUserProtocol = Depends(get_current_user),
+        _action_name: str = action.name,
+    ):
+        service = meta.service(session)
+        body_params = await _read_body_params(request)
+
+        # 请求体参数优先（支持 keyWord 驼峰命名）
+        if "keyWord" in body_params and not keyword:
+            keyword = body_params.pop("keyWord")
+        if "keyword" in body_params and not keyword:
+            keyword = body_params.pop("keyword")
+        if "order" in body_params and not order:
+            order = body_params.pop("order")
+        if "sort" in body_params and not sort:
+            sort = body_params.pop("sort")
+
+        query = _build_crud_query(
+            request=request,
+            config=meta.list_query,
+            keyword=keyword,
+            order=order,
+            sort=sort,
+            body_params=body_params,
+        )
+        available_kwargs = _build_service_kwargs(
+            meta=meta,
+            action_name=_action_name,
+            query=query,
+            request=request,
+            background_tasks=background_tasks,
+            current_user=current_user,
+        )
+        result = await run_in_threadpool(
+            _run_action_sync, service, meta.before_hooks, _action_name, service.list, available_kwargs
+        )
+        return await _resolve_result(result)
+
+    _finalize_endpoint(endpoint, meta, action)
+    _add_api_route_per_method(
+        router,
+        action.path,
+        endpoint,
+        methods=_crud_route_methods(action),
+        response_model=response_model,
+        # 历史 quirk：list 复用 info_ignore_property 控制 response_model_exclude_none
+        response_model_exclude_none=bool(meta.info_ignore_property),
+        summary=action.summary,
+    )
+
+
+def _register_page_route(router: APIRouter, meta: CoolControllerMeta, action: CrudAction) -> None:
+    response_model = PageResult[meta.page_item_model] if meta.page_item_model is not None else None
+
+    async def endpoint(
+        page: int = Query(default=1, ge=1, le=100000),
+        size: int = Query(default=10, ge=1, le=100),
+        keyword: str | None = Query(default=None),
+        order: str | None = Query(default=None),
+        sort: str | None = Query(default=None),
+        session: Session = Depends(get_session),
+        request: Request = None,
+        background_tasks: BackgroundTasks = None,
+        current_user: CurrentUserProtocol = Depends(get_current_user),
+        _action_name: str = action.name,
+    ):
+        service = meta.service(session)
+        body_params = await _read_body_params(request)
+
+        # 请求体参数优先（支持 keyWord 驼峰命名）
+        if "keyWord" in body_params and not keyword:
+            keyword = body_params.pop("keyWord")
+        if "keyword" in body_params and not keyword:
+            keyword = body_params.pop("keyword")
+        if "page" in body_params:
+            page = body_params.pop("page")
+        if "size" in body_params:
+            size = body_params.pop("size")
+        if "order" in body_params and not order:
+            order = body_params.pop("order")
+        if "sort" in body_params and not sort:
+            sort = body_params.pop("sort")
+
+        query = _build_crud_query(
+            request=request,
+            config=meta.page_query or meta.list_query,
+            page=page,
+            size=size,
+            keyword=keyword,
+            order=order,
+            sort=sort,
+            body_params=body_params,
+        )
+        available_kwargs = _build_service_kwargs(
+            meta=meta,
+            action_name=_action_name,
+            query=query,
+            request=request,
+            background_tasks=background_tasks,
+            current_user=current_user,
+        )
+        result = await run_in_threadpool(
+            _run_action_sync, service, meta.before_hooks, _action_name, service.page, available_kwargs
+        )
+        return await _resolve_result(result)
+
+    _finalize_endpoint(endpoint, meta, action)
+    _add_api_route_per_method(
+        router,
+        action.path,
+        endpoint,
+        methods=_crud_route_methods(action),
+        response_model=response_model,
+        summary=action.summary,
+    )
+
+
+def _make_info_endpoint(meta: CoolControllerMeta, action: CrudAction):
+    """构建 info endpoint：按 info_param_type 决定 id 的参数类型（int 强约束 ge=1 / str）。"""
+    if meta.info_param_type is int:
+
+        async def endpoint(
+            id: int = Query(..., ge=1),
+            session: Session = Depends(get_session),
+            request: Request = None,
+            background_tasks: BackgroundTasks = None,
+            current_user: CurrentUserProtocol = Depends(get_current_user),
+            _action_name: str = action.name,
+        ):
+            service = meta.service(session)
+            available_kwargs = _build_service_kwargs(
+                meta=meta,
+                action_name=_action_name,
+                id=id,
+                request=request,
+                background_tasks=background_tasks,
+                current_user=current_user,
+            )
+            result = await run_in_threadpool(
+                _run_action_sync, service, meta.before_hooks, _action_name, service.info, available_kwargs
+            )
+            return _strip_ignored_properties(await _resolve_result(result), meta.info_ignore_property)
+
+    else:
+
+        async def endpoint(
+            id: str = Query(...),
+            session: Session = Depends(get_session),
+            request: Request = None,
+            background_tasks: BackgroundTasks = None,
+            current_user: CurrentUserProtocol = Depends(get_current_user),
+            _action_name: str = action.name,
+        ):
+            service = meta.service(session)
+            available_kwargs = _build_service_kwargs(
+                meta=meta,
+                action_name=_action_name,
+                id=id,
+                request=request,
+                background_tasks=background_tasks,
+                current_user=current_user,
+            )
+            result = await run_in_threadpool(
+                _run_action_sync, service, meta.before_hooks, _action_name, service.info, available_kwargs
+            )
+            return _strip_ignored_properties(await _resolve_result(result), meta.info_ignore_property)
+
+    return endpoint
+
+
+def _register_info_route(router: APIRouter, meta: CoolControllerMeta, action: CrudAction) -> None:
+    endpoint = _make_info_endpoint(meta, action)
+    _finalize_endpoint(endpoint, meta, action)
+    router.add_api_route(
+        action.path,
+        endpoint,
+        methods=[action.method],
+        response_model=meta.info_response_model,
+        summary=action.summary,
+    )
+
+
+def _make_payload_endpoint(meta: CoolControllerMeta, action: CrudAction, service_method_name: str, *, with_ids: bool):
+    """构建以 payload 为请求体的 endpoint（add/update/delete 共用骨架）。
+
+    service 方法按名字在请求期经 getattr 解析（与原内联写法 `service.add` 的
+    请求期取值语义一致，保留子类覆写生效）。delete 额外注入 ids=payload.ids；
+    请求模型由调用方在返回后补注解（FastAPI 依据 __annotations__["payload"]
+    生成请求体 schema）。
+    """
+
+    async def endpoint(
+        payload,
+        session: Session = Depends(get_session),
+        request: Request = None,
+        background_tasks: BackgroundTasks = None,
+        current_user: CurrentUserProtocol = Depends(get_current_user),
+        _action_name: str = action.name,
+    ):
+        service = meta.service(session)
+        extra: dict[str, Any] = {"ids": payload.ids} if with_ids else {}
+        available_kwargs = _build_service_kwargs(
+            meta=meta,
+            action_name=_action_name,
+            payload=payload,
+            request=request,
+            background_tasks=background_tasks,
+            current_user=current_user,
+            **extra,
+        )
+        result = await run_in_threadpool(
+            _run_action_sync,
+            service,
+            meta.before_hooks,
+            _action_name,
+            getattr(service, service_method_name),
+            available_kwargs,
+        )
+        return await _resolve_result(result)
+
+    return endpoint
+
+
+def _register_payload_route(
+    router: APIRouter,
+    meta: CoolControllerMeta,
+    action: CrudAction,
+    *,
+    service_method_name: str,
+    request_model,
+    response_model,
+    with_ids: bool = False,
+) -> None:
+    endpoint = _make_payload_endpoint(meta, action, service_method_name, with_ids=with_ids)
+    endpoint.__annotations__["payload"] = request_model
+    _finalize_endpoint(endpoint, meta, action)
+    router.add_api_route(
+        action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary
+    )
+
+
 def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
+    """按 action 分派到各 route 组构建函数（add/update/delete 走 payload 骨架）。"""
     # 建立快捷查找映射
     default_actions_map = {action.name: action for action in DEFAULT_CRUD_ACTIONS}
 
@@ -269,324 +571,41 @@ def _register_crud_routes(router: APIRouter, meta: CoolControllerMeta) -> None:
         else:
             action = action_item
 
-        permission = f"{meta.module}:{meta.resource.replace('/', ':')}:{action.permission_suffix}"
-        full_path = f"/{meta.scope}/{meta.module}/{meta.resource}{action.path}"
-        # 确定该资源对应的核心模型，用于 EPS 扫描列
-        core_model = meta.page_item_model or meta.list_response_model or meta.info_response_model
-
-        method_patterns = tuple(f"{method} {full_path}" for method in _crud_route_methods(action))
-        _register_permission_config(
-            PermissionConfig(
-                name=f"{meta.name_prefix}{action.summary}",
-                code=f"{meta.code_prefix}_{action.permission_suffix}",
-                permission=permission,
-                admin_patterns=method_patterns,
-                role_codes=meta.role_codes,
-            )
-        )
-        _register_exported_route(
-            ExportedRouteMeta(
-                scope=meta.scope,
-                module=meta.module,
-                resource=meta.resource,
-                controller_name=controller_name,
-                method=action.method,
-                path=full_path,
-                summary=action.summary,
-                permission=permission,
-                source="crud",
-                query_meta=_export_query_meta(meta.page_query if action.name == "page" else meta.list_query),
-                model=core_model,
-                ignore_token=False,
-            )
-        )
+        _register_action_meta(meta, action, controller_name)
 
         if action.name == "list":
-            response_model = list[meta.list_response_model] if meta.list_response_model is not None else None
-
-            async def endpoint(
-                keyword: str | None = Query(default=None),
-                order: str | None = Query(default=None),
-                sort: str | None = Query(default=None),
-                session: Session = Depends(get_session),
-                request: Request = None,
-                background_tasks: BackgroundTasks = None,
-                current_user: CurrentUserProtocol = Depends(get_current_user),
-                _action_name: str = action.name,
-            ):
-                service = meta.service(session)
-
-                # 读取请求体参数（支持前端 JSON 请求）
-                body_params: dict[str, Any] = {}
-                if request and request.method == "POST":
-                    try:
-                        body_params = await request.json() or {}
-                    except Exception:
-                        body_params = {}
-
-                # 请求体参数优先（支持 keyWord 驼峰命名）
-                if "keyWord" in body_params and not keyword:
-                    keyword = body_params.pop("keyWord")
-                if "keyword" in body_params and not keyword:
-                    keyword = body_params.pop("keyword")
-                if "order" in body_params and not order:
-                    order = body_params.pop("order")
-                if "sort" in body_params and not sort:
-                    sort = body_params.pop("sort")
-
-                query = _build_crud_query(
-                    request=request,
-                    config=meta.list_query,
-                    keyword=keyword,
-                    order=order,
-                    sort=sort,
-                    body_params=body_params,
-                )
-                available_kwargs = _build_service_kwargs(
-                    meta=meta,
-                    action_name=_action_name,
-                    query=query,
-                    request=request,
-                    background_tasks=background_tasks,
-                    current_user=current_user,
-                )
-                result = await run_in_threadpool(
-                    _run_action_sync, service, meta.before_hooks, _action_name, service.list, available_kwargs
-                )
-                return await _resolve_result(result)
-
-            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
-            _tag_generated_endpoint(endpoint, meta.scope)
-            _add_api_route_per_method(
-                router,
-                action.path,
-                endpoint,
-                methods=_crud_route_methods(action),
-                response_model=response_model,
-                response_model_exclude_none=bool(meta.info_ignore_property),
-                summary=action.summary,
-            )
+            _register_list_route(router, meta, action)
         elif action.name == "page":
-            response_model = PageResult[meta.page_item_model] if meta.page_item_model is not None else None
-
-            async def endpoint(
-                page: int = Query(default=1, ge=1, le=100000),
-                size: int = Query(default=10, ge=1, le=100),
-                keyword: str | None = Query(default=None),
-                order: str | None = Query(default=None),
-                sort: str | None = Query(default=None),
-                session: Session = Depends(get_session),
-                request: Request = None,
-                background_tasks: BackgroundTasks = None,
-                current_user: CurrentUserProtocol = Depends(get_current_user),
-                _action_name: str = action.name,
-            ):
-                service = meta.service(session)
-
-                # 读取请求体参数（支持前端 JSON 请求）
-                body_params: dict[str, Any] = {}
-                if request and request.method == "POST":
-                    try:
-                        body_params = await request.json() or {}
-                    except Exception:
-                        body_params = {}
-
-                # 请求体参数优先（支持 keyWord 驼峰命名）
-                if "keyWord" in body_params and not keyword:
-                    keyword = body_params.pop("keyWord")
-                if "keyword" in body_params and not keyword:
-                    keyword = body_params.pop("keyword")
-                if "page" in body_params:
-                    page = body_params.pop("page")
-                if "size" in body_params:
-                    size = body_params.pop("size")
-                if "order" in body_params and not order:
-                    order = body_params.pop("order")
-                if "sort" in body_params and not sort:
-                    sort = body_params.pop("sort")
-
-                query = _build_crud_query(
-                    request=request,
-                    config=meta.page_query or meta.list_query,
-                    page=page,
-                    size=size,
-                    keyword=keyword,
-                    order=order,
-                    sort=sort,
-                    body_params=body_params,
-                )
-                available_kwargs = _build_service_kwargs(
-                    meta=meta,
-                    action_name=_action_name,
-                    query=query,
-                    request=request,
-                    background_tasks=background_tasks,
-                    current_user=current_user,
-                )
-                result = await run_in_threadpool(
-                    _run_action_sync, service, meta.before_hooks, _action_name, service.page, available_kwargs
-                )
-                return await _resolve_result(result)
-
-            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
-            _tag_generated_endpoint(endpoint, meta.scope)
-            _add_api_route_per_method(
-                router,
-                action.path,
-                endpoint,
-                methods=_crud_route_methods(action),
-                response_model=response_model,
-                summary=action.summary,
-            )
+            _register_page_route(router, meta, action)
         elif action.name == "info":
-            response_model = meta.info_response_model
-            if meta.info_param_type is int:
-
-                async def endpoint(
-                    id: int = Query(..., ge=1),
-                    session: Session = Depends(get_session),
-                    request: Request = None,
-                    background_tasks: BackgroundTasks = None,
-                    current_user: CurrentUserProtocol = Depends(get_current_user),
-                    _action_name: str = action.name,
-                ):
-                    service = meta.service(session)
-                    available_kwargs = _build_service_kwargs(
-                        meta=meta,
-                        action_name=_action_name,
-                        id=id,
-                        request=request,
-                        background_tasks=background_tasks,
-                        current_user=current_user,
-                    )
-                    result = await run_in_threadpool(
-                        _run_action_sync, service, meta.before_hooks, _action_name, service.info, available_kwargs
-                    )
-                    return _strip_ignored_properties(await _resolve_result(result), meta.info_ignore_property)
-            else:
-
-                async def endpoint(
-                    id: str = Query(...),
-                    session: Session = Depends(get_session),
-                    request: Request = None,
-                    background_tasks: BackgroundTasks = None,
-                    current_user: CurrentUserProtocol = Depends(get_current_user),
-                    _action_name: str = action.name,
-                ):
-                    service = meta.service(session)
-                    available_kwargs = _build_service_kwargs(
-                        meta=meta,
-                        action_name=_action_name,
-                        id=id,
-                        request=request,
-                        background_tasks=background_tasks,
-                        current_user=current_user,
-                    )
-                    result = await run_in_threadpool(
-                        _run_action_sync, service, meta.before_hooks, _action_name, service.info, available_kwargs
-                    )
-                    return _strip_ignored_properties(await _resolve_result(result), meta.info_ignore_property)
-
-            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
-            _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(
-                action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary
-            )
+            _register_info_route(router, meta, action)
         elif action.name == "add":
-            request_model = meta.add_request_model
-            response_model = meta.add_response_model
-
-            async def endpoint(
-                payload,
-                session: Session = Depends(get_session),
-                request: Request = None,
-                background_tasks: BackgroundTasks = None,
-                current_user: CurrentUserProtocol = Depends(get_current_user),
-                _action_name: str = action.name,
-            ):
-                service = meta.service(session)
-                available_kwargs = _build_service_kwargs(
-                    meta=meta,
-                    action_name=_action_name,
-                    payload=payload,
-                    request=request,
-                    background_tasks=background_tasks,
-                    current_user=current_user,
-                )
-                result = await run_in_threadpool(
-                    _run_action_sync, service, meta.before_hooks, _action_name, service.add, available_kwargs
-                )
-                return await _resolve_result(result)
-
-            endpoint.__annotations__["payload"] = request_model
-            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
-            _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(
-                action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary
+            _register_payload_route(
+                router,
+                meta,
+                action,
+                service_method_name="add",
+                request_model=meta.add_request_model,
+                response_model=meta.add_response_model,
             )
         elif action.name == "update":
-            request_model = meta.update_request_model
-            response_model = meta.update_response_model
-
-            async def endpoint(
-                payload,
-                session: Session = Depends(get_session),
-                request: Request = None,
-                background_tasks: BackgroundTasks = None,
-                current_user: CurrentUserProtocol = Depends(get_current_user),
-                _action_name: str = action.name,
-            ):
-                service = meta.service(session)
-                available_kwargs = _build_service_kwargs(
-                    meta=meta,
-                    action_name=_action_name,
-                    payload=payload,
-                    request=request,
-                    background_tasks=background_tasks,
-                    current_user=current_user,
-                )
-                result = await run_in_threadpool(
-                    _run_action_sync, service, meta.before_hooks, _action_name, service.update, available_kwargs
-                )
-                return await _resolve_result(result)
-
-            endpoint.__annotations__["payload"] = request_model
-            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
-            _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(
-                action.path, endpoint, methods=[action.method], response_model=response_model, summary=action.summary
+            _register_payload_route(
+                router,
+                meta,
+                action,
+                service_method_name="update",
+                request_model=meta.update_request_model,
+                response_model=meta.update_response_model,
             )
         elif action.name == "delete":
-            request_model = meta.delete_request_model
-
-            async def endpoint(
-                payload,
-                session: Session = Depends(get_session),
-                request: Request = None,
-                background_tasks: BackgroundTasks = None,
-                current_user: CurrentUserProtocol = Depends(get_current_user),
-                _action_name: str = action.name,
-            ):
-                service = meta.service(session)
-                available_kwargs = _build_service_kwargs(
-                    meta=meta,
-                    action_name=_action_name,
-                    ids=payload.ids,
-                    payload=payload,
-                    request=request,
-                    background_tasks=background_tasks,
-                    current_user=current_user,
-                )
-                result = await run_in_threadpool(
-                    _run_action_sync, service, meta.before_hooks, _action_name, service.delete, available_kwargs
-                )
-                return await _resolve_result(result)
-
-            endpoint.__annotations__["payload"] = request_model
-            endpoint.__name__ = f"endpoint_{meta.module}_{meta.resource}_{action.name}"
-            _tag_generated_endpoint(endpoint, meta.scope)
-            router.add_api_route(
-                action.path, endpoint, methods=[action.method], response_model=dict, summary=action.summary
+            _register_payload_route(
+                router,
+                meta,
+                action,
+                service_method_name="delete",
+                request_model=meta.delete_request_model,
+                response_model=dict,
+                with_ids=True,
             )
 
 
