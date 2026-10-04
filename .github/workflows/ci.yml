@@ -86,10 +86,11 @@ jobs:
           python -c "import psycopg; psycopg.connect('postgresql://loom:loom@localhost:5432/loom_test', autocommit=True).execute('CREATE SCHEMA IF NOT EXISTS test_engines')"
 
       - name: 后端测试
-        # live 测试缺 DEEPSEEK_API_KEY 时 AssertionError 而非跳过，且真实外呼，故排除。
+        # live 测试缺 DEEPSEEK_API_KEY 时 setUp 统一 skipTest（D6）——CI 无 key 全跳过，
+        # 本地配置 key 后自动启用为真实外呼验证。
         # TEST_DATABASE_URL：自建引擎类测试全量走独立 schema（Step 3 主 job 切 PG），
         # make_test_engine 每用例 reflect+drop 保证隔离；TestClient 类走 DATABASE_URL。
-        run: python -m pytest --ignore=tests/test_ai_deepseek_live.py
+        run: python -m pytest
         env:
           TEST_DATABASE_URL: postgresql+psycopg://loom:loom@localhost:5432/loom_test?options=-csearch_path%3Dtest_engines
 
@@ -119,11 +120,12 @@ jobs:
           print(f"OK: {len(registered)} 个任务注册，调度与路由引用有效")
           EOF
 
-      - name: 依赖漏洞审计（pip-audit，报告模式）
-        # D2 决策：先报告不阻断（continue-on-error），清完存量高危后翻转为硬门禁（G7 期）。
+      - name: 依赖漏洞审计（pip-audit，硬门禁）
+        # D2 翻转（G7）：存量已清零（dependabot #14 大刷新后 lock 审计无漏洞），
+        # 报告模式转硬门禁；后续 dependabot PR 若引入新漏洞会在此被拦，
+        # 处置方式=同 PR 内升级或 lock 内调整，不接受带洞合入。
         # 审计对象是 requirements.lock 的钉版集合——即实际随镜像发布的内容，
         # 与测试环境解耦（安装在测试跑完之后，不污染被锁定的依赖树）。
-        continue-on-error: true
         run: |
           pip install --quiet pip-audit
           pip-audit -r requirements.lock --progress-spinner off
@@ -146,8 +148,16 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
-      - name: 依赖漏洞审计（npm audit，报告模式）
-        # D2 决策：先报告不阻断，清完存量高危后翻转为硬门禁（G7 期）；只看 high+critical
+      - name: 依赖漏洞审计（npm audit，生产面硬门禁）
+        # D2 翻转（G7）：生产依赖面（--omit=dev）zero high/critical 硬门禁。
+        # 存量清理：44→17 由 npm audit fix 完成；xlsx（high、npm 停更无修复）
+        # 切 SheetJS 官方 CDN 0.20.3；echarts/element-plus（moderate）属 major 升级留观察。
+        # dev 依赖面（vite6→8 / vitest / tailwind3 链）vulnerability 存量未清，仍走下方报告模式。
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: 依赖漏洞审计（npm audit，全量报告模式）
+        # 全量（含 dev）口径继续报告不阻断：tailwind 3.x→4、vite 6→8 为 major 迁移，
+        # 清偿后本步可摘除（届时全量即硬门禁）。
         continue-on-error: true
         run: npm audit --audit-level=high
 

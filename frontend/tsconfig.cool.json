@@ -7,7 +7,7 @@
 		"src/cool/**/*",
 		"src/config/**/*",
 		"src/modules/base/**/*",
-		"src/modules/dict/types/**/*",
+		"src/modules/dict/**/*",
 		"src/plugins/view/types/**/*",
 		"src/shims-vue.d.ts"
 	]

@@ -23,10 +23,9 @@ def _env_value(name: str) -> str:
 
 
 def _deepseek_api_key() -> str:
-    key = _env_value("DEEPSEEK_API_KEY")
-    if not key:
-        raise AssertionError("backend/.env 必须配置 DEEPSEEK_API_KEY，DeepSeek live 测试不再跳过")
-    return key
+    # D6 决策：缺 key 返回空串，由 setUp 统一 skipTest——恢复"本地默认全量绿"；
+    # 配置 DEEPSEEK_API_KEY 后这些用例自动启用为真实外呼的 live 验证。
+    return _env_value("DEEPSEEK_API_KEY")
 
 
 def _live_provider() -> AiProvider:
@@ -70,6 +69,8 @@ def _parse_sse_chunks(chunks: list[str]) -> list[dict]:
 
 class DeepSeekLiveTestCase(unittest.TestCase):
     def setUp(self):
+        if not _deepseek_api_key():
+            self.skipTest("缺 DEEPSEEK_API_KEY，DeepSeek live 用例跳过（配置后自动启用）")
         self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
