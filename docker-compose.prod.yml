@@ -1,0 +1,160 @@
+# 生产部署 compose（G6/H3）——独立全量 spec，与 docker-compose.yml 无合并关系。
+# 不做 override 的原因（2026-10-04 演练实测）：compose 对 volumes/ports 按 target
+# 合并而非替换，env_file 列表也是合并——override 形态会让"去源码挂载/去 dev env"
+# 的意图静默失效。生产工件必须显式自包含。
+#
+# 启动：cp .env.prod.example .env.prod 改全部密钥后
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+# 安全基线：
+#   - postgres/redis/backend 端口一律不对宿主发布，对外仅 frontend nginx
+#   - Redis requirepass；PG 强口令；DEBUG=false 触发 startup_checks 硬门禁
+#   - 镜像内代码运行（无源码挂载、无 --reload），backend 启动前跑 alembic 迁移
+#   - 全部服务 restart: unless-stopped；beat 独立容器调度定时任务
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: loom-prod-redis
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?请在 .env.prod 设置 REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      # requirepass 后裸 ping 会 NOAUTH，必须带密码
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD}' ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - loom-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: loom-prod-pg
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?请在 .env.prod 设置 POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env.prod 设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-loom_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-loom}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - loom-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: loom-prod-backend
+    env_file:
+      - ./.env.prod
+    environment:
+      # 显式覆盖连接串（密码以 compose 插值注入，避免在两处维护）
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-loom_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      # 本地存储的上传产物需跨容器重启持久
+      - backend_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # baseline squash 使空库 upgrade head 即正统从零部署路径
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    restart: unless-stopped
+    networks:
+      - loom-network
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: loom-prod-worker
+    env_file:
+      - ./.env.prod
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-loom_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c 'celery -A app.celery_app worker --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,workflow,workflow.eval,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video'
+    # 镜像内置 HEALTHCHECK 打的是 uvicorn /health，对 worker 无意义——
+    # 覆盖为 celery 自身的 worker 存活探针
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery_app inspect ping -d celery@$${HOSTNAME} | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - loom-network
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: loom-prod-beat
+    env_file:
+      - ./.env.prod
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-loom_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "celery -A app.celery_app beat --loglevel=$${LOG_LEVEL:-info}"
+    # beat 无 ping 探针：以 PID1 进程命令行含 celery 为存活判据
+    # （覆盖镜像内置的 uvicorn healthcheck，避免永远 unhealthy）
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa celery /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - loom-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: loom-prod-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - backend
+    # 使用镜像默认 CMD（nginx -g 'daemon off;'），切勿继承开发态命令
+    restart: unless-stopped
+    networks:
+      - loom-network
+
+volumes:
+  redis_data:
+    name: loom-prod-redis-data
+  postgres_data:
+    name: loom-prod-pg-data
+  backend_data:
+    name: loom-prod-backend-data
+
+networks:
+  # 独立物理网络：避免与开发态 compose 创建的 loom-network（label 归属不同项目）冲突
+  loom-network:
+    name: loom-prod-network

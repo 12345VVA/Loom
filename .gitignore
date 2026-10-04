@@ -22,6 +22,9 @@ wheels/
 *.egg
 MANIFEST
 *.env
+# 生产环境密钥（不匹配 *.env 后缀规则，显式排除）
+.env.prod
+.env.prod.local
 .venv
 env/
 venv/
