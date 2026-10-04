@@ -5,12 +5,15 @@ workflow.cleanup.sweep 每日调用。语义约定：
 - 一律"先删 DB 行、commit 后再删文件"——文件删除失败留孤儿，由
   sweep_orphan_payloads 下一轮兜底；反之先删文件会产生悬挂 ref（接口 500）。
 - 孤儿回收仅支持本地存储后端（S3 无列举接口，跳过并告警）。
+- 下游模块持有同前缀载荷时，通过 PAYLOAD_REF_PROVIDERS 注册存活引用
+  收集器（eval 在 workflow_eval 包导入时注册），保持下游→上游单向依赖。
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 
 from sqlmodel import Session, select
@@ -26,6 +29,12 @@ _PAYLOAD_PREFIX = "wf_payload_"
 # mtime 超过宽限期的文件，彻底规避"刚写入未登记被误删"的竞态
 _ORPHAN_GRACE_HOURS = 24
 _ORPHAN_MAX_DELETE = 5000
+
+# 跨模块扩展点（H4 解耦）：返回额外"仍被存活行引用"的载荷 ref 集合。
+# 下游模块（workflow_eval 等）在本模块不感知的前提下注册收集器，
+# 避免孤儿清扫误删其存活文件；依赖方向由下游 import 本模块完成注册。
+PayloadRefProvider = Callable[[Session], Iterable[str | None]]
+PAYLOAD_REF_PROVIDERS: list[PayloadRefProvider] = []
 
 
 class WorkflowCleanupService:
@@ -138,14 +147,14 @@ class WorkflowCleanupService:
         ).all():
             refs.add(content_ref)
 
-        from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult
-
-        for actual_ref in self.session.exec(
-            select(WorkflowEvalCaseResult.actual_output_storage_ref).where(
-                WorkflowEvalCaseResult.delete_time == None,  # noqa: E711
-                WorkflowEvalCaseResult.actual_output_storage_ref != None,  # noqa: E711
-            )
-        ).all():
-            refs.add(actual_ref)
+        # 下游模块注册的存活引用（如 workflow_eval 的 case 产物），收集器
+        # 抛异常只告警不阻断清扫——单一下游故障不应停摆整条清理链路
+        for provider in PAYLOAD_REF_PROVIDERS:
+            try:
+                for ref in provider(self.session):
+                    if ref:
+                        refs.add(ref)
+            except Exception:
+                logger.warning("载荷引用收集器执行失败 provider=%r", provider, exc_info=True)
 
         return refs

@@ -13,7 +13,7 @@ from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.workflow_annotation.model.annotation import WorkflowAnnotation
 from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult
-from app.modules.workflow_eval.service.eval_run_service import _assert_run_owned
+from app.modules.workflow_eval.service.eval_run_service import assert_run_owned
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class WorkflowAnnotationService(BaseAdminCrudService):
             if case_result is None:
                 # 关联用例不存在：不可放行（否则绕过归属校验产生孤儿标注）
                 raise HTTPException(status_code=404, detail="关联的评估用例结果不存在")
-            _assert_run_owned(self.session, case_result.eval_run_id, current_user)
+            assert_run_owned(self.session, case_result.eval_run_id, current_user)
 
         return super().add(data)
 
@@ -83,7 +83,7 @@ class WorkflowAnnotationService(BaseAdminCrudService):
                 if ann is not None:
                     cr = self.session.get(WorkflowEvalCaseResult, ann.case_result_id)
                     if cr is not None:
-                        _assert_run_owned(self.session, cr.eval_run_id, current_user)
+                        assert_run_owned(self.session, cr.eval_run_id, current_user)
         return super().update(payload)
 
     def delete(
@@ -99,7 +99,7 @@ class WorkflowAnnotationService(BaseAdminCrudService):
             for ann in anns:
                 cr = self.session.get(WorkflowEvalCaseResult, ann.case_result_id)
                 if cr is not None:
-                    _assert_run_owned(self.session, cr.eval_run_id, current_user)
+                    assert_run_owned(self.session, cr.eval_run_id, current_user)
         return super().delete(ids, payload=payload, soft_delete=soft_delete)
 
     def compute_kappa(self, eval_run_id: int, current_user: User | None = None) -> dict:
@@ -107,8 +107,8 @@ class WorkflowAnnotationService(BaseAdminCrudService):
 
         每 case_result 取一条标注（is_gold 优先，否则最新），与 case_result.passed 配对算 κ。
         """
-        # 归属校验：复用 workflow_eval 模块的 _assert_run_owned（超管放行，非 owner 抛 403）
-        run = _assert_run_owned(self.session, eval_run_id, current_user)
+        # 归属校验：复用 workflow_eval 模块的 assert_run_owned（超管放行，非 owner 抛 403）
+        run = assert_run_owned(self.session, eval_run_id, current_user)
 
         case_results = list(
             self.session.exec(

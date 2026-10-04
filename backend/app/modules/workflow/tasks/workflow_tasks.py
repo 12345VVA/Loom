@@ -155,7 +155,7 @@ def _is_cancelled_sync(instance_id: int) -> bool:
 async def _flush_worker(instance_id: int, queue: asyncio.Queue) -> None:
     """后台批量落库协程：按批大小或时间间隔 flush，收到 SENTINEL 则处理剩余后退出。
 
-    Queue/Task 均在 _async_execute 的 asyncio.run 事件循环内创建与销毁，不跨 Celery prefork
+    Queue/Task 均在 async_execute 的 asyncio.run 事件循环内创建与销毁，不跨 Celery prefork
     fork 复用。单消费者保证节点日志 FIFO。
     """
     batch: list[dict] = []
@@ -272,7 +272,7 @@ def execute_workflow(
         _mark_instance_failed(instance_id, f"初始参数解析失败: {e}")
         logger.error("工作流 %d 参数 JSON 解析失败: %s", instance_id, e)
         return
-    asyncio.run(_async_execute(instance_id, definition_id, initial_vars, resume_val))
+    asyncio.run(async_execute(instance_id, definition_id, initial_vars, resume_val))
 
 
 @celery_app.task(name="workflow.version.sweep_archived")
@@ -343,7 +343,7 @@ def _resolve_execution_graph(
     return graph_json, thread_id
 
 
-async def _async_execute(
+async def async_execute(
     instance_id: int,
     definition_id: int,
     initial_vars: dict,

@@ -16,7 +16,7 @@ from app.modules.workflow.tasks.workflow_tasks import _resolve_execution_graph
 
 
 class ResolveExecutionGraphTestCase(unittest.TestCase):
-    """_async_execute 提取出的编译拓扑解析（#20）。"""
+    """async_execute 提取出的编译拓扑解析（#20）。"""
 
     def setUp(self):
         self.engine = make_test_engine()

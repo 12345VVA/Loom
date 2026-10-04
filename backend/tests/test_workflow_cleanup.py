@@ -2,6 +2,7 @@
 
 - 执行日志过期清理：分批删行、载荷文件回收、顺序（先删行后删文件）
 - 孤儿载荷回收：存活集差集、mtime 宽限期、软删行回收、S3 跳过、前缀过滤
+- eval 载荷引用保护：收集器扩展点（H4 解耦）与 eval 产物防误删
 - 实例删除级联：软删子表、清空 state_data、载荷文件删除、running 拒绝
 - failed 资产重试：窗口挑选、成功/失败路径、limit
 - eval offload 还原：state_data 裸读 bug 修复回归
@@ -168,6 +169,29 @@ class SweepOrphanPayloadsTest(unittest.TestCase):
         self.assertFalse(os.path.exists(orphan))
         self.assertTrue(os.path.exists(fresh_orphan), "宽限期内的新文件跳过")
         self.assertTrue(os.path.exists(not_payload), "非 wf_payload 前缀不动")
+
+    def test_eval_payload_refs_protected_via_provider(self):
+        # H4 解耦回归：eval 产物载荷经 workflow_eval 包导入时注册的收集器进入存活集，
+        # workflow 孤儿清扫不得误删（依赖方向保持 eval→workflow 单向）
+        from app.modules.workflow_eval.model.eval_run import WorkflowEvalCaseResult
+
+        self.session.add(
+            WorkflowEvalCaseResult(
+                eval_run_id=1,
+                case_key="c1",
+                actual_output_storage_ref="/uploads/wf_payload_eval_alive.json",
+            )
+        )
+        self.session.commit()
+
+        eval_alive = self._make_file("wf_payload_eval_alive.json", age_hours=48)
+        orphan = self._make_file("wf_payload_orphan2.json", age_hours=48)
+        with _patch_storage(self.storage):
+            removed = WorkflowCleanupService(self.session).sweep_orphan_payloads(grace_hours=24)
+
+        self.assertEqual(removed, 1)
+        self.assertTrue(os.path.exists(eval_alive), "eval 产物载荷不应被孤儿清扫误删")
+        self.assertFalse(os.path.exists(orphan))
 
     def test_skips_non_local_provider(self):
         s3_service = Mock()

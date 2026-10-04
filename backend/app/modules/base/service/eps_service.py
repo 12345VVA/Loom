@@ -12,7 +12,6 @@ from app.framework.controller_meta import get_registered_exported_routes
 from app.framework.eps.scanner import scan_model_columns
 from app.modules.base.compat import get_resource_compat
 
-
 _REF_PREFIX = "#/components/schemas/"
 
 

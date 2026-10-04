@@ -30,6 +30,14 @@ FRAMEWORK_REVERSE_DEPENDENCY_WHITELIST = frozenset()
 # 天然不在扫描范围。
 CORE_LAZY_MODULES_IMPORTS_WHITELIST = frozenset()
 
+# 模块方向守卫（H4）：被消费的上游域禁止反向 import 其消费方。
+# 依赖契约：workflow_annotation → workflow_eval → workflow → {ai, media, ...}，
+# workflow 源码出现任何指向两个下游质量域的 import（含函数体内延迟 import）即失败。
+# 需要新增方向规则时在此字典扩条目即可。
+MODULE_DIRECTION_FORBIDDEN = {
+    "app.modules.workflow": ("app.modules.workflow_eval", "app.modules.workflow_annotation"),
+}
+
 
 def _get_top_level_app_imports(file_path: Path) -> set[str]:
     """提取文件顶层（非函数体内）导入的 app.* 模块。"""
@@ -67,6 +75,51 @@ def _get_all_app_imports(file_path: Path) -> set[str]:
             if not node.level and node.module and node.module.startswith("app"):
                 imports.add(node.module)
     return imports
+
+
+def _resolve_import_from(mod: str, node: ast.ImportFrom) -> str | None:
+    """把 ImportFrom 解析为绝对目标模块串（相对导入按当前模块所在包定位）。"""
+    if node.level == 0:
+        return node.module
+    pkg_parts = mod.split(".")[:-1]
+    up = node.level - 1
+    if up:
+        if up > len(pkg_parts):
+            return None
+        pkg_parts = pkg_parts[:-up]
+    if node.module:
+        return ".".join([*pkg_parts, node.module])
+    return ".".join(pkg_parts) or None
+
+
+def _get_all_app_imports_resolved(file_path: Path, mod_name: str) -> set[str]:
+    """全 AST 提取 app.* 导入并解析相对导入（跨域 SCC 与方向守卫的口径）。"""
+    try:
+        tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+    except SyntaxError:
+        return set()
+
+    imports = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("app"):
+                    imports.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            target = _resolve_import_from(mod_name, node)
+            if target and target.startswith("app"):
+                imports.add(target)
+    return imports
+
+
+def _module_domain(mod: str) -> str:
+    """依赖域归属：app.core / app.framework / app.modules.<name> / 其他顶层。"""
+    parts = mod.split(".")
+    if len(parts) >= 2 and parts[1] in ("core", "framework"):
+        return ".".join(parts[:2])
+    if len(parts) >= 3 and parts[1] == "modules":
+        return ".".join(parts[:3])
+    return ".".join(parts[:2])
 
 
 class ArchitectureGuardTests(unittest.TestCase):
@@ -227,6 +280,108 @@ class ArchitectureGuardTests(unittest.TestCase):
             sccs,
             [],
             f"检测到真实循环依赖 (SCC size > 1):\n{sccs}",
+        )
+
+    def test_no_cross_domain_circular_dependencies(self):
+        """跨域循环依赖守卫（H4/G4）：全量 AST（含函数体内延迟 import 与相对导入）
+        建图后跑 Tarjan SCC，凡「横跨多个依赖域」的环一律失败。
+
+        与 test_no_circular_dependencies 的分工：后者以顶层 AST 零容忍（同/跨域都拦），
+        本守卫把盲区（lazy import）补上，但允许「同域内部环」——模块拆分后兄弟文件
+        间的延迟互引是合法形态（2026-10-04 诊断实测 3 个环均为域内环）。
+        真正危险的是跨域环（如 workflow ↔ workflow_eval），那是模块边界失守。
+        """
+        mods: dict[str, Path] = {}
+        for p in APP_DIR.rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            rel = p.relative_to(BACKEND_ROOT).with_suffix("")
+            parts = list(rel.parts)
+            if parts[-1] == "__init__":
+                parts = parts[:-1]
+            mod_name = ".".join(parts)
+            mods[mod_name] = p
+
+        graph: dict[str, set[str]] = defaultdict(set)
+        for name, path in mods.items():
+            for target in _get_all_app_imports_resolved(path, name):
+                if target in mods:
+                    graph[name].add(target)
+                else:
+                    parts = target.split(".")
+                    for i in range(len(parts) - 1, 0, -1):
+                        cand = ".".join(parts[:i])
+                        if cand in mods:
+                            graph[name].add(cand)
+                            break
+
+        # Tarjan 算法（全量边）
+        index_counter = [0]
+        stack: list[str] = []
+        lowlink: dict[str, int] = {}
+        index: dict[str, int] = {}
+        on_stack: set[str] = set()
+        sccs: list[list[str]] = []
+
+        def strongconnect(v: str) -> None:
+            index[v] = lowlink[v] = index_counter[0]
+            index_counter[0] += 1
+            stack.append(v)
+            on_stack.add(v)
+            for w in sorted(graph.get(v, ())):
+                if w not in index:
+                    strongconnect(w)
+                    lowlink[v] = min(lowlink[v], lowlink[w])
+                elif w in on_stack:
+                    lowlink[v] = min(lowlink[v], index[w])
+            if lowlink[v] == index[v]:
+                comp = []
+                while True:
+                    w = stack.pop()
+                    on_stack.discard(w)
+                    comp.append(w)
+                    if w == v:
+                        break
+                sccs.append(comp)
+
+        for v in sorted(mods):
+            if v not in index:
+                strongconnect(v)
+
+        cross_domain = [c for c in sccs if len({_module_domain(m) for m in c}) > 1]
+        self.assertEqual(
+            cross_domain,
+            [],
+            "检测到跨依赖域循环依赖（模块边界失守，需架构级解耦）:\n"
+            + "\n".join(f"  [{_module_domain(c[0])} ↔ ...] {c}" for c in cross_domain),
+        )
+
+    def test_module_dependency_direction(self):
+        """模块方向守卫（H4/G4）：上游域禁止反向 import 消费方（含 lazy import）。
+
+        依赖契约：workflow_annotation → workflow_eval → workflow 单向。eval→workflow
+        指向 model 层不会回流成 SCC（跨域 SCC 守卫拦不住），必须用方向规则直接封死。
+        """
+        violations: list[str] = []
+        for upstream, forbidden_domains in MODULE_DIRECTION_FORBIDDEN.items():
+            upstream_dir = APP_DIR.joinpath(*upstream.split(".")[2:])
+            for py_file in upstream_dir.rglob("*.py"):
+                if "__pycache__" in py_file.parts:
+                    continue
+                rel = py_file.relative_to(BACKEND_ROOT).with_suffix("")
+                parts = list(rel.parts)
+                if parts[-1] == "__init__":
+                    parts = parts[:-1]
+                mod_name = ".".join(parts)
+                for target in _get_all_app_imports_resolved(py_file, mod_name):
+                    for forbidden in forbidden_domains:
+                        if target == forbidden or target.startswith(forbidden + "."):
+                            violations.append(f"{mod_name} -> {target}")
+
+        self.assertEqual(
+            violations,
+            [],
+            "发现上游域反向依赖消费方（破坏 annotation→eval→workflow 单向契约）:\n" + "\n".join(violations),
         )
 
     def test_framework_independence(self):

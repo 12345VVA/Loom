@@ -160,7 +160,7 @@ class ExecuteWorkflowBadJsonTestCase(_BaseDBTestCase):
         instance = self._add_instance(definition, status="running")
         with (
             patch.object(workflow_tasks, "_mark_instance_failed") as mock_mark,
-            patch.object(workflow_tasks, "_async_execute") as mock_async,
+            patch.object(workflow_tasks, "async_execute") as mock_async,
         ):
             # apply 同步执行 Celery task（不经 broker），bind=True 自动注入 self
             workflow_tasks.execute_workflow.apply(args=(instance.id, definition.id, "{bad json"))
@@ -169,8 +169,8 @@ class ExecuteWorkflowBadJsonTestCase(_BaseDBTestCase):
         mock_async.assert_not_called()  # 参数解析失败，不应走到真正执行
 
     def test_valid_json_proceeds_to_execute(self):
-        """正常 JSON 路径仍进入 _async_execute（保证修复未误伤正常流程）。"""
-        with patch.object(workflow_tasks, "_async_execute", AsyncMock()) as mock_async:
+        """正常 JSON 路径仍进入 async_execute（保证修复未误伤正常流程）。"""
+        with patch.object(workflow_tasks, "async_execute", AsyncMock()) as mock_async:
             workflow_tasks.execute_workflow.apply(args=(999, 1, '{"q": "hi"}'))
         mock_async.assert_called_once()
 

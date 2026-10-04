@@ -82,10 +82,10 @@ def _run_metrics(run: WorkflowEvalRun) -> dict:
 
 def compare_runs(session: Session, run_a_id: int, run_b_id: int, current_user=None) -> dict:
     """对比两次评估运行（必须同测试集且均已完成）。run_b 相对 run_a 的变化。"""
-    from app.modules.workflow_eval.service.eval_run_service import _assert_run_owned
+    from app.modules.workflow_eval.service.eval_run_service import assert_run_owned
 
-    run_a = _assert_run_owned(session, run_a_id, current_user)
-    run_b = _assert_run_owned(session, run_b_id, current_user)
+    run_a = assert_run_owned(session, run_a_id, current_user)
+    run_b = assert_run_owned(session, run_b_id, current_user)
     if run_a.test_set_id != run_b.test_set_id:
         raise HTTPException(status_code=400, detail="两个评估运行必须属于同一测试集才能对比")
     if run_a.status not in EvalRunStatus.TERMINAL or run_b.status not in EvalRunStatus.TERMINAL:

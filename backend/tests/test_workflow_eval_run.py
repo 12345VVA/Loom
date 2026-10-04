@@ -1,6 +1,6 @@
-"""T9c 批量评估执行测试：mock _async_execute，验证 case_result 落库、汇总指标、异常隔离。
+"""T9c 批量评估执行测试：mock async_execute，验证 case_result 落库、汇总指标、异常隔离。
 
-不依赖真实 LangGraph——用 fake _async_execute 模拟执行（写 instance.state_data 含 workflow_output），
+不依赖真实 LangGraph——用 fake async_execute 模拟执行（写 instance.state_data 含 workflow_output），
 验证 _async_run_eval 的编排、评估、汇总、单 case 异常隔离。
 """
 
@@ -24,7 +24,7 @@ from app.modules.workflow_eval.tasks import eval_tasks
 
 
 def _make_echo_execute(engine):
-    """fake _async_execute：把 initial_vars.q 回写成 workflow_output='echo:{q}'，模拟成功执行。"""
+    """fake async_execute：把 initial_vars.q 回写成 workflow_output='echo:{q}'，模拟成功执行。"""
 
     async def fake(
         instance_id, definition_id, initial_vars, resume_val=None, *, version_id=None, graph_json_override=None
@@ -80,7 +80,7 @@ class EvalRunTestCase(unittest.TestCase):
 
     def test_run_eval_writes_results_and_finalizes(self):
         with (
-            patch.object(eval_tasks, "_async_execute", _make_echo_execute(self.engine)),
+            patch.object(eval_tasks, "async_execute", _make_echo_execute(self.engine)),
             patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1),
             patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine),
         ):
@@ -109,7 +109,7 @@ class EvalRunTestCase(unittest.TestCase):
             self.assertIsNotNone(by_key["c1"].workflow_instance_id)
 
     def test_case_exception_isolated(self):
-        """_async_execute 全部抛异常 → 每 case 写 error，整批不崩；全 error 时 run 为 FAILED（非 PARTIAL）。"""
+        """async_execute 全部抛异常 → 每 case 写 error，整批不崩；全 error 时 run 为 FAILED（非 PARTIAL）。"""
 
         async def always_boom(
             instance_id, definition_id, initial_vars, resume_val=None, *, version_id=None, graph_json_override=None
@@ -117,7 +117,7 @@ class EvalRunTestCase(unittest.TestCase):
             raise RuntimeError("boom")
 
         with (
-            patch.object(eval_tasks, "_async_execute", always_boom),
+            patch.object(eval_tasks, "async_execute", always_boom),
             patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1),
             patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine),
         ):
@@ -164,7 +164,7 @@ class EvalRunTestCase(unittest.TestCase):
     def test_list_cases_returns_camelcase(self):
         """list_cases 出口须为 camelCase（修复详情页字段取不到）。"""
         with (
-            patch.object(eval_tasks, "_async_execute", _make_echo_execute(self.engine)),
+            patch.object(eval_tasks, "async_execute", _make_echo_execute(self.engine)),
             patch.object(eval_tasks, "MAX_CONCURRENT_CASES", 1),
             patch("app.modules.workflow_eval.service.eval_orchestrator.engine", self.engine),
         ):
@@ -182,7 +182,7 @@ class EvalRunTestCase(unittest.TestCase):
 
     def test_assert_run_owned(self):
         """归属校验：owner 放行、非归属非超管 403、超管放行、不存在 404。"""
-        from app.modules.workflow_eval.service.eval_run_service import _assert_run_owned
+        from app.modules.workflow_eval.service.eval_run_service import assert_run_owned
 
         class FakeUser:
             def __init__(self, uid: int, super_admin: bool):
@@ -191,13 +191,13 @@ class EvalRunTestCase(unittest.TestCase):
 
         with Session(self.engine) as s:
             # run id=1（setUp 建立时 user_id=1）
-            _assert_run_owned(s, 1, FakeUser(1, False))  # owner
+            assert_run_owned(s, 1, FakeUser(1, False))  # owner
             with self.assertRaises(HTTPException) as cm:
-                _assert_run_owned(s, 1, FakeUser(999, False))
+                assert_run_owned(s, 1, FakeUser(999, False))
             self.assertEqual(cm.exception.status_code, 403)
-            _assert_run_owned(s, 1, FakeUser(999, True))  # 超管放行
+            assert_run_owned(s, 1, FakeUser(999, True))  # 超管放行
             with self.assertRaises(HTTPException) as cm:
-                _assert_run_owned(s, 999, None)
+                assert_run_owned(s, 999, None)
             self.assertEqual(cm.exception.status_code, 404)
 
     def test_load_eval_context_uses_snapshot_cases(self):

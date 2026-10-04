@@ -28,7 +28,7 @@ from app.modules.workflow_eval.service.evaluator import EvaluatorRegistry
 logger = logging.getLogger(__name__)
 
 
-def _assert_run_owned(session: Session, eval_run_id: int, current_user: User | None) -> WorkflowEvalRun:
+def assert_run_owned(session: Session, eval_run_id: int, current_user: User | None) -> WorkflowEvalRun:
     """校验评估运行存在且归属当前用户（超管放行），返回 run。"""
     run = session.get(WorkflowEvalRun, eval_run_id)
     if not run:
@@ -135,7 +135,7 @@ class WorkflowEvalRunService(BaseAdminCrudService):
 
     def list_cases(self, eval_run_id: int, current_user: User | None = None, page: int = 1, size: int = 20) -> dict:
         """分页查询某次运行的用例结果（camelCase 出口，大输出按 storage_ref 还原）。"""
-        _assert_run_owned(self.session, eval_run_id, current_user)
+        assert_run_owned(self.session, eval_run_id, current_user)
 
         total = self.session.exec(
             select(func.count()).select_from(
@@ -168,7 +168,7 @@ class WorkflowEvalRunService(BaseAdminCrudService):
 
         返回 {id, status, cancelled}；cancelled=False 表示运行已终结（无需/未能取消）。
         """
-        run = _assert_run_owned(self.session, eval_run_id, current_user)
+        run = assert_run_owned(self.session, eval_run_id, current_user)
         result = self.session.execute(
             update(WorkflowEvalRun)
             .where(

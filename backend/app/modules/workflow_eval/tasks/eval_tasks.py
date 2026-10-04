@@ -1,6 +1,6 @@
 """工作流批量评估 Celery 任务。
 
-在独立事件循环内并发跑各 case：每 case 建真实 WorkflowInstance 并 await _async_execute
+在独立事件循环内并发跑各 case：每 case 建真实 WorkflowInstance 并 await async_execute
 （复用 flush 落库/CAS/checkpointer/治理/SSE 全链路，方案 A），用 Semaphore 控并发、
 wait_for 控单 case 超时。单 case 异常隔离（return_exceptions + try/except）。
 """
@@ -21,7 +21,7 @@ if sys.platform == "win32":
 from app.celery_app import celery_app
 from app.core.config import settings
 from app.core.logging import workflow_instance_id_ctx
-from app.modules.workflow.tasks.workflow_tasks import _async_execute
+from app.modules.workflow.tasks.workflow_tasks import async_execute
 from app.modules.workflow_eval.model.enum import CaseResultStatus
 from app.modules.workflow_eval.service.eval_orchestrator import (
     backfill_missing_results,
@@ -103,10 +103,10 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
                 )
                 inputs = json.loads(case.input_data) if case.input_data else {}
 
-                # 复用 _async_execute 全链路；用 graph 快照保证回归可比
+                # 复用 async_execute 全链路；用 graph 快照保证回归可比
                 try:
                     await asyncio.wait_for(
-                        _async_execute(
+                        async_execute(
                             instance_id,
                             definition_id,
                             inputs,
@@ -188,7 +188,7 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
                     actual=instance_result.get("output"),
                     case_config=case_cfg,
                 )
-                # judge/composite 的 LLM 调用归属当前 case instance（节点路径已由 _async_execute set 覆盖）
+                # judge/composite 的 LLM 调用归属当前 case instance（节点路径已由 async_execute set 覆盖）
                 _judge_ctx_token = workflow_instance_id_ctx.set(instance_id)
                 try:
                     # llm_judge 含同步 LLM 调用，用 to_thread 卸载避免阻塞事件循环（否则 case 并发失效）
