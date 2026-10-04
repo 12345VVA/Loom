@@ -10,14 +10,14 @@ import { migrateLoadedElements } from '../utils/graph-migration';
  * 工作流加载 / 发布 / 导出 composable
  */
 export function useWorkflowIO(options: {
-	service: any;
+	service: Eps.Service;
 	workflowId: Ref<string | null>;
 	workflowName: Ref<string>;
 	workflowCode: Ref<string>;
 	workflowDescription: Ref<string>;
 	elements: Ref<(FlowNode | FlowEdge)[]>;
 	aiProfiles: Ref<Eps.profile[]>;
-	buildGraphPayload: () => any;
+	buildGraphPayload: () => Record<string, unknown>;
 	persistSignature: (els: (FlowNode | FlowEdge)[]) => string;
 	initUndoRedo: () => void;
 	/** 加载/新建完成：以当前拓扑签名（已剥离运行态字段）重置 isDirty 比较基线 */
@@ -42,10 +42,12 @@ export function useWorkflowIO(options: {
 
 	/** 拉取工作流详情并还原画布拓扑：解析草稿 JSON、兼容旧版字段/handle 格式迁移；无草稿时初始化默认开始-结束节点 */
 	async function fetchWorkflowData() {
+		// 与 publishWorkflow 同款守卫：无 id（新建未保存）时无详情可拉
+		if (!workflowId.value) return;
 		try {
-			const res = await service.workflow.definition.info({ id: workflowId.value });
-			workflowName.value = res.name;
-			workflowCode.value = res.code;
+			const res = await service.workflow.definition.info({ id: Number(workflowId.value) });
+			workflowName.value = res.name ?? '';
+			workflowCode.value = res.code ?? '';
 			workflowDescription.value = res.description || '';
 
 			// 加载草稿拓扑（纯版本表模型：graph 存版本表，info 回填 draftGraphJson）
@@ -113,8 +115,8 @@ export function useWorkflowIO(options: {
 			await service.workflow.version.publish({ definitionId: Number(workflowId.value) });
 			ElMessage.success(t('发布成功'));
 			await fetchWorkflowData();
-		} catch (err: any) {
-			ElMessage.error(t('发布失败: ') + (err.message || err));
+		} catch (err) {
+			ElMessage.error(t('发布失败: ') + (err instanceof Error ? err.message : String(err)));
 		}
 	}
 

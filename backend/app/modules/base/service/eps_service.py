@@ -120,9 +120,7 @@ class EpsService:
                     "dts": {
                         "parameters": _fix_dts_types(openapi_meta.get("parameters", [])),
                         "requestBody": _fix_dts_types(openapi_meta.get("requestBody")),
-                        "responses": _fix_dts_types(
-                            _inline_response_refs(openapi, openapi_meta.get("responses", {}))
-                        ),
+                        "responses": _fix_dts_types(_inline_response_refs(openapi, openapi_meta.get("responses", {}))),
                     },
                 }
             )

@@ -21,8 +21,8 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from main import app  # noqa: E402  导入即完成模块装载与路由注册（lifespan 不执行）
 from app.modules.base.service.eps_service import EpsService  # noqa: E402
+from main import app  # noqa: E402  导入即完成模块装载与路由注册（lifespan 不执行）
 
 BASELINE_PATH = BACKEND_ROOT / "eps_baseline.json"
 

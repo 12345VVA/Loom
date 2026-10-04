@@ -32,11 +32,7 @@ def _response_schema(responses: dict) -> dict:
 
 
 def test_ref_resolved_inline():
-    responses = {
-        "200": {
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UserRead"}}}
-        }
-    }
+    responses = {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/UserRead"}}}}}
     data = _fix_dts_types(_inline_response_refs(OPENAPI, responses))
     schema = _response_schema(data)
     assert schema["type"] == "object"
@@ -48,11 +44,7 @@ def test_ref_resolved_inline():
 
 
 def test_circular_ref_breaks_to_object():
-    responses = {
-        "200": {
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MenuTree"}}}
-        }
-    }
+    responses = {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/MenuTree"}}}}}
     data = _inline_response_refs(OPENAPI, responses)
     items = _response_schema(data)["properties"]["children"]["items"]
     assert items == {"type": "object"}
@@ -84,20 +76,14 @@ def test_anyof_union_passthrough():
 
 
 def test_dangling_ref_degrades_to_object():
-    responses = {
-        "200": {
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NotFound"}}}
-        }
-    }
+    responses = {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/NotFound"}}}}}
     data = _inline_response_refs(OPENAPI, responses)
     assert _response_schema(data) == {"type": "object"}
 
 
 def test_scalar_passthrough():
     responses = {"200": {"schema": {"type": "integer"}}}
-    assert _inline_response_refs(OPENAPI, responses) == {
-        "200": {"schema": {"type": "integer"}}
-    }
+    assert _inline_response_refs(OPENAPI, responses) == {"200": {"schema": {"type": "integer"}}}
 
 
 def test_empty_components():
