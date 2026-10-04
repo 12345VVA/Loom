@@ -94,3 +94,13 @@ cp types/index.d.ts ../../node_modules/@cool-vue/vite-plugin/types/
 - [ ] 实体接口索引签名未移除；POST 参数保持 `data?: any`
 - [ ] 重生成后五道闸全绿
 - [ ] suppressions 计数与 any 字面量增减一致
+
+## 后端接口面变更的同步义务（G5 契约基线）
+
+后端路由/入参模型/列元数据变更会同时改变 EPS 导出——CI 有 `EPS 契约基线校验` 门禁
+（`backend/scripts/dump_eps.py --check` 对比 `backend/eps_baseline.json`），失同步即红。
+变更后端接口面时的完整顺序：
+
+1. dev server 重启后重生成 `frontend/build/cool/eps.d.ts`（与 eps.json）
+2. `cd backend && python scripts/dump_eps.py` 更新契约基线
+3. eps.d.ts、eps_baseline.json 与后端改动一并提交

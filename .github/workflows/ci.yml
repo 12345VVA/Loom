@@ -74,6 +74,11 @@ jobs:
           alembic upgrade head
           alembic check
 
+      - name: EPS 契约基线校验
+        # 后端接口面（路由/入参模型/列元数据）变更而未同步前端 EPS 与基线时在此拦截。
+        # 处理：dev server 重生成 eps.d.ts → python scripts/dump_eps.py 更新基线 → 一并提交。
+        run: python scripts/dump_eps.py --check
+
       - name: 准备自建引擎测试的独立 schema
         # make_test_engine 通道（自建引擎类测试）与 TestClient 通道（DATABASE_URL）
         # 同库会互相 drop 对方表——分 schema 隔离
