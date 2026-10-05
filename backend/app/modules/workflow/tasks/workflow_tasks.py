@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import sys
@@ -36,6 +37,7 @@ from app.modules.workflow.service.checkpointer import get_async_checkpointer
 from app.modules.workflow.service.compiler import WorkflowCompiler
 from app.modules.workflow.service.error_format import friendly_error_message
 from app.modules.workflow.service.event_bus import publish_event
+from app.modules.workflow.service.graph_validate import graph_has_interrupt_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -288,9 +290,11 @@ def sweep_archived_versions() -> None:
 
 @celery_app.task(name="workflow.cleanup.sweep")
 def sweep_workflow_cleanup() -> dict:
-    """周期清理执行日志（SysParam workflowExecutionLogKeepDays，默认 90 天）与孤儿载荷文件。
+    """周期清理执行日志（SysParam workflowExecutionLogKeepDays，默认 90 天）、终态实例的
+    LangGraph checkpoint（workflowCheckpointKeepDays，默认 7 天）与孤儿载荷文件。
 
     先删日志再回收孤儿：同轮内日志删除后残留的载荷文件即被孤儿回收兜底。
+    checkpoint 回收仅 postgres backend 生效（见 sweep_checkpoint_threads）。
     """
     from app.modules.base.service.sys_manage_service import SysParamService
     from app.modules.workflow.service.cleanup_service import WorkflowCleanupService
@@ -300,7 +304,14 @@ def sweep_workflow_cleanup() -> dict:
         service = WorkflowCleanupService(session)
         logs_removed = service.sweep_execution_logs(keep_days=keep_days)
         orphans_removed = service.sweep_orphan_payloads()
-    return {"logsRemoved": logs_removed, "orphanPayloadsRemoved": orphans_removed, "keepDays": keep_days}
+        ckpt_keep_days = _int_param(SysParamService(session).get_value("workflowCheckpointKeepDays", "7"), 7)
+        checkpoint_threads_removed = service.sweep_checkpoint_threads(keep_days=ckpt_keep_days)
+    return {
+        "logsRemoved": logs_removed,
+        "orphanPayloadsRemoved": orphans_removed,
+        "checkpointThreadsRemoved": checkpoint_threads_removed,
+        "keepDays": keep_days,
+    }
 
 
 def _int_param(value: str | None, default: int) -> int:
@@ -403,9 +414,18 @@ async def async_execute(
         )
         graph = WorkflowCompiler.compile_graph(graph_json)
 
-        async with get_async_checkpointer() as checkpointer:
-            compiled = graph.compile(checkpointer=checkpointer)
-            logger.info("[Workflow] Graph compiled successfully, instance=%d", instance_id)
+        # P0：无中断节点且非恢复路径的图跳过 checkpointer——LangGraph 以内存态完成 astream，
+        # 省去每步全量快照落库（variables 累积 merge 下 checkpoint_blobs 为 O(N²) 写放大）。
+        # resume 走 Command(resume=...) 硬依赖断点，强制挂载；开关见
+        # WORKFLOW_CHECKPOINT_SKIP_WITHOUT_INTERRUPT（kill-switch）。
+        use_checkpointer = resume_val is not None or (
+            settings.WORKFLOW_CHECKPOINT_SKIP_WITHOUT_INTERRUPT and graph_has_interrupt_nodes(graph_json)
+        )
+        cm = get_async_checkpointer() if use_checkpointer else contextlib.nullcontext()
+        async with cm as checkpointer:
+            compiled = graph.compile(checkpointer=checkpointer) if use_checkpointer else graph.compile()
+            logger.info("[Workflow] Graph compiled successfully, instance=%d, checkpointer=%s",
+                        instance_id, use_checkpointer)
 
             config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 100}
 
@@ -478,6 +498,21 @@ async def async_execute(
                         if node_id == "__interrupt__":
                             # 中断前先把已入队的日志落库，再写 paused 终态
                             await _drain_flush(flush_queue, flush_task)
+                            if not use_checkpointer:
+                                # 防呆：图声称无中断节点却收到 __interrupt__（如未来新增中断节点类型
+                                # 未纳入 INTERRUPT_NODE_TYPES），无 checkpointer 时写 paused 将永远
+                                # 无法 resume（制造假死实例），按 failed 收尾暴露问题
+                                err_msg = (
+                                    "收到中断事件但本次执行未挂载断点（checkpointer），无法进入可恢复的暂停态；"
+                                    "请检查图中断节点类型是否已纳入 INTERRUPT_NODE_TYPES"
+                                )
+                                with Session(engine) as session:
+                                    _cas(session, "running", status="failed", error_message=err_msg)
+                                    session.commit()
+                                logger.error("[Workflow] %s instance=%d", err_msg, instance_id)
+                                publish_event(instance_id, "failed", {"status": "failed", "error": err_msg})
+                                _notify_workflow_failure(instance_id)
+                                return
                             with Session(engine) as session:
                                 inst = session.get(WorkflowInstance, instance_id)
                                 current_node_name = "human_input"

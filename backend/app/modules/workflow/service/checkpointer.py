@@ -105,6 +105,13 @@ import contextlib
 from collections.abc import AsyncGenerator
 from typing import Any
 
+# P0：async saver 本身每任务新建（Celery 每任务 asyncio.run 独立 event loop，而
+# AsyncPostgresSaver 绑定创建时的 loop，进程级单例复用会报跨 loop 错误），但
+# setup()（DDL 建表 + 迁移检查，幂等）进程级只需一次。标志守卫跳过重复执行；
+# 不加 asyncio.Lock——模块级锁会绑定首个创建它的 loop，eval 并发首轮的竞态
+# 最多重复执行一次幂等 setup()，无害。
+_async_setup_done = False
+
 
 @contextlib.asynccontextmanager
 async def get_async_checkpointer() -> AsyncGenerator[Any, None]:
@@ -112,6 +119,7 @@ async def get_async_checkpointer() -> AsyncGenerator[Any, None]:
     返回异步版本的 LangGraph Checkpointer 上下文管理器。
     用于 Celery 或其他异步执行环境，以满足 astream 等异步流的要求。
     """
+    global _async_setup_done
     backend = (settings.WORKFLOW_CHECKPOINT_BACKEND or "memory").strip().lower()
 
     if backend == "memory":
@@ -135,7 +143,9 @@ async def get_async_checkpointer() -> AsyncGenerator[Any, None]:
         pg_conn_str = pg_conn_str.replace("postgresql+asyncpg://", "postgresql://", 1)
 
         async with AsyncPostgresSaver.from_conn_string(pg_conn_str) as saver:
-            await saver.setup()
+            if not _async_setup_done:
+                await saver.setup()
+                _async_setup_done = True
             logger.info("工作流 Checkpoint 后端: AsyncPostgresSaver")
             yield saver
 

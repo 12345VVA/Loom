@@ -310,8 +310,10 @@ class WorkflowInstanceService(BaseAdminCrudService):
         """删除前校验调用者是否为每个待删工作流实例的所有者（修复 IDOR 越权删实例）。
 
         BaseAdminCrudService.delete 按 ids 直接软删除，不走 DataScope，故在此显式逐条校验 owner。
-        附带级联（详见 _cascade_delete）：软删执行日志/产物、清空 state_data、
-        commit 后 best-effort 删 offload 载荷文件与 checkpoint thread。
+        附带级联（详见 _cascade_delete）：软删执行日志/产物、清空 state_data、commit 后
+        best-effort 删 offload 载荷文件；checkpoint thread 仅硬删时当场删（行已物理消失，
+        sweep 无法再定位），软删交由每日 sweep 按 workflowCheckpointKeepDays 回收，
+        保住"软删期内可恢复"语义。
         ai_model_call_log（成本审计）与 media_asset（用户资产）保留不删。
         """
         for entity_id in ids or []:
@@ -326,14 +328,16 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
         storage_refs, thread_ids = self._cascade_delete(ids or [])
 
+        active_soft_delete = soft_delete if soft_delete is not None else self.soft_delete
         result = super().delete(ids, payload=payload, soft_delete=soft_delete)
 
         # DB 已提交，文件与 checkpoint 清理失败仅留孤儿（孤儿清理任务兜底），不影响删除结果
         self._delete_storage_refs(storage_refs)
-        from app.modules.workflow.service.checkpointer import delete_thread_best_effort
+        if not active_soft_delete:
+            from app.modules.workflow.service.checkpointer import delete_thread_best_effort
 
-        for thread_id in thread_ids:
-            delete_thread_best_effort(thread_id)
+            for thread_id in thread_ids:
+                delete_thread_best_effort(thread_id)
         return result
 
     def _cascade_delete(self, ids: list[int]) -> tuple[list[str], list[str]]:

@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # 工作流引擎
     # checkpoint 默认 postgres：保证 Celery 多 Worker / 重启后 paused 实例可恢复（memory 仅用于单进程演示）
     WORKFLOW_CHECKPOINT_BACKEND: str = "postgres"  # "memory" | "postgres"
+    # 无中断节点（human_input）的纯自动化图跳过 checkpointer：LangGraph 以内存态完成 astream，
+    # 省去每步全量快照的 checkpoint 写放大（O(N²)）；kill-switch，置 False 恢复全图挂载
+    WORKFLOW_CHECKPOINT_SKIP_WITHOUT_INTERRUPT: bool = True
     WORKFLOW_NODE_TEST_TIMEOUT: int = 180  # 单节点测试超时秒数（LLM 节点常需 60-180 秒）
     WORKFLOW_NODE_TIMEOUT: int = 600  # 正式执行单节点超时秒数（比 30 分钟硬上限短，留足图像节点空间）
     # 节点级自动重试：失败后按指数退避重试，覆盖 LLM / 外部 API 临时故障

@@ -2,8 +2,11 @@
 
 - 执行日志过期清理：分批删行、载荷文件回收、顺序（先删行后删文件）
 - 孤儿载荷回收：存活集差集、mtime 宽限期、软删行回收、S3 跳过、前缀过滤
+- checkpoint 线程回收：终态+保留期+EXISTS 半连接选择、running/paused 绝不清、
+  失败排除续跑、memory 短路、max_instances 截断
 - eval 载荷引用保护：收集器扩展点（H4 解耦）与 eval 产物防误删
-- 实例删除级联：软删子表、清空 state_data、载荷文件删除、running 拒绝
+- 实例删除级联：软删子表、清空 state_data、载荷文件删除、running 拒绝、
+  软删不立即删 checkpoint（交 sweep）/ 硬删当场删
 - failed 资产重试：窗口挑选、成功/失败路径、limit
 - eval offload 还原：state_data 裸读 bug 修复回归
 """
@@ -18,6 +21,7 @@ from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 from helpers import make_test_engine
+from sqlalchemy import text
 from sqlmodel import Session, SQLModel
 
 from app.framework.storage import LocalStorageProvider, StorageService, offload_payload
@@ -201,6 +205,129 @@ class SweepOrphanPayloadsTest(unittest.TestCase):
         self.assertEqual(removed, 0)
 
 
+class SweepCheckpointThreadsTest(unittest.TestCase):
+    """P0：终态实例 checkpoint 回收。选择条件 = 终态 + created_at 过保留期 + checkpoints 表 EXISTS。"""
+
+    def setUp(self):
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        # checkpoints 表由 langgraph 自建（不在 SQLModel metadata），测试内建 mini 结构
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE checkpoints (thread_id TEXT, checkpoint_ns TEXT, checkpoint_id TEXT)")
+        self.session = Session(self.engine)
+        self.definition = WorkflowDefinition(code="wf", name="WF", graph_json="{}", is_active=True, user_id=1)
+        self.session.add(self.definition)
+        self.session.commit()
+        self.session.refresh(self.definition)
+
+    def tearDown(self):
+        self.session.close()
+
+    def _instance(self, *, status: str, age_days: float, thread_id: str, with_checkpoint: bool = True):
+        created = datetime.now(UTC) - timedelta(days=age_days)
+        inst = WorkflowInstance(
+            definition_id=self.definition.id,
+            thread_id=thread_id,
+            status=status,
+            created_at=created,
+            updated_at=created,
+            user_id=1,
+        )
+        self.session.add(inst)
+        self.session.commit()
+        self.session.refresh(inst)
+        if with_checkpoint:
+            self.session.execute(
+                text("INSERT INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id) VALUES (:t, '', :c)"),
+                {"t": thread_id, "c": f"cp-{thread_id}"},
+            )
+            self.session.commit()
+        return inst
+
+    def _sweep(self, keep_days: int = 7, **kwargs):
+        # 默认 deleter 成功时真清 mini checkpoints 行（镜像生产 delete_thread 行为），
+        # 否则 EXISTS 半连接永远命中、同一实例被反复重选
+        with (
+            patch("app.modules.workflow.service.cleanup_service.settings") as mock_settings,
+            patch(
+                "app.modules.workflow.service.checkpointer.delete_thread_best_effort",
+                side_effect=None,
+            ) as mock_del,
+        ):
+            mock_del.side_effect = self._purging_deleter(set())
+            mock_settings.WORKFLOW_CHECKPOINT_BACKEND = "postgres"
+            removed = WorkflowCleanupService(self.session).sweep_checkpoint_threads(keep_days=keep_days, **kwargs)
+        return removed, mock_del
+
+    def _purging_deleter(self, fail_threads: set[str]):
+        """成功路径真正清掉 mini checkpoints 行（镜像生产 delete_thread 行为，
+        保证 EXISTS 半连接能让已清实例出局），fail_threads 中的 thread 模拟删除失败。"""
+
+        def _delete(thread_id: str) -> bool:
+            if thread_id in fail_threads:
+                return False
+            with self.engine.begin() as conn:
+                conn.exec_driver_sql("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+            return True
+
+        return _delete
+
+    def test_sweeps_stale_terminal_and_spares_active(self):
+        self._instance(status="success", age_days=10, thread_id="t-swept")
+        paused = self._instance(status="paused", age_days=30, thread_id="t-paused")
+        running = self._instance(status="running", age_days=30, thread_id="t-running")
+        fresh = self._instance(status="failed", age_days=1, thread_id="t-fresh")
+
+        removed, mock_del = self._sweep(keep_days=7)
+
+        self.assertEqual(removed, 1)
+        mock_del.assert_called_once_with("t-swept")
+        for inst, why in ((paused, "paused"), (running, "running"), (fresh, "未过保留期")):
+            self.assertIsNotNone(self.session.get(WorkflowInstance, inst.id), f"{why} 实例不应被选中")
+
+    def test_spares_terminal_without_checkpoint_rows(self):
+        # 已清过 / 从未有 checkpoint 的实例不进选择集（EXISTS 半连接标记）
+        self._instance(status="success", age_days=10, thread_id="t-nocp", with_checkpoint=False)
+        removed, mock_del = self._sweep()
+        self.assertEqual(removed, 0)
+        mock_del.assert_not_called()
+
+    def test_delete_failure_excluded_and_loop_continues(self):
+        # 首个 thread 删除失败：本轮排除，不阻塞同批后续实例
+        self._instance(status="success", age_days=10, thread_id="t-bad")
+        good = self._instance(status="failed", age_days=10, thread_id="t-good")
+        with (
+            patch("app.modules.workflow.service.cleanup_service.settings") as mock_settings,
+            patch(
+                "app.modules.workflow.service.checkpointer.delete_thread_best_effort",
+                side_effect=self._purging_deleter({"t-bad"}),
+            ) as mock_del,
+        ):
+            mock_settings.WORKFLOW_CHECKPOINT_BACKEND = "postgres"
+            removed = WorkflowCleanupService(self.session).sweep_checkpoint_threads(keep_days=7)
+        self.assertEqual(removed, 1)
+        self.assertEqual({c.args[0] for c in mock_del.call_args_list}, {"t-bad", "t-good"})
+        self.assertIsNotNone(self.session.get(WorkflowInstance, good.id))
+
+    def test_memory_backend_short_circuits(self):
+        self._instance(status="success", age_days=10, thread_id="t-x")
+        with (
+            patch("app.modules.workflow.service.cleanup_service.settings") as mock_settings,
+            patch("app.modules.workflow.service.checkpointer.delete_thread_best_effort") as mock_del,
+        ):
+            mock_settings.WORKFLOW_CHECKPOINT_BACKEND = "memory"
+            removed = WorkflowCleanupService(self.session).sweep_checkpoint_threads(keep_days=7)
+        self.assertEqual(removed, 0)
+        mock_del.assert_not_called()
+
+    def test_max_instances_caps(self):
+        for i in range(3):
+            self._instance(status="success", age_days=10, thread_id=f"t-{i}")
+        removed, mock_del = self._sweep(max_instances=2)
+        self.assertEqual(removed, 2)
+        self.assertEqual(mock_del.call_count, 2)
+
+
 class CascadeDeleteTest(unittest.TestCase):
     def setUp(self):
         self.engine = make_test_engine()
@@ -271,6 +398,19 @@ class CascadeDeleteTest(unittest.TestCase):
             deleted_refs,
             {"/uploads/wf_payload_state.json", "/uploads/wf_payload_log.json", "/uploads/wf_payload_art.json"},
         )
+        # P0：软删只标记，checkpoint 留给每日 sweep 按保留期回收（保住软删期内可恢复语义）
+        mock_del_thread.assert_not_called()
+
+    def test_hard_delete_deletes_checkpoint_immediately(self):
+        """硬删：实例行物理消失，sweep 的 EXISTS 半连接无法再定位 thread，必须当场删 checkpoint。"""
+        service = WorkflowInstanceService(self.session)
+        with (
+            _patch_storage(self.storage),
+            patch(
+                "app.modules.workflow.service.checkpointer.delete_thread_best_effort", return_value=True
+            ) as mock_del_thread,
+        ):
+            service.delete([self.instance.id], current_user=_super(), soft_delete=False)
         mock_del_thread.assert_called_once_with("th-1")
 
     def test_running_instance_rejected(self):

@@ -18,6 +18,16 @@ SUBGRAPH_NODE_TYPES = {"loop_controller", "batch_processor"}
 # 不支持单节点测试的节点类型集合（无执行逻辑、依赖子图、或需人工交互）
 UNTESTABLE_NODE_TYPES = {"start", "end", "loop_controller", "batch_processor", "human_input", "loop_body_group"}
 
+# 中断类节点类型：依赖 LangGraph interrupt + checkpointer 断点续跑的节点。
+# 当前唯一 interrupt 源是 human_input（node_executors.execute_human_input_node）；
+# 图内不含这类节点时执行全程无断点需求，可跳过 checkpointer（省 O(N²) checkpoint 写放大）。
+INTERRUPT_NODE_TYPES = {"human_input"}
+
+
+def graph_has_interrupt_nodes(graph_json: dict[str, Any]) -> bool:
+    """判断图内是否存在依赖 checkpointer 断点续跑的中断类节点（空图/缺 nodes 字段返回 False）。"""
+    return any(n.get("type") in INTERRUPT_NODE_TYPES for n in (graph_json or {}).get("nodes", []))
+
 
 def validate_graph(graph_json: dict[str, Any]) -> None:
     """

@@ -2,11 +2,14 @@
 
 - #4 start_instance 去重竞态：Redis SETNX 抢占锁（重复拒绝 / 不同 inputs 放行 / Redis 不可用降级 DB）
 - #5 json.loads 异常处理：execute_workflow 参数 JSON 畸形时写 failed 终态（_mark_instance_failed 的 CAS 语义）
+- P0-3 async checkpointer：进程级 setup 幂等跳过（连接仍每任务新建，setup 仅首轮执行）
 """
 
 from __future__ import annotations
 
+import asyncio
 import unittest
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import redis
@@ -14,8 +17,10 @@ from fastapi import HTTPException
 from helpers import make_test_engine
 from sqlmodel import Session, SQLModel, select
 
+from app.core.config import settings
 from app.modules.base.model.auth import User
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
+from app.modules.workflow.service.checkpointer import get_async_checkpointer
 from app.modules.workflow.service.workflow_service import WorkflowInstanceService
 from app.modules.workflow.tasks import workflow_tasks
 
@@ -173,6 +178,161 @@ class ExecuteWorkflowBadJsonTestCase(_BaseDBTestCase):
         with patch.object(workflow_tasks, "async_execute", AsyncMock()) as mock_async:
             workflow_tasks.execute_workflow.apply(args=(999, 1, '{"q": "hi"}'))
         mock_async.assert_called_once()
+
+
+# ==========================================
+# P0-3：async checkpointer 进程级 setup 幂等跳过
+# ==========================================
+
+
+class _FakeSaver:
+    setup_calls = 0
+
+    async def setup(self):
+        _FakeSaver.setup_calls += 1
+
+
+class AsyncCheckpointerSetupOnceTestCase(unittest.TestCase):
+    """postgres backend 下同一进程内多次进入 get_async_checkpointer，setup 仅首轮执行。"""
+
+    def setUp(self):
+        import app.modules.workflow.service.checkpointer as ckpt_mod
+
+        self._ckpt_mod = ckpt_mod
+        self._orig_flag = ckpt_mod._async_setup_done
+        ckpt_mod._async_setup_done = False
+        _FakeSaver.setup_calls = 0
+
+    def tearDown(self):
+        self._ckpt_mod._async_setup_done = self._orig_flag
+
+    def test_setup_runs_once_across_reentries(self):
+        @asynccontextmanager
+        async def fake_from_conn_string(conn_str):
+            yield _FakeSaver()
+
+        async def enter_twice():
+            for _ in range(2):
+                async with get_async_checkpointer() as saver:
+                    self.assertIsInstance(saver, _FakeSaver)
+
+        with (
+            patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "postgres"),
+            patch("app.core.database.DATABASE_URL", "postgresql+psycopg://u:p@localhost:5432/db"),
+            patch(
+                "langgraph.checkpoint.postgres.aio.AsyncPostgresSaver.from_conn_string",
+                fake_from_conn_string,
+            ),
+        ):
+            asyncio.run(enter_twice())
+
+        self.assertEqual(_FakeSaver.setup_calls, 1, "setup 应仅进程首轮执行一次")
+
+
+# ==========================================
+# P0-2：无中断节点的图跳过 checkpointer
+# ==========================================
+
+
+class _FakeCompiled:
+    """记录 compile(checkpointer=...) 入参；astream 产出可配置事件后自然结束。"""
+
+    events: list = []
+
+    def __init__(self, checkpointer):
+        self.checkpointer = checkpointer
+        type(self).compiled_instances.append(self)
+
+    compiled_instances: list = []
+
+    def astream(self, state, config=None, stream_mode=None):
+        async def _gen():
+            for ev in type(self).events:
+                yield ev
+
+        return _gen()
+
+
+class _FakeCompiler:
+    @staticmethod
+    def compile_graph(graph_json):
+        return _FakeGraph()
+
+
+class _FakeGraph:
+    def compile(self, checkpointer=None):
+        return _FakeCompiled(checkpointer)
+
+
+class CheckpointerSkipTestCase(_BaseDBTestCase):
+    """P0-2 接线：无 human_input 图不挂 checkpointer；human_input / resume 路径强制挂载。"""
+
+    def _run(self, graph_json: dict, resume_val=None, *, compiler=None, events=None):
+        definition = self._add_definition()
+        instance = self._add_instance(definition, status="running")
+
+        holder = {"saver": object(), "cm_calls": 0}
+
+        @asynccontextmanager
+        async def fake_cm():
+            holder["cm_calls"] += 1
+            yield holder["saver"]
+
+        _FakeCompiled.compiled_instances = []
+        _FakeCompiled.events = events or []
+        with (
+            patch.object(workflow_tasks, "engine", self.engine),
+            patch.object(workflow_tasks, "publish_event"),
+            patch.object(workflow_tasks, "persist_workflow_artifacts"),
+            patch.object(workflow_tasks, "_notify_workflow_failure"),
+            patch.object(workflow_tasks, "WorkflowCompiler", compiler or _FakeCompiler),
+            patch.object(workflow_tasks, "get_async_checkpointer", fake_cm),
+            patch.object(settings, "WORKFLOW_CHECKPOINT_SKIP_WITHOUT_INTERRUPT", True),
+        ):
+            asyncio.run(
+                workflow_tasks.async_execute(
+                    instance.id, definition.id, {"q": 1}, resume_val, graph_json_override=graph_json
+                )
+            )
+        return instance, holder
+
+    def test_graph_without_interrupt_skips_checkpointer(self):
+        instance, holder = self._run({"nodes": [{"id": "n1", "type": "llm"}], "edges": []})
+        self.assertEqual(holder["cm_calls"], 0, "无中断节点的图不应创建 checkpointer")
+        self.assertIsNone(_FakeCompiled.compiled_instances[0].checkpointer)
+        with Session(self.engine) as verify:
+            self.assertEqual(verify.get(WorkflowInstance, instance.id).status, "success")
+
+    def test_graph_with_human_input_uses_checkpointer(self):
+        graph = {"nodes": [{"id": "h", "type": "human_input"}], "edges": []}
+        _, holder = self._run(graph)
+        self.assertEqual(holder["cm_calls"], 1)
+        self.assertIs(_FakeCompiled.compiled_instances[0].checkpointer, holder["saver"])
+
+    def test_resume_forces_checkpointer_even_without_interrupt(self):
+        graph = {"nodes": [{"id": "n1", "type": "llm"}], "edges": []}
+        _, holder = self._run(graph, resume_val={"answer": 1})
+        self.assertEqual(holder["cm_calls"], 1, "恢复路径硬依赖断点，必须挂载 checkpointer")
+        self.assertIs(_FakeCompiled.compiled_instances[0].checkpointer, holder["saver"])
+
+    def test_interrupt_without_checkpointer_marks_failed_not_paused(self):
+        """防呆：无 checkpointer 时收到 __interrupt__ 不得写 paused（无法恢复的假死），按 failed 收尾。"""
+
+        class _InterruptCompiler:
+            @staticmethod
+            def compile_graph(graph_json):
+                return _FakeGraph()
+
+        instance, holder = self._run(
+            {"nodes": [{"id": "n1", "type": "llm"}], "edges": []},
+            compiler=_InterruptCompiler,
+            events=[{"__interrupt__": (object(),)}],
+        )
+        self.assertEqual(holder["cm_calls"], 0)
+        with Session(self.engine) as verify:
+            refreshed = verify.get(WorkflowInstance, instance.id)
+        self.assertEqual(refreshed.status, "failed", "未挂载断点时中断应按 failed 收尾而非 paused")
+        self.assertIn("未挂载断点", refreshed.error_message)
 
 
 if __name__ == "__main__":
