@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import secrets
 import time
@@ -14,12 +15,28 @@ from app.core.config import settings
 from app.modules.base.model.auth import CaptchaResponse
 from app.modules.base.service.cache_service import cache_get_del, cache_set
 
-# captcha 参数校验范围
+# captcha 参数校验范围（仅作入参契约校验；渲染与答案解空间由服务端固定尺寸决定，见 C2）
 CAPTCHA_WIDTH_MIN = 80
 CAPTCHA_WIDTH_MAX = 300
 CAPTCHA_HEIGHT_MIN = 80
 CAPTCHA_HEIGHT_MAX = 300
+# 服务端固定渲染尺寸：客户端 width 曾直接决定答案解空间（width=80 仅 21 个候选位、
+# 配合 ±12 容差存在万能 x，即报告 C2），前端本就上报 300×120，服务端不再信任该参数
+CAPTCHA_RENDER_WIDTH = 300
+CAPTCHA_RENDER_HEIGHT = 120
+# 解空间不变式：候选位置数必须 ≥ 10×容差带宽度，否则验证码可被万能 x 枚举（配置错误快速失败）
+_CANDIDATE_BAND_RATIO = 10
+_PUZZLE_SIZE = 44
 _CAPTCHA_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _reject_non_finite_constant(value: str) -> float:
+    """json.loads 的 parse_constant 钩子：拒绝 NaN/Infinity/-Infinity（C1）。
+
+    IEEE-754 下任何与 NaN 的数值比较恒为 False，位置/轨迹校验会被整体短路；
+    JSON 规范本就不含这些常量，Python 默认 allow_nan 属于方言宽容，此处收紧。
+    """
+    raise ValueError(f"非法数值常量: {value}")
 
 
 class CaptchaMixin:
@@ -108,12 +125,23 @@ class CaptchaMixin:
             )
 
         tolerance = settings.CAPTCHA_SLIDER_TOLERANCE
-        puzzle_size = 44
+        # C2 修复：渲染与答案解空间一律使用服务端固定尺寸，客户端 width/height 不再参与
+        width_int = CAPTCHA_RENDER_WIDTH
+        height_int = CAPTCHA_RENDER_HEIGHT
+        puzzle_size = _PUZZLE_SIZE
         max_target = width_int - puzzle_size - 8
         if max_target <= 8:
+            # 服务端固定尺寸下不应触发；防配置/常量被误改导致解空间为空
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"验证码宽度需大于 {puzzle_size + 16}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="验证码渲染尺寸配置非法",
+            )
+        # 解空间不变式守卫（C2 纵深）：候选位置数 < 10×容差带时，存在对任意 target_x
+        # 恒命中的万能 x 区间——拒绝签发而非退化出可枚举的验证码
+        if (max_target - 8 + 1) < _CANDIDATE_BAND_RATIO * (2 * tolerance):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="验证码配置解空间不足（CAPTCHA_SLIDER_TOLERANCE 与渲染尺寸配比失衡）",
             )
         target_x = 8 + secrets.randbelow(max_target - 8 + 1)
         target_y = (height_int - puzzle_size) // 2
@@ -160,11 +188,14 @@ class CaptchaMixin:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
         try:
             challenge = json.loads(cached)
-            payload = json.loads(verify_code)
-        except json.JSONDecodeError:
+            # parse_constant 拒绝 NaN/Infinity（C1）：json.loads 默认 allow_nan=True，
+            # '{"x": NaN}' 会解析成 float('nan') 使下方全部比较恒为 False
+            payload = json.loads(verify_code, parse_constant=_reject_non_finite_constant)
+        except (json.JSONDecodeError, ValueError):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
 
-        if challenge.get("type") != "slider":
+        if not isinstance(challenge, dict) or challenge.get("type") != "slider":
+            # isinstance 防御（L1）：challenge 非法形态时统一 401 而非 AttributeError 500
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
 
         try:
@@ -173,7 +204,12 @@ class CaptchaMixin:
             final_x = float(payload["x"])
             duration_ms = int(payload["duration"])
             track = payload["track"]
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, OverflowError):
+            # OverflowError：1e999 这类字面量绕过 parse_constant 解析为 inf，int(inf) 抛溢出
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+
+        # C1 纵深：非有限值（含缓存被写坏的场景）直接拒绝，位置/轨迹比较不允许退化
+        if not (math.isfinite(target_x) and math.isfinite(tolerance) and math.isfinite(final_x)):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
 
         if abs(final_x - target_x) > tolerance:
@@ -190,8 +226,10 @@ class CaptchaMixin:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
             try:
                 current_x = float(point["x"])
-            except (KeyError, TypeError, ValueError):
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+            except (KeyError, TypeError, ValueError, OverflowError):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+            if not math.isfinite(current_x):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
             if current_x < previous_x:
                 backtrack = previous_x - current_x
                 backtrack_total += backtrack
