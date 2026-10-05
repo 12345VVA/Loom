@@ -1,12 +1,14 @@
-"""验证码图像加固渲染管线不变式测试（专项 §17：P1 色彩形变扰动 + 伪缺口烧票）。
+"""验证码图像加固渲染管线不变式测试（专项 §17/§18：P1 色彩形变扰动 + 伪缺口烧票 + 验收复审二次修复）。
 
 校验逻辑与封存载荷零改动，因此既有 captcha 测试必须原样通过；本文件只覆盖
-新渲染路径的构造性不变式（尺寸/咬合/间距/色调/开关回退/响应契约）。
+新渲染路径的构造性不变式（尺寸/咬合/间距/色调/开关回退/响应契约），以及验收
+报告 S3/S6/S7 三条确定性旁路对应的输出级防回归断言（形状零信号/同行/明度解绑）。
 """
 
 from __future__ import annotations
 
 import base64
+import colorsys
 import io
 import json
 import os
@@ -14,7 +16,7 @@ import random
 import sys
 import unittest
 
-from PIL import Image
+from PIL import Image, ImageFilter
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -24,6 +26,7 @@ from app.modules.base.service.auth_captcha_render import (  # noqa: E402
     RenderParams,
     build_puzzle_mask,
     layout_decoys,
+    pick_tints,
     render_slider_captcha,
 )
 from app.modules.base.service.auth_service import AuthService  # noqa: E402
@@ -32,6 +35,64 @@ from tests.helpers import captcha_target_x  # noqa: E402
 _PUZZLE_SIZE = 44
 _TRACK_WIDTH = 300
 _TRACK_HEIGHT = 120
+
+
+def _segment_holes(bg: Image.Image, min_area: int = 260) -> list[tuple[int, int, int, int, list[int]]]:
+    """输出级缺口提取（验收 S6 同款手法，纯 PIL）：暗区分位阈值 → 3×3 开运算 → BFS 连通域。
+
+    返回 [(x0, y0, bbox_w, bbox_h, 像素下标列表)]，坐标系与 target_x/target_y 一致。"""
+    gray = bg.convert("L")
+    width, height = gray.size
+    data = list(gray.getdata())
+    threshold = min(sorted(data)[int(len(data) * 0.42)], 135)
+    dark = Image.new("L", (width, height))
+    dark.putdata([255 if value < threshold else 0 for value in data])
+    opened = list(dark.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3)).getdata())
+
+    holes: list[tuple[int, int, int, int, list[int]]] = []
+    visited = bytearray(len(opened))
+    for start, value in enumerate(opened):
+        if not value or visited[start]:
+            continue
+        visited[start] = 1
+        stack = [start]
+        pixels: list[int] = []
+        while stack:
+            pixel = stack.pop()
+            pixels.append(pixel)
+            px, py = pixel % width, pixel // width
+            for nx, ny in ((px - 1, py), (px + 1, py), (px, py - 1), (px, py + 1)):
+                if 0 <= nx < width and 0 <= ny < height:
+                    neighbor = ny * width + nx
+                    if opened[neighbor] and not visited[neighbor]:
+                        visited[neighbor] = 1
+                        stack.append(neighbor)
+        if len(pixels) < min_area:
+            continue
+        xs = [p % width for p in pixels]
+        ys = [p // width for p in pixels]
+        x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+        bbox_w, bbox_h = x1 - x0 + 1, y1 - y0 + 1
+        if 14 <= bbox_w <= 50 and 10 <= bbox_h <= 50:
+            holes.append((x0, y0, bbox_w, bbox_h, pixels))
+    return holes
+
+
+def _normalized_hole_mask(hole: tuple[int, int, int, int, list[int]], width: int) -> Image.Image:
+    """候选掩码 bbox 归一化到 44×44（S6 IoU 比较器同款）。"""
+    x0, y0, bbox_w, bbox_h, pixels = hole
+    mask = Image.new("L", (bbox_w, bbox_h), 0)
+    for pixel in pixels:
+        mask.putpixel((pixel % width - x0, pixel // width - y0), 255)
+    return mask.resize((_PUZZLE_SIZE, _PUZZLE_SIZE), Image.NEAREST)
+
+
+def _mask_iou(a: Image.Image, b: Image.Image) -> float:
+    pa = a.getdata()
+    pb = b.getdata()
+    intersection = sum(1 for x, y in zip(pa, pb) if x > 127 and y > 127)
+    union = sum(1 for x, y in zip(pa, pb) if x > 127 or y > 127)
+    return intersection / union if union else 0.0
 
 
 class ShapeLibraryTests(unittest.TestCase):
@@ -98,9 +159,33 @@ class RenderPipelineTests(unittest.TestCase):
             self.assertEqual(len(result.tints), 1 + len(result.decoys))
             self.assertEqual(len(set(result.tints)), len(result.tints), f"seed={seed} 色调出现碰撞")
 
-    def test_decoy_shapes_differ_from_piece(self):
-        """伪缺口异形（形状判别通道）：形状合法、互异，且数量与 decoys 一致。"""
-        for seed in range(20):
+    def test_tint_brightness_not_bound_to_truth(self):
+        """S7 防回归（明度解绑）：真缺口色调（tints[0]）的明度不得固定占据最亮档——
+        洗牌前「掩码内均值明度 argmax」曾 99.2% 命中。同时校验调色板明度仍逐档错开
+        （≥30，色觉障碍用户两两可分的无障碍性保留）。"""
+        brightest = darkest = 0
+        rounds = 300
+        for seed in range(rounds):
+            tints = pick_tints(random.Random(seed), 3)
+            values = sorted(colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)[2] * 255 for r, g, b in tints)
+            for left, right in zip(values, values[1:]):
+                self.assertGreaterEqual(right - left, 30.0, f"seed={seed} 调色板明度档距不足（无障碍性受损）")
+            true_value = colorsys.rgb_to_hsv(*[c / 255 for c in tints[0]])[2] * 255
+            if true_value == values[-1]:
+                brightest += 1
+            if true_value == values[0]:
+                darkest += 1
+        # 洗牌后真缺口应均匀落在各明度档（≈1/3）；90% 上界防退化、远离 100% 旧泄漏
+        self.assertLess(brightest, rounds * 0.9, "真缺口恒为最亮档（S7 明度通道泄漏）")
+        self.assertLess(darkest, rounds * 0.9, "真缺口恒为最暗档（反向明度通道泄漏）")
+
+    def test_decoy_shapes_carry_no_signal(self):
+        """S6 防回归（形状零信号）：输出级提取全部缺口，与拼图块 alpha 的归一化 IoU
+        必须**两两打平**——任何「互异保证」（异形/异旋转）都会让 IoU 排序确定性指认
+        真缺口（验收实测 120/120）。绝对 IoU 无意义（capsule 经 bbox 归一化拉伸后
+        天然仅 ~0.38），判别只可能来自候选间差异。"""
+        argmax_true = 0
+        for seed in range(30):
             result = render_slider_captcha(
                 _TRACK_WIDTH,
                 _TRACK_HEIGHT,
@@ -110,26 +195,54 @@ class RenderPipelineTests(unittest.TestCase):
                 rng=random.Random(seed),
                 params=RenderParams(),
             )
-            self.assertEqual(len(result.decoy_shapes), len(result.decoys))
-            self.assertEqual(len(set(result.decoy_shapes)), len(result.decoy_shapes), f"seed={seed} 伪缺口形状重复")
-            for shape in result.decoy_shapes:
-                self.assertIn(shape, PUZZLE_SHAPES)
+            holes = _segment_holes(result.bg)
+            self.assertGreaterEqual(len(holes), 2, f"seed={seed} 应检出 ≥2 个缺口")
+            piece_mask = result.slider.getchannel("A")
+            ious = [_mask_iou(_normalized_hole_mask(hole, _TRACK_WIDTH), piece_mask) for hole in holes]
+            for iou in ious:
+                self.assertGreaterEqual(iou, 0.30, f"seed={seed} 缺口分割疑似垃圾输出: {ious}")
+            self.assertLessEqual(max(ious) - min(ious), 0.10, f"seed={seed} 候选间 IoU 差异过大（形状信号）: {ious}")
+            if abs(holes[ious.index(max(ious))][0] - (60 + seed)) <= 3:
+                argmax_true += 1
+        self.assertLessEqual(argmax_true, 20, "IoU argmax 指认真缺口比例异常（形状通道泄漏）")
+
+    def test_decoys_same_row_as_target(self):
+        """S3 防回归（同行不变式）：输出级全部缺口锚点 y 必须相等——sliderY（=target_y）
+        随响应公开且校验只比 x，伪缺口异行时「y 最接近 sliderY」即确定性指路标（96.7%）。"""
+        for seed in range(30):
+            result = render_slider_captcha(
+                _TRACK_WIDTH,
+                _TRACK_HEIGHT,
+                60 + seed,
+                20,
+                _PUZZLE_SIZE,
+                rng=random.Random(seed),
+                params=RenderParams(),
+            )
+            holes = _segment_holes(result.bg)
+            self.assertGreaterEqual(len(holes), 2, f"seed={seed} 应检出 ≥2 个缺口")
+            # 分割 bbox 存在 ±1-2px 阈值噪声，同带 ≤3px 即视为同行（异行泄漏量级为数十 px）
+            y0s = [hole[1] for hole in holes]
+            self.assertLessEqual(max(y0s) - min(y0s), 3, f"seed={seed} 缺口不同行（y 侧信道）: {y0s}")
 
     def test_decoy_spacing_invariant(self):
-        """烧票有效性回归：伪缺口与真缺口/彼此 Chebyshev ≥ 64，且与 target_x 距离必超容差。"""
+        """烧票有效性回归：伪缺口与真缺口/彼此 |dx| ≥ 64（同行后 Chebyshev 即 |dx|），
+        且与 target_x 距离必超容差。"""
         rng = random.Random(20261005)
         tolerance = settings.CAPTCHA_SLIDER_TOLERANCE
         for _ in range(200):
             target = (rng.randint(8, _TRACK_WIDTH - _PUZZLE_SIZE - 8), rng.randint(0, _TRACK_HEIGHT - _PUZZLE_SIZE))
             count = rng.randint(1, 2)
-            decoys = layout_decoys(rng, target, count, _PUZZLE_SIZE, _TRACK_WIDTH, _TRACK_HEIGHT)
+            decoys = layout_decoys(rng, target, count, _PUZZLE_SIZE, _TRACK_WIDTH)
             self.assertLessEqual(len(decoys), count)
             for dx, dy in decoys:
                 self.assertTrue(8 <= dx <= _TRACK_WIDTH - _PUZZLE_SIZE - 8, "伪缺口必须与真缺口同横向带")
-                self.assertTrue(0 <= dy <= _TRACK_HEIGHT - _PUZZLE_SIZE)
-                chevy = max(abs(dx - target[0]), abs(dy - target[1]))
-                self.assertGreaterEqual(chevy, _PUZZLE_SIZE + 20, "间距不变式破坏")
+                self.assertEqual(dy, target[1], "伪缺口必须与真缺口同行（S3）")
+                self.assertGreaterEqual(abs(dx - target[0]), _PUZZLE_SIZE + 20, "间距不变式破坏")
                 self.assertGreater(abs(dx - target[0]), tolerance, "伪缺口落入容差带 → 烧票机制失效")
+                for ox, oy in decoys:
+                    if (ox, oy) != (dx, dy):
+                        self.assertGreaterEqual(abs(dx - ox), _PUZZLE_SIZE + 20, "两两间距不变式破坏")
 
 
 class DispatchToggleTests(unittest.TestCase):

@@ -10,6 +10,17 @@
   靠色调判别通道区分（拼图块色调=真缺口色调）；选错伪缺口必然超出容差
   （间距不变式 >容差 5 倍），经 GETDEL 一次性消费烧票。
 
+2026-10-05 验收复审后的二次修复（验收报告 S3/S6/S7，详见专项 §18）——三条不变式：
+- **形状不携带真假信息**：真缺口/伪缺口/拼图块共用同一张 hole_mask（同形状同旋转）。
+  初版曾让伪缺口强制异形并注释「形状即真人判别通道」，被验收方以 bbox 归一化 IoU
+  比较器 100% 击穿（S6）——形状比较器是几行代码的事，任何「互异保证」都是确定性泄漏。
+- **明度不与真假绑定**：判别色调调色板生成后随机洗牌，真缺口不固定取最亮档（S7
+  曾以「掩码内均值明度 argmax」99.2% 命中）。色觉障碍无障碍性不受损：调色板明度
+  仍逐档错开（两两可分），且拼图块与真缺口色调恒相同——匹配依据是「色调相等」，
+  从来不是「明度排序」。
+- **伪缺口与真缺口同行**：sliderY（=target_y）随响应公开、校验只比 x，伪缺口若异行，
+  「锚点 y 最接近 sliderY」即成确定性指路标（S3 浏览器实测 96.7% 命中）。
+
 模块约束：
 - 纯函数：不 import FastAPI、不读 settings、不碰 Redis——基准脚本
   （scripts/bench_captcha_solver.py）可脱离应用直接复用同一路径，保证
@@ -72,9 +83,8 @@ class RenderResult:
     bg: Image.Image  # RGB (width, height)
     slider: Image.Image  # RGBA (size, size)，alpha=旋转后形状遮罩，非形状区透明
     hole_mask: Image.Image  # L (size, size)：真缺口/伪缺口/拼图块共用的旋转后遮罩
-    tints: list[tuple[int, int, int]]  # [0]=真缺口色调（=拼图块色调），其余=伪缺口色调
-    decoys: list[tuple[int, int]]  # 伪缺口画布坐标
-    decoy_shapes: list[str]  # 伪缺口形状（≠拼图块形状——形状即真人判别通道）
+    tints: list[tuple[int, int, int]]  # [0]=真缺口色调（=拼图块色调），其余=伪缺口色调（洗牌后分配）
+    decoys: list[tuple[int, int]]  # 伪缺口画布坐标（y 恒等于 target_y——同行不变式）
 
 
 def build_puzzle_mask(shape: str, size: int, theta: float, rng: random.Random) -> Image.Image:
@@ -185,14 +195,20 @@ def perturb_piece(img: Image.Image, rng: random.Random, params: RenderParams) ->
 
 
 def pick_tints(rng: random.Random, count: int) -> list[tuple[int, int, int]]:
-    """判别色调调色板：色相均布无碰撞，明度逐档错开（色觉障碍用户可按明度匹配）。"""
+    """判别色调调色板：色相均布无碰撞、明度逐档错开（两两可分，色觉障碍用户可按明度
+    区分候选），**生成后随机洗牌**——真/伪分配与明度次序解绑（验收 S7：洗牌前
+    「掩码内均值明度 argmax」99.2% 命中，真缺口恒为 tints[0]=最亮档）。
+
+    无障碍性不受损：拼图块与真缺口恒为同一色调，匹配依据是「色调相等」而非
+    「明度排序」；明度错开只承担「候选两两可分」，不承担「指认真缺口」。"""
     start = rng.randint(0, 255)
     tints: list[tuple[int, int, int]] = []
     for index in range(count):
         hue = (start + index * 256 // max(1, count)) % 256
-        value = 235 - index * 40  # 明度错开兜底
+        value = 235 - index * 40  # 明度错开兜底（40 档间隔 > 同档噪声扰动幅度）
         r, g, b = colorsys.hsv_to_rgb(hue / 255.0, 0.55, max(120, value) / 255.0)
         tints.append((round(r * 255), round(g * 255), round(b * 255)))
+    rng.shuffle(tints)
     return tints
 
 
@@ -202,32 +218,32 @@ def layout_decoys(
     count: int,
     puzzle_size: int,
     width: int,
-    height: int,
 ) -> list[tuple[int, int]]:
-    """伪缺口布局（拒绝采样）：与真缺口同横向带（防「边缘必为伪」泄漏）。
+    """伪缺口布局（拒绝采样）：**与真缺口同行**，仅沿 x 轴分离。
 
-    两条不变式：
-    - **x 轴分离**：|dx − target_x| ≥ puzzle_size + 20——校验只比 x，伪缺口若落进
-      x 容差带，选错反而「白拿通过」，烧票机制失效（> 容差 12 的 5 倍）。
-    - 两两 Chebyshev ≥ puzzle_size + 20：视觉互不重叠。
+    两条不变式（验收 S3 二次修复）：
+    - **同行**：y 恒等于 target_y——sliderY（=target_y）随响应公开且校验只比 x，
+      伪缺口若异行，「锚点 y 最接近 sliderY」即成确定性指路标（验收方浏览器实测
+      96.7% 命中）。同行后该判据退化为在候选中随机。
+    - **x 轴分离**：|dx − target_x| 及两两 |dx| ≥ puzzle_size + 20——校验只比 x，
+      伪缺口若落进 x 容差带，选错反而「白拿通过」，烧票机制失效（> 容差 12 的 5 倍）。
     采样失败时降级减少伪缺口数（防御性兜底，正常参数下不会触发）。"""
     if count <= 0:
         return []
     min_gap = puzzle_size + _DECOY_MIN_GAP_EXTRA
     x_low, x_high = 8, width - puzzle_size - 8
-    y_low, y_high = 0, height - puzzle_size
     if x_high < x_low:
         return []
 
     decoys: list[tuple[int, int]] = []
     for _ in range(count):
         for _attempt in range(50):
-            candidate = (rng.randint(x_low, x_high), rng.randint(y_low, y_high))
-            if abs(candidate[0] - target[0]) < min_gap:
+            x = rng.randint(x_low, x_high)
+            if abs(x - target[0]) < min_gap:
                 continue
-            if any(max(abs(candidate[0] - d[0]), abs(candidate[1] - d[1])) < min_gap for d in decoys):
+            if any(abs(x - d[0]) < min_gap for d in decoys):
                 continue
-            decoys.append(candidate)
+            decoys.append((x, target[1]))
             break
     return decoys
 
@@ -253,7 +269,7 @@ def render_slider_captcha(
     piece_ring = mask_ring_inner(hole_mask, width=2)  # 拼图块内环（不越遮罩轮廓，保咬合）
 
     decoy_count = rng.randint(max(0, params.decoy_min), max(0, params.decoy_max))
-    decoys = layout_decoys(rng, (target_x, target_y), decoy_count, puzzle_size, width, height)
+    decoys = layout_decoys(rng, (target_x, target_y), decoy_count, puzzle_size, width)
     tints = pick_tints(rng, 1 + len(decoys))
     true_tint = tints[0]
 
@@ -294,7 +310,9 @@ def render_slider_captcha(
     piece = _alpha_blend_masked(piece, _PIECE_RING_RGB, piece_ring, 255)
     piece.putalpha(hole_mask)  # 终末钳制：alpha 恒等于遮罩，构造性保证逐字节咬合
 
-    # ── 阶段 4：真缺口 + 伪缺口（同暗块/描边/噪声统计；色调不同、伪缺口异形）──
+    # ── 阶段 4：真缺口 + 伪缺口（同遮罩/描边/噪声统计/同行，仅色调互异）──
+    # 形状/旋转/描边/暗块样式在真假缺口间**构造性一致**：任何「互异保证」（异形、异行、
+    # 明度排序）都是给比较器留的确定性信号（验收 S3/S6/S7）。唯一判别通道=色调相等。
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     true_mean = _hole_noise_mean(bg, target_x, target_y, puzzle_size)
     paste_hole(
@@ -309,22 +327,15 @@ def render_slider_captcha(
         true_mean,
         rng,
     )
-    decoy_shapes: list[str] = []
     for index, (dx, dy) in enumerate(decoys):
-        # 伪缺口异形（≠拼图块形状、彼此互异）——形状即真人判别通道（不受色觉影响），
-        # 而朴素内容匹配求解器没有形状比较器，选中伪缺口即烧票
-        decoy_shape = rng.choice([s for s in PUZZLE_SHAPES if s != shape and s not in decoy_shapes])
-        decoy_shapes.append(decoy_shape)
-        decoy_mask = build_puzzle_mask(decoy_shape, puzzle_size, rng.uniform(-abs(theta), abs(theta)), rng)
-        decoy_ring = mask_ring(decoy_mask, width=2)
         decoy_mean = _hole_noise_mean(bg, dx, dy, puzzle_size)
         paste_hole(
             overlay,
             dx,
             dy,
             tints[1 + index],
-            decoy_mask,
-            decoy_ring,
+            hole_mask,
+            ring,
             params.tint_alpha,
             params.hole_noise_sigma,
             decoy_mean,
@@ -332,7 +343,7 @@ def render_slider_captcha(
         )
     bg = Image.alpha_composite(bg.convert("RGBA"), overlay).convert("RGB")
 
-    return RenderResult(bg=bg, slider=piece, hole_mask=hole_mask, tints=tints, decoys=decoys, decoy_shapes=decoy_shapes)
+    return RenderResult(bg=bg, slider=piece, hole_mask=hole_mask, tints=tints, decoys=decoys)
 
 
 def paste_hole(
@@ -376,11 +387,13 @@ def paste_hole(
 
 
 def _random_bg_color(rng: random.Random) -> tuple[int, int, int]:
-    """中灰随机背景色（配合噪声线条防 OCR 定位缺口）。
+    """中灰随机背景色（100-160，legacy 为 180-230 浅色）。
 
-    刻意取 100-160（legacy 为 180-230 浅色）：§13 求解器的亮度反向补偿（×1.76）
-    会把浅色背景整体饱和成 255 白场，使洞成为全图唯一暗结构、求解器退化为
-    暗块探测器；中灰下补偿不饱和，该信号消失。"""
+    真实目的：§13 求解器的亮度反向补偿（×1.76）会把浅色背景整体饱和成 255 白场，
+    使洞成为全图唯一暗结构、求解器退化为暗块探测器；中灰下补偿不饱和，该信号消失。
+    （验收报告勘误：早期版本注释「防 OCR 定位缺口」不成立——压暗背景实际**放大**了
+    白描边对比度 95-155。这是**接受的取舍**：定位缺口本就不是安全边界，真人同样
+    靠描边定位，且真伪缺口共用同一描边样式——难点必须全部落在「区分真假」上。）"""
     return (rng.randint(100, 160), rng.randint(100, 160), rng.randint(100, 160))
 
 
