@@ -335,5 +335,41 @@ class CheckpointerSkipTestCase(_BaseDBTestCase):
         self.assertIn("未挂载断点", refreshed.error_message)
 
 
+class MemoryBackendGuardTestCase(unittest.TestCase):
+    """P2 防呆：memory backend 下异步分支可用（langgraph-checkpoint 4.x 无 memory/aio 模块，
+    AsyncMemorySaver import 会 ModuleNotFoundError）且 delete_thread 诚实短路（跨进程空转）。"""
+
+    def test_async_memory_checkpointer_yields_inmemory_saver(self):
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        async def _run():
+            async with get_async_checkpointer() as saver:
+                return saver
+
+        with patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "memory"):
+            saver = asyncio.run(_run())
+        self.assertIsInstance(saver, InMemorySaver)
+        # 4.x 统一 sync+async 接口：异步方法存在，暂停/恢复链路调用不 AttributeError
+        self.assertTrue(hasattr(saver, "aget_tuple"))
+        self.assertTrue(hasattr(saver, "delete_thread"))
+
+    def test_delete_thread_best_effort_short_circuits_on_memory(self):
+        from app.modules.workflow.service import checkpointer as cp
+
+        original_warned = cp._memory_delete_warned
+        cp._memory_delete_warned = False
+        try:
+            with (
+                patch.object(settings, "WORKFLOW_CHECKPOINT_BACKEND", "memory"),
+                patch.object(cp.logger, "warning") as mock_warn,
+            ):
+                # 返回 False（跨进程空转，不虚报成功）；告警只发一次防刷屏
+                self.assertFalse(cp.delete_thread_best_effort("t-1"))
+                self.assertFalse(cp.delete_thread_best_effort("t-2"))
+            self.assertEqual(mock_warn.call_count, 1)
+        finally:
+            cp._memory_delete_warned = original_warned
+
+
 if __name__ == "__main__":
     unittest.main()

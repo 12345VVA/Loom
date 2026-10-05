@@ -10,6 +10,8 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _checkpointer = None
+# memory backend 下 delete_thread 空转的告警只发一次（实例批量删除时防日志刷屏）
+_memory_delete_warned = False
 
 
 def get_checkpointer():
@@ -29,7 +31,10 @@ def get_checkpointer():
         from langgraph.checkpoint.memory import MemorySaver
 
         _checkpointer = MemorySaver()
-        logger.info("工作流 Checkpoint 后端: MemorySaver（进程内，重启后数据丢失）")
+        logger.warning(
+            "工作流 Checkpoint 后端: MemorySaver（进程内，重启后数据丢失；且与 Celery worker 的"
+            "异步 saver 实例互不相通——human_input 暂停/恢复不可用，仅限本地测试）"
+        )
 
     elif backend == "postgres":
         # PostgresSaver.from_conn_string 被 @contextmanager 装饰，
@@ -88,6 +93,18 @@ def delete_thread_best_effort(thread_id: str) -> bool:
     checkpoint_writes、memory 清内存 dict），不手写 SQL。
     失败仅告警返回 False——残留 checkpoint 只占存储，无功能影响。
     """
+    backend = (settings.WORKFLOW_CHECKPOINT_BACKEND or "memory").strip().lower()
+    if backend == "memory":
+        # memory backend 下本进程的 MemorySaver 单例与 worker 的实例互不相通，
+        # delete_thread 是空转（对不存在的 thread 删空气不报错），诚实返回 False 防误导计数
+        global _memory_delete_warned
+        if not _memory_delete_warned:
+            logger.warning(
+                "memory backend 下 checkpoint 清理仅作用于本进程 saver、跨进程为空转"
+                "（执行在 worker 的另一实例中）；生产请配置 postgres backend"
+            )
+            _memory_delete_warned = True
+        return False
     try:
         saver = get_checkpointer()
         delete = getattr(saver, "delete_thread", None)
@@ -123,13 +140,14 @@ async def get_async_checkpointer() -> AsyncGenerator[Any, None]:
     backend = (settings.WORKFLOW_CHECKPOINT_BACKEND or "memory").strip().lower()
 
     if backend == "memory":
-        # MemorySaver 是同步的，但 langgraph 对其提供了宽松的异步兼容或我们可以直接包装
-        # 如果新版强求 AsyncSaver，我们可以实现一个简单的包装，或看 MemorySaver 是否自带异步。
-        # 事实上 MemorySaver 是安全的进程内字典，通常支持 async
-        from langgraph.checkpoint.memory.aio import AsyncMemorySaver
+        # langgraph-checkpoint 4.x 起无 memory/aio 模块（AsyncMemorySaver 已合入 InMemorySaver，
+        # 其同时实现同步+异步接口）；此处用 InMemorySaver。注意：每任务新建实例——
+        # human_input 暂停写入的 checkpoint 随任务结束丢失，resume（新任务、新 saver）
+        # 拿不到断点，即 memory backend 下暂停/恢复功能本就不成立，仅限测试。
+        from langgraph.checkpoint.memory import InMemorySaver
 
-        saver = AsyncMemorySaver()
-        logger.info("工作流 Checkpoint 后端: AsyncMemorySaver")
+        saver = InMemorySaver()
+        logger.warning("工作流 Checkpoint 后端: InMemorySaver（每任务新建实例，human_input 暂停/恢复不可用，仅限测试）")
         yield saver
 
     elif backend == "postgres":
