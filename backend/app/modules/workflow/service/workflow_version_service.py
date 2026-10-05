@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import func, update
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.modules.base.model.auth import User
@@ -66,9 +67,15 @@ class WorkflowVersionService(BaseAdminCrudService):
         code: str | None = None,
         name: str | None = None,
         description: str | None = None,
+        base_updated_at: datetime | None = None,
         current_user: User | None = None,
     ) -> WorkflowDefinitionVersion:
-        """保存草稿（editor 保存入口）。无草稿建 draft 版本；有则覆盖。同步 code/name/description。"""
+        """保存草稿（editor 保存入口）。无草稿建 draft 版本；有则覆盖。同步 code/name/description。
+
+        base_updated_at 非空时启用乐观锁：CAS 条件追加 updated_at 比对，不一致即 409
+        （他人已保存），拒绝静默 last-write-wins。该表三处 Core 写入均显式 set
+        updated_at，故此列可信（before_update 事件不覆盖 Core 写入）。
+        """
         definition = self._get_definition_owned(definition_id, current_user)
         validate_graph_json(graph_json)
 
@@ -84,17 +91,26 @@ class WorkflowVersionService(BaseAdminCrudService):
         now = datetime.now(UTC)
         draft_vid = definition.draft_version_id
         if draft_vid is not None:
-            # 覆盖现有草稿 graph（CAS draft→draft，状态异常则 fallback 建新草稿）
+            # 覆盖现有草稿 graph（CAS draft→draft + 可选乐观锁，状态异常则 fallback 建新草稿）
+            conditions = [
+                WorkflowDefinitionVersion.id == draft_vid,
+                WorkflowDefinitionVersion.status == WorkflowVersionStatus.DRAFT,
+            ]
+            if base_updated_at is not None:
+                conditions.append(WorkflowDefinitionVersion.updated_at == base_updated_at)
             result = self.session.execute(
-                update(WorkflowDefinitionVersion)
-                .where(
-                    WorkflowDefinitionVersion.id == draft_vid,
-                    WorkflowDefinitionVersion.status == WorkflowVersionStatus.DRAFT,
-                )
-                .values(graph_json=graph_json, updated_at=now)
+                update(WorkflowDefinitionVersion).where(*conditions).values(graph_json=graph_json, updated_at=now)
             )
             if result.rowcount == 0:
-                draft_vid = None  # 草稿已被并发发布，重建
+                current = self.session.get(WorkflowDefinitionVersion, draft_vid)
+                if not current or current.status != WorkflowVersionStatus.DRAFT:
+                    draft_vid = None  # 草稿已被并发发布，重建
+                else:
+                    self.session.rollback()
+                    raise HTTPException(
+                        status_code=409,
+                        detail="草稿已被他人修改（乐观锁冲突），请刷新加载最新内容后重试",
+                    )
         if draft_vid is None:
             draft_vid = self._create_draft(definition, graph_json)
 
@@ -128,10 +144,10 @@ class WorkflowVersionService(BaseAdminCrudService):
         publisher_id = current_user.id if current_user else None
         draft_graph = draft.graph_json  # 建新草稿用（CAS 后状态会变）
 
-        # 1) 旧 published CAS→archived
+        # 1) 旧 published CAS→archived（rowcount=0 说明旧发布版状态被并发改动）
         old_pub_vid = definition.current_version_id
         if old_pub_vid is not None:
-            self.session.execute(
+            result = self.session.execute(
                 update(WorkflowDefinitionVersion)
                 .where(
                     WorkflowDefinitionVersion.id == old_pub_vid,
@@ -139,6 +155,9 @@ class WorkflowVersionService(BaseAdminCrudService):
                 )
                 .values(status=WorkflowVersionStatus.ARCHIVED, updated_at=now)
             )
+            if result.rowcount == 0:
+                self.session.rollback()
+                raise HTTPException(status_code=409, detail="发布冲突：旧发布版本状态已变更，请刷新后重试")
 
         # 2) draft CAS→published（rowcount=0 抛 409 并发冲突）
         result = self.session.execute(
@@ -159,32 +178,37 @@ class WorkflowVersionService(BaseAdminCrudService):
             self.session.rollback()
             raise HTTPException(status_code=409, detail="草稿状态已变更（可能被并发发布），请刷新后重试")
 
-        # 3) 主表指针迁移：current 指向新发布版，draft 暂置空（随后建新草稿回填）
+        # 3) 主表指针迁移：current 指向新发布版，draft 暂置空（同事务内建新草稿后回填）
         self.session.execute(
             update(WorkflowDefinition)
             .where(WorkflowDefinition.id == definition_id)
             .values(current_version_id=draft_vid, draft_version_id=None)
         )
-        self.session.commit()
 
-        # 4) 自动建新草稿（graph 复制自刚发布版）
-        self.session.refresh(definition)
-        new_draft = WorkflowDefinitionVersion(
-            definition_id=definition_id,
-            version_no=self._next_version_no(definition_id),
-            status=WorkflowVersionStatus.DRAFT,
-            graph_json=draft_graph,
-            parent_version_id=draft_vid,
-            user_id=definition.user_id,
-        )
-        self.session.add(new_draft)
-        self.session.flush()
-        self.session.execute(
-            update(WorkflowDefinition)
-            .where(WorkflowDefinition.id == definition_id)
-            .values(draft_version_id=new_draft.id)
-        )
-        self.session.commit()
+        # 4) 自动建新草稿（graph 复制自刚发布版）——与 1-3 同一事务，消除
+        # 「发布已成功但新草稿未建」（draft_version_id=None，editor 无草稿可续编）的中间态
+        try:
+            new_draft = WorkflowDefinitionVersion(
+                definition_id=definition_id,
+                version_no=self._next_version_no(definition_id),
+                status=WorkflowVersionStatus.DRAFT,
+                graph_json=draft_graph,
+                parent_version_id=draft_vid,
+                user_id=definition.user_id,
+            )
+            self.session.add(new_draft)
+            self.session.flush()
+            self.session.execute(
+                update(WorkflowDefinition)
+                .where(WorkflowDefinition.id == definition_id)
+                .values(draft_version_id=new_draft.id)
+            )
+            self.session.commit()
+        except IntegrityError:
+            # (definition_id, version_no) 唯一约束兜底并发分配；单事务化后整体回滚，
+            # 不再出现「发布已成功但接口 500 且无草稿」的半完成态
+            self.session.rollback()
+            raise HTTPException(status_code=409, detail="发布冲突：版本号分配冲突，请刷新后重试")
         return self.session.get(WorkflowDefinitionVersion, draft_vid)  # type: ignore[return-value]
 
     # ---------------------------------- 回滚 ----------------------------------
@@ -209,8 +233,11 @@ class WorkflowVersionService(BaseAdminCrudService):
         now = datetime.now(UTC)
         note = change_note or f"回滚自 v{target.version_no}"
         draft_vid = definition.draft_version_id
+        covered = False
         if draft_vid is not None:
-            self.session.execute(
+            # CAS 覆盖现有草稿；rowcount=0 说明草稿已被并发发布/改动，走新建草稿兜底
+            # （此前静默 0 行仍返回指向已发布行的 draftVersionId，是关联缺口）
+            result = self.session.execute(
                 update(WorkflowDefinitionVersion)
                 .where(
                     WorkflowDefinitionVersion.id == draft_vid,
@@ -223,9 +250,11 @@ class WorkflowVersionService(BaseAdminCrudService):
                     updated_at=now,
                 )
             )
-            self.session.commit()
-            self.session.refresh(definition)
-        else:
+            covered = result.rowcount > 0
+            if covered:
+                self.session.commit()
+                self.session.refresh(definition)
+        if not covered:
             new_draft = WorkflowDefinitionVersion(
                 definition_id=definition_id,
                 version_no=self._next_version_no(definition_id),

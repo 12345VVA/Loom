@@ -85,7 +85,11 @@ class WorkflowDefinitionVersionDetailRead(WorkflowDefinitionVersionRead):
 
 
 class WorkflowSaveDraftRequest(BaseModel):
-    """保存草稿（editor 保存入口）。挂 definition controller。"""
+    """保存草稿（editor 保存入口）。挂 definition controller。
+
+    base_updated_at：乐观锁基线——前端回显加载草稿时的 updated_at，与库内不一致
+    说明草稿已被并发修改，拒绝静默覆盖（409）。None 时跳过校验（兼容旧调用方）。
+    """
 
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
@@ -94,6 +98,7 @@ class WorkflowSaveDraftRequest(BaseModel):
     code: str | None = None
     name: str | None = None
     description: str | None = None
+    base_updated_at: datetime | None = None
 
 
 class WorkflowPublishRequest(BaseModel):

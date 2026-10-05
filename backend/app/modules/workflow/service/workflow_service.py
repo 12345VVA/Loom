@@ -290,6 +290,8 @@ class WorkflowService(BaseAdminCrudService):
             v = self.session.get(WorkflowDefinitionVersion, draft_vid)
             if v:
                 data["draftGraphJson"] = v.graph_json
+                # 草稿乐观锁基线：editor 保存时经 baseUpdatedAt 回传比对
+                data["draftUpdatedAt"] = v.updated_at
 
 
 class WorkflowInstanceService(BaseAdminCrudService):

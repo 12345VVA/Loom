@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 from helpers import make_test_engine
+from sqlalchemy import update
 from sqlmodel import Session, SQLModel, select
 
 from app.modules.base.model.auth import User
@@ -85,6 +86,50 @@ class VersioningTestCase(unittest.TestCase):
             self._svc().save_draft(self.def_id, _graph(), current_user=_user(2))
         self.assertEqual(cm.exception.status_code, 403)
 
+    def test_save_draft_optimistic_lock(self):
+        """base_updated_at 乐观锁：基线一致放行、不一致 409、None 跳过校验、草稿被并发发布仍走重建。"""
+        from datetime import timedelta
+
+        svc = self._svc()
+        v1 = svc.save_draft(self.def_id, _graph(base=1), current_user=_user(1))
+        self.assertIsNotNone(v1.updated_at)
+        baseline = v1.updated_at
+
+        # 模拟他人保存：显式推进库内 updated_at 与内容（避免依赖时钟精度）
+        newer = baseline + timedelta(seconds=10)
+        self.session.execute(
+            update(WorkflowDefinitionVersion)
+            .where(WorkflowDefinitionVersion.id == v1.id)
+            .values(graph_json=_graph(base=2), updated_at=newer)
+        )
+        self.session.commit()
+
+        # 过期基线 → 409，不做静默覆盖
+        with self.assertRaises(HTTPException) as cm:
+            svc.save_draft(self.def_id, _graph(base=3), base_updated_at=baseline, current_user=_user(1))
+        self.assertEqual(cm.exception.status_code, 409)
+        draft = self.session.get(WorkflowDefinitionVersion, v1.id)
+        self.assertEqual(json.loads(draft.graph_json)["nodes"][0]["config"]["k"], 2)  # 内容未被覆盖
+
+        # 当前基线（与他人保存后的 updated_at 一致）→ 正常覆盖
+        v2 = svc.save_draft(self.def_id, _graph(base=4), base_updated_at=newer, current_user=_user(1))
+        self.assertEqual(v2.id, v1.id)
+
+        # 基线为 None → 跳过校验（兼容旧调用方）
+        v3 = svc.save_draft(self.def_id, _graph(base=5), current_user=_user(1))
+        self.assertEqual(v3.id, v1.id)
+
+        # 草稿被并发发布后：即使带过期基线也走重建路径而非 409
+        self.session.execute(
+            update(WorkflowDefinitionVersion)
+            .where(WorkflowDefinitionVersion.id == v1.id)
+            .values(status=WorkflowVersionStatus.PUBLISHED)
+        )
+        self.session.commit()
+        rebuilt = svc.save_draft(self.def_id, _graph(base=6), base_updated_at=v1.updated_at, current_user=_user(1))
+        self.assertNotEqual(rebuilt.id, v1.id)
+        self.assertEqual(rebuilt.status, WorkflowVersionStatus.DRAFT)
+
     # --------------------------------- publish ---------------------------------
 
     def test_publish_promotes_draft_and_archives_old(self):
@@ -110,6 +155,47 @@ class VersioningTestCase(unittest.TestCase):
         with self.assertRaises(HTTPException) as cm:
             self._svc().publish(self.def_id, None, current_user=_user(1))
         self.assertEqual(cm.exception.status_code, 400)
+
+    def test_publish_conflict_when_old_published_mutated(self):
+        """旧 published 版本被并发改动（CAS rowcount=0）→ 409，且整体不产生半完成态。"""
+        svc = self._svc()
+        svc.save_draft(self.def_id, _graph(1), current_user=_user(1))
+        pub1 = svc.publish(self.def_id, "first", current_user=_user(1))
+        svc.save_draft(self.def_id, _graph(2), current_user=_user(1))
+
+        # 模拟并发：把旧发布版状态改成 archived（publish 的 CAS 前提失效）
+        self.session.execute(
+            update(WorkflowDefinitionVersion)
+            .where(WorkflowDefinitionVersion.id == pub1.id)
+            .values(status=WorkflowVersionStatus.ARCHIVED)
+        )
+        self.session.commit()
+
+        with self.assertRaises(HTTPException) as cm:
+            svc.publish(self.def_id, "second", current_user=_user(1))
+        self.assertEqual(cm.exception.status_code, 409)
+
+    def test_rollback_falls_back_to_new_draft_when_draft_published(self):
+        """rollback 时草稿已被并发发布（CAS rowcount=0）→ 兜底新建草稿而非返回指向已发布行的 id。"""
+        svc = self._svc()
+        svc.save_draft(self.def_id, _graph(base=1), current_user=_user(1))
+        pub1 = svc.publish(self.def_id, "v1", current_user=_user(1))
+        stale_draft_id = self.session.get(WorkflowDefinition, self.def_id).draft_version_id
+
+        # 模拟并发：当前草稿被直接发布（status 不再是 DRAFT）
+        self.session.execute(
+            update(WorkflowDefinitionVersion)
+            .where(WorkflowDefinitionVersion.id == stale_draft_id)
+            .values(status=WorkflowVersionStatus.PUBLISHED, published_at=pub1.published_at)
+        )
+        self.session.commit()
+
+        result = svc.rollback(self.def_id, pub1.id, None, current_user=_user(1), immediate=False)
+        new_draft = self.session.get(WorkflowDefinitionVersion, result["draftVersionId"])
+        self.assertIsNotNone(new_draft)
+        self.assertEqual(new_draft.status, WorkflowVersionStatus.DRAFT)  # 是新建草稿而非已发布行
+        self.assertNotEqual(new_draft.id, stale_draft_id)
+        self.assertEqual(json.loads(new_draft.graph_json)["nodes"][0]["config"]["k"], 1)  # 内容=v1
 
     # --------------------------------- rollback ---------------------------------
 

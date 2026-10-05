@@ -15,6 +15,8 @@ export function useWorkflowIO(options: {
 	workflowName: Ref<string>;
 	workflowCode: Ref<string>;
 	workflowDescription: Ref<string>;
+	/** 草稿乐观锁基线：加载时由 info 的 draftUpdatedAt 写入，保存时经 useSaveFlow 回传 */
+	draftUpdatedAt: Ref<string | null>;
 	elements: Ref<(FlowNode | FlowEdge)[]>;
 	aiProfiles: Ref<Eps.profile[]>;
 	buildGraphPayload: () => Record<string, unknown>;
@@ -30,6 +32,7 @@ export function useWorkflowIO(options: {
 		workflowName,
 		workflowCode,
 		workflowDescription,
+		draftUpdatedAt,
 		elements,
 		aiProfiles,
 		buildGraphPayload,
@@ -49,6 +52,8 @@ export function useWorkflowIO(options: {
 			workflowName.value = res.name ?? '';
 			workflowCode.value = res.code ?? '';
 			workflowDescription.value = res.description || '';
+			// 草稿乐观锁基线（草稿行 updateTime），保存时回传 baseUpdatedAt
+			draftUpdatedAt.value = res.draftUpdatedAt ?? null;
 
 			// 加载草稿拓扑（纯版本表模型：graph 存版本表，info 回填 draftGraphJson）
 			if (res.draftGraphJson && res.draftGraphJson !== '{}') {

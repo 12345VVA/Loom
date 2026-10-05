@@ -71,6 +71,7 @@ class WorkflowDefinitionController(BaseController):
             code=payload.code,
             name=payload.name,
             description=payload.description,
+            base_updated_at=payload.base_updated_at,
             current_user=current_user,
         )
         return WorkflowDefinitionVersionRead.model_validate(version).model_dump(by_alias=True)

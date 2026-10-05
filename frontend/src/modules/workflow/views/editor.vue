@@ -330,6 +330,8 @@ const workflowId = ref<string | null>(null);
 const workflowName = ref('');
 const workflowCode = ref('');
 const workflowDescription = ref('');
+// 草稿乐观锁基线：加载时由 useWorkflowIO 写入（info.draftUpdatedAt），保存时回传 baseUpdatedAt
+const draftUpdatedAt = ref<string | null>(null);
 const saving = ref(false);
 const selectedNodeId = ref<string | null>(null);
 const isDirty = ref(false);
@@ -404,6 +406,7 @@ const { saveWorkflow } = useSaveFlow({
 	workflowCode,
 	workflowName,
 	workflowDescription,
+	draftUpdatedAt,
 	service,
 	buildGraphPayload,
 	persistSignature,
@@ -434,6 +437,7 @@ const { fetchWorkflowData, fetchAiProfiles, publishWorkflow, exportWorkflow } = 
 	workflowName,
 	workflowCode,
 	workflowDescription,
+	draftUpdatedAt,
 	elements,
 	aiProfiles,
 	buildGraphPayload,

@@ -23,6 +23,8 @@ export function useSaveFlow(opts: {
 	workflowCode: Ref<string>;
 	workflowName: Ref<string>;
 	workflowDescription: Ref<string>;
+	/** 草稿乐观锁基线：加载时的草稿 updateTime，保存时经 baseUpdatedAt 回传（None 跳过校验） */
+	draftUpdatedAt: Ref<string | null>;
 	service: any;
 	buildGraphPayload: () => any;
 	persistSignature: (els: any[]) => string;
@@ -72,13 +74,17 @@ export function useSaveFlow(opts: {
 			const graphPayload = opts.buildGraphPayload();
 
 			// 4. 保存草稿（纯版本表模型：graph 存版本表草稿，未发布不上线）
-			await opts.service.workflow.definition.saveDraft({
+			// baseUpdatedAt 乐观锁：基线不一致后端返回 409，拒绝静默覆盖他人修改
+			const res = await opts.service.workflow.definition.saveDraft({
 				definitionId: Number(opts.workflowId.value),
 				code: opts.workflowCode.value,
 				name: opts.workflowName.value,
 				description: opts.workflowDescription.value,
-				graphJson: JSON.stringify(graphPayload)
+				graphJson: JSON.stringify(graphPayload),
+				baseUpdatedAt: opts.draftUpdatedAt.value || undefined
 			});
+			// 以保存后的草稿 updateTime 刷新乐观锁基线
+			opts.draftUpdatedAt.value = res?.updateTime ?? opts.draftUpdatedAt.value;
 
 			ElMessage.success(t('草稿保存成功（发布后生效）'));
 			opts.isDirty.value = false;
