@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 import unittest
 from datetime import UTC, datetime
 from unittest.mock import patch
@@ -58,6 +60,7 @@ from app.modules.ai.service.ai_service import (
     AiModelService,
     AiProviderService,
 )
+from app.modules.ai.service.runtime_service import _STREAM_HEARTBEAT, _with_heartbeat
 from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
 
 
@@ -1899,6 +1902,135 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(events[0]["event"], "delta")
         self.assertEqual(events[0]["content"], "hi")
         self.assertEqual(events[-1]["usage"]["totalTokens"], 3)
+
+    def test_ollama_adapter_sends_auth_header(self):
+        """配置了 api_key 时（如经鉴权网关暴露），请求必须携带鉴权头而非静默忽略。"""
+        provider = AiProvider(
+            code="ollama", name="Ollama", adapter="ollama", api_key_cipher=encrypt_secret("sk-ollama")
+        )
+        adapter = OllamaAdapter(provider)
+
+        class FakeStreamResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def raise_for_status(self):
+                return None
+
+            def iter_lines(self):
+                return iter([json.dumps({"done": True})])
+
+        with patch("httpx.stream", return_value=FakeStreamResponse()) as mock_stream:
+            list(adapter.stream_chat(model="llama", messages=[{"role": "user", "content": "hi"}], options={}))
+
+        headers = mock_stream.call_args.kwargs["headers"]
+        self.assertEqual(headers["Authorization"], "Bearer sk-ollama")
+
+    def test_with_heartbeat_emits_sentinel_during_silence(self):
+        def slow_events():
+            yield {"event": "delta", "content": "a"}
+            time.sleep(0.15)
+            yield {"event": "delta", "content": "b"}
+
+        items = list(_with_heartbeat(slow_events(), interval=0.05))
+
+        self.assertEqual(items[0], {"event": "delta", "content": "a"})
+        self.assertEqual(items[-1], {"event": "delta", "content": "b"})
+        heartbeats = [item for item in items if item is _STREAM_HEARTBEAT]
+        self.assertGreaterEqual(len(heartbeats), 1)
+
+    def test_with_heartbeat_passthrough_without_silence(self):
+        def fast_events():
+            yield {"seq": 1}
+            yield {"seq": 2}
+
+        items = list(_with_heartbeat(fast_events(), interval=5.0))
+
+        self.assertEqual(items, [{"seq": 1}, {"seq": 2}])
+
+    def test_with_heartbeat_propagates_upstream_error(self):
+        def bad_events():
+            yield {"seq": 1}
+            raise RuntimeError("upstream boom")
+
+        with self.assertRaises(RuntimeError):
+            list(_with_heartbeat(bad_events(), interval=5.0))
+
+    def test_with_heartbeat_stops_pump_after_close(self):
+        started = threading.Event()
+
+        def endless_events():
+            started.set()
+            while True:
+                time.sleep(0.01)
+                yield {"tick": True}
+
+        stream = _with_heartbeat(endless_events(), interval=5.0)
+        self.assertEqual(next(stream), {"tick": True})
+        # 模拟客户端断开：生成器关闭后 pump 线程须随 stop 标志退出
+        stream.close()
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            if not any(t.name == "ai-stream-heartbeat-pump" for t in threading.enumerate()):
+                break
+            time.sleep(0.02)
+        self.assertFalse(any(t.name == "ai-stream-heartbeat-pump" for t in threading.enumerate()))
+
+    def test_runtime_stream_chat_does_not_touch_request_session(self):
+        """P1 回归：流式生成器在线程池迭代，不得复用非线程安全的请求会话做 DB 操作。"""
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
+        self.session.add(profile)
+        self.session.commit()
+
+        in_stream = {"active": False}
+        request_session = self.session
+        touched: list[str] = []
+
+        def _spy(method_name: str):
+            original = getattr(request_session, method_name)
+
+            def wrapper(*args, **kwargs):
+                if in_stream["active"]:
+                    touched.append(method_name)
+                return original(*args, **kwargs)
+
+            return wrapper
+
+        for name in ("add", "commit", "flush", "execute", "exec", "get"):
+            setattr(request_session, name, _spy(name))
+
+        class FakeAdapter:
+            def stream_chat(self, *, model, messages, options):
+                yield {"event": "delta", "content": "he"}
+                # begin 已在首事件前执行；此后到收尾之间请求会话必须零参与
+                in_stream["active"] = True
+                yield {"event": "delta", "content": "llo"}
+                yield {"event": "done", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            chunks = list(
+                AiModelRuntimeService(self.session).stream_chat(
+                    AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+                )
+            )
+
+        in_stream["active"] = False
+        events = _parse_sse_chunks(chunks)
+        self.assertEqual(events[-1]["event"], "done")
+        self.assertEqual(touched, [])
 
     def test_claude_adapter_unsupported_embedding(self):
         provider = AiProvider(code="claude", name="Claude", adapter="claude", api_key_cipher=encrypt_secret("key"))

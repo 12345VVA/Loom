@@ -15,6 +15,7 @@ class OllamaAdapter(BaseHttpAdapter):
         response = httpx.post(
             f"{self.base_url}/api/chat",
             json={"model": model, "messages": messages, "stream": False, "options": options},
+            headers=self._headers(),
             timeout=self.timeout,
         )
         response.raise_for_status()
@@ -34,6 +35,7 @@ class OllamaAdapter(BaseHttpAdapter):
             "POST",
             f"{self.base_url}/api/chat",
             json={"model": model, "messages": messages, "stream": True, "options": options},
+            headers=self._headers(),
             timeout=self.timeout,
         ) as response:
             response.raise_for_status()
@@ -55,7 +57,10 @@ class OllamaAdapter(BaseHttpAdapter):
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         text = input if isinstance(input, str) else "\n".join(input)
         response = httpx.post(
-            f"{self.base_url}/api/embeddings", json={"model": model, "prompt": text, **options}, timeout=self.timeout
+            f"{self.base_url}/api/embeddings",
+            json={"model": model, "prompt": text, **options},
+            headers=self._headers(),
+            timeout=self.timeout,
         )
         response.raise_for_status()
         data = response.json()
@@ -65,13 +70,13 @@ class OllamaAdapter(BaseHttpAdapter):
         raise UnsupportedCapabilityError("Ollama 暂不支持统一图像生成接口")
 
     def test(self) -> dict:
-        response = httpx.get(f"{self.base_url}/api/tags", timeout=10)
+        response = httpx.get(f"{self.base_url}/api/tags", headers=self._headers(), timeout=10)
         response.raise_for_status()
         data = response.json()
         return {"success": True, "count": len(data.get("models", []))}
 
     def list_models(self) -> list[dict[str, Any]]:
-        response = httpx.get(f"{self.base_url}/api/tags", timeout=10)
+        response = httpx.get(f"{self.base_url}/api/tags", headers=self._headers(), timeout=10)
         response.raise_for_status()
         data = response.json()
         result: list[dict[str, Any]] = []

@@ -5,6 +5,8 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import queue
+import threading
 import time
 import time as time_module
 from collections.abc import Iterable
@@ -60,6 +62,65 @@ logger = logging.getLogger(__name__)
 # 防止 fallback 链成环时 _invoke 失败→_fallback→_invoke 形成无限递归（最终 RecursionError 崩 worker）
 _fallback_depth: contextvars.ContextVar[int] = contextvars.ContextVar("ai_fallback_depth", default=0)
 MAX_FALLBACK_DEPTH = 5
+
+# 流式静默心跳间隔：上游超过该时长无任何事件产出时输出 SSE 注释帧保活，
+# 避免首 token 等待 / 深度思考期间被中间代理或公网网关（Cloudflare/ALB 默认空闲超时）掐断
+_STREAM_HEARTBEAT_INTERVAL_SECONDS = 15.0
+
+# 心跳/结束哨兵：仅在 _with_heartbeat 的内部队列中流转，不会进入业务事件流
+_STREAM_HEARTBEAT = object()
+_STREAM_DONE = object()
+
+
+def _with_heartbeat(events: Iterable[dict], interval: float = _STREAM_HEARTBEAT_INTERVAL_SECONDS) -> Iterable[dict]:
+    """为同步上游事件流插入心跳哨兵（静默超过 interval 秒时产出 _STREAM_HEARTBEAT）。
+
+    同步生成器阻塞在上游 read 时控制权不回到循环体，无法自行插心跳；
+    借一个 pump 线程把"等待下一条事件"转成"带超时的队列等待"。上游异常经
+    队列原样透传给主迭代重新 raise，保持现有降级分支语义不变。生成器关闭
+    （客户端断开）时通过 stop 事件通知 pump 退出——若其正阻塞在上游 read，
+    最迟在下一条数据或 adapter 读超时后退出（daemon 线程兜底）。
+    """
+    events_queue: queue.Queue = queue.Queue()
+    stop = threading.Event()
+
+    def _pump() -> None:
+        try:
+            for event in events:
+                if stop.is_set():
+                    break
+                events_queue.put(event)
+        except BaseException as exc:  # noqa: BLE001 - 需要把上游任意异常转交主迭代处理
+            events_queue.put(exc)
+        finally:
+            events_queue.put(_STREAM_DONE)
+
+    threading.Thread(target=_pump, daemon=True, name="ai-stream-heartbeat-pump").start()
+    try:
+        while True:
+            try:
+                item = events_queue.get(timeout=interval)
+            except queue.Empty:
+                yield _STREAM_HEARTBEAT
+                continue
+            if item is _STREAM_DONE:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        stop.set()
+
+
+def _independent_session(request_session: Session) -> Session:
+    """为流式生成器创建与请求会话同库的独立 Session。
+
+    流式生成器由 Starlette 在 AnyIO 线程池中迭代,线程与创建请求会话的事件循环不同,
+    而 SQLAlchemy Session 非线程安全(流式专项审查 P1)。这里按请求会话的 bind 另开
+    会话:生产环境与请求同库,测试环境天然指向用例自身的内存库引擎(make_test_engine)。
+    不能改用全局 SessionLocal——其绑定全局 engine,会写穿测试隔离。
+    """
+    return Session(request_session.get_bind())
 
 
 def _make_absolute_url(path: str) -> str:
@@ -129,6 +190,7 @@ class AiModelRuntimeService:
         st: _InvocationState,
         usage: dict[str, Any],
         *,
+        session: Session,
         user: User | None,
         cost_micro_usd: int,
         request_id: str | None = None,
@@ -157,6 +219,7 @@ class AiModelRuntimeService:
             cost_micro_usd=cost_micro_usd,
             request_id=request_id,
             options=options,
+            session=session,
         )
 
     def _audit_failure(
@@ -166,6 +229,7 @@ class AiModelRuntimeService:
         usage: dict[str, Any],
         detail: str | None,
         *,
+        session: Session,
         user: User | None,
         request_id: str | None = None,
         options: dict[str, Any] | None = None,
@@ -193,6 +257,7 @@ class AiModelRuntimeService:
             user=user,
             request_id=request_id,
             options=options,
+            session=session,
         )
 
     def _block_invocation(
@@ -202,6 +267,7 @@ class AiModelRuntimeService:
         usage: dict[str, Any],
         detail: str,
         *,
+        session: Session,
         user: User | None,
         request_id: str | None = None,
         options: dict[str, Any] | None = None,
@@ -220,6 +286,7 @@ class AiModelRuntimeService:
             user=user,
             request_id=request_id,
             options=options,
+            session=session,
         )
 
     def chat(self, payload: AiChatRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
@@ -386,6 +453,7 @@ class AiModelRuntimeService:
                 cost_micro_usd=cost_micro_usd,
                 request_id=result.get("requestId"),
                 options=effective_options,
+                session=self.session,
             )
             if method == "image":
                 logger.info(
@@ -415,16 +483,24 @@ class AiModelRuntimeService:
             return {"success": True, "provider": provider.code, "model": model.code, "profile": profile.code, **result}
         except AiGovernanceUnavailable as exc:
             # Redis 故障导致 cost 类并发规则无法判定：fail-closed 返回 503（P0-17）
-            self._block_invocation(st, "unavailable", usage, str(exc), user=current_user, options=effective_options)
+            self._block_invocation(
+                st, "unavailable", usage, str(exc), user=current_user, options=effective_options, session=self.session
+            )
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         except AiGovernanceBlocked as exc:
-            self._block_invocation(st, "blocked", usage, str(exc), user=current_user, options=effective_options)
+            self._block_invocation(
+                st, "blocked", usage, str(exc), user=current_user, options=effective_options, session=self.session
+            )
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
         except UnsupportedCapabilityError as exc:
-            self._audit_failure(st, "unsupported", usage, str(exc), user=current_user, options=effective_options)
+            self._audit_failure(
+                st, "unsupported", usage, str(exc), user=current_user, options=effective_options, session=self.session
+            )
             raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
         except Exception as exc:
-            self._audit_failure(st, "error", usage, str(exc), user=current_user, options=effective_options)
+            self._audit_failure(
+                st, "error", usage, str(exc), user=current_user, options=effective_options, session=self.session
+            )
             # 所有方法失败统一打一条结构化 ERROR（含完整 traceback）；
             # request_id 由 Formatter 自动从 contextvar 注入，无需在此重复
             logger.error(
@@ -505,7 +581,10 @@ class AiModelRuntimeService:
         skip_masking: bool = False,
     ) -> Iterable[str]:
         start = time.perf_counter()
-        st = _InvocationState.from_resolved(self.session, resolved, start)
+        # 流式生成器由 Starlette 在 AnyIO 线程池中迭代，与创建请求会话的事件循环线程不同，
+        # SQLAlchemy Session 非线程安全：改用同库独立会话，随生成器 finally 关闭
+        session = _independent_session(self.session)
+        st = _InvocationState.from_resolved(session, resolved, start)
         provider, model, profile = st.provider, st.model, st.profile
         content_parts: list[str] = []
         usage: dict[str, Any] = {}
@@ -521,10 +600,16 @@ class AiModelRuntimeService:
             )
             adapter = build_adapter(provider)
             with _adapter_timeout(adapter, profile.timeout):
-                stream_events = adapter.stream_chat(
-                    model=model.code, messages=messages, options=_options_without_governance(options)
+                stream_events = _with_heartbeat(
+                    adapter.stream_chat(
+                        model=model.code, messages=messages, options=_options_without_governance(options)
+                    )
                 )
                 for event in stream_events:
+                    if event is _STREAM_HEARTBEAT:
+                        # SSE 注释帧保活：前端 parseSse 跳过 ':' 行，不影响业务事件解析
+                        yield ": heartbeat\n\n"
+                        continue
                     request_id = event.get("requestId") or request_id
                     usage = event.get("usage") or usage
                     event_name = event.get("event")
@@ -538,7 +623,15 @@ class AiModelRuntimeService:
                         continue
                     if event_name == "error":
                         message = event.get("content") or "模型流式调用失败"
-                        self._audit_failure(st, "error", usage, str(message), user=current_user, request_id=request_id)
+                        self._audit_failure(
+                            st,
+                            "error",
+                            usage,
+                            str(message),
+                            user=current_user,
+                            request_id=request_id,
+                            session=session,
+                        )
                         yield _sse_event({"event": "error", "message": str(message), "status": 400})
                         return
                     if event_name == "done":
@@ -562,23 +655,45 @@ class AiModelRuntimeService:
                 cost_micro_usd=cost_micro_usd,
                 request_id=request_id,
                 options=request_options,
+                session=session,
             )
             done_sent = True
             yield _sse_event(done_payload)
         except AiGovernanceUnavailable as exc:
             # Redis 故障导致 cost 类并发规则无法判定：fail-closed 返回 503（P0-17）
             self._block_invocation(
-                st, "unavailable", usage, str(exc), user=current_user, request_id=request_id, options=request_options
+                st,
+                "unavailable",
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+                options=request_options,
+                session=session,
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 503})
         except AiGovernanceBlocked as exc:
             self._block_invocation(
-                st, "blocked", usage, str(exc), user=current_user, request_id=request_id, options=request_options
+                st,
+                "blocked",
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+                options=request_options,
+                session=session,
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 429})
         except UnsupportedCapabilityError as exc:
             self._audit_failure(
-                st, "unsupported", usage, str(exc), user=current_user, request_id=request_id, options=request_options
+                st,
+                "unsupported",
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+                options=request_options,
+                session=session,
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 501})
         except Exception as exc:
@@ -607,16 +722,31 @@ class AiModelRuntimeService:
                     structured_response,
                     response_format_overridden,
                     current_user=current_user,
+                    session=session,
                 )
                 if fallback is not None:
                     self._audit_failure(
-                        st, "error", usage, str(exc), user=current_user, request_id=request_id, options=request_options
+                        st,
+                        "error",
+                        usage,
+                        str(exc),
+                        user=current_user,
+                        request_id=request_id,
+                        options=request_options,
+                        session=session,
                     )
                     yield from fallback
                     return
             if not done_sent:
                 self._audit_failure(
-                    st, "error", usage, str(exc), user=current_user, request_id=request_id, options=request_options
+                    st,
+                    "error",
+                    usage,
+                    str(exc),
+                    user=current_user,
+                    request_id=request_id,
+                    options=request_options,
+                    session=session,
                 )
                 yield _sse_event({"event": "error", "message": f"模型调用失败: {exc}", "status": 400})
         finally:
@@ -631,8 +761,9 @@ class AiModelRuntimeService:
                     usage=usage,
                     cost_micro_usd=0,
                 )
+            session.close()
 
-    def _fallback_chain_has_cycle(self, profile: AiModelProfile) -> bool:
+    def _fallback_chain_has_cycle(self, profile: AiModelProfile, session: Session) -> bool:
         """运行期同步检测 fallback 链是否存在环或超过最大深度。
 
         不依赖 contextvar，对流式生成器的惰性求值同样可靠，作为保存期环校验的运行期兜底
@@ -645,7 +776,7 @@ class AiModelRuntimeService:
             if cursor.id in visited:
                 return True
             visited.add(cursor.id)
-            nxt = self.session.get(AiModelProfile, cursor.fallback_profile_id)
+            nxt = session.get(AiModelProfile, cursor.fallback_profile_id)
             if nxt is None:
                 return False
             cursor = nxt
@@ -660,11 +791,13 @@ class AiModelRuntimeService:
         structured_response: dict[str, Any] | None = None,
         response_format_overridden: bool = False,
         current_user: User | None = None,
+        *,
+        session: Session,
     ) -> Iterable[str] | None:
         if not profile.fallback_profile_id:
             return None
         # 运行期同步防环（不依赖 contextvar 的生成器时序，流式路径可靠）：堵住并发/脏数据成环导致的无限递归
-        if self._fallback_chain_has_cycle(profile):
+        if self._fallback_chain_has_cycle(profile, session):
             logger.warning("AI 流式 fallback 链检测到环或超深，停止降级")
             return None
         # 深度兜底：fallback 链过长时停止降级
@@ -674,14 +807,14 @@ class AiModelRuntimeService:
             return None
         token = _fallback_depth.set(depth + 1)
         try:
-            fallback = self.session.get(AiModelProfile, profile.fallback_profile_id)
+            fallback = session.get(AiModelProfile, profile.fallback_profile_id)
             if not fallback:
                 return None
-            model = self.session.get(AiModel, fallback.model_id)
-            provider = self.session.get(AiProvider, model.provider_id) if model else None
+            model = session.get(AiModel, fallback.model_id)
+            provider = session.get(AiProvider, model.provider_id) if model else None
             if not model or not provider or not model.is_active or not provider.is_active:
                 return None
-            options = {**AiModelRegistryService(self.session)._merge_options(model, fallback), **request_options}
+            options = {**AiModelRegistryService(session)._merge_options(model, fallback), **request_options}
             if structured_response:
                 options["response_format"] = structured_response
             elif response_format_overridden:
@@ -712,7 +845,7 @@ class AiModelRuntimeService:
         if not profile.fallback_profile_id:
             return None
         # 运行期同步防环（不依赖 contextvar）：堵住并发/脏数据成环导致的无限递归
-        if self._fallback_chain_has_cycle(profile):
+        if self._fallback_chain_has_cycle(profile, self.session):
             logger.warning("AI fallback 链检测到环或超深，停止降级")
             return None
         # 深度兜底：fallback 链过长时停止降级
@@ -769,6 +902,8 @@ class AiModelRuntimeService:
         start: float,
         usage: dict,
         error: str | None = None,
+        *,
+        session: Session,
         user: User | None = None,
         cost_micro_usd: int = 0,
         request_id: str | None = None,
@@ -800,7 +935,7 @@ class AiModelRuntimeService:
             workflow_instance_id=workflow_instance_id_ctx.get(),
             request_options=request_options_str,
         )
-        self.session.add(log)
-        self.session.commit()
+        session.add(log)
+        session.commit()
         # 失效统计看板缓存：新调用日志已落库，旧聚合结果不再准确
         invalidate_summary_cache()
