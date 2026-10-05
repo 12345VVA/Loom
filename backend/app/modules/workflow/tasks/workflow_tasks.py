@@ -427,8 +427,9 @@ async def async_execute(
         cm = get_async_checkpointer() if use_checkpointer else contextlib.nullcontext()
         async with cm as checkpointer:
             compiled = graph.compile(checkpointer=checkpointer) if use_checkpointer else graph.compile()
-            logger.info("[Workflow] Graph compiled successfully, instance=%d, checkpointer=%s",
-                        instance_id, use_checkpointer)
+            logger.info(
+                "[Workflow] Graph compiled successfully, instance=%d, checkpointer=%s", instance_id, use_checkpointer
+            )
 
             config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 100}
 

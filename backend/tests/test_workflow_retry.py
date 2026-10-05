@@ -179,9 +179,7 @@ class RunNodeStandaloneTestCase(unittest.TestCase):
     """
 
     def _run_standalone(self, config: dict, mock_variables: dict | None = None):
-        return asyncio.run(
-            WorkflowCompiler.run_node_standalone("n1", "llm", config, mock_variables or {})
-        )
+        return asyncio.run(WorkflowCompiler.run_node_standalone("n1", "llm", config, mock_variables or {}))
 
     def test_retry_applied_in_standalone(self):
         """单节点测试同样走重试：前 2 次瞬时失败、第 3 次成功。"""

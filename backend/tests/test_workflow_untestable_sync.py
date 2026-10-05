@@ -14,9 +14,7 @@ from pathlib import Path
 from app.modules.workflow.service.graph_validate import UNTESTABLE_NODE_TYPES
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-FRONTEND_CONSTANTS = (
-    BACKEND_ROOT.parent / "frontend" / "src" / "modules" / "workflow" / "components" / "constants.ts"
-)
+FRONTEND_CONSTANTS = BACKEND_ROOT.parent / "frontend" / "src" / "modules" / "workflow" / "components" / "constants.ts"
 
 
 class UntestableNodeTypesSyncTestCase(unittest.TestCase):

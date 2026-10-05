@@ -54,7 +54,9 @@ class WorkflowInstance(BaseEntity, table=True):
     # 运行类型：production 正式 | trial 编辑器试运行（草稿版）| eval 批量评估。
     # 测试实例的产物打同款标记、失败不发通知、列表默认过滤（见 _notify_workflow_failure / QueryConfig field_eq）
     run_type: str = Field(default="production", index=True, max_length=20)
-    eval_run_id: int | None = Field(default=None, index=True)  # eval 专有：回溯 WorkflowEvalRun（trial/production 为 NULL）
+    eval_run_id: int | None = Field(
+        default=None, index=True
+    )  # eval 专有：回溯 WorkflowEvalRun（trial/production 为 NULL）
 
     @property
     def is_test(self) -> bool:

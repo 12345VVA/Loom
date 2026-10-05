@@ -34,9 +34,7 @@ def _user(uid: int) -> User:
 
 
 def _graph() -> str:
-    return json.dumps(
-        {"nodes": [{"id": "n0", "type": "test", "name": "N0", "config": {}}], "edges": []}
-    )
+    return json.dumps({"nodes": [{"id": "n0", "type": "test", "name": "N0", "config": {}}], "edges": []})
 
 
 class RunTypeInstanceTestCase(unittest.TestCase):
@@ -56,7 +54,6 @@ class RunTypeInstanceTestCase(unittest.TestCase):
 
     def test_start_instance_is_production(self):
         WorkflowVersionService(self.session).save_draft(self.def_id, _graph(), current_user=_user(1))
-        d = self.session.get(WorkflowDefinition, self.def_id)
         WorkflowVersionService(self.session).publish(self.def_id, "v1", current_user=_user(1))
 
         inst_svc = WorkflowInstanceService(self.session)
