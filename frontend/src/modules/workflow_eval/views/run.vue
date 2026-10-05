@@ -28,7 +28,7 @@
 							class="is-loading"
 							style="vertical-align: -2px; margin-right: 2px"
 						>
-							<Loading />
+							<loading />
 						</el-icon>
 						{{ statusLabel(scope.row.status) }}
 					</el-tag>

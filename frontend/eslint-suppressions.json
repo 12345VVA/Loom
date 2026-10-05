@@ -596,7 +596,7 @@
   },
   "src/modules/workflow/composables/useNodeTest.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 8
+      "count": 9
     }
   },
   "src/modules/workflow/composables/useSaveFlow.ts": {
@@ -666,12 +666,12 @@
   },
   "src/modules/workflow/views/editor.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 9
+      "count": 11
     }
   },
   "src/modules/workflow/views/instance.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 20
+      "count": 22
     }
   },
   "src/modules/workflow/views/version.vue": {
@@ -711,7 +711,7 @@
   },
   "src/modules/workflow_eval/views/run.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 27
+      "count": 31
     }
   },
   "src/modules/workflow_eval/views/suite.vue": {

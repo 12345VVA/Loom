@@ -267,7 +267,8 @@ class SweepCheckpointThreadsTest(unittest.TestCase):
             if thread_id in fail_threads:
                 return False
             with self.engine.begin() as conn:
-                conn.exec_driver_sql("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+                # text() 具名参数：方言无关（exec_driver_sql 的 ? 是 SQLite 专属，PG/psycopg 下崩溃）
+                conn.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": thread_id})
             return True
 
         return _delete
