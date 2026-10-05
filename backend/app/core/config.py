@@ -87,7 +87,11 @@ class Settings(BaseSettings):
     CAPTCHA_SLIDER_TOLERANCE: int = 12
     CAPTCHA_SLIDER_MIN_DURATION_MS: int = 450
     CAPTCHA_SLIDER_MIN_TRACK_POINTS: int = 6
+    CAPTCHA_SLIDER_MAX_TRACK_POINTS: int = 300  # 轨迹点数上限（M2：防超大载荷）
     CAPTCHA_SLIDER_MAX_BACKTRACK_PX: int = 8
+    # H1：自报拖拽时长与轨迹末点时刻的最大间隔（同源时钟；过小说明轨迹/时长各自编造，
+    # 过大会误伤"拖完停住再松手"，默认 5s 宽松值）
+    CAPTCHA_SLIDER_MAX_RELEASE_GAP_MS: int = 5000
     BASE_LOGIN_FAIL_WINDOW: int = 15 * 60
     BASE_LOGIN_ACCOUNT_FAIL_MAX: int = 5
     BASE_LOGIN_IP_FAIL_MAX: int = 20

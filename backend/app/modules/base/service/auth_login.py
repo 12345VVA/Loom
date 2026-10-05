@@ -71,7 +71,9 @@ class LoginMixin:
             try:
                 self.captcha_check(payload.captcha_id, payload.verify_code)
             except HTTPException as exc:
-                self._mark_login_failure(payload.username, login_ip)
+                # H2：验证码失败只计 IP 失败计数，不计账号——校验无需凭证，
+                # 计入账号即成"仅凭用户名锁死任意账号"的 DoS 原语
+                self._mark_login_failure(payload.username, login_ip, count_account=False)
                 self._record_login_log(
                     request=request,
                     account=payload.username,
@@ -294,9 +296,17 @@ class LoginMixin:
             return "当前IP请求过于频繁，请稍后再试"
         return None
 
-    def _mark_login_failure(self, account: str, ip: str) -> int:
-        account_failures = self._increase_counter(
-            self._build_account_fail_key(account), settings.BASE_LOGIN_FAIL_WINDOW
+    def _mark_login_failure(self, account: str, ip: str, *, count_account: bool = True) -> int:
+        """累计登录失败（账号+IP 双计数）并在达阈值时锁定。
+
+        count_account=False：仅计 IP 计数——用于验证码失败分支（H2）。验证码校验发生在
+        密码校验之前且无需任何凭证，若计入账号计数，仅凭用户名 5 次请求即可锁死任意
+        账号 15 分钟（DoS 原语）。IP 计数保留：同一 IP 持续撞验证码仍受 20 次/15min 锁约束。
+        """
+        account_failures = (
+            self._increase_counter(self._build_account_fail_key(account), settings.BASE_LOGIN_FAIL_WINDOW)
+            if count_account
+            else 0
         )
         ip_failures = self._increase_counter(self._build_ip_fail_key(ip), settings.BASE_LOGIN_FAIL_WINDOW)
         risk_hit = 0

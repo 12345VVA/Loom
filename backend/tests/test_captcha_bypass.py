@@ -144,6 +144,138 @@ class CaptchaBypassTests(unittest.TestCase):
             self._check(captcha_id, self._track(100))
         self.assertEqual(cm.exception.status_code, 401)
 
+    # --------------------------------- H1 ---------------------------------
+
+    def _verify(self, *, x: float, duration: int, points: list[dict]) -> str:
+        return json.dumps({"x": x, "duration": duration, "track": points})
+
+    def test_h1_track_time_going_backwards_rejected(self):
+        """t 必须单调非递减（前端与 duration 同源），时间倒流属伪造载荷。"""
+        issue = self._issue()
+        verify_code = self._verify(
+            x=100,
+            duration=720,
+            points=[{"x": 10, "t": 300}, {"x": 50, "t": 200}, {"x": 100, "t": 720}],
+        )
+        with self.assertRaises(HTTPException) as cm:
+            self._check(issue["captchaId"], verify_code)
+        self.assertEqual(cm.exception.status_code, 401)
+
+    def test_h1_last_t_exceeds_duration_rejected(self):
+        """末点时刻不得超过自报拖拽时长（同源时钟 +200ms 事件循环余量）。"""
+        issue = self._issue()
+        verify_code = self._verify(
+            x=100,
+            duration=720,
+            points=[{"x": i * 20, "t": t} for i, t in enumerate((100, 200, 300, 400, 500, 2000))],
+        )
+        with self.assertRaises(HTTPException) as cm:
+            self._check(issue["captchaId"], verify_code)
+        self.assertEqual(cm.exception.status_code, 401)
+
+    def test_h1_release_gap_too_large_rejected(self):
+        """拖拽时长与末点时刻间隔超限（轨迹与 duration 各自编造）→ 401。"""
+        issue = self._issue()
+        verify_code = self._verify(
+            x=100,
+            duration=10000,  # ≤ TTL 窗口、≥ 最小时长，但与末点 t=720 间隔 9s > 5s
+            points=[{"x": i * 20, "t": t} for i, t in enumerate((100, 200, 300, 400, 500, 720))],
+        )
+        with self.assertRaises(HTTPException) as cm:
+            self._check(issue["captchaId"], verify_code)
+        self.assertEqual(cm.exception.status_code, 401)
+
+    def test_h1_duration_over_expire_window_rejected(self):
+        """自报拖拽时长超过验证码时效窗口（TTL 120s）→ 伪造载荷。"""
+        issue = self._issue()
+        verify_code = self._verify(
+            x=100,
+            duration=200000,
+            points=[{"x": i * 20, "t": t} for i, t in enumerate((1, 2, 3, 4, 5, 6))],
+        )
+        with self.assertRaises(HTTPException) as cm:
+            self._check(issue["captchaId"], verify_code)
+        self.assertEqual(cm.exception.status_code, 401)
+
+    def test_m2_track_point_cap_rejected(self):
+        """轨迹点数超上限（M2：防超大载荷占用工作线程）→ 401。"""
+        issue = self._issue()
+        points = [{"x": i % 200, "t": i} for i in range(settings.CAPTCHA_SLIDER_MAX_TRACK_POINTS + 1)]
+        verify_code = self._verify(x=100, duration=5000, points=points)
+        with self.assertRaises(HTTPException) as cm:
+            self._check(issue["captchaId"], verify_code)
+        self.assertEqual(cm.exception.status_code, 401)
+
+
+class CaptchaLockoutTests(unittest.TestCase):
+    """H2 回归：验证码失败不得计入账号失败计数（否则仅凭用户名 5 次请求即可锁死任意账号）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+        cls.client.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
+
+    def setUp(self):
+        from app.modules.base.service.cache_service import cache_delete_pattern as dp
+
+        dp("login:fail:*")
+        dp("login:lock:*")
+        self.client.cookies.clear()
+
+    def tearDown(self):
+        from app.modules.base.service.cache_service import cache_delete_pattern as dp
+
+        dp("login:fail:*")
+        dp("login:lock:*")
+
+    def _valid_captcha_login(self) -> object:
+        """正确密码 + 真实求解的验证码 → 应当登录成功（200）。"""
+        captcha_res = self.client.get("/admin/base/open/captcha")
+        self.assertEqual(captcha_res.status_code, 200)
+        captcha_data = captcha_res.json()["data"]
+        return self.client.post(
+            "/admin/base/open/login",
+            json={
+                "username": settings.DEFAULT_ADMIN_USERNAME,
+                "password": settings.DEFAULT_ADMIN_PASSWORD,
+                "captchaId": captcha_data["captchaId"],
+                "verifyCode": _valid_verify_code(captcha_data),
+            },
+        )
+
+    def test_captcha_failures_do_not_lock_account(self):
+        """5 次错误验证码（无凭证）后，正确凭证 + 合法验证码仍可登录——账号未被锁定。"""
+        # 修复前：验证码失败计入账号计数，5 次即触发 900s 账号锁 → 下一步 429
+        for _ in range(settings.BASE_LOGIN_ACCOUNT_FAIL_MAX):
+            res = self.client.post(
+                "/admin/base/open/login",
+                json={
+                    "username": settings.DEFAULT_ADMIN_USERNAME,
+                    "password": settings.DEFAULT_ADMIN_PASSWORD,
+                    "captchaId": None,
+                    "verifyCode": None,
+                },
+            )
+            self.assertIn(res.status_code, (401, 422), res.text)
+
+        login_res = self._valid_captcha_login()
+        self.assertEqual(
+            login_res.status_code, 200, f"验证码失败不应锁账号，实际: {login_res.status_code} {login_res.text}"
+        )
+
+
+def _valid_verify_code(captcha_data: dict) -> str:
+    """从服务端缓存读答案构造合法求解轨迹（与 test_auth_security_fixes 同法）。"""
+    captcha_id = captcha_data["captchaId"]
+    cached = cache_get(AuthService._build_captcha_cache_key(captcha_id))
+    target_x = int(json.loads(cached)["target_x"])
+    track = [{"x": round(target_x * step / 6, 2), "t": step * 120} for step in range(1, 7)]
+    return json.dumps({"x": target_x, "duration": 720, "track": track})
+
 
 if __name__ == "__main__":
     unittest.main()

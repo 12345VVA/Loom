@@ -215,32 +215,52 @@ class CaptchaMixin:
         if abs(final_x - target_x) > tolerance:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
         if duration_ms < settings.CAPTCHA_SLIDER_MIN_DURATION_MS:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证速度过快，请重试")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        # H1：自报拖拽时长不得超过验证码时效窗口（拖 10 分钟再提交属伪造载荷）
+        if duration_ms > settings.CAPTCHA_EXPIRE_SECONDS * 1000:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        # M2：轨迹点数上限（防数 MB JSON + 数十万点占用工作线程 CPU/内存）
         if not isinstance(track, list) or len(track) < settings.CAPTCHA_SLIDER_MIN_TRACK_POINTS:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        if len(track) > settings.CAPTCHA_SLIDER_MAX_TRACK_POINTS:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
 
+        # H1：轨迹时间轴交叉校验——前端 t 与 duration 同源（Date.now 差值），要求
+        # 非负、单调非递减、末点不超过自报时长（+事件循环余量）、时长与末点间隔有界。
+        # 定位是弱防护（脚本可伪造一致时间轴），强度来自一次性消费+失败锁定+限流的叠加。
         previous_x = -1.0
+        previous_t = -1
         backtrack_total = 0.0
         for point in track:
             if not isinstance(point, dict):
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
             try:
                 current_x = float(point["x"])
+                current_t = int(point["t"])
             except (KeyError, TypeError, ValueError, OverflowError):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
             if not math.isfinite(current_x):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+            if current_t < 0 or current_t < previous_t:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+            previous_t = current_t
             if current_x < previous_x:
                 backtrack = previous_x - current_x
                 backtrack_total += backtrack
                 if backtrack > settings.CAPTCHA_SLIDER_MAX_BACKTRACK_PX:
-                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
             previous_x = current_x
 
         if backtrack_total > settings.CAPTCHA_SLIDER_MAX_BACKTRACK_PX * 2:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
         if abs(previous_x - final_x) > tolerance:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码轨迹异常")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        # H1：末点时刻不得超过自报时长（同源时钟，200ms 为事件循环余量）；
+        # 时长与末点间隔过大说明轨迹与 duration 各自编造
+        if previous_t > duration_ms + 200:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        if duration_ms - previous_t > settings.CAPTCHA_SLIDER_MAX_RELEASE_GAP_MS:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
 
     @staticmethod
     def _build_captcha_cache_key(captcha_id: str) -> str:
