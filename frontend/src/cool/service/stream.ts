@@ -36,13 +36,16 @@ export function useStream() {
 			}
 		}
 
+		// GET/HEAD 不允许携带 body：传了 data 也必须丢弃，否则 fetch 直接抛 TypeError
+		const hasBody = method.toUpperCase() !== 'GET' && method.toUpperCase() !== 'HEAD';
+
 		return fetch(config.baseUrl + url, {
 			method,
 			headers: {
 				Authorization: authToken,
-				'Content-Type': 'application/json'
+				...(hasBody ? { 'Content-Type': 'application/json' } : {})
 			},
-			body: JSON.stringify(data),
+			body: hasBody ? JSON.stringify(data) : undefined,
 			signal: abortController?.signal
 		})
 			.then(res => {

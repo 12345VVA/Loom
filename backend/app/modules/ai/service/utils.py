@@ -235,6 +235,12 @@ def _summarize_binary_like(value: Any, kind: str = "binary") -> dict[str, Any]:
 
 @contextmanager
 def _adapter_timeout(adapter, timeout: int | None):
+    """临时收紧适配器上游超时。
+
+    语义是 httpx 的 read timeout（两次数据到达之间的最大间隔），并非整条流的总时长上限：
+    流式场景下它约束逐 chunk 的静默间隔，防上游挂死；对下游客户端的连接保活由
+    _with_heartbeat 负责，两者正交，勿混用。
+    """
     if timeout is None:
         yield
         return

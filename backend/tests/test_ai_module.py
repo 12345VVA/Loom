@@ -1879,6 +1879,8 @@ class AiModuleTestCase(unittest.TestCase):
         adapter = OllamaAdapter(provider)
 
         class FakeStreamResponse:
+            headers = {"x-request-id": "req-ollama-test"}
+
             def __enter__(self):
                 return self
 
@@ -1902,6 +1904,9 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(events[0]["event"], "delta")
         self.assertEqual(events[0]["content"], "hi")
         self.assertEqual(events[-1]["usage"]["totalTokens"], 3)
+        # 上游请求标识头须逐事件透传供审计回收（P3 遗留）
+        self.assertEqual(events[0]["requestId"], "req-ollama-test")
+        self.assertEqual(events[-1]["requestId"], "req-ollama-test")
 
     def test_ollama_adapter_sends_auth_header(self):
         """配置了 api_key 时（如经鉴权网关暴露），请求必须携带鉴权头而非静默忽略。"""
@@ -1911,6 +1916,8 @@ class AiModuleTestCase(unittest.TestCase):
         adapter = OllamaAdapter(provider)
 
         class FakeStreamResponse:
+            headers = {}
+
             def __enter__(self):
                 return self
 

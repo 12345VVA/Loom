@@ -28,6 +28,7 @@ class OllamaAdapter(BaseHttpAdapter):
                 "completionTokens": data.get("eval_count") or 0,
                 "totalTokens": (data.get("prompt_eval_count") or 0) + (data.get("eval_count") or 0),
             },
+            "requestId": response.headers.get("x-request-id") or response.headers.get("request-id"),
         }
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
@@ -39,20 +40,22 @@ class OllamaAdapter(BaseHttpAdapter):
             timeout=self.timeout,
         ) as response:
             response.raise_for_status()
+            # Ollama 服务端通常不下发请求标识头，读到 None 属预期，仅在有头时可供审计追溯
+            request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
             for line in response.iter_lines():
                 if not line:
                     continue
                 data = _loads_line(line)
                 content = (data.get("message") or {}).get("content")
                 if content:
-                    yield {"event": "delta", "content": content, "raw": data}
+                    yield {"event": "delta", "content": content, "raw": data, "requestId": request_id}
                 if data.get("done"):
                     usage = {
                         "promptTokens": data.get("prompt_eval_count") or 0,
                         "completionTokens": data.get("eval_count") or 0,
                         "totalTokens": (data.get("prompt_eval_count") or 0) + (data.get("eval_count") or 0),
                     }
-                    yield {"event": "done", "raw": data, "usage": usage}
+                    yield {"event": "done", "raw": data, "usage": usage, "requestId": request_id}
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         text = input if isinstance(input, str) else "\n".join(input)

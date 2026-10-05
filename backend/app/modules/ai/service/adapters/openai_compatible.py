@@ -34,10 +34,12 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
             "content": getattr(message, "content", None),
             "raw": data,
             "usage": normalize_usage(data.get("usage") if isinstance(data, dict) else {}),
+            "requestId": extract_request_id(response),
         }
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
         stream = self.client.chat.completions.create(model=model, messages=messages, stream=True, **options)
+        request_id = extract_request_id(stream)
         for chunk in stream:
             data = chunk.model_dump(mode="json") if hasattr(chunk, "model_dump") else {}
             choice = (data.get("choices") or [{}])[0]
@@ -48,11 +50,17 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
             usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
             # DeepSeek 等思考模型的思维链增量，按 thinking_delta 事件透传（不混入正文）
             if reasoning_delta:
-                yield {"event": "thinking_delta", "content": reasoning_delta, "raw": data}
+                yield {"event": "thinking_delta", "content": reasoning_delta, "raw": data, "requestId": request_id}
             if delta:
-                yield {"event": "delta", "content": delta, "raw": data}
+                yield {"event": "delta", "content": delta, "raw": data, "requestId": request_id}
             if usage or finish_reason:
-                yield {"event": "done", "raw": data, "usage": usage, "finishReason": finish_reason}
+                yield {
+                    "event": "done",
+                    "raw": data,
+                    "usage": usage,
+                    "finishReason": finish_reason,
+                    "requestId": request_id,
+                }
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         response = self.client.embeddings.create(model=model, input=input, **options)
