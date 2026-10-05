@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import math
 import re
 import secrets
@@ -31,6 +32,8 @@ CAPTCHA_RENDER_HEIGHT = 120
 _CANDIDATE_BAND_RATIO = 10
 _PUZZLE_SIZE = 44
 _CAPTCHA_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+logger = logging.getLogger(__name__)
 
 
 def _fernet() -> Fernet:
@@ -59,6 +62,7 @@ def _reject_non_finite_constant(value: str) -> float:
     IEEE-754 下任何与 NaN 的数值比较恒为 False，位置/轨迹校验会被整体短路；
     JSON 规范本就不含这些常量，Python 默认 allow_nan 属于方言宽容，此处收紧。
     """
+    logger.warning("验证码校验拒绝：verify_code 含非法数值常量 %s（疑似绕过尝试，L4）", value)
     raise ValueError(f"非法数值常量: {value}")
 
 
@@ -131,6 +135,7 @@ class CaptchaMixin:
         issue_ip = client_ip or "unknown"
         issued = cache_incr(f"captcha:issue:{issue_ip}", settings.CAPTCHA_ISSUE_WINDOW_SECONDS)
         if issued is not None and issued > settings.CAPTCHA_ISSUE_MAX_PER_WINDOW:
+            logger.warning("验证码签发限流触发 ip=%s issued=%d（M1/L4）", issue_ip, issued)
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="验证码获取过于频繁，请稍后再试")
 
         # 参数范围校验，防止恶意输入
@@ -255,6 +260,7 @@ class CaptchaMixin:
 
         # C1 纵深：非有限值（含缓存被写坏的场景）直接拒绝，位置/轨迹比较不允许退化
         if not (math.isfinite(target_x) and math.isfinite(tolerance) and math.isfinite(final_x)):
+            logger.warning("验证码校验拒绝：入参含非有限值（final_x=%r，疑似绕过尝试，L4）", final_x)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
 
         if abs(final_x - target_x) > tolerance:
