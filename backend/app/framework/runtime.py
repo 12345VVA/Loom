@@ -1,4 +1,9 @@
-"""框架运行时依赖注册表（DI）。
+"""框架运行时（FastAPI 胶水 + DI 门面）。
+
+M9 定义下沉：RuntimeRegistry / registry / FrameworkRuntimeError 的实现位于
+app/core/runtime.py（core 层自洽，core/security 直接消费 core 侧符号）；
+本模块保留 FastAPI 相关胶水并门面 re-export 注册表符号，既有引用方
+（main 装配点、framework 中间件、controller_meta、守卫探针）import 路径不变。
 
 framework 层不 import 任何业务模块（架构守卫强制）；base 等业务模块在
 应用装配期（main.py 顶层，早于路由构建）通过 registry.register 注册实现，
@@ -11,8 +16,6 @@ framework 消费侧经 registry.resolve 或下方稳定委托函数获取实现�
 
 from __future__ import annotations
 
-import threading
-from collections.abc import Callable
 from typing import Any
 
 from fastapi import Depends, Request
@@ -20,34 +23,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
 from app.core.database import get_session
-
-
-class FrameworkRuntimeError(RuntimeError):
-    """框架运行时依赖缺失（业务模块未完成装配）。"""
-
-
-class RuntimeRegistry:
-    """线程安全的名字 → 实现注册表（controller_meta 注册表同款范式）。"""
-
-    def __init__(self) -> None:
-        self._lock = threading.RLock()
-        self._impls: dict[str, Callable[..., Any]] = {}
-
-    def register(self, name: str, impl: Callable[..., Any]) -> None:
-        with self._lock:
-            self._impls[name] = impl
-
-    def resolve(self, name: str) -> Callable[..., Any]:
-        with self._lock:
-            impl = self._impls.get(name)
-        if impl is None:
-            raise FrameworkRuntimeError(
-                f"框架运行时依赖未注册: {name}（业务模块装配缺失，检查应用入口的 registry.register）"
-            )
-        return impl
-
-
-registry = RuntimeRegistry()
+from app.core.runtime import FrameworkRuntimeError as FrameworkRuntimeError
+from app.core.runtime import RuntimeRegistry as RuntimeRegistry
+from app.core.runtime import registry as registry
 
 # 与 base 现实现行为等价的 bearer 提取器（无 token 时 credentials 为 None，
 # 由注册的实现决定 401/放行语义——不在此处强制报错）

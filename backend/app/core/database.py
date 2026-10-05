@@ -11,7 +11,7 @@ from sqlalchemy.orm import SessionTransactionOrigin
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.config import settings
-from app.framework.models.entity import BaseEntity
+from app.core.models.entity import BaseEntity
 
 
 def _autodiscover_models() -> None:

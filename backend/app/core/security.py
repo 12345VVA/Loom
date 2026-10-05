@@ -15,7 +15,7 @@ import jwt
 from fastapi import HTTPException, status
 
 from app.core.config import settings
-from app.framework.runtime import registry
+from app.core.runtime import registry
 
 # 常见弱密码黑名单
 COMMON_WEAK_PASSWORDS = {

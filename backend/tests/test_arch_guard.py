@@ -186,6 +186,26 @@ class ArchitectureGuardTests(unittest.TestCase):
             + "\n".join(f"  {f} -> {m}" for f, m in sorted(stale)),
         )
 
+    def test_core_never_imports_framework(self):
+        """断言 app/core 对 app.framework 零依赖（全 AST 含延迟 import，递归子目录）。
+
+        core→framework 的唯一历史边（database.py 引 BaseEntity）已随 M9 定义下沉清零：
+        BaseEntity 平移至 app/core/models/entity.py，framework/models/entity.py 留门面
+        re-export。自此依赖方向单一：framework→core、modules→{core, framework}；
+        core 出现任何指向 app.framework 的 import（含函数体内）一律失败。
+        """
+        violations = []
+        for py_file in CORE_DIR.rglob("*.py"):
+            for imp in _get_all_app_imports(py_file):
+                if imp.startswith("app.framework"):
+                    violations.append(f"{py_file.relative_to(CORE_DIR).as_posix()} -> {imp}")
+
+        self.assertEqual(
+            violations,
+            [],
+            "app/core 出现对 app.framework 的依赖（含延迟 import，全面禁止）：\n" + "\n".join(violations),
+        )
+
     def test_framework_reverse_dependency_whitelist(self):
         """断言 app/framework 对 app.modules 的反向依赖（含函数内延迟 import）不超过「存量容忍」快照。
 
