@@ -255,7 +255,17 @@ class WorkflowInstanceController(BaseController):
             except asyncio.CancelledError:
                 logger.info("工作流实例 %d 的 SSE 监控长连接已被客户端关闭", instance_id)
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        # 反代理防缓冲三件套与 AI 侧 model.py 对齐：Nginx 默认 proxy_buffering on，
+        # 缺 X-Accel-Buffering: no 时节点状态事件会攒到缓冲满才刷出（prod compose 拓扑必现）
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
 
 router = WorkflowInstanceController.router
