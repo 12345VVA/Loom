@@ -103,9 +103,7 @@ class NodeTestPersistTestCase(unittest.TestCase):
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         # 草稿版 graph：含一个可测节点（type 任意，executor 由测试 patch）
-        graph = json.dumps(
-            {"nodes": [{"id": "n1", "type": "llm", "name": "测试节点", "config": {}}], "edges": []}
-        )
+        graph = json.dumps({"nodes": [{"id": "n1", "type": "llm", "name": "测试节点", "config": {}}], "edges": []})
         from app.modules.workflow.model.workflow_version import (
             WorkflowDefinitionVersion,
             WorkflowVersionStatus,
@@ -137,8 +135,6 @@ class NodeTestPersistTestCase(unittest.TestCase):
 
     def _run_test_node(self, executor):
         """统一驱动：patch registry/redis 后执行 test_node，返回 (响应, 实例, 日志行)。"""
-        from unittest.mock import Mock, patch
-
         from app.modules.workflow.service import compiler as compiler_mod
         from app.modules.workflow.service.workflow_service import WorkflowInstanceService
 

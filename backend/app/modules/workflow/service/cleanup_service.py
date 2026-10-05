@@ -47,7 +47,9 @@ class WorkflowCleanupService:
     def __init__(self, session: Session):
         self.session = session
 
-    def sweep_execution_logs(self, keep_days: int, test_node_keep_days: int | None = None, batch_size: int = 500) -> int:
+    def sweep_execution_logs(
+        self, keep_days: int, test_node_keep_days: int | None = None, batch_size: int = 500
+    ) -> int:
         """分批硬删过期执行日志，返回删除行数；删行后 best-effort 删除其载荷文件。
 
         test_node_keep_days：单节点测试日志的独立短保留期（开发期高频操作，载荷大、
@@ -79,10 +81,7 @@ class WorkflowCleanupService:
                 conditions.append(stale_test_filter)
             batch = list(
                 self.session.exec(
-                    select(WorkflowExecutionLog)
-                    .where(*conditions)
-                    .order_by(WorkflowExecutionLog.id)
-                    .limit(batch_size)
+                    select(WorkflowExecutionLog).where(*conditions).order_by(WorkflowExecutionLog.id).limit(batch_size)
                 ).all()
             )
             if not batch:
