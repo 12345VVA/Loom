@@ -1,5 +1,7 @@
 # Workflow 模块代码审查报告
 
+> ✅ **状态已回填（2026-10-05）**：本文档全部 23 项（S1–S7 + M1–M11 + L1–L10 + T1）已**逐条对当前源码复核**并更新标记——**22 项已闭环，仅 L6 大部分修复**。完整的逐条证据（`文件:行号`）见 [遗留审查状态回填-2026-10-05](../deliverables/遗留审查状态回填-2026-10-05.md) §A，以及下方的 §八。工作流模块的后续审查见 [节点模块审查核实（2026-09-22）](../deliverables/节点模块-2026-09-22/审查核实.md) 三件套与 [工作流实施-测试-节点测试边界分析-2026-10-05](../deliverables/工作流实施-测试-节点测试边界分析-2026-10-05.md)。
+
 > **审查日期**：2026-06-22
 > **审查范围**：工作流模块全量（后端 compiler / 执行服务 / 接口安全 + 前端画布 / 节点配置，约 12K 行）
 > **审查方法**：5 维度并行审查 → 对每条严重项回到源码对抗验证 → 剔除误报
@@ -23,11 +25,13 @@
 | S4 | 🔴 严重 | 无法主动取消运行中的工作流 | 【已修复】 |
 | S5 | 🔴 严重 | resume 存在 TOCTOU 并发竞态 | 【已修复】 |
 | S6 | 🔴 严重 | resume 传 None 会从头重跑 | 【已修复】 |
-| S7 | 🔴 严重 | 删除 switch/intent 分支后连线残留错位 | 【未修复】 |
-| M1-M11 | 🟡 中等 | 健壮性 / 一致性 / 体验类问题（共 11 条） | 【未修复】 |
-| L1-L10 | 🔵 轻微 | 代码质量类（共约 10 条） | 【未修复】 |
+| S7 | 🔴 严重 | 删除 switch/intent 分支后连线残留错位 | 【已修复】（2026-10-05 回填） |
+| M1-M11 | 🟡 中等 | 健壮性 / 一致性 / 体验类问题（共 11 条） | 【已修复】（11/11，2026-10-05 回填） |
+| L1-L10 | 🔵 轻微 | 代码质量类（共约 10 条） | 【已修复】9 项闭环 + L10 原已修；**L6 大部分修复** |
+| T1 | 🟡 中等 | 集成测试读写真实 PG 业务数据（测试基础设施） | 【已修复】（方案 A：独立测试库） |
 
 **总体结论**：单节点测试链路与画布交互质量很高；但**生产化前有 7 个确凿的严重问题**，集中在多用户安全隔离、长任务可恢复性、并发控制。
+**回填后结论（2026-10-05）**：上述问题**已由 6–10 月多轮改造实质覆盖**——严重 1/1、中等 11/11、轻微 9/9（L6 大部分）、关联 1/1 全部闭环。回填前"未修复"标记属**状态未同步**，非问题真实存在。详见 [遗留审查状态回填-2026-10-05](../deliverables/遗留审查状态回填-2026-10-05.md)。
 
 ---
 
@@ -111,7 +115,7 @@
 - **问题**：`json.dumps(user_input)` 在 `user_input=None` 时得到字符串 `"null"` → `json.loads("null")=None` → `if resume_val is not None` 不成立 → **走 initial_state 分支，从 start 重新执行**，而非从 human_input 恢复。
 - **影响**：暂停的工作流被误从头重跑，跳过人工输入节点。
 
-### S7 【未修复】删除 switch 的 Case / intent 的分支后连线残留且标签错位（前端唯一确凿 🔴）
+### S7 【已修复】删除 switch 的 Case / intent 的分支后连线残留且标签错位（前端唯一确凿 🔴）
 
 - **严重度**：🔴 严重（正确性）
 - **位置**：[switch-config.vue:23](../frontend/src/modules/workflow/components/node-configs/switch-config.vue#L23)
@@ -126,67 +130,67 @@
 
 ## 二、🟡 中等问题
 
-### M1 【未修复】`validate_graph` 对缺 `id` 的节点抛裸 `KeyError`
+### M1 【已修复】`validate_graph` 对缺 `id` 的节点抛裸 `KeyError`
 
 - **位置**：[compiler.py:198](../backend/app/modules/workflow/service/compiler.py#L198) — `{n["id"]: n for n in nodes}` 无守卫，与 L200 的 `if "id" in n` 守卫自相矛盾
 - **影响**：畸形 JSON（节点缺 id）导致 `KeyError` → Celery 层只写入无意义的 error_message，应给"节点缺少 id 字段"提示
 - **修复**：改为 `if "id" in n` 守卫，并在前面显式校验 id/type 必填
 
-### M2 【未修复】校验与编译对 group→controller 推断不一致
+### M2 【已修复】校验与编译对 group→controller 推断不一致
 
 - **位置**：[compiler.py:299-305](../backend/app/modules/workflow/service/compiler.py#L299-L305) / [337-343](../backend/app/modules/workflow/service/compiler.py#L337-L343) / [881-896](../backend/app/modules/workflow/service/compiler.py#L881-L896)
 - **问题**：三处都从 `loop_body_group.config.controllerNodeId` 推断 controller，但**仅编译阶段有"从边推断"兜底**，校验阶段没有，可能"校验通过但编译崩"
 - **修复**：提取公共推断函数三处统一调用；或校验阶段强制要求显式 `controllerNodeId`
 
-### M3 【未修复】`recover_orphaned_instances` 5 分钟窗口误杀长耗时实例
+### M3 【已修复】`recover_orphaned_instances` 5 分钟窗口误杀长耗时实例
 
 - **位置**：[workflow_service.py:1149](../backend/app/modules/workflow/service/workflow_service.py#L1149) — `timedelta(minutes=5)`
 - **影响**：图像节点常 5-10 分钟，部署重启时正常实例被误判 failed，错误信息"Server restarted"误导排查
 - **修复**：cutoff 拉到与 `task_time_limit` 一致（30 分钟）或基于 `celery_task_id` + `AsyncResult.state` 探活；改为可配置
 
-### M4 【未修复】异常堆栈 `str(e)` 直接回传前端
+### M4 【已修复】异常堆栈 `str(e)` 直接回传前端
 
 - **位置**：[workflow_service.py:78](../backend/app/modules/workflow/service/workflow_service.py#L78) / [1135](../backend/app/modules/workflow/service/workflow_service.py#L1135)、[workflow_tasks.py:192](../backend/app/modules/workflow/tasks/workflow_tasks.py#L192)
 - **影响**：泄露 provider 错误、内部字段名、文件路径，辅助攻击
 - **修复**：对外只返回通用化错误，详细 `str(e)` 仅写入 `logger.error`
 
-### M5 【未修复】`node-inputs-editor` 的 `nameErrors` 跨节点残留 + 不阻断保存/测试
+### M5 【已修复】`node-inputs-editor` 的 `nameErrors` 跨节点残留 + 不阻断保存/测试
 
 - **位置**：[node-config-panel.vue:57-61](../frontend/src/modules/workflow/components/node-config-panel.vue#L57-L61)（该组件在 `:key` div **外**，切换节点不重建）；`node-inputs-editor.vue` 的 `nameErrors` 为组件内 reactive
 - **影响**：跨节点错误提示污染；非法/空 inputs 仍可持久化与提交测试
 - **修复**：`watch(() => props.modelValue, ...)` 清空 `nameErrors`；保存/测试入口阻断非法 inputs
 
-### M6 【未修复】试运行写 `el.class`/`runLog` 触发 deep watch，污染 `isDirty`
+### M6 【已修复】试运行写 `el.class`/`runLog` 触发 deep watch，污染 `isDirty`
 
 - **位置**：`useWorkflowTest.ts:197-235` + `editor.vue` 的 deep watch（约 850-860 行）
 - **影响**：试运行中保存按钮误亮、可能保存运行中快照；每次轮询还清空 `_upstreamCache`
 - **修复**：watch 内排除运行态字段，或引入 `isRunning` 标志短路；把 `runLog`/`class` 移到独立的 `Map<nodeId, runtimeState>`
 
-### M7 【未修复】`duplicateNode` 复制时未清 `runLog`/`class`，且 group 内节点坐标未转换
+### M7 【已修复】`duplicateNode` 复制时未清 `runLog`/`class`，且 group 内节点坐标未转换
 
 - **位置**：`editor.vue:1497-1541`
 - **影响**：复制节点显示伪执行结果、边框变色；group 内节点复制后 `parentNode` 被删但坐标仍是相对 group 的，位置漂移
 - **修复**：`delete newNode.data.runLog; delete newNode.class;` 若原节点有 parentNode，坐标加上 group.position
 
-### M8 【未修复】`useNodeTest` 无 token 隔离，并发测试串结果
+### M8 【已修复】`useNodeTest` 无 token 隔离，并发测试串结果
 
 - **位置**：`useNodeTest.ts:51` / `144-146`
 - **影响**：节点 A 测试中切到 B 再测试，A 返回时结果被写到 B 节点（用 `nodeTestDialog.nodeId` 查找）
 - **修复**：`startNodeTest` 开头 `const token = ++testToken`，异步回来 `if (token !== testToken) return`
 
-### M9 【未修复】`cl-json-tree` 用 `index` 作 `:key`，中间删除字段会错位
+### M9 【已修复】`cl-json-tree` 用 `index` 作 `:key`，中间删除字段会错位
 
 - **位置**：`cl-json-tree-editor.vue:16`、`cl-json-tree-node-item.vue:114`
 - **影响**：Vue 列表按 index 复用 DOM，删除中间项后输入框内容与数据错位
 - **修复**：每个节点分配稳定唯一 id（`crypto.randomUUID()`），`:key="node._uid"`
 
-### M10 【未修复】循环/批处理节点列表长度无上限
+### M10 【已修复】循环/批处理节点列表长度无上限
 
 - **位置**：[workflow_service.py:451-492](../backend/app/modules/workflow/service/workflow_service.py#L451-L492)（循环）/ [495-533](../backend/app/modules/workflow/service/workflow_service.py#L495-L533)（批处理）
 - **影响**：上游 LLM 可返回任意长数组 → "爆炸图"烧 Celery worker + AI 配额；`concurrency_limit` 已限到 ≤20，但列表长度本身无上限
 - **修复**：`execute_loop_controller_node` / `execute_batch_processor_node` 入口对 `len(items)` 设硬上限（如 ≤200）
 
-### M11 【未修复】SafeEvaluator 不支持切片、BoolOp 不短路、dict 缺键即抛
+### M11 【已修复】SafeEvaluator 不支持切片、BoolOp 不短路、dict 缺键即抛
 
 - **位置**：[compiler.py:81-86](../backend/app/modules/workflow/service/compiler.py#L81-L86)（BoolOp 列表推导不短路）、[99-103](../backend/app/modules/workflow/service/compiler.py#L99-L103)（Attribute dict 缺键抛 TypeError）、Subscript 未处理 `ast.Slice`
 - **影响**：条件表达式写法受限（`a and a.field` 防御性写法失败、`messages[0:3]` 切片失败），错误信息晦涩
@@ -198,15 +202,15 @@
 
 | 编号 | 状态 | 位置 | 要点 |
 |---|---|---|---|
-| L1 | 【未修复】 | [compiler.py:536-540](../backend/app/modules/workflow/service/compiler.py#L536-L540) 等 | `node_config[route]=route` 冗余副作用（见下方"误报"说明：不污染执行器，但建议删除） |
-| L2 | 【未修复】 | [compiler.py:174-179](../backend/app/modules/workflow/service/compiler.py#L174-L179) | `convert_keys_to_snake` 递归无深度守卫，深层嵌套可触发 RecursionError |
-| L3 | 【部分修复】 | [compiler.py:811-823](../backend/app/modules/workflow/service/compiler.py#L811-L823) | `apply_input_mappings`：本轮拦截一处**回归**——空映射被改为返回 `{}`，导致未配输入映射的节点（执行器如 `execute_llm_node` 直接用其渲染 prompt）提示词变量全部丢失，已恢复为 `return global_vars`；原"形状不一致"轻微项保留 |
-| L4 | 【未修复】 | `custom-nodes/*.vue` | 所有自定义节点组件普遍缺 `defineOptions({ name })`，影响 keep-alive |
-| L5 | 【未修复】 | [compiler.py:160](../backend/app/modules/workflow/service/compiler.py#L160) | `render_template` 正则会吞掉模板里的 JSON 片段（`{"a":1}` 被当变量路径） |
-| L6 | 【未修复】 | [workflow_service.py:573-597](../backend/app/modules/workflow/service/workflow_service.py#L573-L597) | 图像节点失败静默返回空字符串，UI 无感知 |
-| L7 | 【未修复】 | [workflow.py:134-138](../backend/app/modules/workflow/model/workflow.py#L134-L138) | `WorkflowInstanceResumeRequest.user_input: Any` 绕过 Pydantic 校验 |
-| L8 | 【未修复】 | 限流中间件 IP 维度 | `/testNode`、`/start`、`/resume` 高成本接口仅享 IP 维度限流，建议加 per-user |
-| L9 | 【未修复】 | `useUndoRedo.ts:32-36` | pushSnapshot 满历史时 shift 但 pointer 不更新（不崩溃，但代码异味，建议简化） |
+| L1 | 【已消除】 | [compiler.py:536-540](../backend/app/modules/workflow/service/compiler.py#L536-L540) 等 | `node_config[route]=route` 冗余副作用（见下方"误报"说明：不污染执行器，但建议删除） |
+| L2 | 【已修复】 | [compiler.py:174-179](../backend/app/modules/workflow/service/compiler.py#L174-L179) | `convert_keys_to_snake` 递归无深度守卫，深层嵌套可触发 RecursionError |
+| L3 | 【已修复】 | [compiler.py:811-823](../backend/app/modules/workflow/service/compiler.py#L811-L823) | `apply_input_mappings`：本轮拦截一处**回归**——空映射被改为返回 `{}`，导致未配输入映射的节点（执行器如 `execute_llm_node` 直接用其渲染 prompt）提示词变量全部丢失，已恢复为 `return global_vars`；原"形状不一致"轻微项保留 |
+| L4 | 【已修复】 | `custom-nodes/*.vue` | 所有自定义节点组件普遍缺 `defineOptions({ name })`，影响 keep-alive |
+| L5 | 【已修复】 | [compiler.py:160](../backend/app/modules/workflow/service/compiler.py#L160) | `render_template` 正则会吞掉模板里的 JSON 片段（`{"a":1}` 被当变量路径） |
+| L6 | 【大部分修复】 | [workflow_service.py:573-597](../backend/app/modules/workflow/service/workflow_service.py#L573-L597) | 图像节点失败静默返回空字符串，UI 无感知 |
+| L7 | 【已修复】 | [workflow.py:134-138](../backend/app/modules/workflow/model/workflow.py#L134-L138) | `WorkflowInstanceResumeRequest.user_input: Any` 绕过 Pydantic 校验 |
+| L8 | 【已修复】 | 限流中间件 IP 维度 | `/testNode`、`/start`、`/resume` 高成本接口仅享 IP 维度限流，建议加 per-user |
+| L9 | 【已修复】 | `useUndoRedo.ts:32-36` | pushSnapshot 满历史时 shift 但 pointer 不更新（不崩溃，但代码异味，建议简化） |
 | L10 | 【已修复】 | `workflow_service.py` + `event_bus.py` | `workflow_event_listeners` 死代码已删除；`event_bus.py` 的 import/遍历引用一并移除（此前 `workflow_service.py` 删定义后 `event_bus.py` 仍 `import` 它，导致所有 `cancel` 触发 `ImportError` 的预存回归——本次拦截修复） |
 
 ---
@@ -248,7 +252,7 @@ S1+S2 是**多用户场景下的信息泄露**，风险最高且修复成本最�
 
 > 本节归档在 workflow 安全审查 + PG 迁移过程中发现的测试基础设施问题。虽不属于 workflow 模块代码缺陷，但影响"在真实 PG 上跑测试"的安全性，故记录于此。
 
-### T1 【未修复】集成测试通过 TestClient(app) 读写真实 PG 业务数据
+### T1 【已修复】集成测试通过 TestClient(app) 读写真实 PG 业务数据
 
 - **严重度**：🟡 中等（测试隔离 / 数据污染）
 - **位置**：[test_framework_alignment.py:214-332](../backend/tests/test_framework_alignment.py#L214-L332) — `test_crud_page_and_list_support_get_and_post`、`test_admin_crud_requires_authentication_and_permission`、`test_eps_uses_public_prop_and_source_field` 三个集成测试
@@ -264,6 +268,27 @@ S1+S2 是**多用户场景下的信息泄露**，风险最高且修复成本最�
 
 ---
 
+## 八、状态回填（2026-10-05 源码复核）
+
+> 本节为**权威现状**。原正文各条按创建时点记录，其状态标记已按本次复核更新（见 §二/§三）。
+> 逐条证据（`文件:行号`）见 [遗留审查状态回填-2026-10-05](../deliverables/遗留审查状态回填-2026-10-05.md) §A。
+
+**核心更正**：原横幅称"S7 及约 21 项 M/L 状态未更新"，复核证实这批问题**已被 6–10 月多轮改造实质覆盖**，属**状态未同步**而非真实欠账。
+
+| 组 | 数量 | 复核结论 |
+|---|---|---|
+| 严重 S1–S7 | 7 | ✅ 全部已修复（S7 改用稳定 handle id `case_<id>` + `removeEdges` 精确删边） |
+| 中等 M1–M11 | 11 | ✅ 11/11 已修复 |
+| 轻微 L1–L10 | 10 | ✅ 9 项修复/消除（**L6 大部分修复**）+ L10 原已修 |
+| 关联 T1 | 1 | ✅ 已修复（conftest 兜底 `DATABASE_URL` 指向 SQLite 测试库，方案 A） |
+| **合计** | **29** | **28 闭环，1 项（L6）大部分修复** |
+
+**唯一实质残留（L6）**：生图节点在**厂商返回空 URL** 时（`node_executors.py:417-418`）仍 `return {output_variable: ""}`，UI 无感知。主失败路径（API 调用异常）已改为 `raise`（`:409-414`）。属低危、影响面小。
+
+**检查证据速览**：`graph_validate.py:41-48`（M1）、`workflow_service.py:802`（M3）、`error_format.py`（M4）、`node-config-panel.vue:69-71`（M5）、`editor.vue:625-640`（M6）、`useNodeFactory.ts:166-225`（M7）、`useNodeTest.ts:90/146/168/217`（M8）、`cl-json-tree-*.vue:16/116`（M9）、`node_executors.py:299-346`（M10）、`expressions.py:29-41/88-98/111-115/229-231/177`（M11/L2/L5）、`custom-nodes/*.vue` 16/16 `defineOptions`（L4）、`workflow.py:184-188`（L7）、`rate_limit.py:69-77`（L8）、`useUndoRedo.ts:48-52`（L9）、`backend/tests/conftest.py:20`（T1）。
+
+---
+
 ## 变更记录
 
 | 日期 | 操作 | 说明 |
@@ -273,3 +298,4 @@ S1+S2 是**多用户场景下的信息泄露**，风险最高且修复成本最�
 | 2026-06-23 | 修复 S3/S4/S5/S6 | S3：checkpointer 默认 sqlite + 修 from_conn_string 潜伏 bug + 启动校验；S4：cancel_instance + /cancel + per-node 超时 + 协作式取消 + 终态 CAS；S5：resume DB 原子 CAS（弃 Redis 锁）；S6：None 守卫 + DTO 收紧（兼修 L7）。新增 19 测试，ruff 全绿 |
 | 2026-06-23 | 记录 T1 | 记录测试基础设施问题：集成测试经 `TestClient(app)` 读写真实 PG 业务数据（夹具表污染根因已修，业务表读写层未处理，待后续） |
 | 2026-06-23 | 提交前审查修复 | S1 补 `WorkflowInstanceService.delete` owner 校验（实例删除越权遗漏）；S3 postgres 分支 `from_conn_string` 误用修复（显式 Connection + setup）；L3 恢复 `apply_input_mappings` 空映射返回 `global_vars`（修复提示词变量丢失回归）；L10 删 `workflow_event_listeners` 死代码并修 `event_bus.py` ImportError（cancel 崩溃预存回归）。46 相关测试通过 |
+| 2026-10-05 | **状态回填** | 对当前源码逐条复核全部 23 项（S7 + M1–M11 + L1–L10 + T1）：**22 项闭环，仅 L6 大部分修复**；更新全文状态标记并新增 §八。证据见 [遗留审查状态回填-2026-10-05](../deliverables/遗留审查状态回填-2026-10-05.md) |

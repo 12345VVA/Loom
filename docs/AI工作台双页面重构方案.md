@@ -5,6 +5,8 @@
 > **基准规范**：`AGENTS.md`、`frontend/.cursor/rules/module.mdc`、`frontend/.cursor/rules/ui-guidelines.mdc`  
 > **目标**：彻底消灭 `image.vue`（1,836 行）和 `chat.vue`（1,451 行）两大巨型文件债务，将主视图缩减至 150~200 行，建立清晰的 Composable + 子组件化架构。
 
+> ⏳ **状态标记（2026-10-05 补）**：**方案类文档，未见对应的实施/验收报告**（2026-10-05 归档盘点结论）。是否已落地**尚未核实**——如需推进，请先对照当前 `frontend/src/modules/ai/` 现状确认。索引状态见 [docs/README.md](./README.md) §8。
+
 ---
 
 ## 一、 现状与问题总结
