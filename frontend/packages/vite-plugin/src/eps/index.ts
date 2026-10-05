@@ -442,8 +442,10 @@ async function createDescribe({ list, service }: { list: Eps.Entity[]; service: 
 									// 参数类型
 									let q: string[] = [];
 
-									// 参数列表
-									const { parameters = [] } = a.dts || {};
+									// 参数列表（剔除 _action_name：后端 controller_meta 端点签名的
+									// 全局依赖注入参数，非业务字段，不进 GET 类型签名）
+									const { parameters: allParameters = [] } = a.dts || {};
+									const parameters = allParameters.filter((p) => p.name !== "_action_name");
 
 									// POST/PUT 有请求体：query 参数冒充 body 会过度约束调用侧，参数侧保持 any
 									const hasBody =
