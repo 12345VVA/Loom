@@ -22,7 +22,16 @@
 		<cl-row>
 			<cl-table ref="Table" @selection-change="onSelectionChange">
 				<template #slot-status="{ scope }">
-					<el-tag :type="statusTagType(scope.row.status)" size="small">{{ statusLabel(scope.row.status) }}</el-tag>
+					<el-tag :type="statusTagType(scope.row.status)" size="small">
+						<el-icon
+							v-if="scope.row.status === 'running'"
+							class="is-loading"
+							style="vertical-align: -2px; margin-right: 2px"
+						>
+							<Loading />
+						</el-icon>
+						{{ statusLabel(scope.row.status) }}
+					</el-tag>
 				</template>
 				<template #slot-detail="{ scope }">
 					<el-button text type="primary" @click="openDetail(scope.row)">{{ $t('详情') }}</el-button>
@@ -222,7 +231,8 @@ defineOptions({ name: 'workflow-eval-run' });
 
 import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { reactive, ref } from 'vue';
+import { Loading } from '@element-plus/icons-vue';
+import { onDeactivated, onUnmounted, reactive, ref } from 'vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
@@ -271,7 +281,44 @@ async function onDefinitionChange() {
 	}
 }
 
-const Crud = useCrud({ service: evalService.eval_run }, (app) => app.refresh());
+const Crud = useCrud({ service: evalService.eval_run }, (app) => {
+	// 初次加载后若有进行中的评估则启动实时进度轮询（P1：评估运行当前无任何中态反馈）
+	app.refresh().then((res: any) => checkRunningAndPoll(res));
+});
+
+// 评估实时进度：存在 pending/running 行时每 3s 轮询刷新列表（refresh 保留当前分段/翻页参数）
+let progressTimer: ReturnType<typeof setInterval> | null = null;
+
+function checkRunningAndPoll(res: any) {
+	const rows = res?.list || [];
+	if (rows.some((r: any) => ['pending', 'running'].includes(r.status))) {
+		startProgressPolling();
+	} else {
+		stopProgressPolling();
+	}
+}
+
+function startProgressPolling() {
+	if (progressTimer) return;
+	progressTimer = setInterval(async () => {
+		try {
+			const res = await Crud.value?.refresh();
+			checkRunningAndPoll(res);
+		} catch {
+			// 单次轮询失败忽略，下一轮重试
+		}
+	}, 3000);
+}
+
+function stopProgressPolling() {
+	if (progressTimer) {
+		clearInterval(progressTimer);
+		progressTimer = null;
+	}
+}
+
+onUnmounted(stopProgressPolling);
+onDeactivated(stopProgressPolling);
 
 const selectedRuns = ref<any[]>([]);
 function onSelectionChange(rows: any[]) {
@@ -340,7 +387,7 @@ async function submitStart() {
 		await evalService.eval_run.start(startDialog.form);
 		ElMessage.success(t('评估已发起'));
 		startDialog.visible = false;
-		Crud.value?.refresh();
+		Crud.value?.refresh().then((res: any) => checkRunningAndPoll(res));
 	} catch (err: any) {
 		ElMessage.error(`${t('发起失败')}: ${err.message || err}`);
 	} finally {
