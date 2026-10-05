@@ -105,7 +105,7 @@
 						:disabled="isTestRunDisabled"
 						@click="$emit('open-test-dialog')"
 					>
-						{{ $t('试运行') }}
+						{{ $t('试运行（草稿）') }}
 					</el-button>
 				</div>
 			</el-tooltip>

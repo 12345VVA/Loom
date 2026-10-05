@@ -25,6 +25,8 @@
 						<workflow-icon name="log" :size="18" />
 					</div>
 					<h3 class="drawer-title">{{ title || $t('工作流步骤执行日志') }}</h3>
+					<!-- 运行类型徽标：非生产实例（试运行/评估）显示，生产不占视觉（对齐 IA 规范） -->
+					<run-type-tag v-if="runType && runType !== 'production'" :type="runType" />
 					<el-tag
 						v-if="status !== undefined"
 						:type="statusTagType"
@@ -469,6 +471,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import WorkflowIcon from './workflow-icon.vue';
+import RunTypeTag from './run-type-tag.vue';
 import { copyToClipboard, type WorkflowLogItem } from '../utils';
 import { useI18n } from 'vue-i18n';
 import LogJsonViewer from './log-json-viewer.vue';
@@ -502,6 +505,8 @@ const props = withDefaults(
 		emptyText?: string;
 		/** 提供则显示顶部状态 tag（editor 测试运行用） */
 		status?: string;
+		/** 实例运行类型（production|trial|eval）：非 production 时头部显示徽标 */
+		runType?: string;
 		/** 时间格式：editor 测试日志用 HH:mm:ss，instance 步骤日志用完整日期 */
 		timeFormat?: string;
 	}>(),
@@ -510,6 +515,7 @@ const props = withDefaults(
 		size: '820px',
 		loading: false,
 		emptyText: '',
+		runType: 'production',
 		timeFormat: 'HH:mm:ss'
 	}
 );

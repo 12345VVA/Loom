@@ -3,14 +3,24 @@
 		<cl-row>
 			<cl-refresh-btn />
 			<el-button type="primary" @click="openStartDialog">
-				{{ $t('启动测试实例') }}
+				{{ $t('正式运行') }}
 			</el-button>
 			<cl-flex1 />
+			<!-- 运行类型分段：默认只看生产（测试记录需显式切换，避免正式/测试混淆） -->
+			<el-radio-group v-model="runTypeFilter" @change="onRunTypeChange">
+				<el-radio-button label="production">{{ $t('生产') }}</el-radio-button>
+				<el-radio-button label="trial">{{ $t('试运行') }}</el-radio-button>
+				<el-radio-button label="eval">{{ $t('评估') }}</el-radio-button>
+				<el-radio-button label="all">{{ $t('全部') }}</el-radio-button>
+			</el-radio-group>
 			<cl-search-key :placeholder="$t('搜索状态、当前节点')" />
 		</cl-row>
 
 		<cl-row>
 			<cl-table ref="Table">
+				<template #column-runType="{ scope }">
+					<run-type-tag :type="scope.row.runType" />
+				</template>
 				<template #column-failedNodeId="{ scope }">
 					<el-tooltip
 						v-if="scope.row.status === 'failed' && scope.row.failedNodeId"
@@ -31,10 +41,10 @@
 		</cl-row>
 	</cl-crud>
 
-	<!-- 启动实例测试弹窗 -->
+	<!-- 正式运行弹窗 -->
 	<el-dialog
 		v-model="startDialog.visible"
-		:title="$t('启动工作流实例')"
+		:title="$t('启动工作流生产实例')"
 		width="500px"
 		destroy-on-close
 	>
@@ -102,6 +112,7 @@
 		:items="logDrawer.items"
 		:loading="logDrawer.loading"
 		:title="$t('工作流步骤执行日志')"
+		:run-type="viewingRunType"
 		size="850px"
 		time-format="YYYY-MM-DD HH:mm:ss"
 		:empty-text="$t('暂无节点执行步骤记录')"
@@ -124,6 +135,7 @@ import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
 import LogDrawer from '../components/log-drawer.vue';
 import ArtifactDrawer from '../components/artifact-drawer.vue';
+import RunTypeTag from '../components/run-type-tag.vue';
 import { formatVersionNo } from '../utils';
 
 const { service } = useCool();
@@ -145,6 +157,7 @@ interface WorkflowInstance {
 	definitionId: number;
 	threadId: string;
 	status: 'pending' | 'running' | 'paused' | 'success' | 'failed';
+	runType?: 'production' | 'trial' | 'eval';
 	currentNode?: string;
 	failedNodeId?: string;
 	stateData: string;
@@ -168,6 +181,13 @@ interface WorkflowExecutionLog {
 }
 
 const definitions = ref<WorkflowDefinition[]>([]);
+
+// 运行类型分段过滤：默认只看生产；「全部」时不传 runType（后端无此参数即不过滤）
+const runTypeFilter = ref<'production' | 'trial' | 'eval' | 'all'>('production');
+
+function onRunTypeChange() {
+	Crud.value?.refresh({ runType: runTypeFilter.value === 'all' ? undefined : runTypeFilter.value, page: 1 });
+}
 
 // 启动对话框表单
 const startDialog = reactive({
@@ -196,6 +216,9 @@ const logDrawer = reactive({
 	items: [] as WorkflowExecutionLog[]
 });
 
+// 当前查看日志的实例运行类型（传给 log-drawer 显示徽标）
+const viewingRunType = ref('production');
+
 // 产物抽屉状态
 const artifactDrawer = reactive({
 	visible: false,
@@ -211,6 +234,11 @@ const Table = useTable({
 			prop: 'versionNo',
 			width: 100,
 			formatter: (_row: any, _col: any, val: any) => formatVersionNo(val)
+		},
+		{
+			label: t('运行类型'),
+			prop: 'runType',
+			width: 100
 		},
 		{
 			label: t('运行时 Thread ID'),
@@ -281,7 +309,8 @@ const Crud = useCrud(
 		service: (service as any).workflow.instance
 	},
 	app => {
-		app.refresh();
+		// 默认只看生产实例（crud.params 持久 merge，翻页/搜索自动携带）
+		app.refresh({ runType: runTypeFilter.value === 'all' ? undefined : runTypeFilter.value });
 	}
 );
 
@@ -340,7 +369,7 @@ async function onDefinitionChange(val: number) {
 
 async function submitStartInstance() {
 	if (!startDialog.form.definitionId) {
-		ElMessage.warning(t('请选择要测试的工作流！'));
+		ElMessage.warning(t('请选择要运行的工作流！'));
 		return;
 	}
 	let inputs = {};
@@ -410,6 +439,7 @@ function openArtifactDrawer(row: WorkflowInstance) {
 }
 
 async function viewExecutionLogs(row: WorkflowInstance) {
+	viewingRunType.value = row.runType || 'production';
 	logDrawer.visible = true;
 	logDrawer.loading = true;
 	logDrawer.items = [];

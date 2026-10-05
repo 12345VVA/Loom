@@ -148,10 +148,10 @@
 			</div>
 		</div>
 
-		<!-- 测试运行初始变量弹窗 -->
+		<!-- 试运行初始变量弹窗 -->
 		<el-dialog
 			v-model="testDialog.visible"
-			:title="$t('测试运行工作流')"
+			:title="$t('试运行（草稿版，不影响线上数据）')"
 			width="500px"
 			destroy-on-close
 		>
@@ -219,7 +219,8 @@
 			:items="testLogDrawer.items"
 			:loading="testLogDrawer.loading"
 			:status="testLogDrawer.status"
-			:title="$t('测试运行日志')"
+			run-type="trial"
+			:title="$t('试运行日志')"
 			size="780px"
 			:empty-text="$t('暂无执行记录，等待后端运行')"
 			@close="stopLogPolling"
