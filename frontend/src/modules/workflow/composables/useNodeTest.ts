@@ -1,4 +1,4 @@
-import { reactive, computed, type Ref } from 'vue';
+import { reactive, computed, ref, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { findInvalidNodeInput } from '../utils';
 import type { FlowNode } from '../types/editor';
@@ -11,6 +11,18 @@ interface NodeTestResult {
 	error?: string;
 	isTimeout?: boolean;
 }
+
+/** 单节点测试历史（sessionStorage，弹窗内回看/回填；P1-4 可观测性补偿） */
+interface NodeTestHistoryEntry {
+	time: string;
+	inputsJson: string;
+	outputData: any;
+	timeCost: number;
+	error?: string;
+	status: 'success' | 'error';
+}
+
+const NODE_TEST_HISTORY_MAX = 5;
 
 /** 单节点测试弹窗状态 */
 interface NodeTestDialogState {
@@ -34,6 +46,32 @@ export function useNodeTest(
 ) {
 	// 用于缓存用户在该节点输入的测试数据
 	const mockVariablesCache = reactive<Record<string, string>>({});
+
+	// 当前节点的测试历史（最近 N 次，刷新页面即清——仅会话级回看）
+	const nodeTestHistory = ref<NodeTestHistoryEntry[]>([]);
+
+	function historyKey(nodeId: string) {
+		return `loom:nodeTestHistory:${workflowId.value}:${nodeId}`;
+	}
+
+	function loadHistory(nodeId: string): NodeTestHistoryEntry[] {
+		try {
+			return JSON.parse(sessionStorage.getItem(historyKey(nodeId)) || '[]');
+		} catch {
+			return [];
+		}
+	}
+
+	function appendHistory(nodeId: string, entry: NodeTestHistoryEntry) {
+		try {
+			const list = loadHistory(nodeId);
+			list.unshift(entry);
+			sessionStorage.setItem(historyKey(nodeId), JSON.stringify(list.slice(0, NODE_TEST_HISTORY_MAX)));
+		} catch {
+			// 存储不可用/已满：历史为增强功能，静默跳过
+		}
+		nodeTestHistory.value = loadHistory(nodeId);
+	}
 
 	// 单节点测试弹窗状态
 	const nodeTestDialog = reactive<NodeTestDialogState>({
@@ -82,6 +120,7 @@ export function useNodeTest(
 		nodeTestDialog.nodeLabel = node.label;
 		nodeTestDialog.nodeType = node.type;
 		nodeTestDialog.result = null;
+		nodeTestHistory.value = loadHistory(node.id);
 
 		// 智能预填变量：优先使用缓存，其次根据上游变量推导
 		if (mockVariablesCache[node.id]) {
@@ -148,6 +187,16 @@ export function useNodeTest(
 				}
 			}
 
+			// 同步写入会话级历史（回看/回填输入）与画布节点 runLog
+			appendHistory(testNodeId, {
+				time: new Date().toLocaleTimeString(),
+				inputsJson: nodeTestDialog.form.inputsJson,
+				outputData,
+				timeCost: res.latencyMs || 0,
+				error: res.error || undefined,
+				status
+			});
+
 			// 同步写入画布节点 runLog，画布上节点下方也显示执行日志
 			const node = elements.value.find(
 				(el: any) => !('source' in el) && el.id === testNodeId
@@ -184,6 +233,7 @@ export function useNodeTest(
 
 	return {
 		nodeTestDialog,
+		nodeTestHistory,
 		openNodeTestDialog,
 		startNodeTest,
 		closeNodeTestDialog,

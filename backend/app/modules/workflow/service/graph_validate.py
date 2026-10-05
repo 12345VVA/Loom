@@ -15,7 +15,9 @@ CONDITIONAL_NODE_TYPES = {"condition", "intent_classifier", "switch"}
 # 子图执行节点类型：循环体在编译时提取为独立子图，运行时按序/并发调用
 SUBGRAPH_NODE_TYPES = {"loop_controller", "batch_processor"}
 
-# 不支持单节点测试的节点类型集合（无执行逻辑、依赖子图、或需人工交互）
+# 不支持单节点测试的节点类型集合（无执行逻辑、依赖子图、或需人工交互）。
+# ⚠️ 本集合为权威来源；前端镜像在 frontend/src/modules/workflow/components/constants.ts，
+# 改动任一侧必须同步另一侧（后端在此兜底 400，前端用于提前禁用测试入口）。
 UNTESTABLE_NODE_TYPES = {"start", "end", "loop_controller", "batch_processor", "human_input", "loop_body_group"}
 
 # 中断类节点类型：依赖 LangGraph interrupt + checkpointer 断点续跑的节点。

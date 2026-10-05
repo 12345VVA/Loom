@@ -113,9 +113,11 @@
 		:loading="logDrawer.loading"
 		:title="$t('工作流步骤执行日志')"
 		:run-type="viewingRunType"
+		:cancellable="['pending', 'running', 'paused'].includes(viewingStatus)"
 		size="850px"
 		time-format="YYYY-MM-DD HH:mm:ss"
 		:empty-text="$t('暂无节点执行步骤记录')"
+		@stop="cancelViewingInstance"
 		@expand-all="expandAllLogs"
 		@collapse-all="collapseAllLogs"
 	/>
@@ -216,8 +218,10 @@ const logDrawer = reactive({
 	items: [] as WorkflowExecutionLog[]
 });
 
-// 当前查看日志的实例运行类型（传给 log-drawer 显示徽标）
+// 当前查看日志的实例运行类型（传给 log-drawer 显示徽标）、状态与 ID（决定是否可停止）
 const viewingRunType = ref('production');
+const viewingStatus = ref('');
+const viewingInstanceId = ref<number | undefined>(undefined);
 
 // 产物抽屉状态
 const artifactDrawer = reactive({
@@ -440,6 +444,8 @@ function openArtifactDrawer(row: WorkflowInstance) {
 
 async function viewExecutionLogs(row: WorkflowInstance) {
 	viewingRunType.value = row.runType || 'production';
+	viewingStatus.value = row.status;
+	viewingInstanceId.value = row.id;
 	logDrawer.visible = true;
 	logDrawer.loading = true;
 	logDrawer.items = [];
@@ -453,6 +459,19 @@ async function viewExecutionLogs(row: WorkflowInstance) {
 		ElMessage.error(t('获取执行日志失败: ') + (err.message || err));
 	} finally {
 		logDrawer.loading = false;
+	}
+}
+
+// 停止当前查看的实例（log-drawer 头部停止按钮）
+async function cancelViewingInstance() {
+	if (!viewingInstanceId.value) return;
+	try {
+		await (service as any).workflow.instance.cancel({ instanceId: viewingInstanceId.value });
+		ElMessage.success(t('已发送停止请求，实例将尽快取消'));
+		viewingStatus.value = 'cancelled';
+		Crud.value?.refresh();
+	} catch (err: any) {
+		ElMessage.error(t('停止失败: ') + (err.message || err));
 	}
 }
 

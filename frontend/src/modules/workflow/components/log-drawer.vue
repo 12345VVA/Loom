@@ -37,6 +37,11 @@
 					</el-tag>
 				</div>
 				<div class="drawer-header-actions">
+					<el-tooltip v-if="cancellable" :content="$t('停止运行')" placement="bottom">
+						<el-button circle size="small" type="danger" plain @click="emit('stop')">
+							<workflow-icon name="close" :size="14" />
+						</el-button>
+					</el-tooltip>
 					<el-tooltip
 						:content="isFullscreen ? $t('退出全屏') : $t('全屏查看')"
 						placement="bottom"
@@ -507,6 +512,8 @@ const props = withDefaults(
 		status?: string;
 		/** 实例运行类型（production|trial|eval）：非 production 时头部显示徽标 */
 		runType?: string;
+		/** 提供则头部显示「停止运行」按钮（运行中的实例日志抽屉用），点击 emit('stop') */
+		cancellable?: boolean;
 		/** 时间格式：editor 测试日志用 HH:mm:ss，instance 步骤日志用完整日期 */
 		timeFormat?: string;
 	}>(),
@@ -516,6 +523,7 @@ const props = withDefaults(
 		loading: false,
 		emptyText: '',
 		runType: 'production',
+		cancellable: false,
 		timeFormat: 'HH:mm:ss'
 	}
 );
@@ -525,6 +533,7 @@ const emit = defineEmits<{
 	(e: 'close'): void;
 	(e: 'expand-all'): void;
 	(e: 'collapse-all'): void;
+	(e: 'stop'): void;
 }>();
 
 const { t } = useI18n();

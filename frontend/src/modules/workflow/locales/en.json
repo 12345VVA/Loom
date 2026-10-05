@@ -330,5 +330,11 @@
 	"试运行（草稿）": "Trial Run (Draft)",
 	"试运行（草稿版，不影响线上数据）": "Trial Run (Draft, no production data affected)",
 	"试运行日志": "Trial Run Log",
-	"请选择要运行的工作流！": "Please select a workflow to run!"
+	"请选择要运行的工作流！": "Please select a workflow to run!",
+	"历史记录": "History",
+	"点击回填该次测试输入": "Click to restore the test input",
+	"停止运行": "Stop",
+	"已发送停止请求，实例将尽快取消": "Stop request sent, the instance will be cancelled soon",
+	"已发送停止请求，试运行将尽快取消": "Stop request sent, the trial run will be cancelled soon",
+	"停止失败: ": "Stop failed: "
 }

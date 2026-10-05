@@ -206,6 +206,25 @@
 				</div>
 			</div>
 
+			<!-- 会话级历史（最近 5 次）：点击回填当时输入 -->
+			<el-collapse v-if="nodeTestHistory.length" class="node-test-history">
+				<el-collapse-item :title="$t('历史记录') + `（${nodeTestHistory.length}）`" name="history">
+					<div
+						v-for="(h, i) in nodeTestHistory"
+						:key="i"
+						class="node-test-history__item"
+						:title="$t('点击回填该次测试输入')"
+						@click="restoreNodeTestHistory(h)"
+					>
+						<el-tag :type="h.status === 'success' ? 'success' : 'danger'" size="small">
+							{{ h.time }}
+						</el-tag>
+						<span class="node-test-history__cost">{{ h.timeCost }}ms</span>
+						<span v-if="h.error" class="node-test-history__error">{{ h.error }}</span>
+					</div>
+				</el-collapse-item>
+			</el-collapse>
+
 			<template #footer>
 				<el-button @click="closeNodeTestDialog">{{ $t('关闭') }}</el-button>
 				<el-button type="success" :loading="nodeTestDialog.loading" @click="startNodeTest">
@@ -220,10 +239,12 @@
 			:loading="testLogDrawer.loading"
 			:status="testLogDrawer.status"
 			run-type="trial"
+			:cancellable="testLogDrawer.status === 'running' && !!testLogDrawer.instanceId"
 			:title="$t('试运行日志')"
 			size="780px"
 			:empty-text="$t('暂无执行记录，等待后端运行')"
 			@close="stopLogPolling"
+			@stop="stopTestRun"
 			@expand-all="expandAllTestLogs"
 			@collapse-all="collapseAllTestLogs"
 		/>
@@ -440,7 +461,7 @@ const { getUpstreamVariablesForNode, upstreamVariablesOf, invalidateUpstreamCach
 	useUpstreamVariables(elements);
 
 // 单节点测试 composable
-const { nodeTestDialog, openNodeTestDialog, startNodeTest, closeNodeTestDialog, clearMockCache } =
+const { nodeTestDialog, nodeTestHistory, openNodeTestDialog, startNodeTest, closeNodeTestDialog, clearMockCache } =
 	useNodeTest(
 		service,
 		t,
@@ -450,6 +471,24 @@ const { nodeTestDialog, openNodeTestDialog, startNodeTest, closeNodeTestDialog, 
 		saveWorkflow,
 		getUpstreamVariablesForNode
 	);
+
+// 历史条目点击：回填当时的模拟变量输入，便于复现
+function restoreNodeTestHistory(h: { inputsJson: string }) {
+	nodeTestDialog.form.inputsJson = h.inputsJson;
+}
+
+// 停止试运行实例（log-drawer 头部停止按钮）：发取消请求并断开 SSE 流
+async function stopTestRun() {
+	if (!testLogDrawer.instanceId) return;
+	try {
+		await (service as any).workflow.instance.cancel({ instanceId: testLogDrawer.instanceId });
+		ElMessage.success(t('已发送停止请求，试运行将尽快取消'));
+	} catch (err: any) {
+		ElMessage.error(t('停止失败: ') + (err.message || err));
+	} finally {
+		stopLogPolling();
+	}
+}
 
 // 监听测试抽屉打开，如果打开则关闭配置面板
 watch(
@@ -827,6 +866,41 @@ function deleteSelectedNode() {
 }
 
 // 单节点测试结果展示
+.node-test-history {
+	margin-top: 10px;
+
+	&__item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 0;
+		cursor: pointer;
+		font-size: 12px;
+		border-bottom: 1px dashed var(--el-border-color-lighter);
+
+		&:hover {
+			background: var(--el-fill-color-lighter);
+		}
+
+		&:last-child {
+			border-bottom: none;
+		}
+	}
+
+	&__cost {
+		color: var(--el-text-color-secondary);
+		font-size: 11px;
+	}
+
+	&__error {
+		color: var(--el-color-danger);
+		font-size: 11px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+}
+
 .node-test-result {
 	margin-top: 12px;
 	border: 1px solid var(--el-border-color-lighter);
