@@ -477,6 +477,56 @@ class WorkflowCompiler:
 
         return builder
 
+    @staticmethod
+    async def _invoke_executor_with_retry(
+        executor, node_inputs: dict[str, Any], executor_config: dict[str, Any], config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """带重试的执行器调用：节点级自动重试（全局默认 + 节点 config 覆盖；指数退避）。
+
+        create_node_runner（整图执行）与 run_node_standalone（单节点测试）共用，
+        保证「节点测试」与「整图执行」的重试语义一致（修 P0-1 覆盖面假象）。
+        """
+        import asyncio
+
+        from app.core.config import settings
+
+        node_id = executor_config.get("id", "")
+        max_attempts = config.get("retry_max_attempts")
+        if max_attempts is None:
+            max_attempts = settings.WORKFLOW_NODE_RETRY_MAX_ATTEMPTS
+        max_attempts = max(1, int(max_attempts))  # 至少尝试 1 次
+        backoff_base = config.get("retry_backoff_base")
+        if backoff_base is None:
+            backoff_base = settings.WORKFLOW_NODE_RETRY_BACKOFF_BASE
+
+        updates = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                updates = await executor(node_inputs, executor_config)
+                break
+            except GraphBubbleUp:
+                # 控制流信号：interrupt 中断（人工审批挂起）/ drain 优雅停机。
+                # 必须原样冒泡给 LangGraph —— 既不重试，也不包装为 NodeExecutionError，
+                # 否则 human_input 永远无法进入 paused，停机信号也会被误判为节点失败。
+                raise
+            except Exception as e:
+                if attempt >= max_attempts:
+                    # 重试耗尽：抛 NodeExecutionError 携带 node_id，供上层写 failed_node_id
+                    raise NodeExecutionError(node_id, attempt, e) from e
+                delay = float(backoff_base) * (2 ** (attempt - 1))
+                logger.warning(
+                    "节点 '%s' 第 %d/%d 次执行失败，%.1fs 后重试: %s",
+                    node_id,
+                    attempt,
+                    max_attempts,
+                    delay,
+                    e,
+                )
+                await asyncio.sleep(delay)
+        if updates is None:
+            updates = {}
+        return updates
+
     @classmethod
     def create_node_runner(cls, node_id: str, node_type: str, config: dict[str, Any]):
         """
@@ -484,10 +534,6 @@ class WorkflowCompiler:
         """
 
         async def node_runner(state: WorkflowState) -> dict[str, Any]:
-            import asyncio
-
-            from app.core.config import settings
-
             # 记录当前执行节点
             state["current_node"] = node_id
 
@@ -499,43 +545,10 @@ class WorkflowCompiler:
             # 1. 应用输入变量映射，提炼入参
             node_inputs = resolve_node_inputs(state["variables"], config)
 
-            # 2. 运行执行器（节点级自动重试：全局默认 + 节点 config 覆盖；指数退避）
+            # 2. 运行执行器（共享重试语义，见 _invoke_executor_with_retry）
             #    重试在 node_runner 内部，updates 在 return 后才 apply 到 state，故前次失败不污染 state
             executor_config = {**config, "id": node_id}
-            max_attempts = config.get("retry_max_attempts")
-            if max_attempts is None:
-                max_attempts = settings.WORKFLOW_NODE_RETRY_MAX_ATTEMPTS
-            max_attempts = max(1, int(max_attempts))  # 至少尝试 1 次
-            backoff_base = config.get("retry_backoff_base")
-            if backoff_base is None:
-                backoff_base = settings.WORKFLOW_NODE_RETRY_BACKOFF_BASE
-
-            updates = None
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    updates = await executor(node_inputs, executor_config)
-                    break
-                except GraphBubbleUp:
-                    # 控制流信号：interrupt 中断（人工审批挂起）/ drain 优雅停机。
-                    # 必须原样冒泡给 LangGraph —— 既不重试，也不包装为 NodeExecutionError，
-                    # 否则 human_input 永远无法进入 paused，停机信号也会被误判为节点失败。
-                    raise
-                except Exception as e:
-                    if attempt >= max_attempts:
-                        # 重试耗尽：抛 NodeExecutionError 携带 node_id，供上层写 failed_node_id
-                        raise NodeExecutionError(node_id, attempt, e) from e
-                    delay = float(backoff_base) * (2 ** (attempt - 1))
-                    logger.warning(
-                        "节点 '%s' 第 %d/%d 次执行失败，%.1fs 后重试: %s",
-                        node_id,
-                        attempt,
-                        max_attempts,
-                        delay,
-                        e,
-                    )
-                    await asyncio.sleep(delay)
-            if updates is None:
-                updates = {}
+            updates = await cls._invoke_executor_with_retry(executor, node_inputs, executor_config, config)
 
             # 3. 应用输出变量映射，写回全局状态
             output_mappings = config.get("output_mappings", {})
@@ -544,6 +557,27 @@ class WorkflowCompiler:
             return {"variables": new_variables, "current_node": node_id}
 
         return node_runner
+
+    @classmethod
+    async def run_node_standalone(
+        cls, node_id: str, node_type: str, config: dict[str, Any], mock_variables: dict[str, Any]
+    ) -> dict[str, Any]:
+        """单节点测试执行体：复用整图执行的入参提炼/重试/输出映射语义，不建图不落库。
+
+        返回「输出增量」：updates 经 output_mappings 应用到 mock_variables 后的差集，
+        与历史 test_node 的 NodeTestResponse.output 契约一致（前端零改动）。
+        """
+        executor = node_registry.get(node_type)
+        if not executor:
+            raise ValueError(f"工作流中使用了未注册的节点类型: '{node_type}'")
+
+        node_inputs = resolve_node_inputs(mock_variables, config)
+        executor_config = {**config, "id": node_id}
+        updates = await cls._invoke_executor_with_retry(executor, node_inputs, executor_config, config)
+
+        # 与 node_runner 一致地应用输出映射，再对 mock 取差集得到本节点实际产出的增量
+        merged = apply_output_mappings(dict(mock_variables), updates, config.get("output_mappings", {}))
+        return {k: v for k, v in merged.items() if k not in mock_variables or merged[k] != mock_variables[k]}
 
     @classmethod
     def create_conditional_router(cls, node_id: str, config: dict[str, Any]):

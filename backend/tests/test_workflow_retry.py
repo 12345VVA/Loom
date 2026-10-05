@@ -171,6 +171,95 @@ class NodeRunnerRetryTestCase(unittest.TestCase):
         self.assertEqual(calls, 1)
 
 
+class RunNodeStandaloneTestCase(unittest.TestCase):
+    """单节点测试执行体（run_node_standalone）：与整图执行共享重试/输出映射语义（修 P0-1）。
+
+    回归守护：test_node 此前直连 executor，测不到重试与 output_mappings——
+    「节点测试通过 ≠ 整图能跑通」。改造后两条路径共用 _invoke_executor_with_retry。
+    """
+
+    def _run_standalone(self, config: dict, mock_variables: dict | None = None):
+        return asyncio.run(
+            WorkflowCompiler.run_node_standalone("n1", "llm", config, mock_variables or {})
+        )
+
+    def test_retry_applied_in_standalone(self):
+        """单节点测试同样走重试：前 2 次瞬时失败、第 3 次成功。"""
+        calls = 0
+
+        async def flaky(inputs, config):
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                raise RuntimeError("transient")
+            return {"output": "ok"}
+
+        with patch.object(compiler_mod.node_registry, "get", return_value=flaky):
+            result = self._run_standalone({"retry_max_attempts": 3, "retry_backoff_base": 0.0})
+        self.assertEqual(calls, 3)  # 直连 executor 的旧实现 calls=1，此处验证重试语义生效
+        self.assertEqual(result, {"output": "ok"})
+
+    def test_bubble_up_not_swallowed(self):
+        """控制流信号（GraphInterrupt）在单节点测试中同样原样上抛、不重试。"""
+        from langgraph.errors import GraphInterrupt
+
+        calls = 0
+
+        async def interrupter(inputs, config):
+            nonlocal calls
+            calls += 1
+            raise GraphInterrupt()
+
+        with patch.object(compiler_mod.node_registry, "get", return_value=interrupter):
+            with self.assertRaises(GraphInterrupt):
+                self._run_standalone({"retry_max_attempts": 3, "retry_backoff_base": 0.0})
+        self.assertEqual(calls, 1)
+
+    def test_retry_exhausted_raises_node_execution_error(self):
+        """重试耗尽抛 NodeExecutionError（携带 node_id），供前端显示可读错误。"""
+
+        async def always_fail(inputs, config):
+            raise RuntimeError("boom")
+
+        with patch.object(compiler_mod.node_registry, "get", return_value=always_fail):
+            with self.assertRaises(NodeExecutionError) as cm:
+                self._run_standalone({"retry_max_attempts": 2, "retry_backoff_base": 0.0})
+        self.assertEqual(cm.exception.node_id, "n1")
+        self.assertEqual(cm.exception.attempts, 2)
+
+    def test_output_mappings_applied_and_diffed(self):
+        """output_mappings 写回后按差集返回增量：mock 键不出现在结果中。"""
+        config = {"output_mappings": {"result": "variables.final"}}
+
+        async def ok(inputs, config):
+            return {"result": "ok"}
+
+        with patch.object(compiler_mod.node_registry, "get", return_value=ok):
+            result = self._run_standalone(config, {"input_1": "hi"})
+        # updates 经映射写到 final；mock 的 input_1 不回显
+        self.assertEqual(result, {"final": "ok"})
+
+    def test_no_mappings_returns_updates_directly(self):
+        """无 output_mappings：updates 即增量（与旧 test_node 契约一致）。"""
+
+        async def ok(inputs, config):
+            return {"output": 42}
+
+        with patch.object(compiler_mod.node_registry, "get", return_value=ok):
+            result = self._run_standalone({}, {"q": "hi"})
+        self.assertEqual(result, {"output": 42})
+
+    def test_same_value_overwrite_not_reported_as_increment(self):
+        """updates 与 mock 同键同值：不误报为增量（差集语义）。"""
+
+        async def echo(inputs, config):
+            return {"q": "hi", "new": 1}
+
+        with patch.object(compiler_mod.node_registry, "get", return_value=echo):
+            result = self._run_standalone({}, {"q": "hi"})
+        self.assertEqual(result, {"new": 1})
+
+
 class FailedNodeIdPersistTestCase(unittest.TestCase):
     """failed_node_id 字段持久化 + NodeExecutionError 携带 node_id。"""
 

@@ -705,8 +705,8 @@ class WorkflowInstanceService(BaseAdminCrudService):
         definition_id: int,
         node_id: str,
         current_user: User | None,
-    ) -> tuple[dict[str, Any], Any]:
-        """解析待测试节点：校验定义/版本/节点，返回 (config, executor)。失败抛 HTTPException。"""
+    ) -> tuple[dict[str, Any], str]:
+        """解析待测试节点：校验定义/版本/节点，返回 (config, node_type)。失败抛 HTTPException。"""
         from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
         from app.modules.workflow.service.compiler import (
             UNTESTABLE_NODE_TYPES,
@@ -740,10 +740,9 @@ class WorkflowInstanceService(BaseAdminCrudService):
             raise HTTPException(status_code=400, detail=f"节点类型 '{node_type}' 不支持单节点测试")
 
         config = convert_keys_to_snake(node.get("config", {}))
-        executor = node_registry.get(node_type)
-        if not executor:
+        if not node_registry.get(node_type):
             raise HTTPException(status_code=400, detail=f"工作流中使用了未注册的节点类型: '{node_type}'")
-        return config, executor
+        return config, node_type
 
     async def test_node(
         self,
@@ -753,24 +752,23 @@ class WorkflowInstanceService(BaseAdminCrudService):
         current_user: User | None = None,
     ) -> "NodeTestResponse":
         """
-        单节点测试：直接调用注册的节点执行器，不走完整的 LangGraph，不创建实例和日志。
+        单节点测试：复用整图执行的节点级语义（入参提炼/自动重试/输出映射，见
+        WorkflowCompiler.run_node_standalone），不走完整 LangGraph，不创建实例和日志。
         """
         from app.core.config import settings
         from app.core.redis import redis_client
         from app.modules.workflow.model.workflow import NodeTestResponse
-        from app.modules.workflow.service.compiler import resolve_node_inputs
+        from app.modules.workflow.service.compiler import WorkflowCompiler
 
-        # 1. 解析节点（校验定义/版本/节点/类型，返回 config + executor）
-        config, executor = await self._resolve_node_for_test(definition_id, node_id, current_user)
+        # 1. 解析节点（校验定义/版本/节点/类型，返回 config + node_type）
+        config, node_type = await self._resolve_node_for_test(definition_id, node_id, current_user)
 
         # 2. 防重放：同一节点 2 秒内不重复执行 (使用 Redis)
         dedup_key = f"loom:workflow:test_node:{definition_id}:{node_id}"
         if not redis_client.set(dedup_key, "1", nx=True, ex=2):
             raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
 
-        # 3. 执行节点（提炼入参 + 超时控制，默认 180 秒；LLM 节点常需 60-180 秒响应）
-        node_inputs = resolve_node_inputs(mock_variables, config)
-        executor_config = {**config, "id": node_id}
+        # 3. 执行节点（与整图执行共享重试/输出映射 + 超时控制，默认 180 秒；LLM 节点常需 60-180 秒响应）
         timeout_seconds = settings.WORKFLOW_NODE_TEST_TIMEOUT
 
         start_time = time.perf_counter()
@@ -778,9 +776,10 @@ class WorkflowInstanceService(BaseAdminCrudService):
         is_timeout = False
         updates = {}
         try:
-            updates = await asyncio.wait_for(executor(node_inputs, executor_config), timeout=timeout_seconds)
-            if updates is None:
-                updates = {}
+            updates = await asyncio.wait_for(
+                WorkflowCompiler.run_node_standalone(node_id, node_type, config, mock_variables),
+                timeout=timeout_seconds,
+            )
         except TimeoutError:
             logger.warning("单节点测试超时 [%s] (%ds)", node_id, timeout_seconds)
             error_msg = f"节点执行超时（{timeout_seconds}秒），可能是模型响应过慢或配置有误"
@@ -791,7 +790,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
             is_timeout = False
 
         latency_ms = int((time.perf_counter() - start_time) * 1000)
-        # 单节点测试主要关心节点本身的输出 updates，不关心写回全局后的完整 variables 状态
+        # 单节点测试主要关心节点本身的输出增量（output_mappings 应用后），不关心完整 variables 状态
         return NodeTestResponse(output=updates, latency_ms=latency_ms, error=error_msg, is_timeout=is_timeout)
 
 
