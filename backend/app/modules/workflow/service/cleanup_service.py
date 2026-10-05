@@ -18,6 +18,7 @@ import os
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import and_
 from sqlmodel import Session, select
 
 from app.core.config import settings
@@ -46,21 +47,40 @@ class WorkflowCleanupService:
     def __init__(self, session: Session):
         self.session = session
 
-    def sweep_execution_logs(self, keep_days: int, batch_size: int = 500) -> int:
-        """分批硬删过期执行日志，返回删除行数；删行后 best-effort 删除其载荷文件。"""
+    def sweep_execution_logs(self, keep_days: int, test_node_keep_days: int | None = None, batch_size: int = 500) -> int:
+        """分批硬删过期执行日志，返回删除行数；删行后 best-effort 删除其载荷文件。
+
+        test_node_keep_days：单节点测试日志的独立短保留期（开发期高频操作，载荷大、
+        追溯价值衰减快），按实例 run_type='test_node' 经 EXISTS 半连接识别；缺省不启用。
+        """
         from app.framework.storage import StorageService as _Storage
 
         cutoff = datetime.now(UTC) - timedelta(days=max(1, int(keep_days)))
+        test_cutoff = (
+            datetime.now(UTC) - timedelta(days=max(1, int(test_node_keep_days)))
+            if test_node_keep_days is not None
+            else None
+        )
+        stale_test_filter = None
+        if test_cutoff is not None:
+            test_instance = select(WorkflowInstance.id).where(
+                WorkflowInstance.id == WorkflowExecutionLog.instance_id,
+                WorkflowInstance.run_type == "test_node",
+            )
+            stale_test_filter = and_(WorkflowExecutionLog.created_at < test_cutoff, test_instance.exists())
         storage = _Storage.get_instance()
         removed = 0
         while True:
+            conditions = [
+                WorkflowExecutionLog.created_at < cutoff,
+                WorkflowExecutionLog.delete_time == None,  # noqa: E711
+            ]
+            if stale_test_filter is not None:
+                conditions.append(stale_test_filter)
             batch = list(
                 self.session.exec(
                     select(WorkflowExecutionLog)
-                    .where(
-                        WorkflowExecutionLog.created_at < cutoff,
-                        WorkflowExecutionLog.delete_time == None,  # noqa: E711
-                    )
+                    .where(*conditions)
                     .order_by(WorkflowExecutionLog.id)
                     .limit(batch_size)
                 ).all()

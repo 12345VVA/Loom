@@ -11,6 +11,7 @@
 				<el-radio-button label="production">{{ $t('生产') }}</el-radio-button>
 				<el-radio-button label="trial">{{ $t('试运行') }}</el-radio-button>
 				<el-radio-button label="eval">{{ $t('评估') }}</el-radio-button>
+				<el-radio-button label="test_node">{{ $t('单点') }}</el-radio-button>
 				<el-radio-button label="all">{{ $t('全部') }}</el-radio-button>
 			</el-radio-group>
 			<cl-search-key :placeholder="$t('搜索状态、当前节点')" />
@@ -159,7 +160,7 @@ interface WorkflowInstance {
 	definitionId: number;
 	threadId: string;
 	status: 'pending' | 'running' | 'paused' | 'success' | 'failed';
-	runType?: 'production' | 'trial' | 'eval';
+	runType?: 'production' | 'trial' | 'eval' | 'test_node';
 	currentNode?: string;
 	failedNodeId?: string;
 	stateData: string;
@@ -185,7 +186,7 @@ interface WorkflowExecutionLog {
 const definitions = ref<WorkflowDefinition[]>([]);
 
 // 运行类型分段过滤：默认只看生产；「全部」时不传 runType（后端无此参数即不过滤）
-const runTypeFilter = ref<'production' | 'trial' | 'eval' | 'all'>('production');
+const runTypeFilter = ref<'production' | 'trial' | 'eval' | 'test_node' | 'all'>('production');
 
 function onRunTypeChange() {
 	Crud.value?.refresh({ runType: runTypeFilter.value === 'all' ? undefined : runTypeFilter.value, page: 1 });

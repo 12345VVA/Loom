@@ -239,3 +239,4 @@ class NodeTestResponse(BaseModel):
     latency_ms: int
     error: str | None = None
     is_timeout: bool = False
+    instance_id: int | None = None  # 落库的测试实例 ID（run_type='test_node'，可跳转运行记录页）

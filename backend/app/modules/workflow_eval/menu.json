@@ -1,7 +1,7 @@
 [
   {
     "code": "nav_workflow_eval",
-    "name": "工作流评价",
+    "name": "测试与评估",
     "type": "group",
     "parent_code": "nav_workflow",
     "icon": "icon-task",

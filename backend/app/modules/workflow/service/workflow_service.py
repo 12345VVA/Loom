@@ -705,8 +705,12 @@ class WorkflowInstanceService(BaseAdminCrudService):
         definition_id: int,
         node_id: str,
         current_user: User | None,
-    ) -> tuple[dict[str, Any], str]:
-        """解析待测试节点：校验定义/版本/节点，返回 (config, node_type)。失败抛 HTTPException。"""
+    ) -> dict[str, Any]:
+        """解析待测试节点：校验定义/版本/节点，返回测试上下文。失败抛 HTTPException。
+
+        返回 dict：config（snake_case 节点配置）/ node_type / node_name / version_id（草稿版，
+        供测试实例 version_id 回填）。
+        """
         from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
         from app.modules.workflow.service.compiler import (
             UNTESTABLE_NODE_TYPES,
@@ -742,7 +746,12 @@ class WorkflowInstanceService(BaseAdminCrudService):
         config = convert_keys_to_snake(node.get("config", {}))
         if not node_registry.get(node_type):
             raise HTTPException(status_code=400, detail=f"工作流中使用了未注册的节点类型: '{node_type}'")
-        return config, node_type
+        return {
+            "config": config,
+            "node_type": node_type,
+            "node_name": node.get("name") or node_id,
+            "version_id": draft_vid,
+        }
 
     async def test_node(
         self,
@@ -753,22 +762,40 @@ class WorkflowInstanceService(BaseAdminCrudService):
     ) -> "NodeTestResponse":
         """
         单节点测试：复用整图执行的节点级语义（入参提炼/自动重试/输出映射，见
-        WorkflowCompiler.run_node_standalone），不走完整 LangGraph，不创建实例和日志。
+        WorkflowCompiler.run_node_standalone），不走完整 LangGraph。
+
+        P1-4 落库：建 run_type='test_node' 实例 + 单行执行日志（脱敏 + 超长 offload），
+        结果可追溯/审计并接入运行记录页；响应契约（NodeTestResponse）不变，仅新增 instanceId。
         """
         from app.core.config import settings
         from app.core.redis import redis_client
         from app.modules.workflow.model.workflow import NodeTestResponse
         from app.modules.workflow.service.compiler import WorkflowCompiler
 
-        # 1. 解析节点（校验定义/版本/节点/类型，返回 config + node_type）
-        config, node_type = await self._resolve_node_for_test(definition_id, node_id, current_user)
+        # 1. 解析节点（校验定义/版本/节点/类型）
+        ctx = await self._resolve_node_for_test(definition_id, node_id, current_user)
+        config, node_type = ctx["config"], ctx["node_type"]
 
         # 2. 防重放：同一节点 2 秒内不重复执行 (使用 Redis)
         dedup_key = f"loom:workflow:test_node:{definition_id}:{node_id}"
         if not redis_client.set(dedup_key, "1", nx=True, ex=2):
             raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
 
-        # 3. 执行节点（与整图执行共享重试/输出映射 + 超时控制，默认 180 秒；LLM 节点常需 60-180 秒响应）
+        # 3. 建 run_type='test_node' 测试实例（副作用门控按 != production 天然跳过通知/产物）
+        instance = WorkflowInstance(
+            definition_id=definition_id,
+            version_id=ctx["version_id"],
+            thread_id=str(uuid4()),
+            status="running",
+            state_data=json.dumps(mock_variables),
+            run_type="test_node",
+            user_id=current_user.id if current_user else None,
+        )
+        self.session.add(instance)
+        self.session.commit()
+        self.session.refresh(instance)
+
+        # 4. 执行节点（与整图执行共享重试/输出映射 + 超时控制，默认 180 秒；LLM 节点常需 60-180 秒响应）
         timeout_seconds = settings.WORKFLOW_NODE_TEST_TIMEOUT
 
         start_time = time.perf_counter()
@@ -790,8 +817,58 @@ class WorkflowInstanceService(BaseAdminCrudService):
             is_timeout = False
 
         latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+        # 5. 终态 + 单行执行日志（best-effort：落库失败不影响测试响应）
+        try:
+            status = "error" if error_msg else "success"
+            input_data, input_ref = _test_node_log_payload(mock_variables)
+            output_data, output_ref = _test_node_log_payload(updates if not error_msg else {"error": error_msg})
+            log_row = WorkflowExecutionLog(
+                instance_id=instance.id,
+                node_id=node_id,
+                node_name=ctx["node_name"][:150],
+                node_type=node_type[:50],
+                input_data=input_data,
+                input_storage_ref=input_ref,
+                output_data=output_data,
+                output_storage_ref=output_ref,
+                latency_ms=latency_ms,
+                status=status,
+                error_message=error_msg,
+            )
+            if is_timeout:
+                instance.status = "failed"
+                instance.error_message = error_msg
+            else:
+                instance.status = "success" if not error_msg else "failed"
+                instance.error_message = error_msg
+            self.session.add(instance)
+            self.session.add(log_row)
+            self.session.commit()
+        except Exception:
+            logger.warning("单节点测试日志落库失败 instance=%d", instance.id, exc_info=True)
+
         # 单节点测试主要关心节点本身的输出增量（output_mappings 应用后），不关心完整 variables 状态
-        return NodeTestResponse(output=updates, latency_ms=latency_ms, error=error_msg, is_timeout=is_timeout)
+        return NodeTestResponse(
+            output=updates, latency_ms=latency_ms, error=error_msg, is_timeout=is_timeout, instance_id=instance.id
+        )
+
+
+_TEST_NODE_LOG_INLINE_MAX = 90_000  # 单节点测试日志行内联上限（列宽 100000，留余量）
+
+
+def _test_node_log_payload(value: Any) -> tuple[str, str | None]:
+    """单节点测试日志载荷：脱敏后内联；超长转对象存储 ref（对齐 T8 载荷分离机制）。"""
+    from app.framework.storage import offload_payload
+    from app.modules.ai.service.security_service import AiSecurityService
+
+    masked = AiSecurityService.mask_sensitive_dict(value) if isinstance(value, dict) else value
+    text = json.dumps(masked, ensure_ascii=False, default=str)
+    if len(text) <= _TEST_NODE_LOG_INLINE_MAX:
+        return text, None
+    inline, ref = offload_payload(text)
+    # ref 非空表示载荷已落存储：内联留空，读取端 _restore_logs_payload 按 ref 还原
+    return ("", ref) if ref else (inline[:_TEST_NODE_LOG_INLINE_MAX], None)
 
 
 def recover_orphaned_instances(session: Session):

@@ -304,8 +304,10 @@ def sweep_workflow_cleanup() -> dict:
 
     with Session(engine) as session:
         keep_days = _int_param(SysParamService(session).get_value("workflowExecutionLogKeepDays", "90"), 90)
+        # 单节点测试日志独立短保留（开发期高频、载荷大、追溯价值衰减快）
+        test_node_keep_days = _int_param(SysParamService(session).get_value("workflowTestNodeLogKeepDays", "7"), 7)
         service = WorkflowCleanupService(session)
-        logs_removed = service.sweep_execution_logs(keep_days=keep_days)
+        logs_removed = service.sweep_execution_logs(keep_days=keep_days, test_node_keep_days=test_node_keep_days)
         orphans_removed = service.sweep_orphan_payloads()
         ckpt_keep_days = _int_param(SysParamService(session).get_value("workflowCheckpointKeepDays", "7"), 7)
         checkpoint_threads_removed = service.sweep_checkpoint_threads(keep_days=ckpt_keep_days)

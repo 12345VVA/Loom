@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import unittest
 from unittest.mock import Mock, patch
@@ -18,6 +19,7 @@ from sqlmodel import Session, SQLModel, select
 from app.modules.base.model.auth import User
 from app.modules.workflow.model.workflow import (
     WorkflowDefinition,
+    WorkflowExecutionLog,
     WorkflowInstance,
     WorkflowInstanceRead,
 )
@@ -91,6 +93,96 @@ class RunTypeInstanceTestCase(unittest.TestCase):
         dumped = dto.model_dump(by_alias=True)
         self.assertEqual(dumped["runType"], "production")
         self.assertIsNone(dumped["evalRunId"])
+
+
+class NodeTestPersistTestCase(unittest.TestCase):
+    """P1-4 落库：test_node 建 run_type='test_node' 实例 + 单行执行日志。"""
+
+    def setUp(self):
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+        # 草稿版 graph：含一个可测节点（type 任意，executor 由测试 patch）
+        graph = json.dumps(
+            {"nodes": [{"id": "n1", "type": "llm", "name": "测试节点", "config": {}}], "edges": []}
+        )
+        from app.modules.workflow.model.workflow_version import (
+            WorkflowDefinitionVersion,
+            WorkflowVersionStatus,
+        )
+
+        definition = WorkflowDefinition(code="wf1", name="WF1", is_active=True, user_id=1)
+        self.session.add(definition)
+        self.session.commit()
+        self.session.refresh(definition)
+        draft = WorkflowDefinitionVersion(
+            definition_id=definition.id,
+            version_no=1,
+            status=WorkflowVersionStatus.DRAFT,
+            graph_json=graph,
+            user_id=1,
+        )
+        self.session.add(draft)
+        self.session.commit()
+        self.session.refresh(draft)
+        definition.draft_version_id = draft.id
+        self.session.add(definition)
+        self.session.commit()
+        self.def_id = definition.id
+        self.draft_vid = draft.id
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def _run_test_node(self, executor):
+        """统一驱动：patch registry/redis 后执行 test_node，返回 (响应, 实例, 日志行)。"""
+        from unittest.mock import Mock, patch
+
+        from app.modules.workflow.service import compiler as compiler_mod
+        from app.modules.workflow.service.workflow_service import WorkflowInstanceService
+
+        svc = WorkflowInstanceService(self.session)
+        with (
+            patch.object(compiler_mod.node_registry, "get", return_value=executor),
+            patch("app.core.redis.redis_client") as mock_redis,
+        ):
+            mock_redis.set.return_value = True
+            resp = asyncio.run(svc.test_node(self.def_id, "n1", {"q": "hi"}, _user(1)))
+        instance = self.session.exec(
+            select(WorkflowInstance).where(WorkflowInstance.definition_id == self.def_id)
+        ).first()
+        log_row = self.session.exec(
+            select(WorkflowExecutionLog).where(WorkflowExecutionLog.instance_id == instance.id)
+        ).first()
+        return resp, instance, log_row
+
+    def test_success_persists_instance_and_log(self):
+        async def ok(inputs, config):
+            return {"answer": "ok"}
+
+        resp, instance, log_row = self._run_test_node(ok)
+        self.assertEqual(instance.run_type, "test_node")
+        self.assertTrue(instance.is_test)
+        self.assertEqual(instance.version_id, self.draft_vid)  # 跑草稿版
+        self.assertEqual(instance.status, "success")
+        self.assertIsNone(instance.error_message)
+        self.assertEqual(resp.instance_id, instance.id)  # 响应透传实例 ID
+        self.assertIsNotNone(log_row)
+        self.assertEqual(log_row.node_name, "测试节点")
+        self.assertEqual(log_row.status, "success")
+        self.assertIn('"q"', log_row.input_data)  # mock 输入入日志
+        self.assertIn("ok", log_row.output_data)
+
+    def test_failure_persists_error_state(self):
+        async def boom(inputs, config):
+            raise RuntimeError("节点炸了")
+
+        resp, instance, log_row = self._run_test_node(boom)
+        self.assertEqual(instance.status, "failed")
+        self.assertIn("节点炸了", instance.error_message)
+        self.assertEqual(log_row.status, "error")
+        self.assertEqual(resp.error, instance.error_message)
 
 
 class ArtifactRunTypeMarkTestCase(unittest.TestCase):
