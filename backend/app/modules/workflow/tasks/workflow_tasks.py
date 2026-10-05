@@ -319,6 +319,29 @@ def sweep_workflow_cleanup() -> dict:
     }
 
 
+@celery_app.task(name="workflow.cleanup.sweep_stuck_instances")
+def sweep_stuck_instances() -> dict:
+    """周期回收假死的 running/pending 实例（checkpoint P1 遗留兜底）。
+
+    worker 挂死/OOM kill 后实例永久滞留 running：删除被拒（需先取消）、无任何周期收尸。
+    与启动回收器 recover_orphaned_instances（进程重启场景，30 分钟宽限）互补，本任务覆盖
+    「进程未重启但 worker 挂死」的窗口。宽限期经 SysParam workflowStuckInstanceGraceMinutes
+    控制（默认 60 分钟，须大于单节点最长合法静默期 600s + 队列积压时长，防误杀慢节点/排队实例）。
+    production 实例回收后按模板发失败通知（_notify_workflow_failure 内部按 run_type 门控）。
+    """
+    from app.modules.base.service.sys_manage_service import SysParamService
+    from app.modules.workflow.service.cleanup_service import WorkflowCleanupService
+
+    with Session(engine) as session:
+        grace_minutes = _int_param(SysParamService(session).get_value("workflowStuckInstanceGraceMinutes", "60"), 60)
+        swept_ids = WorkflowCleanupService(session).sweep_stuck_running_instances(grace_minutes)
+    for instance_id in swept_ids:
+        _notify_workflow_failure(instance_id)
+    if swept_ids:
+        logger.info("假死实例回收完成 grace_minutes=%s swept=%d", grace_minutes, len(swept_ids))
+    return {"sweptInstances": len(swept_ids), "graceMinutes": grace_minutes}
+
+
 def _int_param(value: str | None, default: int) -> int:
     try:
         return int(value or default)

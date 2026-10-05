@@ -329,6 +329,82 @@ class SweepCheckpointThreadsTest(unittest.TestCase):
         self.assertEqual(mock_del.call_count, 2)
 
 
+class SweepStuckInstancesTest(unittest.TestCase):
+    """checkpoint P1：假死 running/pending 实例回收。选择条件 = running/pending + updated_at 过宽限期；
+    paused 依赖断点恢复绝不纳入；逐行 CAS 防覆盖并发终态。"""
+
+    def setUp(self):
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+        self.definition = WorkflowDefinition(code="wf", name="WF", graph_json="{}", is_active=True, user_id=1)
+        self.session.add(self.definition)
+        self.session.commit()
+        self.session.refresh(self.definition)
+
+    def tearDown(self):
+        self.session.close()
+
+    def _instance(self, *, status: str, age_minutes: float) -> WorkflowInstance:
+        stale_time = datetime.now(UTC) - timedelta(minutes=age_minutes)
+        inst = WorkflowInstance(
+            definition_id=self.definition.id,
+            thread_id=f"t-{status}-{age_minutes}",
+            status=status,
+            created_at=stale_time,
+            updated_at=stale_time,
+            user_id=1,
+        )
+        self.session.add(inst)
+        self.session.commit()
+        self.session.refresh(inst)
+        return inst
+
+    def _sweep(self, grace_minutes: int = 60):
+        with patch("app.modules.workflow.service.cleanup_service.publish_event") as mock_publish:
+            swept = WorkflowCleanupService(self.session).sweep_stuck_running_instances(grace_minutes)
+        return swept, mock_publish
+
+    def test_sweeps_stale_running_and_pending_only(self):
+        stale_running = self._instance(status="running", age_minutes=120)
+        stale_pending = self._instance(status="pending", age_minutes=120)
+        fresh_running = self._instance(status="running", age_minutes=5)
+        stale_paused = self._instance(status="paused", age_minutes=120)
+        stale_success = self._instance(status="success", age_minutes=120)
+
+        swept, mock_publish = self._sweep(grace_minutes=60)
+
+        self.assertEqual(sorted(swept), sorted([stale_running.id, stale_pending.id]))
+        for iid in swept:
+            row = self.session.get(WorkflowInstance, iid)
+            self.assertEqual(row.status, "failed")
+            self.assertIn("假死回收", row.error_message)
+        # 未入选/不可入选的实例保持原状
+        self.assertEqual(self.session.get(WorkflowInstance, fresh_running.id).status, "running")
+        self.assertEqual(self.session.get(WorkflowInstance, stale_paused.id).status, "paused")
+        self.assertEqual(self.session.get(WorkflowInstance, stale_success.id).status, "success")
+        # 每个回收实例发布 SSE failed 事件
+        self.assertEqual(mock_publish.call_count, 2)
+
+    def test_grace_minutes_filters(self):
+        self._instance(status="running", age_minutes=30)
+        swept, _ = self._sweep(grace_minutes=60)
+        self.assertEqual(swept, [])
+
+    def test_cas_skips_concurrently_finalized(self):
+        """CAS 语义：select 后被并发置终态（如 cancelled）的实例不被覆盖。"""
+        stale = self._instance(status="running", age_minutes=120)
+        # 模拟并发：清扫前状态已被改为 cancelled
+        stale.status = "cancelled"
+        self.session.add(stale)
+        self.session.commit()
+
+        swept, mock_publish = self._sweep(grace_minutes=60)
+        self.assertEqual(swept, [])
+        self.assertEqual(self.session.get(WorkflowInstance, stale.id).status, "cancelled")
+        mock_publish.assert_not_called()
+
+
 class CascadeDeleteTest(unittest.TestCase):
     def setUp(self):
         self.engine = make_test_engine()

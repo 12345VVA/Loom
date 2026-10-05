@@ -93,6 +93,12 @@ celery_app.conf.beat_schedule = {
         "task": "workflow.eval.sweep_timeouts",
         "schedule": 900.0,
     },
+    # 每 15 分钟巡检假死的 running/pending 工作流实例（兜底 worker 挂死；宽限期 SysParam
+    # workflowStuckInstanceGraceMinutes 默认 60 分钟，须大于单节点最长合法静默期 600s）
+    "sweep-stuck-workflow-instances": {
+        "task": "workflow.cleanup.sweep_stuck_instances",
+        "schedule": 900.0,
+    },
     # 每天凌晨 4 点清理过期归档工作流版本（兜底版本表无限增长，跳过被引用版本）
     "sweep-archived-versions": {
         "task": "workflow.version.sweep_archived",

@@ -18,13 +18,14 @@ import os
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_
+from sqlalchemy import and_, update
 from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.framework.storage import StorageService
 from app.modules.workflow.model.workflow import WorkflowExecutionLog, WorkflowInstance
 from app.modules.workflow.model.workflow_artifact import WorkflowArtifact
+from app.modules.workflow.service.event_bus import publish_event
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,51 @@ class WorkflowCleanupService:
         if removed:
             logger.info("checkpoint 线程清理完成 keep_days=%s removed=%d", keep_days, removed)
         return removed
+
+    # 假死回收的状态集合：paused 依赖断点恢复（resume 需 checkpoint），绝不纳入
+    _STUCK_SWEEP_STATUSES = ("running", "pending")
+
+    def sweep_stuck_running_instances(self, grace_minutes: int, max_instances: int = 1000) -> list[int]:
+        """回收假死的 running/pending 实例（worker 挂死/OOM 后永久滞留：删除被拒、无收尸），返回回收实例 id。
+
+        - 时间判定用 updated_at：执行循环每批节点落库会刷新它（_persist_node_payloads_sync），
+          停止刷新超过宽限期即视为假死。宽限期必须大于单节点最长合法静默期
+          （WORKFLOW_NODE_TIMEOUT=600s）与任务队列积压时长之和，默认经 SysParam
+          workflowStuckInstanceGraceMinutes 控制为 60 分钟；与启动回收器
+          recover_orphaned_instances（30 分钟宽限、覆盖进程重启场景）互补，
+          本方法覆盖「进程未重启但 worker 挂死」的窗口。
+        - 逐行 CAS（status 保持选中时的原值）置 failed，并发终态写入不被覆盖；
+        - paused 实例绝不纳入：误置 failed 将导致断点恢复永久失效；
+        - 终态落定后 checkpoint 线程交由 sweep_checkpoint_threads 按保留期回收。
+        """
+        cutoff = datetime.now(UTC) - timedelta(minutes=max(1, int(grace_minutes)))
+        stuck = list(
+            self.session.exec(
+                select(WorkflowInstance.id, WorkflowInstance.status)
+                .where(
+                    WorkflowInstance.status.in_(self._STUCK_SWEEP_STATUSES),
+                    WorkflowInstance.updated_at < cutoff,
+                )
+                .order_by(WorkflowInstance.id)
+                .limit(max_instances)
+            ).all()
+        )
+        now = datetime.now(UTC)
+        message = f"实例假死回收：超过 {int(grace_minutes)} 分钟无进度更新（疑似 worker 中断），由周期清理置为 failed"
+        swept_ids: list[int] = []
+        for instance_id, status in stuck:
+            result = self.session.execute(
+                update(WorkflowInstance)
+                .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == status)
+                .values(status="failed", error_message=message[:500], updated_at=now)
+            )
+            if result.rowcount:
+                swept_ids.append(instance_id)
+        self.session.commit()
+        for instance_id in swept_ids:
+            logger.warning("回收假死工作流实例 %d（超过 %d 分钟无进度更新）", instance_id, int(grace_minutes))
+            publish_event(instance_id, "failed", {"status": "failed", "error": message, "node_id": None})
+        return swept_ids
 
     def _alive_payload_refs(self) -> set[str]:
         """全库仍被存活行引用的载荷 ref 集合（软删行的 ref 视为可回收）。"""
