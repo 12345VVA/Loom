@@ -100,13 +100,18 @@ class BaseOpenController(BaseController):
     @Get("/captcha", summary="验证码", anonymous=True)
     def captcha(
         self,
+        request: Request,
         width: int = 150,
         height: int = 80,
         color: str = "#333333",
         session: Session = Depends(get_session),
     ) -> CaptchaResponse:
         service = AuthService(session)
-        return service.captcha(width, height, color)
+        # 签发绑定客户端 IP（L3），并作为签发限流的计数维度（M1）；
+        # IP 提取与 login 侧同源（auth_request_info），保证绑定比对一致
+        from app.modules.base.service.auth_request_info import _get_request_ip
+
+        return service.captcha(width, height, color, client_ip=_get_request_ip(request))
 
     @Get("/config", summary="登录页公开配置", anonymous=True)
     def config(self) -> dict:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import math
 import re
@@ -9,11 +11,12 @@ import secrets
 import time
 from uuid import uuid4
 
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException, status
 
 from app.core.config import settings
 from app.modules.base.model.auth import CaptchaResponse
-from app.modules.base.service.cache_service import cache_get_del, cache_set
+from app.modules.base.service.cache_service import cache_get_del, cache_incr, cache_set
 
 # captcha 参数校验范围（仅作入参契约校验；渲染与答案解空间由服务端固定尺寸决定，见 C2）
 CAPTCHA_WIDTH_MIN = 80
@@ -28,6 +31,26 @@ CAPTCHA_RENDER_HEIGHT = 120
 _CANDIDATE_BAND_RATIO = 10
 _PUZZLE_SIZE = 44
 _CAPTCHA_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _fernet() -> Fernet:
+    """由 JWT 密钥派生 Fernet（答案封存用，M3：Redis 明文遍历即得全部答案）。"""
+    key = base64.urlsafe_b64encode(hashlib.sha256(settings.JWT_SECRET_KEY.encode()).digest())
+    return Fernet(key)
+
+
+def _seal_challenge(payload: dict) -> str:
+    """签发载荷封存为密文——Redis 侧只见 HMAC 包裹的密文，防「读缓存即知答案」。"""
+    return _fernet().encrypt(json.dumps(payload, ensure_ascii=True).encode()).decode()
+
+
+def _unseal_challenge(raw: str) -> dict | None:
+    """解封校验载荷；密文被篡改/非密文/解析失败一律返回 None（调用方统一 401）。"""
+    try:
+        challenge = json.loads(_fernet().decrypt(raw.encode()))
+    except (InvalidToken, json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return None
+    return challenge if isinstance(challenge, dict) else None
 
 
 def _reject_non_finite_constant(value: str) -> float:
@@ -101,7 +124,15 @@ class CaptchaMixin:
         )
         return bg, slider
 
-    def captcha(self, width: int = 150, height: int = 80, color: str = "#333333") -> CaptchaResponse:
+    def captcha(
+        self, width: int = 150, height: int = 80, color: str = "#333333", *, client_ip: str | None = None
+    ) -> CaptchaResponse:
+        # M1：签发限流（中间件 30/min/IP 之外的长窗口上限，抬升分布式图像生成拖垮 CPU 的成本）
+        issue_ip = client_ip or "unknown"
+        issued = cache_incr(f"captcha:issue:{issue_ip}", settings.CAPTCHA_ISSUE_WINDOW_SECONDS)
+        if issued is not None and issued > settings.CAPTCHA_ISSUE_MAX_PER_WINDOW:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="验证码获取过于频繁，请稍后再试")
+
         # 参数范围校验，防止恶意输入
         try:
             width_int = int(width)
@@ -144,24 +175,34 @@ class CaptchaMixin:
                 detail="验证码配置解空间不足（CAPTCHA_SLIDER_TOLERANCE 与渲染尺寸配比失衡）",
             )
         target_x = 8 + secrets.randbelow(max_target - 8 + 1)
-        target_y = (height_int - puzzle_size) // 2
+        # L3：缺口纵向位置随机化（原恒为居中，降低模式识别价值）；前端经 sliderY 响应驱动
+        target_y = secrets.randbelow(height_int - puzzle_size + 1)
 
         bg_image, slider_image = self._render_captcha_images(width_int, height_int, target_x, target_y, puzzle_size)
 
         captcha_id = uuid4().hex
-        cache_set(
-            self._build_captcha_cache_key(captcha_id),
-            json.dumps(
-                {
-                    "type": "slider",
-                    "target_x": target_x,
-                    "tolerance": tolerance,
-                    "created_at": int(time.time() * 1000),
-                },
-                ensure_ascii=True,
-            ),
-            settings.CAPTCHA_EXPIRE_SECONDS,
+        # M3：答案封存为密文（Redis 明文遍历曾可直接读出全部 target_x）；
+        # M4：fail-closed——生产 Redis 不可用时不降级进程内缓存（多进程互不共享，
+        # 会产生「永远错」的 captchaId），明确 503 而非静默生成必失效验证码
+        sealed = _seal_challenge(
+            {
+                "type": "slider",
+                "target_x": target_x,
+                "tolerance": tolerance,
+                "created_at": int(time.time() * 1000),
+                "bind_ip": client_ip,  # L3：绑定签发 IP，提交时不一致即拒
+            }
         )
+        if not cache_set(
+            self._build_captcha_cache_key(captcha_id),
+            sealed,
+            settings.CAPTCHA_EXPIRE_SECONDS,
+            allow_memory_fallback=settings.DEBUG,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="验证码服务暂不可用，请稍后重试",
+            )
         # 不返回 targetX（答案）：仅返回带缺口的背景图与滑块图，前端视觉对齐
         return CaptchaResponse(
             captcha_id=captcha_id,
@@ -178,24 +219,28 @@ class CaptchaMixin:
             },
         )
 
-    def captcha_check(self, captcha_id: str | None, verify_code: str | None) -> None:
+    def captcha_check(self, captcha_id: str | None, verify_code: str | None, *, client_ip: str | None = None) -> None:
         if not captcha_id or not verify_code:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不能为空")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
         cache_key = self._build_captcha_cache_key(captcha_id)
         # 防重放：原子读取并删除（GETDEL），并发请求中仅一个能消费成功
         cached = cache_get_del(cache_key)
         if not cached:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        challenge = _unseal_challenge(cached)
+        if challenge is None or challenge.get("type") != "slider":
+            # 密文篡改/非密文/非法形态统一 401（L1）
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+        # L3：签发 IP 绑定校验（双方均已知时才比对，兼容旧缓存与无 request 场景）
+        bound_ip = challenge.get("bind_ip")
+        if bound_ip and client_ip and bound_ip != client_ip:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
+
         try:
-            challenge = json.loads(cached)
             # parse_constant 拒绝 NaN/Infinity（C1）：json.loads 默认 allow_nan=True，
             # '{"x": NaN}' 会解析成 float('nan') 使下方全部比较恒为 False
             payload = json.loads(verify_code, parse_constant=_reject_non_finite_constant)
         except (json.JSONDecodeError, ValueError):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
-
-        if not isinstance(challenge, dict) or challenge.get("type") != "slider":
-            # isinstance 防御（L1）：challenge 非法形态时统一 401 而非 AttributeError 500
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="验证码不正确或已失效")
 
         try:

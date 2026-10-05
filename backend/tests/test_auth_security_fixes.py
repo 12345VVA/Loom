@@ -38,13 +38,10 @@ class _MockRequest:
 
 
 def _slider_verify_code(captcha_data: dict) -> str:
-    # 图像滑块不再返回 targetX，从服务端缓存读取答案构造合法轨迹
-    from app.modules.base.service.auth_service import AuthService
-    from app.modules.base.service.cache_service import cache_get
+    # 图像滑块不再返回 targetX，从服务端缓存读取答案构造合法轨迹（M3 封存后经解封读取）
+    from helpers import captcha_target_x
 
-    captcha_id = captcha_data["captchaId"]
-    cached = cache_get(AuthService._build_captcha_cache_key(captcha_id))
-    target_x = int(json.loads(cached)["target_x"])
+    target_x = captcha_target_x(captcha_data["captchaId"])
     track = [{"x": round(target_x * step / 6, 2), "t": step * 120} for step in range(1, 7)]
     return json.dumps({"x": target_x, "duration": 720, "track": track})
 

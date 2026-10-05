@@ -52,9 +52,9 @@ class CaptchaBypassTests(unittest.TestCase):
         return {"captchaId": body["captchaId"], "data": body["data"]}
 
     def _target_x(self, captcha_id: str) -> int:
-        cached = cache_get(AuthService._build_captcha_cache_key(captcha_id))
-        self.assertIsNotNone(cached)
-        return int(json.loads(cached)["target_x"])
+        from helpers import captcha_target_x
+
+        return captcha_target_x(captcha_id)
 
     def _track(self, *xs, duration: int = 720) -> str:
         points = [{"x": x, "t": (i + 1) * 120} for i, x in enumerate(xs)]
@@ -270,11 +270,114 @@ class CaptchaLockoutTests(unittest.TestCase):
 
 def _valid_verify_code(captcha_data: dict) -> str:
     """从服务端缓存读答案构造合法求解轨迹（与 test_auth_security_fixes 同法）。"""
-    captcha_id = captcha_data["captchaId"]
-    cached = cache_get(AuthService._build_captcha_cache_key(captcha_id))
-    target_x = int(json.loads(cached)["target_x"])
+    from helpers import captcha_target_x
+
+    target_x = captcha_target_x(captcha_data["captchaId"])
     track = [{"x": round(target_x * step / 6, 2), "t": step * 120} for step in range(1, 7)]
     return json.dumps({"x": target_x, "duration": 720, "track": track})
+
+
+class CaptchaHardeningTests(unittest.TestCase):
+    """P2 加固：M3 答案封存 / M4 fail-closed / M1 签发限流 / L3 IP 绑定与 y 随机 / M2 入参上限。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+        cls.client.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
+
+    def setUp(self):
+        cache_delete_pattern("verify:slider:*")
+        cache_delete_pattern("captcha:issue:*")
+
+    def tearDown(self):
+        cache_delete_pattern("verify:slider:*")
+        cache_delete_pattern("captcha:issue:*")
+
+    def test_m3_challenge_sealed_in_cache(self):
+        """答案封存：Redis/缓存侧不再有明文 target_x（遍历 verify:slider:* 无法直接得分）。"""
+        res = self.client.get("/admin/base/open/captcha")
+        self.assertEqual(res.status_code, 200)
+        captcha_id = res.json()["data"]["captchaId"]
+        cached = cache_get(f"verify:slider:{captcha_id}")
+        self.assertIsNotNone(cached)
+        self.assertNotIn("target_x", cached)
+        # 且不是可解析的 JSON（Fernet 密文）
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(cached)
+
+    def test_m4_fail_closed_when_redis_unavailable_in_production(self):
+        """M4：生产（DEBUG=False）且 Redis 不可用 → 签发明确 503，而非静默降级内存
+        （多进程内存互不共享，静默降级会产生「永远错」的 captchaId）。"""
+        with patch.object(settings, "DEBUG", False):
+            res = self.client.get("/admin/base/open/captcha")
+        self.assertEqual(res.status_code, 503)
+
+    def test_m4_memory_fallback_allowed_in_debug(self):
+        """开发环境（DEBUG=True）Redis 不可用时保持内存回退（现有开发体验不变）。"""
+        self.assertTrue(settings.DEBUG)
+        res = self.client.get("/admin/base/open/captcha")
+        self.assertEqual(res.status_code, 200)
+
+    def test_m1_issue_rate_cap(self):
+        """M1：签发限流——窗口内超过 CAPTCHA_ISSUE_MAX_PER_WINDOW 次 → 429。"""
+        with patch.object(settings, "CAPTCHA_ISSUE_MAX_PER_WINDOW", 3):
+            codes = [self.client.get("/admin/base/open/captcha").status_code for _ in range(5)]
+        self.assertEqual(codes[:3], [200, 200, 200])
+        self.assertEqual(codes[3], 429)
+        self.assertEqual(codes[4], 429)
+
+    def test_l3_bind_ip_mismatch_rejected(self):
+        """L3：验证码与签发 IP 绑定——他 IP 提交（如凭证被盗用/跨代答）→ 401；同 IP 正常通过。
+        GETDEL 一次性消费：每个验证码只能校验一次；service 层直调避免依赖 IP 提取链路。"""
+        from helpers import captcha_target_x
+
+        instance = object.__new__(AuthService)
+
+        def _issue(client_ip: str) -> str:
+            resp = instance.captcha(300, 120, "#333333", client_ip=client_ip)
+            return resp.captcha_id
+
+        def _solve(captcha_id: str) -> str:
+            target_x = captcha_target_x(captcha_id)
+            track = [{"x": round(target_x * step / 6, 2), "t": step * 120} for step in range(1, 7)]
+            return json.dumps({"x": target_x, "duration": 720, "track": track})
+
+        # 签发 IP=A，提交 IP=B → 401（该验证码同时被消费）
+        captcha_id = _issue("203.0.113.10")
+        with self.assertRaises(HTTPException) as cm:
+            instance.captcha_check(captcha_id, _solve(captcha_id), client_ip="198.51.100.77")
+        self.assertEqual(cm.exception.status_code, 401)
+
+        # 再签发一个：同 IP 提交 → 通过
+        captcha_id2 = _issue("203.0.113.10")
+        instance.captcha_check(captcha_id2, _solve(captcha_id2), client_ip="203.0.113.10")
+
+    def test_l3_target_y_randomized(self):
+        """L3：缺口纵向位置随机化（原恒为居中 38）。"""
+        ys = set()
+        for _ in range(5):
+            res = self.client.get("/admin/base/open/captcha")
+            ys.add(res.json()["data"]["data"]["sliderY"])
+        self.assertGreater(len(ys), 1, "连续 5 次签发 sliderY 完全一致——随机化未生效")
+        for y in ys:
+            self.assertTrue(0 <= y <= 120 - 44)
+
+    def test_m2_verify_code_length_cap(self):
+        """M2：verify_code 超 4096 字节 → 422（DTO 层拦截，不到达业务逻辑）。"""
+        res = self.client.post(
+            "/admin/base/open/login",
+            json={
+                "username": "x",
+                "password": "x",
+                "captchaId": "0" * 32,
+                "verifyCode": "a" * 5000,
+            },
+        )
+        self.assertEqual(res.status_code, 422)
 
 
 if __name__ == "__main__":

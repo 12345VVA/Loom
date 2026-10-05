@@ -78,12 +78,10 @@ class FrameworkAlignmentTests(unittest.TestCase):
         self.client.cookies.clear()
 
     def _slider_verify_code(self, captcha_data: dict) -> str:
-        # 图像滑块不返回答案，从服务端缓存读取 target_x 构造合法轨迹
-        from app.modules.base.service.auth_service import AuthService
-        from app.modules.base.service.cache_service import cache_get
+        # 图像滑块不返回答案，从服务端缓存读取 target_x 构造合法轨迹（M3 封存后经解封读取）
+        from helpers import captcha_target_x
 
-        cached = cache_get(AuthService._build_captcha_cache_key(captcha_data["captchaId"]))
-        target_x = int(json.loads(cached)["target_x"])
+        target_x = captcha_target_x(captcha_data["captchaId"])
         return json.dumps(
             {
                 "x": target_x,

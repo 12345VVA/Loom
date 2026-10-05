@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 _redis_client: Redis | None = None
 _redis_unavailable = False
+# Redis 故障后的重试退避：此前是永久 latch（一次抖动 → 进程内缓存降级到进程结束），
+# 多进程部署下签发/校验进程内存不共享，验证码等跨进程凭证必然失败（专项 M4）
+_REDIS_RETRY_INTERVAL_SECONDS = 30.0
+_redis_retry_at = 0.0
 _memory_cache: dict[str, tuple[str, float | None]] = {}
 
 
@@ -58,28 +62,37 @@ class CacheNamespace:
 
 
 def get_redis_client() -> Redis | None:
-    """获取 Redis 客户端，失败时返回 None。"""
-    global _redis_client, _redis_unavailable
+    """获取 Redis 客户端，失败时返回 None（退避窗口内）；窗口到期自动重试连接。"""
+    global _redis_client, _redis_unavailable, _redis_retry_at
 
     if _redis_unavailable:
-        return None
+        if time.time() < _redis_retry_at:
+            return None
+        # 退避窗口到期：清除 latch 重试，避免一次抖动导致永久降级
+        _redis_unavailable = False
 
     if _redis_client is None:
         try:
             _redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
             _redis_client.ping()
         except RedisError as exc:
-            logger.warning("Redis 不可用，将跳过服务端登录态缓存: %s", exc)
+            logger.warning("Redis 不可用，暂时跳过服务端缓存（%.0fs 后重试）: %s", _REDIS_RETRY_INTERVAL_SECONDS, exc)
             _redis_unavailable = True
+            _redis_retry_at = time.time() + _REDIS_RETRY_INTERVAL_SECONDS
             _redis_client = None
             return None
 
     return _redis_client
 
 
-def cache_set(key: str, value: str, ttl_seconds: int | None = None) -> bool:
+def cache_set(key: str, value: str, ttl_seconds: int | None = None, *, allow_memory_fallback: bool = True) -> bool:
+    """写入缓存。allow_memory_fallback=False 时 Redis 不可用直接返回 False（不降级内存）——
+    供跨进程一致性敏感的凭证类写入使用（如验证码答案，专项 M4：多进程内存互不共享，
+    静默降级会产生「永远错」的 captchaId），调用方应据此 fail-closed 明确报错。"""
     client = get_redis_client()
     if client is None:
+        if not allow_memory_fallback:
+            return False
         expires_at = time.time() + ttl_seconds if ttl_seconds else None
         _memory_cache[key] = (value, expires_at)
         return True

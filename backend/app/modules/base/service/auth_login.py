@@ -69,7 +69,8 @@ class LoginMixin:
 
         if settings.captcha_enabled:
             try:
-                self.captcha_check(payload.captcha_id, payload.verify_code)
+                # L3：校验与签发的 IP 绑定一致性
+                self.captcha_check(payload.captcha_id, payload.verify_code, client_ip=login_ip)
             except HTTPException as exc:
                 # H2：验证码失败只计 IP 失败计数，不计账号——校验无需凭证，
                 # 计入账号即成"仅凭用户名锁死任意账号"的 DoS 原语

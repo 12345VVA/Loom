@@ -116,8 +116,9 @@ class LoginRequest(BaseModel):
 
     username: str
     password: str
-    captcha_id: str | None = None
-    verify_code: str | None = None
+    # M2：入参长度上限——verify_code 含轨迹 JSON，无上限时可单请求携带数 MB 占用工作线程
+    captcha_id: str | None = Field(default=None, max_length=64)
+    verify_code: str | None = Field(default=None, max_length=4096)
 
     @field_validator("username", "password", mode="before")
     @classmethod

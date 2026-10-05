@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     # H1：自报拖拽时长与轨迹末点时刻的最大间隔（同源时钟；过小说明轨迹/时长各自编造，
     # 过大会误伤"拖完停住再松手"，默认 5s 宽松值）
     CAPTCHA_SLIDER_MAX_RELEASE_GAP_MS: int = 5000
+    # M1：签发限流（全局限流 30/min/IP 之外的长窗口上限，抑制分布式图像生成拖垮 CPU）
+    CAPTCHA_ISSUE_WINDOW_SECONDS: int = 300
+    CAPTCHA_ISSUE_MAX_PER_WINDOW: int = 100
     BASE_LOGIN_FAIL_WINDOW: int = 15 * 60
     BASE_LOGIN_ACCOUNT_FAIL_MAX: int = 5
     BASE_LOGIN_IP_FAIL_MAX: int = 20

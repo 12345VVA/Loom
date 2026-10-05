@@ -9,6 +9,18 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import MetaData, SQLModel
 
 
+def captcha_target_x(captcha_id: str) -> int:
+    """从服务端缓存读验证码答案（M3 封存后为密文，须经 _unseal_challenge 解封）。"""
+    from app.modules.base.service.auth_captcha import _unseal_challenge
+    from app.modules.base.service.cache_service import cache_get
+
+    cached = cache_get(f"verify:slider:{captcha_id}")
+    challenge = _unseal_challenge(cached) if cached else None
+    if not challenge or "target_x" not in challenge:
+        raise AssertionError(f"验证码缓存缺失或解封失败: {captcha_id}")
+    return int(challenge["target_x"])
+
+
 def make_test_engine(tables: list | None = None):
     """测试 engine 工厂：优先 TEST_DATABASE_URL，缺省内存 SQLite。
 

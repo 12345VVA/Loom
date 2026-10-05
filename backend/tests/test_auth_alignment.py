@@ -33,14 +33,10 @@ class AuthAlignmentTests(unittest.TestCase):
         self.client.cookies.clear()
 
     def _captcha_target_x(self, captcha_data: dict) -> int:
-        """图像滑块不再返回答案，从服务端缓存读取 target_x 供测试构造合法轨迹。"""
-        from app.modules.base.service.auth_service import AuthService
-        from app.modules.base.service.cache_service import cache_get
+        """图像滑块不再返回答案，从服务端缓存读取 target_x（M3 封存后经解封读取）。"""
+        from helpers import captcha_target_x
 
-        captcha_id = captcha_data["captchaId"]
-        cached = cache_get(AuthService._build_captcha_cache_key(captcha_id))
-        self.assertIsNotNone(cached, "验证码缓存应存在")
-        return int(json.loads(cached)["target_x"])
+        return captcha_target_x(captcha_data["captchaId"])
 
     def _slider_verify_code(
         self,
