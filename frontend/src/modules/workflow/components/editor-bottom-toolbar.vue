@@ -253,6 +253,8 @@ function onPopoverShow() {
 	bottom: 24px;
 	left: 50%;
 	transform: translateX(-50%);
+	// 配置面板开合的位移平滑过渡（原实现跳变）
+	transition: transform 0.25s ease;
 	background: rgba(255, 255, 255, 0.85);
 	backdrop-filter: blur(12px);
 	border: 1px solid var(--el-border-color-light);

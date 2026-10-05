@@ -65,6 +65,9 @@ export function useWorkflowTest(
 		}
 	}
 
+	// 上次试运行输入缓存（session 级，按工作流隔离）：重复试运行免重填
+	const lastInputsCache = new Map<string, string>();
+
 	async function openTestDialog() {
 		if (!workflowId.value) {
 			ElMessage.warning(t('请先保存新建的工作流然后再进行测试。'));
@@ -78,6 +81,13 @@ export function useWorkflowTest(
 		const invalidInput = findInvalidNodeInput(elements.value);
 		if (invalidInput) {
 			ElMessage.warning(invalidInput.error);
+			return;
+		}
+		// 优先回填上次输入（迭代调试常见场景）；无缓存时从 start 节点推导空表单
+		const cached = lastInputsCache.get(workflowId.value);
+		if (cached !== undefined) {
+			testDialog.form.inputsJson = cached;
+			testDialog.visible = true;
 			return;
 		}
 		const startNode = elements.value.find(
@@ -113,6 +123,10 @@ export function useWorkflowTest(
 				inputs
 			});
 			ElMessage.success(t('工作流测试实例已启动'));
+			// 记住本次输入，下次试运行免重填（改单个值迭代调试的常见场景）
+			if (workflowId.value) {
+				lastInputsCache.set(workflowId.value, testDialog.form.inputsJson);
+			}
 			testDialog.visible = false;
 
 			const instId = res?.id;

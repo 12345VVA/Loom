@@ -5,7 +5,8 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router';
 
 /**
  * 编辑器键盘快捷键与路由守卫 composable
- * Esc 关闭面板/菜单、Ctrl+S 保存、Ctrl+Z/Shift+Z 撤销/重做、Delete/Backspace 删除选中元素；
+ * Esc 关闭面板/菜单、Ctrl+S 保存、Ctrl+Z/Shift+Z 撤销/重做、Delete/Backspace 删除选中元素、
+ * Ctrl/Cmd+Enter 试运行、Ctrl+Shift+T 测试选中节点；
  * 未保存修改时，离开编辑器或切换工作流前提示。
  */
 export function useKeyboardShortcuts(deps: {
@@ -16,8 +17,20 @@ export function useKeyboardShortcuts(deps: {
 	undo: () => boolean;
 	redo: () => boolean;
 	deleteSelectedElements: () => void;
+	openTestDialog: () => void;
+	openNodeTestDialog: (nodeId: string) => void;
 }) {
-	const { selectedNodeId, isDirty, closeContextMenu, saveWorkflow, undo, redo, deleteSelectedElements } = deps;
+	const {
+		selectedNodeId,
+		isDirty,
+		closeContextMenu,
+		saveWorkflow,
+		undo,
+		redo,
+		deleteSelectedElements,
+		openTestDialog,
+		openNodeTestDialog
+	} = deps;
 	const { t } = useI18n();
 	const route = useRoute();
 
@@ -77,6 +90,22 @@ export function useKeyboardShortcuts(deps: {
 				if (redo()) ElMessage.info(t('已重做'));
 			} else {
 				if (undo()) ElMessage.info(t('已撤销'));
+			}
+		}
+
+		// Ctrl/Cmd+Enter：整图试运行（草稿）
+		if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+			event.preventDefault();
+			openTestDialog();
+		}
+
+		// Ctrl+Shift+T：测试当前选中节点（就近验证单节点）
+		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 't') {
+			event.preventDefault();
+			if (selectedNodeId.value) {
+				openNodeTestDialog(selectedNodeId.value);
+			} else {
+				ElMessage.warning(t('请先选中要测试的节点'));
 			}
 		}
 

@@ -336,5 +336,6 @@
 	"停止运行": "Stop",
 	"已发送停止请求，实例将尽快取消": "Stop request sent, the instance will be cancelled soon",
 	"已发送停止请求，试运行将尽快取消": "Stop request sent, the trial run will be cancelled soon",
-	"停止失败: ": "Stop failed: "
+	"停止失败: ": "Stop failed: ",
+	"请先选中要测试的节点": "Please select a node to test first"
 }

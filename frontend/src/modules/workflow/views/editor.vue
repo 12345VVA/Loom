@@ -421,7 +421,10 @@ const { handleKeyDown } = useKeyboardShortcuts({
 	saveWorkflow,
 	undo,
 	redo,
-	deleteSelectedElements
+	deleteSelectedElements,
+	// 箭头包装延迟求值：openTestDialog/openNodeTestDialog 定义在下方 composable 解构中
+	openTestDialog: () => openTestDialog(),
+	openNodeTestDialog: nodeId => openNodeTestDialog(nodeId)
 });
 
 // 工作流加载 / 发布 / 导出（fetchWorkflowData/fetchAiProfiles/publishWorkflow/exportWorkflow）
