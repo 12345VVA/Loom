@@ -211,7 +211,7 @@ def cache_set_nx(key: str, value: str, ttl_seconds: int | None = None) -> bool:
         else:
             return False
     expires_at = time.time() + ttl_seconds if ttl_seconds else None
-    _memory_cache[key] = (value, expires_at)
+    _memory_cache_put(key, value, expires_at)
     return True
 
 

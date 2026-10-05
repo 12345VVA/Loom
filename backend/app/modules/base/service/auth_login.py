@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -31,8 +32,10 @@ from app.modules.base.service.auth_request_info import (
     _get_user_agent,
 )
 from app.modules.base.service.authority_service import (
+    delete_session,
     get_session,
     get_user_token_version,
+    increment_user_token_version,
     prime_login_caches,
     refresh_session,
     register_session,
@@ -49,6 +52,8 @@ from app.modules.base.service.sys_manage_service import SysLoginLogService
 # 登录时序侧信道防护：用户不存在时也用此 dummy 哈希跑一次等价耗时的 PBKDF2，
 # 使"用户不存在"与"密码错误"的响应时间一致，防止攻击者据此枚举有效账号。
 _DUMMY_PASSWORD_HASH = hash_password("__invalid_dummy_account__")
+
+logger = logging.getLogger(__name__)
 
 
 class LoginMixin:
@@ -156,7 +161,7 @@ class LoginMixin:
         refresh_token = create_refresh_token(user, sid)
         permissions = prime_login_caches(self.session, user, access_token)
         register_session(user.id, sid, refresh_token, decode_token(access_token).get("jti"), request)
-        self._clear_login_failure(payload.username, login_ip)
+        self._clear_login_failure(payload.username)
         self._record_login_log(
             request=request,
             user_id=user.id,
@@ -236,10 +241,12 @@ class LoginMixin:
         if not session_record:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
         # 恒定时间比较 refresh_hash，防止按字节前缀差异的定时侧信道泄露 refresh_token
-        if not hmac.compare_digest(
-            str(session_record.get("refresh_hash")),
-            hashlib.sha256(refresh_token_value.encode("utf-8")).hexdigest(),
-        ):
+        provided_hash = hashlib.sha256(refresh_token_value.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(str(session_record.get("refresh_hash")), provided_hash):
+            # R7：提交「上一代已轮转」的 refresh token = 令牌家族泄露信号（合法客户端
+            # 只持最新代）——整族作废并删除会话，防窃取者与合法用户并存续期；
+            # 合法用户下一次刷新将失败并需重新登录（可感知告警，而非被静默顶替）
+            self._revoke_stolen_session_family(user, session_record, provided_hash)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="刷新令牌已失效，请重新登录")
 
         roles = get_user_roles(self.session, user.id)
@@ -254,6 +261,23 @@ class LoginMixin:
             permissions=permissions,
             access_token=access_token,
             refresh_token=refresh_token,
+        )
+
+    def _revoke_stolen_session_family(self, user: User, session_record: dict, provided_hash: str) -> None:
+        """R7：refresh 重用检测——提交的 hash 匹配「上一代」refresh hash 时，
+        判定令牌家族已泄露：递增 token_version 作废该用户全部令牌并删除会话，
+        写告警日志供审计。非重用（纯无效 token）不做任何动作，由调用方统一 401。"""
+        prev_hash = str(session_record.get("prev_refresh_hash") or "")
+        if not prev_hash or not hmac.compare_digest(prev_hash, provided_hash):
+            return
+        sid = str(session_record.get("sid") or "")
+        increment_user_token_version(user.id)
+        if sid:
+            delete_session(user.id, sid)
+        logger.warning(
+            "检测到 refresh token 重用（令牌家族泄露信号，R7）：user_id=%s sid=%s 已整族作废并删除会话",
+            user.id,
+            sid,
         )
 
     def _record_login_log(
@@ -319,12 +343,19 @@ class LoginMixin:
             risk_hit = 1
         return risk_hit
 
-    def _clear_login_failure(self, account: str, ip: str) -> None:
+    def _clear_login_failure(self, account: str) -> None:
+        """成功登录只清账号维度计数/锁（R3）。
+
+        此前连 `login:fail:ip` / `login:lock:ip` 一起删——持有任意有效低权账号即可在
+        爆破轮次间登录一次，把整台 IP 的失败计数与锁清零，用户名喷洒自此仅受
+        /login 限流约束。IP 维度自清靠 TTL（BASE_LOGIN_FAIL_WINDOW）滚动到期。
+        IP 锁存在时登录在 `_check_login_risk` 即被 429，成功登录本就不可达，
+        「清 IP 锁」对锁场景原是死路径；保留 IP 计数对共享出口 IP 的额外代价
+        由 20 次/15min 的高阈值与 15min 窗口兜底。
+        """
         cache_delete(
             self._build_account_fail_key(account),
-            self._build_ip_fail_key(ip),
             self._build_account_lock_key(account),
-            self._build_ip_lock_key(ip),
         )
 
     @staticmethod

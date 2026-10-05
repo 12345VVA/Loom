@@ -20,9 +20,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.core.config import settings  # noqa: E402
 from app.core.database import engine  # noqa: E402
-from app.core.security import hash_password  # noqa: E402
+from app.core.security import decode_token, hash_password  # noqa: E402
 from app.modules.base.model.auth import User  # noqa: E402
-from app.modules.base.service.authority_service import clear_login_caches  # noqa: E402
+from app.modules.base.service.authority_service import clear_login_caches, register_session  # noqa: E402
 from app.modules.base.service.cache_service import cache_delete_pattern  # noqa: E402
 from app.modules.base.service.security_service import create_access_token  # noqa: E402
 from main import app  # noqa: E402
@@ -114,6 +114,9 @@ class AiApiPermissionTests(unittest.TestCase):
             user = session.get(User, self.normal_user_id)
             self.assertIsNotNone(user)
             token = create_access_token(user, "test-sid")
+            # R10：access 校验含 sid 会话存活——直造 token 需注册会话，
+            # 让请求命中预期的 403（权限）而非 401（会话不存在）
+            register_session(user.id, "test-sid", "-", decode_token(token).get("jti") or "-")
         return {"Authorization": f"Bearer {token}"}
 
     # ------------------------------------------------------------------

@@ -77,6 +77,7 @@ class ProfileMixin:
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
+        password_changed = False
         if payload.password:
             if not payload.old_password:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="原密码不能为空")
@@ -87,6 +88,7 @@ class ProfileMixin:
             target.password_hash = hash_password(payload.password)
             target.password_version += 1
             target.password_changed_at = datetime.now(UTC)  # 记录密码修改时间
+            password_changed = True
 
         if payload.nick_name is not None:
             target.nick_name = payload.nick_name
@@ -105,8 +107,11 @@ class ProfileMixin:
         self.session.refresh(target)
         clear_login_caches(target.id)
         # 改密码踢出全部设备：清空该用户所有会话记录
-        # （旧 token 的 password_version 已不匹配，access/refresh 都会被拒；清 session 保持整洁）
-        clear_user_sessions(target.id)
+        # （旧 token 的 password_version 已不匹配，access/refresh 都会被拒；清 session 保持整洁）。
+        # 仅在密码真正变更时执行——R10 后 access 校验会话存活，无差别清会话会把
+        # 纯资料更新（改昵称/备注）也变成全端登出
+        if password_changed:
+            clear_user_sessions(target.id)
         return {"success": True}
 
     def permmenu(self, user: User) -> dict:

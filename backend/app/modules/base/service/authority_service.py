@@ -23,7 +23,14 @@ from app.modules.base.compat import (
     DEFAULT_PUBLIC_PERMISSION_PATHS,
 )
 from app.modules.base.model.auth import Menu, Role, RoleMenuLink, User, UserRoleLink
-from app.modules.base.service.cache_service import cache_delete, cache_get, cache_get_json, cache_set, cache_set_json
+from app.modules.base.service.cache_service import (
+    cache_delete,
+    cache_get,
+    cache_get_json,
+    cache_set,
+    cache_set_json,
+    get_redis_client,
+)
 from app.modules.loader import load_permission_configs
 
 ADMIN_PREFIX = "/admin"
@@ -331,17 +338,31 @@ def get_user_from_access_token(session: Session, token: str) -> tuple[User, dict
     if token_version < current_token_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
 
+    # R10：校验 sid 会话存活——登出/踢设备/被挤只删会话记录，而 refresh 轮转会覆盖
+    # 会话记录里的 access_jti，历史旧代 access token 的 jti 无处登记、无从拉黑，
+    # 此前可存活至自身 TTL。会话删除即拒补上这条回收链。降级语义：DEBUG（单进程
+    # 内存缓存自洽）恒校验；生产仅在 Redis 可用时校验——Redis 故障期间与 jti
+    # 黑名单/token_version 一致 fail-open，不把缓存故障放大为全站 401。
+    sid = payload.get("sid")
+    if sid and (settings.DEBUG or get_redis_client() is not None):
+        if not get_session(user.id, str(sid)):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
+
     cached_password_version = cache_get(build_password_version_cache_key(user.id))
     if cached_password_version is not None and str(password_version) != cached_password_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录状态已失效，请重新登录")
 
     cached_token = cache_get(build_token_cache_key(user.id))
-    if cached_token is not None and settings.ADMIN_SSO_ENABLED and cached_token != token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号已在其他位置登录")
-
-    # 如果缓存为空（例如服务端使用了内存缓存并发生重启），但 Token 的签名合法且密码版本匹对，
-    # 此时静默地重新注入登录缓存，以实现服务端无缝重启用户无感
-    if cached_password_version is None or cached_token is None:
+    if settings.ADMIN_SSO_ENABLED:
+        # R5：SSO fail-closed——设计语义是「缓存 token 与请求 token 不一致即拒」，
+        # 此前缓存缺失（重启/清缓存/驱逐）会静默跳过并把当前 token 扶正为新基线
+        # （fail-open），单点在线约束形同虚设；改为缓存缺失同样拒绝，前端 refresh
+        # 流程会重新登录重建基线
+        if cached_token != token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号已在其他位置登录")
+    elif cached_password_version is None or cached_token is None:
+        # 如果缓存为空（例如服务端使用了内存缓存并发生重启），但 Token 的签名合法且密码版本匹对，
+        # 此时静默地重新注入登录缓存，以实现服务端无缝重启用户无感（非 SSO 模式保留）
         prime_login_caches(session, user, token)
 
     return user, payload
@@ -418,6 +439,9 @@ def register_session(
         "created_at": now,
         "last_active_at": now,
         "refresh_hash": _refresh_token_hash(refresh_token),
+        # R7：上一代 refresh hash（轮转时回填），用于重用检测——提交「上一代」
+        # refresh token 即家族泄露信号
+        "prev_refresh_hash": None,
         "access_jti": access_jti,
     }
     cache_set_json(build_session_key(user_id, sid), record, get_refresh_token_ttl())
@@ -426,11 +450,16 @@ def register_session(
 
 
 def refresh_session(user_id: int, sid: str, new_refresh_token: str, new_access_jti: str) -> None:
-    """refresh 轮转时更新会话记录（refresh_hash / access_jti / 活跃时间）并续期。"""
+    """refresh 轮转时更新会话记录（refresh_hash / access_jti / 活跃时间）并续期。
+
+    R7：当前 hash 轮转前存入 prev_refresh_hash——重放上一代 token 时可被识别为
+    家族泄露信号（区别于「无效 token」的普通拒绝）。
+    """
     record = cache_get_json(build_session_key(user_id, sid))
     if not record:
         # 会话已被踢出/清理：不再复活，refresh 将由调用方的后续校验拒绝
         return
+    record["prev_refresh_hash"] = record.get("refresh_hash")
     record["refresh_hash"] = _refresh_token_hash(new_refresh_token)
     record["access_jti"] = new_access_jti
     record["last_active_at"] = int(time.time())

@@ -14,7 +14,7 @@ from helpers import make_test_engine  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.database import engine as app_engine  # noqa: E402
-from app.core.security import hash_password  # noqa: E402
+from app.core.security import decode_token, hash_password  # noqa: E402
 from app.framework.controller_meta import CrudQuery  # noqa: E402
 from app.framework.router.query_builder import QueryBuilder  # noqa: E402
 from app.modules.base.model.auth import User  # noqa: E402
@@ -26,6 +26,7 @@ from app.modules.base.model.sys import (  # noqa: E402
     SysSecurityLogCreateRequest,
     SysSecurityLogRead,
 )
+from app.modules.base.service.authority_service import register_session  # noqa: E402
 from app.modules.base.service.cache_service import cache_delete_pattern  # noqa: E402
 from app.modules.base.service.data_scope_service import DataScopeContext  # noqa: E402
 from app.modules.base.service.security_service import create_access_token  # noqa: E402
@@ -240,6 +241,9 @@ class FrameworkAlignmentTests(unittest.TestCase):
             session.commit()
             session.refresh(user)
             token = create_access_token(user, "test-sid")
+            # R10：access 校验含 sid 会话存活——直造 token 需注册会话，
+            # 让请求命中预期的 403（权限）而非 401（会话不存在）
+            register_session(user.id, "test-sid", "-", decode_token(token).get("jti") or "-")
 
         forbidden = self.client.post(
             "/admin/base/sys/menu/delete",
