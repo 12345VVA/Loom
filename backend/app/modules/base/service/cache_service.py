@@ -23,6 +23,8 @@ _redis_unavailable = False
 # 多进程部署下签发/校验进程内存不共享，验证码等跨进程凭证必然失败（专项 M4）
 _REDIS_RETRY_INTERVAL_SECONDS = 30.0
 _redis_retry_at = 0.0
+# 进程内降级缓存条目上限（N8：防 Redis 长期不可用期间无界增长）
+_MEMORY_CACHE_MAX_ENTRIES = 10000
 _memory_cache: dict[str, tuple[str, float | None]] = {}
 
 
@@ -94,7 +96,7 @@ def cache_set(key: str, value: str, ttl_seconds: int | None = None, *, allow_mem
         if not allow_memory_fallback:
             return False
         expires_at = time.time() + ttl_seconds if ttl_seconds else None
-        _memory_cache[key] = (value, expires_at)
+        _memory_cache_put(key, value, expires_at)
         return True
     try:
         client.set(name=key, value=value, ex=ttl_seconds)
@@ -213,6 +215,16 @@ def cache_set_nx(key: str, value: str, ttl_seconds: int | None = None) -> bool:
     return True
 
 
+def _memory_cache_put(key: str, value: str, expires_at: float | None) -> None:
+    """进程内缓存写入，带条目上限（N8）：防 Redis 长期不可用期间无界增长。
+    FIFO 驱逐（dict 保序，最旧先出）；条目均为小体积标量，1 万条上限足够宽裕。"""
+    if len(_memory_cache) >= _MEMORY_CACHE_MAX_ENTRIES and key not in _memory_cache:
+        oldest = next(iter(_memory_cache))
+        _memory_cache.pop(oldest, None)
+        logger.warning("内存缓存达上限 %d，FIFO 驱逐最旧条目（Redis 是否长期不可用？）", _MEMORY_CACHE_MAX_ENTRIES)
+    _memory_cache[key] = (value, expires_at)
+
+
 def cache_incr(key: str, ttl_seconds: int | None = None) -> int | None:
     """
     原子递增计数器。返回递增后的值；Redis 异常时返回 None 表示计数不可靠。
@@ -242,7 +254,7 @@ def cache_incr(key: str, ttl_seconds: int | None = None) -> int | None:
     else:
         current = 1
     expires_at = time.time() + ttl_seconds if ttl_seconds else None
-    _memory_cache[key] = (str(current), expires_at)
+    _memory_cache_put(key, str(current), expires_at)
     return current
 
 
@@ -274,7 +286,7 @@ def cache_decr(key: str, ttl_seconds: int | None = None) -> int:
     else:
         current = 0
     expires_at = time.time() + ttl_seconds if ttl_seconds else None
-    _memory_cache[key] = (str(current), expires_at)
+    _memory_cache_put(key, str(current), expires_at)
     return current
 
 
