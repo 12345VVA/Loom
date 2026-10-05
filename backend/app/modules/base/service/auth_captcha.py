@@ -85,7 +85,40 @@ class CaptchaMixin:
         return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
     def _render_captcha_images(self, width: int, height: int, target_x: int, target_y: int, puzzle_size: int):
-        """生成带缺口的背景图与滑块拼图块。缺口位置即答案，但不以数值返回前端。"""
+        """生成带缺口的背景图与滑块拼图块。缺口位置即答案，但不以数值返回前端。
+
+        按总开关分派：加固管线（§17，破坏确定性亮度变换 + 伪缺口烧票）或
+        legacy 渲染（回滚保险）。返回签名不变——唯一调用点 captcha() 零改动。
+        """
+        if settings.CAPTCHA_PUZZLE_HARDENING:
+            from app.modules.base.service.auth_captcha_render import render_slider_captcha
+
+            result = render_slider_captcha(
+                width, height, target_x, target_y, puzzle_size, params=self._captcha_render_params()
+            )
+            return result.bg, result.slider
+        return self._render_captcha_images_legacy(width, height, target_x, target_y, puzzle_size)
+
+    @staticmethod
+    def _captcha_render_params():
+        """settings.CAPTCHA_HARDEN_* → RenderParams（幅度可 env 调档，§15.1 实测对标）。"""
+        from app.modules.base.service.auth_captcha_render import RenderParams
+
+        return RenderParams(
+            brightness=settings.CAPTCHA_HARDEN_BRIGHTNESS,
+            contrast=settings.CAPTCHA_HARDEN_CONTRAST,
+            hue_shift=settings.CAPTCHA_HARDEN_HUE,
+            rotate_deg=settings.CAPTCHA_HARDEN_ROTATE_DEG,
+            scale=settings.CAPTCHA_HARDEN_SCALE,
+            tint_alpha=settings.CAPTCHA_HARDEN_TINT_ALPHA,
+            noise_sigma=0,
+            hole_noise_sigma=settings.CAPTCHA_HARDEN_HOLE_NOISE_SIGMA,
+            decoy_min=settings.CAPTCHA_HARDEN_DECOY_MIN,
+            decoy_max=settings.CAPTCHA_HARDEN_DECOY_MAX,
+        )
+
+    def _render_captcha_images_legacy(self, width: int, height: int, target_x: int, target_y: int, puzzle_size: int):
+        """legacy 渲染（确定性变换，已被 §13 实测 100% 解出）：仅作 CAPTCHA_PUZZLE_HARDENING=False 的回滚路径保留。"""
         import random
 
         from PIL import Image, ImageDraw
