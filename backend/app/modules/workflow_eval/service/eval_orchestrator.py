@@ -131,9 +131,17 @@ def mark_failed(eval_run_id: int, error_msg: str) -> bool:
 
 
 def create_eval_instance(
-    definition_id: int, definition_version_id: int | None, case: WorkflowTestCase, user_id: int | None
+    definition_id: int,
+    definition_version_id: int | None,
+    case: WorkflowTestCase,
+    user_id: int | None,
+    eval_run_id: int | None = None,
 ) -> int:
-    """为单条用例创建运行实例（status=running，新 thread_id，记 version_id），返回 instance_id。"""
+    """为单条用例创建运行实例（status=running，新 thread_id，记 version_id），返回 instance_id。
+
+    实例打 run_type="eval" 并回填 eval_run_id：与正式/试运行实例区分（列表默认过滤、
+    失败不发通知），并可从实例直接回溯所属评估批次。
+    """
     inputs = json.loads(case.input_data) if case.input_data else {}
     with Session(engine) as session:
         instance = WorkflowInstance(
@@ -144,6 +152,8 @@ def create_eval_instance(
             state_data=json.dumps(inputs),
             current_node=None,
             user_id=user_id,
+            run_type="eval",
+            eval_run_id=eval_run_id,
         )
         session.add(instance)
         session.flush()  # flush 取 id，避免 commit 后 expire_on_commit 再 refresh

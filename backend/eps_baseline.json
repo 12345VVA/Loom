@@ -43197,6 +43197,11 @@
                           ],
                           "title": "Originalurl"
                         },
+                        "runType": {
+                          "default": "production",
+                          "title": "Runtype",
+                          "type": "string"
+                        },
                         "storageUrl": {
                           "anyOf": [
                             {
@@ -43505,6 +43510,11 @@
                                 ],
                                 "title": "Originalurl"
                               },
+                              "runType": {
+                                "default": "production",
+                                "title": "Runtype",
+                                "type": "string"
+                              },
                               "storageUrl": {
                                 "anyOf": [
                                   {
@@ -43705,6 +43715,18 @@
           "required": false,
           "source": "version_id",
           "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "run_type",
+          "dict": null,
+          "label": "runType",
+          "nullable": true,
+          "prop": "runType",
+          "propertyName": "runType",
+          "required": false,
+          "source": "run_type",
+          "type": "string",
           "validate": null
         },
         {
@@ -43911,6 +43933,18 @@
           "required": false,
           "source": "version_id",
           "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "run_type",
+          "dict": null,
+          "label": "runType",
+          "nullable": true,
+          "prop": "runType",
+          "propertyName": "runType",
+          "required": false,
+          "source": "run_type",
+          "type": "string",
           "validate": null
         },
         {
@@ -46114,6 +46148,17 @@
                           ],
                           "title": "Errormessage"
                         },
+                        "evalRunId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Evalrunid"
+                        },
                         "failedNodeId": {
                           "anyOf": [
                             {
@@ -46128,6 +46173,11 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "runType": {
+                          "default": "production",
+                          "title": "Runtype",
+                          "type": "string"
                         },
                         "stateData": {
                           "title": "Statedata",
@@ -46385,6 +46435,17 @@
                             ],
                             "title": "Errormessage"
                           },
+                          "evalRunId": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Evalrunid"
+                          },
                           "failedNodeId": {
                             "anyOf": [
                               {
@@ -46399,6 +46460,11 @@
                           "id": {
                             "title": "Id",
                             "type": "number"
+                          },
+                          "runType": {
+                            "default": "production",
+                            "title": "Runtype",
+                            "type": "string"
                           },
                           "stateData": {
                             "title": "Statedata",
@@ -46884,6 +46950,17 @@
                                 ],
                                 "title": "Errormessage"
                               },
+                              "evalRunId": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Evalrunid"
+                              },
                               "failedNodeId": {
                                 "anyOf": [
                                   {
@@ -46898,6 +46975,11 @@
                               "id": {
                                 "title": "Id",
                                 "type": "number"
+                              },
+                              "runType": {
+                                "default": "production",
+                                "title": "Runtype",
+                                "type": "string"
                               },
                               "stateData": {
                                 "title": "Statedata",
@@ -47683,6 +47765,33 @@
           "validate": null
         },
         {
+          "comment": "run_type",
+          "dict": null,
+          "label": "runType",
+          "nullable": true,
+          "prop": "runType",
+          "propertyName": "runType",
+          "required": false,
+          "search": {
+            "value": true
+          },
+          "source": "run_type",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "eval_run_id",
+          "dict": null,
+          "label": "evalRunId",
+          "nullable": true,
+          "prop": "evalRunId",
+          "propertyName": "evalRunId",
+          "required": false,
+          "source": "eval_run_id",
+          "type": "number",
+          "validate": null
+        },
+        {
           "comment": "user_id",
           "dict": null,
           "label": "userId",
@@ -47877,6 +47986,33 @@
           "validate": null
         },
         {
+          "comment": "run_type",
+          "dict": null,
+          "label": "runType",
+          "nullable": true,
+          "prop": "runType",
+          "propertyName": "runType",
+          "required": false,
+          "search": {
+            "value": true
+          },
+          "source": "run_type",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "eval_run_id",
+          "dict": null,
+          "label": "evalRunId",
+          "nullable": true,
+          "prop": "evalRunId",
+          "propertyName": "evalRunId",
+          "required": false,
+          "source": "eval_run_id",
+          "type": "number",
+          "validate": null
+        },
+        {
           "comment": "user_id",
           "dict": null,
           "label": "userId",
@@ -47940,7 +48076,8 @@
       "pageQueryOp": {
         "fieldEq": [
           "definition_id",
-          "status"
+          "status",
+          "runType"
         ],
         "fieldLike": [],
         "keyWordLikeFields": [

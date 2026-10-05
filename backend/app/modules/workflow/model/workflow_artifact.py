@@ -28,6 +28,8 @@ class WorkflowArtifact(BaseEntity, table=True):
     instance_id: int = Field(index=True)
     definition_id: int = Field(index=True)
     version_id: int | None = Field(default=None)
+    # 冗余实例的 run_type（production | trial | eval）：测试产物打标可区分/可清理，免 join 实例表
+    run_type: str = Field(default="production", index=True, max_length=20)
     node_id: str | None = Field(default=None, max_length=100)  # 产出节点（end）
     user_id: int | None = Field(default=None, index=True)  # 归属用户（列名触发自动数据权限）
     field_key: str = Field(max_length=150)  # workflow_output 顶层字段名
@@ -47,6 +49,7 @@ class WorkflowArtifactRead(BaseModel):
     instance_id: int
     definition_id: int
     version_id: int | None = None
+    run_type: str = "production"
     node_id: str | None = None
     user_id: int | None = None
     field_key: str

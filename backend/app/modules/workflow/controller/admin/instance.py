@@ -17,6 +17,7 @@ from app.framework.controller_meta import (
     CoolControllerMeta,
     OrderByConfig,
     QueryConfig,
+    QueryFieldConfig,
 )
 from app.framework.router.route_meta import Get, Post
 from app.modules.base.model.auth import User
@@ -132,7 +133,11 @@ def _replace_transferred_urls(logs: list[WorkflowExecutionLog], instance_id: int
         actions=("page", "info", "list", "delete"),
         page_query=QueryConfig(
             keyword_like_fields=("status", "current_node"),
-            field_eq=("definition_id", "status"),
+            field_eq=(
+                "definition_id",
+                "status",
+                QueryFieldConfig(column="run_type", request_param="runType"),  # 运行类型分段过滤（默认 production）
+            ),
             order_fields=("created_at", "updated_at"),
             add_order_by=(OrderByConfig("created_at", "desc"),),
         ),
@@ -150,7 +155,7 @@ class WorkflowInstanceController(BaseController):
         instance = service.start_instance(payload.definition_id, payload.inputs, current_user)
         return {"id": instance.id}
 
-    @Post("/trial", summary="试运行工作流（草稿版）", permission="workflow:instance:start")
+    @Post("/trial", summary="试运行工作流（草稿版）", permission="workflow:instance:trial")
     def trial(
         self,
         payload: WorkflowInstanceStartRequest,

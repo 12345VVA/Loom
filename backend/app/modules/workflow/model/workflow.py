@@ -51,6 +51,15 @@ class WorkflowInstance(BaseEntity, table=True):
     celery_task_id: str | None = Field(default=None, max_length=200, index=True)
     user_id: int | None = Field(default=None, index=True)  # 启动者，用于数据权限隔离
     failed_node_id: str | None = Field(default=None, max_length=100)  # 失败节点ID（可观测性 + 为断点续跑铺路）
+    # 运行类型：production 正式 | trial 编辑器试运行（草稿版）| eval 批量评估。
+    # 测试实例的产物打同款标记、失败不发通知、列表默认过滤（见 _notify_workflow_failure / QueryConfig field_eq）
+    run_type: str = Field(default="production", index=True, max_length=20)
+    eval_run_id: int | None = Field(default=None, index=True)  # eval 专有：回溯 WorkflowEvalRun（trial/production 为 NULL）
+
+    @property
+    def is_test(self) -> bool:
+        """便捷判断：非正式运行（trial/eval）。派生自 run_type，不落库。"""
+        return self.run_type != "production"
 
 
 class WorkflowExecutionLog(BaseEntity, table=True):
@@ -151,6 +160,8 @@ class WorkflowInstanceRead(BaseModel):
     state_data: str
     error_message: str | None = None
     failed_node_id: str | None = None  # 失败节点ID（透传给前端定位失败节点）
+    run_type: str = "production"  # production | trial | eval（前端徽标 + 默认列表过滤）
+    eval_run_id: int | None = None
     user_id: int | None = None
     created_at: datetime
     updated_at: datetime

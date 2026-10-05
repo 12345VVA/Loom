@@ -198,12 +198,19 @@ def persist_workflow_artifacts(
     try:
         stale_refs: list[str] = []
         with Session(engine) as session:
+            # 冗余实例 run_type 打标：测试实例（trial/eval）的产物可区分/批量清理，免 join 实例表
+            from app.modules.workflow.model.workflow import WorkflowInstance
+
+            instance = session.get(WorkflowInstance, instance_id)
+            run_type = instance.run_type if instance else "production"
             for old in session.exec(select(WorkflowArtifact).where(WorkflowArtifact.instance_id == instance_id)).all():
                 if old.content_ref:
                     stale_refs.append(old.content_ref)
                 session.delete(old)
             for draft in drafts:
-                session.add(_build_row(instance_id, definition_id, version_id, user_id, node_hint, draft, session))
+                session.add(
+                    _build_row(instance_id, definition_id, version_id, user_id, node_hint, draft, session, run_type)
+                )
             session.commit()
         # commit 成功后再删旧载荷文件（新 ref 是新 uuid 不会误删；失败残留由孤儿清理兜底）
         for ref in stale_refs:
@@ -226,6 +233,7 @@ def _build_row(
     node_hint: str | None,
     draft: ArtifactDraft,
     session: Session,
+    run_type: str = "production",
 ) -> WorkflowArtifact:
     media_asset_id: int | None = None
     storage_url: str | None = None
@@ -265,6 +273,7 @@ def _build_row(
         instance_id=instance_id,
         definition_id=definition_id,
         version_id=version_id,
+        run_type=run_type,
         node_id=node_hint,
         user_id=user_id,
         field_key=draft.field_key,

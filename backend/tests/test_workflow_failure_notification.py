@@ -250,6 +250,36 @@ class NotifyWorkflowFailureTestCase(unittest.TestCase):
             _notify_workflow_failure(999999)
             mock_send.assert_not_called()
 
+    def test_notify_skips_for_test_run_types(self):
+        """副作用门控：trial/eval 实例失败不发通知（仅正式实例打扰用户）。"""
+        for run_type in ("trial", "eval"):
+            with self.subTest(run_type=run_type):
+                with Session(self.engine) as session:
+                    definition = WorkflowDefinition(code=f"wf_{run_type}", name="wf", is_active=True, user_id=1)
+                    session.add(definition)
+                    session.commit()
+                    session.refresh(definition)
+                    instance = WorkflowInstance(
+                        definition_id=definition.id,
+                        thread_id=f"t_{run_type}",
+                        status="failed",
+                        state_data="{}",
+                        user_id=1,
+                        run_type=run_type,
+                    )
+                    session.add(instance)
+                    session.commit()
+                    instance_id = instance.id
+
+                with (
+                    patch("app.modules.workflow.tasks.workflow_tasks.engine", self.engine),
+                    patch(
+                        "app.modules.notification.service.notification_service.NotificationService.send_business"
+                    ) as mock_send,
+                ):
+                    _notify_workflow_failure(instance_id)
+                    mock_send.assert_not_called()
+
 
 class MarkInstanceFailedPayloadTestCase(unittest.TestCase):
     """Task 2：_mark_instance_failed 的 SSE failed payload 携带 node_id。"""

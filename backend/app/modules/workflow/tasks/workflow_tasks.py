@@ -227,6 +227,9 @@ def _notify_workflow_failure(instance_id: int) -> None:
             inst = session.get(WorkflowInstance, instance_id)
             if not inst or not inst.user_id:
                 return
+            # 副作用门控：试运行/评估实例失败不打扰用户（仅正式实例发通知），结果仍可通过列表/SSE 查看
+            if inst.run_type != "production":
+                return
             definition = session.get(WorkflowDefinition, inst.definition_id)
             workflow_name = definition.name if definition else None
             from app.modules.notification.service.notification_service import NotificationService

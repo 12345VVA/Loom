@@ -166,6 +166,15 @@
             ]
           },
           {
+            "code": "workflow_instance_trial",
+            "name": "试运行",
+            "type": "button",
+            "permission": "workflow:instance:trial",
+            "role_codes": [
+              "admin"
+            ]
+          },
+          {
             "code": "workflow_instance_resume",
             "name": "人工确认",
             "type": "button",

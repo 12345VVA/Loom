@@ -528,7 +528,9 @@ class WorkflowInstanceService(BaseAdminCrudService):
         draft_vid = definition.draft_version_id or definition.current_version_id
         if draft_vid is None:
             raise HTTPException(status_code=400, detail="该工作流尚无任何版本（草稿/发布），无法试运行")
-        return self._create_and_dispatch_instance(definition, draft_vid, inputs, current_user, dedup=False)
+        return self._create_and_dispatch_instance(
+            definition, draft_vid, inputs, current_user, dedup=False, run_type="trial"
+        )
 
     def _create_and_dispatch_instance(
         self,
@@ -538,11 +540,13 @@ class WorkflowInstanceService(BaseAdminCrudService):
         current_user: User | None,
         *,
         dedup: bool = True,
+        run_type: str = "production",
     ) -> WorkflowInstance:
         """建实例（绑定指定 version_id）+ 可选防重放去重 + 派发 Celery 执行。
 
         start_instance（正式，dedup=True）与 start_trial_instance（试运行，dedup=False）共用。
         版本来源由调用方决定：正式走 current_version_id，试运行走草稿。
+        run_type 区分正式/试运行（eval 由 workflow_eval 侧自建实例），驱动副作用门控与列表过滤。
         """
         definition_id = definition.id
 
@@ -585,6 +589,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
             state_data=json.dumps(inputs),
             current_node=None,
             user_id=current_user.id if current_user else None,
+            run_type=run_type,
         )
         self.session.add(instance)
         self.session.commit()

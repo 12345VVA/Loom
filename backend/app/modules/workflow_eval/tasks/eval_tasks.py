@@ -99,7 +99,7 @@ async def _async_run_eval(eval_run_id: int, celery_task_id: str | None, evaluato
             start_t = time.perf_counter()
             try:
                 instance_id = await asyncio.to_thread(
-                    create_eval_instance, definition_id, ctx["definition_version_id"], case, user_id
+                    create_eval_instance, definition_id, ctx["definition_version_id"], case, user_id, eval_run_id
                 )
                 inputs = json.loads(case.input_data) if case.input_data else {}
 
