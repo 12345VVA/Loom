@@ -46137,6 +46137,17 @@
                           "title": "Definitionid",
                           "type": "number"
                         },
+                        "definitionName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Definitionname"
+                        },
                         "errorMessage": {
                           "anyOf": [
                             {
@@ -46423,6 +46434,17 @@
                           "definitionId": {
                             "title": "Definitionid",
                             "type": "number"
+                          },
+                          "definitionName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Definitionname"
                           },
                           "errorMessage": {
                             "anyOf": [
@@ -46938,6 +46960,17 @@
                               "definitionId": {
                                 "title": "Definitionid",
                                 "type": "number"
+                              },
+                              "definitionName": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Definitionname"
                               },
                               "errorMessage": {
                                 "anyOf": [
@@ -47674,6 +47707,18 @@
           "validate": null
         },
         {
+          "comment": "definition_name",
+          "dict": null,
+          "label": "definitionName",
+          "nullable": true,
+          "prop": "definitionName",
+          "propertyName": "definitionName",
+          "required": false,
+          "source": "definition_name",
+          "type": "string",
+          "validate": null
+        },
+        {
           "comment": "version_id",
           "dict": null,
           "label": "versionId",
@@ -47892,6 +47937,18 @@
           },
           "source": "definition_id",
           "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "definition_name",
+          "dict": null,
+          "label": "definitionName",
+          "nullable": true,
+          "prop": "definitionName",
+          "propertyName": "definitionName",
+          "required": false,
+          "source": "definition_name",
+          "type": "string",
           "validate": null
         },
         {
