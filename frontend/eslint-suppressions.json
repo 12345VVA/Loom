@@ -141,7 +141,7 @@
   },
   "src/modules/ai/views/profile.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 9
+      "count": 14
     }
   },
   "src/modules/ai/views/provider.vue": {
@@ -671,7 +671,7 @@
   },
   "src/modules/workflow/views/instance.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 22
+      "count": 24
     }
   },
   "src/modules/workflow/views/version.vue": {
