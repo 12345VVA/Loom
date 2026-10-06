@@ -669,7 +669,10 @@ class WorkflowInstanceService(BaseAdminCrudService):
         from app.framework.storage import resolve_payload
         from app.modules.workflow.tasks.workflow_tasks import execute_workflow
 
-        # T8：state_data 可能已超阈值落对象存储（state_data_ref 非空），须还原全量快照再作为初始变量续跑
+        # T8：state_data 可能已超阈值落对象存储（state_data_ref 非空），须还原全量快照再作为初始变量续跑。
+        # 注（WF-P2-18）：resume 路径下该快照不参与图执行——LangGraph 从 checkpoint 经
+        # Command(resume=…) 恢复状态，checkpoint 丢失时它也无济于事；其唯一作用是作为
+        # async_execute 异常兜底路径的 current_vars 初值，供失败节点日志构建。
         initial_state = resolve_payload(instance.state_data, instance.state_data_ref)
         task = execute_workflow.delay(instance.id, definition.id, initial_state, json.dumps(user_input))
         instance.celery_task_id = task.id

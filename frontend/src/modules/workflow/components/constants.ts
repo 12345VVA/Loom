@@ -18,6 +18,10 @@ export const UNTESTABLE_NODE_TYPES = [
 	'human_input',
 	'loop_body_group'
 ];
+// mock 占位工具集合（DEMO 徽标依据）。⚠️ 权威来源是后端
+// backend/app/modules/workflow/service/graph_validate.py 的 MOCK_TOOL_CODES，
+// 两处需保持一致（后端非 DEBUG 下执行这些工具直接失败；改动任一侧必须同步另一侧）。
+export const MOCK_TOOL_CODES = ['web_search', 'file_system', 'mock_weather_api'];
 export const OPEN_NODE_TEST_DIALOG_KEY = 'openNodeTestDialog' as unknown as InjectionKey<
 	(node: any) => void
 >;

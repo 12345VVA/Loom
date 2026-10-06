@@ -470,6 +470,10 @@ async def async_execute(
 
     graph_json_override：评估等场景传入已解析的图快照，避免依赖 definition 当前版本（回归可比）；
     默认 None 时从 definition.graph_json 读取（正式执行路径，行为不变）。
+
+    resume_val 非空（恢复路径）时 initial_vars 不参与图执行——状态自 checkpoint 经
+    Command(resume=…) 恢复；该参数仅作为异常兜底路径 current_vars 的初值，供失败节点日志构建
+    （核实清单 WF-P2-18）。
     """
     from langgraph.types import Command
     from sqlalchemy import update

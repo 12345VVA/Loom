@@ -96,6 +96,7 @@
 	"已挂起": "Suspended",
 	"成功": "Success",
 	"失败": "Failed",
+	"已取消": "Cancelled",
 	"当前激活节点": "Current Active Node",
 	"失败节点": "Failed Node",
 	"错误信息": "Error Message",

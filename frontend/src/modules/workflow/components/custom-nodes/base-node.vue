@@ -10,6 +10,14 @@
 				<component :is="meta.icon" />
 			</el-icon>
 			<span class="node-label">{{ label }}</span>
+			<el-tooltip
+				v-if="isMockTool"
+				effect="dark"
+				:content="$t('演示占位工具，生产环境将执行失败')"
+				placement="top"
+			>
+				<span class="demo-badge">DEMO</span>
+			</el-tooltip>
 			<span v-if="isChild" class="child-badge">{{ groupLabel }}</span>
 			<el-tooltip
 				v-if="incomplete"
@@ -142,7 +150,7 @@ import { useI18n } from 'vue-i18n';
 import DOMPurify from 'dompurify';
 import { formatJson, copyToClipboard } from '../../utils';
 import { getNodeMeta } from '../../utils/node-type-registry';
-import { UNTESTABLE_NODE_TYPES, OPEN_NODE_TEST_DIALOG_KEY } from '../constants';
+import { UNTESTABLE_NODE_TYPES, MOCK_TOOL_CODES, OPEN_NODE_TEST_DIALOG_KEY } from '../constants';
 import type { CustomOutputHandle } from './types';
 
 const { t } = useI18n();
@@ -184,6 +192,14 @@ const openNodeTestDialog = inject(OPEN_NODE_TEST_DIALOG_KEY);
 
 const canTestNode = computed(() => {
 	return !UNTESTABLE_NODE_TYPES.includes(node.type);
+});
+
+// WF-P0-2：mock 占位工具打 DEMO 徽标（deprecated `tool` 节点整体为 mock，恒显）
+const isMockTool = computed(() => {
+	return (
+		(node.type === 'tool_executor' && MOCK_TOOL_CODES.includes(node.data?.config?.toolCode)) ||
+		node.type === 'tool'
+	);
 });
 
 function handleTestNode() {
@@ -416,6 +432,20 @@ function highlightJson(data: any): string {
 	color: var(--el-color-warning);
 	border-radius: 4px;
 	white-space: nowrap;
+}
+
+/* WF-P0-2：mock 占位工具的 DEMO 徽标（定位复用 child-badge 模式，info 蓝配色） */
+.demo-badge {
+	position: absolute;
+	top: -8px;
+	left: -4px;
+	font-size: 10px;
+	padding: 1px 6px;
+	background: rgba(64, 158, 255, 0.15);
+	color: var(--el-color-primary);
+	border-radius: 4px;
+	white-space: nowrap;
+	cursor: help;
 }
 
 .node-incomplete-dot {

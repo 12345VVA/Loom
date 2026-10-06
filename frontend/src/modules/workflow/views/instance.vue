@@ -183,7 +183,7 @@ interface WorkflowInstance {
 	id: number;
 	definitionId: number;
 	threadId: string;
-	status: 'pending' | 'running' | 'paused' | 'success' | 'failed';
+	status: 'pending' | 'running' | 'paused' | 'success' | 'failed' | 'cancelled';
 	runType?: 'production' | 'trial' | 'eval' | 'test_node';
 	currentNode?: string;
 	failedNodeId?: string;
@@ -296,7 +296,8 @@ const Table = useTable({
 				{ label: t('运行中'), value: 'running', type: 'primary' },
 				{ label: t('已挂起'), value: 'paused', type: 'warning' },
 				{ label: t('成功'), value: 'success', type: 'success' },
-				{ label: t('失败'), value: 'failed', type: 'danger' }
+				{ label: t('失败'), value: 'failed', type: 'danger' },
+				{ label: t('已取消'), value: 'cancelled', type: 'info' }
 			]
 		},
 		{ label: t('当前激活节点'), prop: 'currentNode', minWidth: 140 },

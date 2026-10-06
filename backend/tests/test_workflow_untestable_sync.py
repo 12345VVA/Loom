@@ -41,5 +41,23 @@ class UntestableNodeTypesSyncTestCase(unittest.TestCase):
         )
 
 
+class MockToolCodesSyncTestCase(unittest.TestCase):
+    """MOCK_TOOL_CODES 前后端一致性（WF-P0-2 防漂移）：后端拦截依据 / 前端 DEMO 徽标依据。"""
+
+    def test_backend_set_matches_frontend_mirror(self):
+        from app.modules.workflow.service.graph_validate import MOCK_TOOL_CODES
+
+        self.assertTrue(FRONTEND_CONSTANTS.exists(), f"前端 constants 文件不存在: {FRONTEND_CONSTANTS}")
+        source = FRONTEND_CONSTANTS.read_text(encoding="utf-8")
+        match = re.search(r"MOCK_TOOL_CODES\s*=\s*\[([^\]]*)\]", source)
+        self.assertIsNotNone(match, "前端 constants.ts 中未找到 MOCK_TOOL_CODES 数组")
+        frontend_codes = set(re.findall(r"'([a-z_]+)'", match.group(1)))
+        self.assertEqual(
+            frontend_codes,
+            set(MOCK_TOOL_CODES),
+            "MOCK_TOOL_CODES 前后端不一致：请同步 graph_validate.py 与 constants.ts",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

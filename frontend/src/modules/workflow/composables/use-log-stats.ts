@@ -68,11 +68,12 @@ export function useLogStats(options: LogStatsInput) {
 		).length;
 	});
 
-	const statusTagType = computed<'success' | 'danger' | 'primary' | 'warning'>(() => {
+	const statusTagType = computed<'success' | 'danger' | 'primary' | 'warning' | 'info'>(() => {
 		const status = toValue(options.status);
 		if (status === 'success') return 'success';
 		if (status === 'failed' || status === 'error') return 'danger';
 		if (status === 'paused') return 'warning';
+		if (status === 'cancelled' || status === 'pending') return 'info';
 		return 'primary';
 	});
 
@@ -84,7 +85,8 @@ export function useLogStats(options: LogStatsInput) {
 			running: t('运行中'),
 			paused: t('已挂起'),
 			success: t('成功'),
-			failed: t('失败')
+			failed: t('失败'),
+			cancelled: t('已取消')
 		};
 		return map[status] || status;
 	});
