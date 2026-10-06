@@ -50,6 +50,22 @@
 				/>
 			</div>
 
+			<div class="param-item">
+				<div class="param-header">
+					<div class="param-label-with-tip">
+						<span>{{ $t('业务场景 (Scenario)') }}:</span>
+						<el-tooltip :content="$t('未指定配置时按此场景路由默认模型，亦用于审计日志归类')" placement="top">
+							<el-icon class="tip-icon"><question-filled /></el-icon>
+						</el-tooltip>
+					</div>
+				</div>
+				<el-input
+					v-model="form.scenario"
+					:placeholder="$t('默认为 default')"
+					clearable
+				/>
+			</div>
+
 			<div class="param-item switch-item">
 				<span>{{ $t('携带上下文历史') }}</span>
 				<el-switch v-model="form.carryContext" />
@@ -63,7 +79,7 @@ defineOptions({
 	name: 'chat-params-popover'
 });
 
-import { Operation } from '@element-plus/icons-vue';
+import { Operation, QuestionFilled } from '@element-plus/icons-vue';
 import type { ChatFormState } from '../composables/use-chat-workbench';
 
 defineProps<{
@@ -88,9 +104,22 @@ defineProps<{
 		.param-header {
 			display: flex;
 			justify-content: space-between;
+			align-items: center;
 			font-size: 12px;
 			color: var(--el-text-color-regular);
 			margin-bottom: 4px;
+
+			.param-label-with-tip {
+				display: flex;
+				align-items: center;
+				gap: 4px;
+
+				.tip-icon {
+					cursor: help;
+					font-size: 13px;
+					color: var(--el-text-color-secondary);
+				}
+			}
 
 			.param-val {
 				font-family: monospace;

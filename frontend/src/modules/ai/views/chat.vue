@@ -15,14 +15,7 @@
 						:options="profileOptions"
 						:placeholder="$t('默认调用配置')"
 						clearable
-						:width="220"
-					/>
-
-					<el-input
-						v-model="form.scenario"
-						:placeholder="$t('场景 (如 default)')"
-						clearable
-						style="width: 140px"
+						:width="240"
 					/>
 				</div>
 

@@ -32,15 +32,13 @@
 				<div class="card-header">
 					<span class="card-title">{{ $t('调用配置') }}</span>
 				</div>
-				<div class="field-grid">
-					<cl-select
-						v-model="form.profileCode"
-						:options="profileOptions"
-						:placeholder="$t('默认图片配置')"
-						clearable
-					/>
-					<el-input v-model="form.scenario" :placeholder="$t('场景编码 (如 default)')" clearable />
-				</div>
+				<cl-select
+					v-model="form.profileCode"
+					:options="profileOptions"
+					:placeholder="$t('默认图片配置')"
+					clearable
+					style="width: 100%"
+				/>
 
 				<div v-if="selectedProfile" class="profile-meta">
 					<el-tag size="small" effect="light">{{ selectedProfile.providerName || '-' }}</el-tag>
@@ -272,18 +270,32 @@
 				:is-ernie-irag="isErnieIrag"
 			/>
 
-			<!-- 6. 高级参数 JSON (默认收起) -->
+			<!-- 6. 高级参数与选项 (默认收起) -->
 			<div class="config-card config-card--collapse">
 				<el-collapse>
 					<el-collapse-item name="advanced">
 						<template #title>
 							<div class="collapse-title">
 								<el-icon><setting /></el-icon>
-								<span>{{ $t('高级参数 JSON') }}</span>
-								<span class="collapse-sub">{{ $t('(请求前自动深合并)') }}</span>
+								<span>{{ $t('高级参数与选项') }}</span>
+								<span class="collapse-sub">{{ $t('(业务场景 / JSON 透传)') }}</span>
 							</div>
 						</template>
 						<div class="advanced-editor">
+							<div class="scenario-field mb-10">
+								<div class="field-label-row">
+									<span class="label-text">{{ $t('业务场景编码 (Scenario)') }}:</span>
+									<el-tooltip :content="$t('未指定调用配置时按此场景路由默认模型，亦用于审计日志归类')" placement="top">
+										<el-icon class="title-tip-icon"><info-filled /></el-icon>
+									</el-tooltip>
+								</div>
+								<el-input
+									v-model="form.scenario"
+									:placeholder="$t('默认为 default')"
+									clearable
+								/>
+							</div>
+
 							<div class="advanced-tools">
 								<span class="tool-note">{{ $t('可覆盖或透传专属参数（如 quality, seed, lora 等）') }}</span>
 								<div class="tool-buttons">
@@ -795,6 +807,23 @@ function formatOptionsJson() {
 		flex-direction: column;
 		gap: 6px;
 
+		.scenario-field {
+			.field-label-row {
+				display: flex;
+				align-items: center;
+				gap: 4px;
+				font-size: 12px;
+				color: var(--el-text-color-regular);
+				margin-bottom: 4px;
+
+				.title-tip-icon {
+					cursor: help;
+					font-size: 13px;
+					color: var(--el-text-color-secondary);
+				}
+			}
+		}
+
 		.advanced-tools {
 			display: flex;
 			justify-content: space-between;
@@ -805,6 +834,9 @@ function formatOptionsJson() {
 	}
 }
 
+.mb-10 {
+	margin-bottom: 10px;
+}
 .mt-10 {
 	margin-top: 10px;
 }
