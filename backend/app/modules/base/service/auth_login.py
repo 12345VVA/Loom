@@ -77,9 +77,9 @@ class LoginMixin:
                 # L3：校验与签发的 IP 绑定一致性
                 self.captcha_check(payload.captcha_id, payload.verify_code, client_ip=login_ip)
             except HTTPException as exc:
-                # H2：验证码失败只计 IP 失败计数，不计账号——校验无需凭证，
-                # 计入账号即成"仅凭用户名锁死任意账号"的 DoS 原语
-                self._mark_login_failure(payload.username, login_ip, count_account=False)
+                # H2：验证码失败只计 IP 失败计数，不计 pair/聚合——校验无需凭证，
+                # 计入即成"仅凭用户名锁死"的 DoS 原语（且会让输错验证码的合法用户锁死自己）
+                self._mark_login_failure(payload.username, login_ip, count_pair=False)
                 self._record_login_log(
                     request=request,
                     account=payload.username,
@@ -161,7 +161,7 @@ class LoginMixin:
         refresh_token = create_refresh_token(user, sid)
         permissions = prime_login_caches(self.session, user, access_token)
         register_session(user.id, sid, refresh_token, decode_token(access_token).get("jti"), request)
-        self._clear_login_failure(payload.username)
+        self._clear_login_failure(payload.username, login_ip)
         self._record_login_log(
             request=request,
             user_id=user.id,
@@ -315,36 +315,68 @@ class LoginMixin:
             logger.error(f"登录日志写入失败 - account: {account}, user_id: {user_id}, status: {status}", exc_info=exc)
 
     def _check_login_risk(self, account: str, ip: str) -> str | None:
-        if cache_get(self._build_account_lock_key(account)):
+        if cache_get(self._build_pair_lock_key(account, ip)):
             return "账号已被临时锁定，请稍后再试"
         if cache_get(self._build_ip_lock_key(ip)):
             return "当前IP请求过于频繁，请稍后再试"
         return None
 
-    def _mark_login_failure(self, account: str, ip: str, *, count_account: bool = True) -> int:
-        """累计登录失败（账号+IP 双计数）并在达阈值时锁定。
+    def _mark_login_failure(self, account: str, ip: str, *, count_pair: bool = True) -> int:
+        """累计登录失败（pair=账号×IP 复合 + IP 双计数）并在达阈值时锁定。
 
-        count_account=False：仅计 IP 计数——用于验证码失败分支（H2）。验证码校验发生在
-        密码校验之前且无需任何凭证，若计入账号计数，仅凭用户名 5 次请求即可锁死任意
-        账号 15 分钟（DoS 原语）。IP 计数保留：同一 IP 持续撞验证码仍受 20 次/15min 锁约束。
+        **R2 二次处置（三次验收 §2，2026-10-06）**：硬锁维度从纯账号改为 (账号, IP)
+        复合——验证码已被证明可解（A1/A2 定位器 100%，§19），纯账号维度硬锁退化为
+        「5 次请求锁死任意账号 15 分钟、无解锁接口、无告警、不触碰任何限流阈值」的
+        DoS 原语（ACCOUNT_FAIL_MAX=5 < IP_FAIL_MAX=20 且同窗口，IP 兜底在数学上被架空）。
+        复合化后攻击者只能锁死自己的 (受害者, 攻击者IP) 组合，合法用户从其他网络
+        不受影响；跨 IP 聚合计数达阈值只**告警不硬锁**（任何可被攻击者触发的拒绝/延迟
+        都是新 DoS 面）。单账号分布式爆破上限从 5/15min 放宽至 5N/15min（N=攻击 IP
+        数）——压制爆破的真正边界是密码熵 + PBKDF2（10^14 空间下 5N/15min 无意义），
+        该交换经三次验收 §4 定量论证后接受。
+
+        count_pair=False：仅计 IP——用于验证码失败分支（H2）。验证码校验发生在密码
+        校验之前且无需任何凭证，计入 pair 同样是「仅凭用户名+IP 锁死该组合」，且会
+        让合法用户输错验证码 5 次锁死自己；IP 计数保留：同一 IP 持续撞验证码仍受
+        20 次/15min 锁约束。
         """
-        account_failures = (
-            self._increase_counter(self._build_account_fail_key(account), settings.BASE_LOGIN_FAIL_WINDOW)
-            if count_account
+        pair_failures = (
+            self._increase_counter(self._build_pair_fail_key(account, ip), settings.BASE_LOGIN_FAIL_WINDOW)
+            if count_pair
             else 0
         )
         ip_failures = self._increase_counter(self._build_ip_fail_key(ip), settings.BASE_LOGIN_FAIL_WINDOW)
         risk_hit = 0
-        if account_failures >= settings.BASE_LOGIN_ACCOUNT_FAIL_MAX:
-            cache_set(self._build_account_lock_key(account), "1", settings.BASE_LOGIN_LOCK_TIME)
+        if pair_failures >= settings.BASE_LOGIN_ACCOUNT_FAIL_MAX:
+            cache_set(self._build_pair_lock_key(account, ip), "1", settings.BASE_LOGIN_LOCK_TIME)
             risk_hit = 1
+            logger.warning(
+                "登录失败锁定触发（pair 维度）account=%s ip=%s failures=%d（R2 复合锁，三次验收 §2）",
+                account,
+                ip,
+                pair_failures,
+            )
+        if count_pair:
+            # 跨 IP 聚合（告警专用，不设锁）：每窗口至多告警一次（marker 去重）
+            account_wide = self._increase_counter(
+                self._build_account_wide_fail_key(account), settings.BASE_LOGIN_FAIL_WINDOW
+            )
+            if account_wide >= settings.BASE_LOGIN_ACCOUNT_FAIL_MAX and not cache_get(
+                self._build_account_wide_alerted_key(account)
+            ):
+                cache_set(self._build_account_wide_alerted_key(account), "1", settings.BASE_LOGIN_FAIL_WINDOW)
+                risk_hit = 1
+                logger.warning(
+                    "账号跨 IP 登录失败聚合达阈值（分布式爆破嫌疑，仅告警不锁定）account=%s failures=%d",
+                    account,
+                    account_wide,
+                )
         if ip_failures >= settings.BASE_LOGIN_IP_FAIL_MAX:
             cache_set(self._build_ip_lock_key(ip), "1", settings.BASE_LOGIN_LOCK_TIME)
             risk_hit = 1
         return risk_hit
 
-    def _clear_login_failure(self, account: str) -> None:
-        """成功登录只清账号维度计数/锁（R3）。
+    def _clear_login_failure(self, account: str, ip: str) -> None:
+        """成功登录清 pair/聚合维度计数与锁，保留 IP 维度（R3）。
 
         此前连 `login:fail:ip` / `login:lock:ip` 一起删——持有任意有效低权账号即可在
         爆破轮次间登录一次，把整台 IP 的失败计数与锁清零，用户名喷洒自此仅受
@@ -354,8 +386,10 @@ class LoginMixin:
         由 20 次/15min 的高阈值与 15min 窗口兜底。
         """
         cache_delete(
-            self._build_account_fail_key(account),
-            self._build_account_lock_key(account),
+            self._build_pair_fail_key(account, ip),
+            self._build_pair_lock_key(account, ip),
+            self._build_account_wide_fail_key(account),
+            self._build_account_wide_alerted_key(account),
         )
 
     @staticmethod
@@ -366,17 +400,27 @@ class LoginMixin:
         return value if value is not None else 0
 
     @staticmethod
-    def _build_account_fail_key(account: str) -> str:
-        return f"login:fail:account:{account}"
+    def _build_pair_fail_key(account: str, ip: str) -> str:
+        return f"login:fail:pair:{account}:{ip}"
 
     @staticmethod
     def _build_ip_fail_key(ip: str) -> str:
         return f"login:fail:ip:{ip}"
 
     @staticmethod
-    def _build_account_lock_key(account: str) -> str:
-        return f"login:lock:account:{account}"
+    def _build_pair_lock_key(account: str, ip: str) -> str:
+        return f"login:lock:pair:{account}:{ip}"
 
     @staticmethod
     def _build_ip_lock_key(ip: str) -> str:
         return f"login:lock:ip:{ip}"
+
+    @staticmethod
+    def _build_account_wide_fail_key(account: str) -> str:
+        """跨 IP 聚合失败计数（告警专用，绝不进锁定路径——R2 复合锁设计）。"""
+        return f"login:fail:account-wide:{account}"
+
+    @staticmethod
+    def _build_account_wide_alerted_key(account: str) -> str:
+        """聚合告警窗口去重标记。"""
+        return f"login:alert:account-wide:{account}"

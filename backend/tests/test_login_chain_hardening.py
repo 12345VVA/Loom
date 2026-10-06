@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import unittest
 
 from fastapi import HTTPException
@@ -65,11 +66,24 @@ class LoginChainHardeningTests(unittest.TestCase):
     def tearDown(self):
         settings.ADMIN_CAPTCHA_ENABLED = self._old_captcha
         # 清理探针残留，避免跨文件 IP/账号风控串扰（限流 429 教训）
+        username = settings.DEFAULT_ADMIN_USERNAME
         cache_delete(
             AuthService._build_ip_fail_key("testclient"),
             AuthService._build_ip_lock_key("testclient"),
-            AuthService._build_account_fail_key(settings.DEFAULT_ADMIN_USERNAME),
-            AuthService._build_account_lock_key(settings.DEFAULT_ADMIN_USERNAME),
+            AuthService._build_pair_fail_key(username, "testclient"),
+            AuthService._build_pair_lock_key(username, "testclient"),
+            AuthService._build_account_wide_fail_key(username),
+            AuthService._build_account_wide_alerted_key(username),
+            # R2 合成 IP 探针（service 级用例）
+            *[
+                key
+                for ip in ("203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.10", "198.51.100.7")
+                for key in (
+                    AuthService._build_pair_fail_key(username, ip),
+                    AuthService._build_pair_lock_key(username, ip),
+                    AuthService._build_ip_fail_key(ip),
+                )
+            ],
         )
 
     def _login(self) -> dict:
@@ -84,19 +98,97 @@ class LoginChainHardeningTests(unittest.TestCase):
         return res.json()["data"]
 
     def test_r3_success_login_keeps_ip_fail_counter(self):
-        """成功登录清账号计数、保留 IP 计数（原实现连 IP 计数/锁一起删 → R3）。"""
+        """成功登录清 pair/聚合计数、保留 IP 计数（原实现连 IP 计数/锁一起删 → R3）。"""
         service = object.__new__(AuthService)
         service._mark_login_failure(settings.DEFAULT_ADMIN_USERNAME, "testclient")
         ip_key = AuthService._build_ip_fail_key("testclient")
-        account_key = AuthService._build_account_fail_key(settings.DEFAULT_ADMIN_USERNAME)
+        pair_key = AuthService._build_pair_fail_key(settings.DEFAULT_ADMIN_USERNAME, "testclient")
         ip_before = cache_get(ip_key)
         self.assertEqual(ip_before, "1")
 
         self._login()
 
-        # 账号维度被清、IP 维度保留——持有有效账号者无法再借登录重置整台 IP 风控状态
-        self.assertIsNone(cache_get(account_key))
+        # pair/聚合维度被清、IP 维度保留——持有有效账号者无法再借登录重置整台 IP 风控状态
+        self.assertIsNone(cache_get(pair_key))
         self.assertEqual(cache_get(ip_key), ip_before)
+
+    def test_r2_pair_lock_scoped_to_source_ip(self):
+        """R2 复合锁（三次验收 §2）：同 IP 失败达阈值只锁 (账号,该IP) 组合——
+        攻击者无法再以 5 次请求锁死任意账号；其他网络不受影响。"""
+        service = object.__new__(AuthService)
+        username = settings.DEFAULT_ADMIN_USERNAME
+        for _ in range(settings.BASE_LOGIN_ACCOUNT_FAIL_MAX):
+            service._mark_login_failure(username, "203.0.113.10")
+
+        # 攻击者自己的 pair 被锁、其他 IP 不受影响、聚合只告警不锁
+        self.assertIsNotNone(service._check_login_risk(username, "203.0.113.10"))
+        self.assertIsNone(service._check_login_risk(username, "203.0.113.99"))
+        self.assertEqual(
+            cache_get(AuthService._build_account_wide_fail_key(username)),
+            str(settings.BASE_LOGIN_ACCOUNT_FAIL_MAX),
+        )
+        self.assertIsNotNone(cache_get(AuthService._build_account_wide_alerted_key(username)))
+        # 旧纯账号锁键不应存在（硬锁维度已废）
+        self.assertIsNone(cache_get(f"login:lock:account:{username}"))
+
+    def test_r2_distributed_cross_ip_alerts_without_lock(self):
+        """R2 复合锁：跨 IP 分布式失败 → 各自 pair 锁定，聚合告警，但任意新 IP 仍可尝试
+        （硬锁不可被他人触发；单账号分布式上限放宽至 5N/15min 由密码熵兜底，§20）。"""
+        service = object.__new__(AuthService)
+        username = settings.DEFAULT_ADMIN_USERNAME
+        for ip in ("203.0.113.1", "203.0.113.2"):
+            for _ in range(settings.BASE_LOGIN_ACCOUNT_FAIL_MAX):
+                service._mark_login_failure(username, ip)
+            self.assertIsNotNone(service._check_login_risk(username, ip), f"{ip} 自身 pair 应已锁定")
+
+        # 聚合计数跨 IP 累积（10），但新 IP 无锁
+        self.assertEqual(
+            cache_get(AuthService._build_account_wide_fail_key(username)),
+            str(settings.BASE_LOGIN_ACCOUNT_FAIL_MAX * 2),
+        )
+        self.assertIsNone(service._check_login_risk(username, "203.0.113.3"))
+        # 告警去重：marker 只置一次（后续失败不再重复告警，窗口内）
+        service._mark_login_failure(username, "203.0.113.3")
+        self.assertEqual(cache_get(AuthService._build_account_wide_alerted_key(username)), "1")
+
+    def test_r2_h2_captcha_failure_never_counts_pair(self):
+        """H2 语义在复合锁下原样保留：验证码失败（count_pair=False）只计 IP——
+        既不锁 pair（免凭证 DoS），也不让输错验证码的合法用户锁死自己。"""
+        service = object.__new__(AuthService)
+        username = settings.DEFAULT_ADMIN_USERNAME
+        for _ in range(settings.BASE_LOGIN_ACCOUNT_FAIL_MAX):
+            service._mark_login_failure(username, "198.51.100.7", count_pair=False)
+
+        self.assertIsNone(cache_get(AuthService._build_pair_fail_key(username, "198.51.100.7")))
+        self.assertIsNone(cache_get(AuthService._build_account_wide_fail_key(username)))
+        self.assertIsNone(service._check_login_risk(username, "198.51.100.7"))
+        self.assertEqual(
+            cache_get(AuthService._build_ip_fail_key("198.51.100.7")), str(settings.BASE_LOGIN_ACCOUNT_FAIL_MAX)
+        )
+
+    def test_r2_lock_rejects_same_ip_then_recovers_on_clear(self):
+        """端到端（HTTP）：错密码 ×5 → pair 锁 → 正确凭证 429；清 pair 锁后恢复 200。
+        复现三次验收 B/C/D 阶段（同源 IP 场景）。"""
+        username = settings.DEFAULT_ADMIN_USERNAME
+        # 预清登录路径限流桶（窗口=epoch//60），避免同类累计触发 429 串扰（限流教训）
+        now_window = int(time.time()) // 60
+        cache_delete(*[f"ratelimit:ip:testclient:{w}:/admin/base/open/login" for w in (now_window, now_window + 1)])
+        for _ in range(settings.BASE_LOGIN_ACCOUNT_FAIL_MAX):
+            res = self.client.post(
+                "/admin/base/open/login",
+                json={"username": username, "password": "definitely-wrong"},
+            )
+            self.assertEqual(res.status_code, 401, res.text)
+
+        locked = self.client.post(
+            "/admin/base/open/login",
+            json={"username": username, "password": settings.DEFAULT_ADMIN_PASSWORD},
+        )
+        self.assertEqual(locked.status_code, 429, locked.text)
+        self.assertIn("账号已被临时锁定", locked.text)
+
+        cache_delete(AuthService._build_pair_lock_key(username, "testclient"))
+        self._login()  # _login 内部断言 200
 
     def test_r7_refresh_reuse_kills_token_family(self):
         """重放上一代 refresh token → 401 且整族作废（token_version 递增）。"""
