@@ -76,3 +76,6 @@ frontend/build/*
 !frontend/build/cool/
 frontend/build/cool/*
 !frontend/build/cool/eps.d.ts
+
+# vendored vite-plugin 构建产物入库（workspaces junction 直接消费，CI 零构建）
+!frontend/packages/vite-plugin/dist/

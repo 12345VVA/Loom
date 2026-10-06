@@ -2,9 +2,14 @@
 	"name": "loom",
 	"version": "0.1.0",
 	"type": "module",
+	"workspaces": [
+		"packages/*"
+	],
 	"scripts": {
 		"dev": "vite --host",
 		"build": "vite build",
+		"build:vite-plugin": "tsc -p packages/vite-plugin/tsconfig.json",
+		"check:vite-plugin": "npm run build:vite-plugin && git diff --exit-code -- packages/vite-plugin/dist",
 		"build-static": "vite build --mode static",
 		"build-demo": "vite build --mode demo",
 		"build:analyze": "vite build --mode analyze",

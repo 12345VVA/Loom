@@ -169,6 +169,10 @@ jobs:
       - name: 类型检查（cool 严格）
         run: npm run type-check:cool
 
+      # vendored vite-plugin：src 与入库 dist 的漂移门禁（改 src 忘 rebuild 即红）
+      - name: vite-plugin 漂移检查
+        run: npm run check:vite-plugin
+
       # 用不带 --fix 的检查模式，CI 不改写文件
       - name: ESLint 检查
         run: npm run lint:check

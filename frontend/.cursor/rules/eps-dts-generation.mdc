@@ -26,18 +26,14 @@ globs: packages/vite-plugin/**/*.ts,build/cool/eps.d.ts,src/cool/service/**/*.ts
 
 ## 修改 vendored 插件的流程（必须）
 
-`packages/vite-plugin` 是 npm 包 `@cool-vue/vite-plugin` 的 vendored 源码副本，**vite 实际加载的是 `node_modules` 安装副本**。只改 `packages/vite-plugin/src` 不生效。
+`packages/vite-plugin` 是 npm 包 `@cool-vue/vite-plugin` 的 vendored 源码副本，已通过 **npm workspaces** 接管安装（root `package.json` 声明 `"workspaces": ["packages/*"]`）：`node_modules/@cool-vue/vite-plugin` 是指向本目录的 junction，`npm install`/`npm ci` 不再从 registry 拉官方版，定制不会被还原。
 
-```powershell
-# 在 frontend/ 下运行；等价于手工「tsc 构建 → cp dist → cp types」三步
-./scripts/sync-vite-plugin.ps1
-```
-
-注意：
-
-- 同步到 node_modules 的定制在 `npm install` 后会被官方版本还原，**install 后重跑该脚本**（CI 不受影响，只依赖入库的 eps.d.ts）。
-- dist/ 被 gitignore，不入库；入库的是 `src/` + `types/` + `tsconfig.json`。
-- 同步后必须重启 dev server（存活的旧 dev server 会用旧插件代码覆盖 eps.d.ts）。
+- vite 实际加载的是 junction 后的 **`dist/` 构建产物**（已入库）；只改 `src/` 不生效。
+- 改 `src/` 后必须：`npm run build:vite-plugin` → 重启 dev server（存活的旧 dev server 会用旧插件代码覆盖 eps.d.ts）→ **src 与 dist 同一 commit 提交**。
+- `npm run check:vite-plugin` = 重新构建 + `git diff --exit-code -- packages/vite-plugin/dist`，CI 有同名门禁——改了 src 忘 rebuild 就提交会在此红。
+- 守卫测试 `tests/unit/eps-baseline.test.ts` 断言安装副本是 workspace junction 且 dist 含定制指纹，安装态意外回退官方版会在 `test:unit` 前置抓获。
+- devDeps 只保留构建硬依赖（typescript / vite / @types/node / @types/lodash / postcss-value-parser）；tsconfig 已锁 `newLine: LF`（防 Windows 下 tsc emit CRLF 造成 check 幻影 diff）。
+- src 删文件后 dist 会遗留孤儿模块（tsc 不清理），无 importer 即不加载；介意可删整个 dist 后重建再提交。
 
 ## 返回类型与参数类型约定
 
@@ -88,7 +84,7 @@ globs: packages/vite-plugin/**/*.ts,build/cool/eps.d.ts,src/cool/service/**/*.ts
 
 ## 检查清单
 
-- [ ] 改动只落在 `packages/vite-plugin/src`，且已 tsc 构建 + 同步 node_modules
+- [ ] 改动只落在 `packages/vite-plugin/src`，且已 `npm run build:vite-plugin`（src + dist 同 commit）
 - [ ] dev server 已重启（或确认无存活的旧 dev server）
 - [ ] 生成器新分支有兜底路径（异常 → any，不抛错）
 - [ ] 实体接口索引签名未移除；POST 参数保持 `data?: any`
