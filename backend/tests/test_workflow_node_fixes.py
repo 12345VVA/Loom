@@ -234,5 +234,65 @@ class M3FstringConversionTestCase(unittest.TestCase):
         self.assertEqual(safe_eval('f"{s!r:>6}"', {"s": "hi"}), "  'hi'")
 
 
+class ResolveNodeForTestDeriveTestCase(unittest.TestCase):
+    """WF-P0-1 收尾：_resolve_node_for_test 对条件节点同源做边推导。
+
+    此前单测环境的 intent config 无 target_route（推导只发生在整图编译局部），
+    节点测试的意图路由恒得 default，无法验证具名分支。
+    """
+
+    def setUp(self) -> None:
+        from helpers import make_test_engine
+        from sqlmodel import Session, SQLModel
+
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+
+    def tearDown(self) -> None:
+        self.session.close()
+
+    def test_intent_config_contains_target_route_from_edges(self) -> None:
+        import json
+
+        from app.modules.workflow.model.workflow import WorkflowDefinition
+        from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
+
+        graph = {
+            "nodes": [
+                {"id": "start_1", "type": "start", "name": "Start"},
+                {
+                    "id": "intent_1",
+                    "type": "intent_classifier",
+                    "name": "Intent",
+                    "config": {
+                        "modelProfileCode": "p1",
+                        "intents": [{"id": "i1", "name": "A"}, {"id": "i2", "name": "B"}],
+                    },
+                },
+                {"id": "branch_a", "type": "llm", "name": "LA", "config": {"modelProfileCode": "p1"}},
+                {"id": "branch_c", "type": "llm", "name": "LC", "config": {"modelProfileCode": "p1"}},
+            ],
+            "edges": [
+                {"id": "e0", "source": "start_1", "target": "intent_1"},
+                {"id": "e1", "source": "intent_1", "target": "branch_a", "sourceHandle": "intent_i1"},
+                {"id": "e2", "source": "intent_1", "target": "branch_c", "sourceHandle": "default"},
+            ],
+        }
+        definition = WorkflowDefinition(code="wf1", name="WF1", is_active=True, draft_version_id=1, user_id=1)
+        self.session.add(definition)
+        self.session.commit()
+        version = WorkflowDefinitionVersion(
+            definition_id=definition.id, version_no=1, status="draft", graph_json=json.dumps(graph)
+        )
+        self.session.add(version)
+        self.session.commit()
+
+        svc = ws.WorkflowInstanceService(self.session)
+        ctx = asyncio.run(svc._resolve_node_for_test(definition.id, "intent_1", None))
+        self.assertEqual(ctx["config"]["intents"][0]["target_route"], "branch_a")
+        self.assertEqual(ctx["config"]["default_route"], "branch_c")
+
+
 if __name__ == "__main__":
     unittest.main()

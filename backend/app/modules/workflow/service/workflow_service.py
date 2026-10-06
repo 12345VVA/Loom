@@ -736,7 +736,9 @@ class WorkflowInstanceService(BaseAdminCrudService):
         """
         from app.modules.workflow.model.workflow_version import WorkflowDefinitionVersion
         from app.modules.workflow.service.compiler import (
+            CONDITIONAL_NODE_TYPES,
             UNTESTABLE_NODE_TYPES,
+            _derive_conditional_config,
             convert_keys_to_snake,
         )
 
@@ -766,7 +768,12 @@ class WorkflowInstanceService(BaseAdminCrudService):
         if node_type in UNTESTABLE_NODE_TYPES:
             raise HTTPException(status_code=400, detail=f"节点类型 '{node_type}' 不支持单节点测试")
 
-        config = convert_keys_to_snake(node.get("config", {}))
+        # 条件节点：与整图编译同源地做边推导（target_route/default_route 写回 config），
+        # 否则单测环境拿不到路由，intent 的具名分支在节点测试中恒得 default（WF-P0-1 收尾）
+        if node_type in CONDITIONAL_NODE_TYPES:
+            config = _derive_conditional_config(node, graph_json.get("edges", []))
+        else:
+            config = convert_keys_to_snake(node.get("config", {}))
         if not node_registry.get(node_type):
             raise HTTPException(status_code=400, detail=f"工作流中使用了未注册的节点类型: '{node_type}'")
         return {
