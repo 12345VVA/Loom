@@ -418,12 +418,14 @@ class WorkflowInstanceService(BaseAdminCrudService):
     def list(self, query=None, current_user=None, relations=None, is_tree=None, parent_field=None):
         # 列表不做 stateData 还原（前端零消费，offload 实例返回空串原样），避免逐行读对象存储
         data = super().list(query, current_user, relations, is_tree, parent_field)
+        self._enrich_definition_name(data)
         self._enrich_version_no(data)
         self._enrich_token_cost(data)
         return data
 
     def page(self, query, current_user=None, relations=()):
         result = super().page(query, current_user, relations)
+        self._enrich_definition_name(result.items)
         self._enrich_version_no(result.items)
         self._enrich_token_cost(result.items)
         return result
@@ -447,6 +449,27 @@ class WorkflowInstanceService(BaseAdminCrudService):
                 except Exception:
                     logger.warning("state_data 载荷还原失败 ref=%s", ref, exc_info=True)
                     it["stateData"] = ""
+
+    def _enrich_definition_name(self, items: list) -> None:
+        """回填 definitionName（join 工作流定义表，一次 IN 查询避免 N+1）。"""
+        if not items:
+            return
+        from app.modules.workflow.model.workflow import WorkflowDefinition
+
+        dids = {it.get("definitionId") for it in items if isinstance(it, dict) and it.get("definitionId")}
+        if not dids:
+            return
+        defs = {
+            d.id: d.name
+            for d in self.session.exec(
+                select(WorkflowDefinition).where(WorkflowDefinition.id.in_(dids))
+            ).all()
+        }
+        for it in items:
+            if isinstance(it, dict):
+                dname = defs.get(it.get("definitionId"))
+                if dname is not None:
+                    it["definitionName"] = dname
 
     def _enrich_version_no(self, items: list) -> None:
         """回填 versionNo（join 版本表，一次 IN 查询）。"""

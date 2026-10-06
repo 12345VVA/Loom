@@ -19,6 +19,15 @@
 
 		<cl-row>
 			<cl-table ref="Table">
+				<template #column-definitionName="{ scope }">
+					<el-link
+						type="primary"
+						:underline="false"
+						@click="goToEditor(scope.row.definitionId)"
+					>
+						{{ getDefinitionName(scope.row) }}
+					</el-link>
+				</template>
 				<template #column-runType="{ scope }">
 					<run-type-tag :type="scope.row.runType" />
 				</template>
@@ -140,9 +149,24 @@ import LogDrawer from '../components/log-drawer.vue';
 import ArtifactDrawer from '../components/artifact-drawer.vue';
 import RunTypeTag from '../components/run-type-tag.vue';
 import { formatVersionNo } from '../utils';
+import { buildStartInputsTemplate } from '../utils/start-inputs';
 
-const { service } = useCool();
+const { service, router } = useCool();
 const { t } = useI18n();
+
+function getDefinitionName(row: any): string {
+	if (row.definitionName) return row.definitionName;
+	const found = definitions.value.find(d => d.id === row.definitionId);
+	return found?.name || `${t('工作流')} #${row.definitionId}`;
+}
+
+function goToEditor(definitionId?: number) {
+	if (!definitionId) return;
+	router.push({
+		path: '/workflow/editor',
+		query: { id: definitionId }
+	});
+}
 
 interface WorkflowDefinition {
 	id: number;
@@ -232,12 +256,24 @@ const artifactDrawer = reactive({
 
 const Table = useTable({
 	columns: [
-		{ label: t('实例ID'), prop: 'id', width: 90 },
-		{ label: t('关联工作流ID'), prop: 'definitionId', width: 130 },
+		{
+			label: t('实例'),
+			prop: 'id',
+			width: 80,
+			align: 'center',
+			formatter: (row: any) => `#${row.id}`
+		},
+		{
+			label: t('工作流'),
+			prop: 'definitionName',
+			minWidth: 160,
+			showOverflowTooltip: true
+		},
 		{
 			label: t('版本'),
 			prop: 'versionNo',
-			width: 100,
+			width: 90,
+			align: 'center',
 			formatter: (_row: any, _col: any, val: any) => formatVersionNo(val)
 		},
 		{
@@ -352,16 +388,9 @@ async function onDefinitionChange(val: number) {
 			const graph = JSON.parse(graphJson);
 			const elements = graph.elements || [];
 			const startNode = elements.find((el: any) => el.type === 'start');
-			if (startNode && startNode.data?.config?.inputVariables) {
-				const vars: string[] = startNode.data.config.inputVariables;
-				const inputs: Record<string, string> = {};
-				vars.forEach(v => {
-					if (v) inputs[v] = '';
-				});
-				startDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
-			} else {
-				startDialog.form.inputsJson = '{}';
-			}
+			// 有默认值的输入变量直接预填默认值，其余留空串待填
+			const inputs = buildStartInputsTemplate(startNode?.data?.config?.inputVariables);
+			startDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
 		} else {
 			startDialog.form.inputsJson = '{}';
 		}

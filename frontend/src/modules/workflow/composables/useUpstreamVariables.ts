@@ -2,6 +2,7 @@ import { type Ref } from 'vue';
 
 import type { FlowNode, FlowEdge } from '../types/editor';
 import { resolveOutputVar } from '../utils';
+import { parseStartInputVariables } from '../utils/start-inputs';
 
 export interface UpstreamVariable {
 	nodeId: string;
@@ -55,16 +56,16 @@ export function useUpstreamVariables(elements: Ref<any[]>) {
 				if (src.type === 'start') {
 					if (visited.has(src.id)) continue;
 					visited.add(src.id);
-					const inputVars: string[] = (src.data?.config as any)?.inputVariables || [];
-					for (const varName of inputVars) {
-						if (varName && varName.trim()) {
-							result.push({
-								nodeId: src.id,
-								nodeLabel: src.label,
-								variableName: varName.trim(),
-								nodeType: src.type
-							});
-						}
+					const inputVars = parseStartInputVariables(
+						(src.data?.config as any)?.inputVariables
+					);
+					for (const v of inputVars) {
+						result.push({
+							nodeId: src.id,
+							nodeLabel: src.label,
+							variableName: v.name,
+							nodeType: src.type
+						});
 					}
 				} else {
 					const cfg = src.data?.config || {};

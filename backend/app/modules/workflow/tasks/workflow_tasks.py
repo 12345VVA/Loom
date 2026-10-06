@@ -56,6 +56,56 @@ def _maybe_offload(content: str) -> tuple[str, str | None]:
     return offload_payload(content)
 
 
+def apply_start_input_defaults(graph_json: dict, inputs: dict) -> dict:
+    """按开始节点声明的默认值补齐工作流输入。
+
+    开始节点的 ``config.inputVariables`` 兼容两种声明：
+      - 旧写法纯变量名：``["query"]``
+      - 新写法带默认值：``[{"name": "count", "default": 10}]``
+
+    仅当输入缺失、为 None 或为空字符串/纯空白时才回落到默认值；用户显式传入的值一律优先。
+    ``graph_json`` 是库中的原始拓扑（config 键为前端 camelCase），因此同时兼容
+    ``inputVariables`` / ``input_variables`` 两种键名。
+    """
+    if not isinstance(inputs, dict) or not isinstance(graph_json, dict):
+        return inputs
+
+    start_cfg: dict | None = None
+    for node in graph_json.get("nodes") or []:
+        if isinstance(node, dict) and node.get("type") == "start":
+            start_cfg = node.get("config") or {}
+            break
+    if not start_cfg:
+        return inputs
+
+    declared = start_cfg.get("inputVariables")
+    if declared is None:
+        declared = start_cfg.get("input_variables")
+    if not isinstance(declared, list):
+        return inputs
+
+    merged = dict(inputs)
+    for item in declared:
+        name: str | None = None
+        has_default = False
+        default: Any = None
+        if isinstance(item, str):
+            name = item.strip()
+        elif isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            if "default" in item:
+                has_default = True
+                default = item.get("default")
+        if not name or not has_default:
+            continue
+
+        current = merged.get(name)
+        if current is None or (isinstance(current, str) and not current.strip()):
+            merged[name] = default
+
+    return merged
+
+
 def _persist_node_payloads_sync(instance_id: int, payloads: list[dict]) -> None:
     """同步批量落库：对每个 payload 更新 instance 推进度 + 插入 exec_log，单次 commit。
 
@@ -440,6 +490,10 @@ async def async_execute(
             [n.get("id") for n in graph_json.get("nodes", [])],
             [(e.get("source"), e.get("target"), e.get("type")) for e in graph_json.get("edges", [])],
         )
+        # B：按开始节点声明的默认值补齐输入（未传/空串时回落到默认值，用户显式值优先）。
+        # 放在编译前——默认值随初始 state 进入 variables，正式运行/试运行/评估三条路径共用。
+        initial_vars = apply_start_input_defaults(graph_json, initial_vars)
+
         graph = WorkflowCompiler.compile_graph(graph_json)
 
         # P0：无中断节点且非恢复路径的图跳过 checkpointer——LangGraph 以内存态完成 astream，

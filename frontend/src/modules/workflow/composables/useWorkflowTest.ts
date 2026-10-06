@@ -1,6 +1,7 @@
 import { reactive, ref, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { findInvalidNodeInput } from '../utils';
+import { buildStartInputsTemplate } from '../utils/start-inputs';
 import { useStream } from '/@/cool/service/stream';
 import dayjs from 'dayjs';
 
@@ -93,16 +94,9 @@ export function useWorkflowTest(
 		const startNode = elements.value.find(
 			(el: any) => !('source' in el) && el.type === 'start'
 		) as FlowNode | undefined;
-		if (startNode && startNode.data?.config?.inputVariables) {
-			const vars: string[] = startNode.data.config.inputVariables;
-			const inputs: Record<string, string> = {};
-			vars.forEach(v => {
-				if (v) inputs[v] = '';
-			});
-			testDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
-		} else {
-			testDialog.form.inputsJson = '{}';
-		}
+		// 有默认值的输入变量直接预填默认值，其余留空串待填
+		const inputs = buildStartInputsTemplate(startNode?.data?.config?.inputVariables);
+		testDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
 		testDialog.visible = true;
 	}
 

@@ -154,6 +154,7 @@ class WorkflowInstanceRead(BaseModel):
 
     id: int
     definition_id: int
+    definition_name: str | None = None  # join 工作流定义表回填（展示用）
     version_id: int | None = None
     version_no: int | None = None  # join 版本表回填（展示用）
     thread_id: str
