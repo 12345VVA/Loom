@@ -1930,6 +1930,11 @@ declare namespace Eps {
 		versionId?: number;
 
 		/**
+		 * run_type
+		 */
+		runType?: string;
+
+		/**
 		 * node_id
 		 */
 		nodeId?: string;
@@ -2079,6 +2084,11 @@ declare namespace Eps {
 		definitionId?: number;
 
 		/**
+		 * definition_name
+		 */
+		definitionName?: string;
+
+		/**
 		 * version_id
 		 */
 		versionId?: number;
@@ -2117,6 +2127,16 @@ declare namespace Eps {
 		 * failed_node_id
 		 */
 		failedNodeId?: string;
+
+		/**
+		 * run_type
+		 */
+		runType?: string;
+
+		/**
+		 * eval_run_id
+		 */
+		evalRunId?: number;
 
 		/**
 		 * user_id
@@ -2496,7 +2516,7 @@ declare namespace Eps {
 
 	type json = any;
 
-	type DictKey = "test_dict" | "status";
+	type DictKey = "status";
 
 	interface PagePagination {
 		size: number;
@@ -3388,6 +3408,7 @@ declare namespace Eps {
 		/** latencyMs */ latencyMs: number;
 		/** error */ error?: string | null;
 		/** isTimeout */ isTimeout?: boolean;
+		/** instanceId */ instanceId?: number | null;
 	}
 
 	interface WorkflowVersionPageResponse {
@@ -3512,7 +3533,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<governance_event>;
+		info(data: { id: number }): Promise<governance_event>;
 
 		/**
 		 * 获取列表
@@ -3556,7 +3577,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<governance_rule>;
+		info(data: { id: number }): Promise<governance_rule>;
 
 		/**
 		 * 获取列表
@@ -3618,7 +3639,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<AiLog>;
+		info(data: { id: number }): Promise<AiLog>;
 
 		/**
 		 * 获取列表
@@ -3662,7 +3683,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<model>;
+		info(data: { id: number }): Promise<model>;
 
 		/**
 		 * 获取列表
@@ -3720,7 +3741,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<profile>;
+		info(data: { id: number }): Promise<profile>;
 
 		/**
 		 * 获取列表
@@ -3802,7 +3823,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<provider>;
+		info(data: { id: number }): Promise<provider>;
 
 		/**
 		 * 获取列表
@@ -3873,7 +3894,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<task>;
+		info(data: { id: number }): Promise<task>;
 
 		/**
 		 * 获取列表
@@ -4127,7 +4148,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<department>;
+		info(data: { id: number }): Promise<department>;
 
 		/**
 		 * 获取列表
@@ -4226,7 +4247,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<login_log>;
+		info(data: { id: number }): Promise<login_log>;
 
 		/**
 		 * 获取列表
@@ -4386,7 +4407,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<menu>;
+		info(data: { id: number }): Promise<menu>;
 
 		/**
 		 * 获取列表
@@ -4500,7 +4521,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<param>;
+		info(data: { id: number }): Promise<param>;
 
 		/**
 		 * 获取分页
@@ -4558,7 +4579,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<role>;
+		info(data: { id: number }): Promise<role>;
 
 		/**
 		 * 获取列表
@@ -4608,7 +4629,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<security_log>;
+		info(data: { id: number }): Promise<security_log>;
 
 		/**
 		 * 获取列表
@@ -4652,7 +4673,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<user>;
+		info(data: { id: number }): Promise<user>;
 
 		/**
 		 * 获取列表
@@ -4731,7 +4752,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<DictInfo>;
+		info(data: { id: number }): Promise<DictInfo>;
 
 		/**
 		 * 获取列表
@@ -4798,7 +4819,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<DictType>;
+		info(data: { id: number }): Promise<DictType>;
 
 		/**
 		 * 获取列表
@@ -4861,7 +4882,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<asset>;
+		info(data: { id: number }): Promise<asset>;
 
 		/**
 		 * 获取列表
@@ -4961,7 +4982,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<message>;
+		info(data: { id: number }): Promise<message>;
 
 		/**
 		 * 获取列表
@@ -5102,7 +5123,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<rule>;
+		info(data: { id: number }): Promise<rule>;
 
 		/**
 		 * 获取列表
@@ -5160,7 +5181,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<template>;
+		info(data: { id: number }): Promise<template>;
 
 		/**
 		 * 获取列表
@@ -5225,7 +5246,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<TaskInfo>;
+		info(data: { id: number }): Promise<TaskInfo>;
 
 		/**
 		 * 获取列表
@@ -5306,7 +5327,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<artifact>;
+		info(data: { id: number }): Promise<artifact>;
 
 		/**
 		 * 获取分页
@@ -5340,7 +5361,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<definition>;
+		info(data: { id: number }): Promise<definition>;
 
 		/**
 		 * 获取列表
@@ -5405,7 +5426,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<instance>;
+		info(data: { id: number }): Promise<instance>;
 
 		/**
 		 * 获取列表
@@ -5513,7 +5534,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<version>;
+		info(data: { id: number }): Promise<version>;
 
 		/**
 		 * 获取列表
@@ -5576,7 +5597,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<annotation>;
+		info(data: { id: number }): Promise<annotation>;
 
 		/**
 		 * 计算 judge 与人工标注的 Cohen's κ
@@ -5651,7 +5672,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<eval_run>;
+		info(data: { id: number }): Promise<eval_run>;
 
 		/**
 		 * 获取列表
@@ -5733,7 +5754,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<test_case>;
+		info(data: { id: number }): Promise<test_case>;
 
 		/**
 		 * 获取列表
@@ -5796,7 +5817,7 @@ declare namespace Eps {
 		/**
 		 * 获取详情
 		 */
-		info(data: { id: number; _action_name?: string }): Promise<test_set>;
+		info(data: { id: number }): Promise<test_set>;
 
 		/**
 		 * 获取列表
