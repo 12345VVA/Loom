@@ -112,7 +112,10 @@ def _validate_subgraph_boundaries(parent_id: str, body_node_ids: set[str], edges
                     f"循环体内节点只能连回循环控制节点或体内部节点。"
                 )
         # 外部节点向体内部入边：只允许父节点连向体入口
-        if target in body_node_ids and source != parent_id:
+        # （source 本身是体节点时属体内部边，第一个检查已覆盖，不得落入本分支——
+        #   缺 source not in body_node_ids 时任何含内部连线（体节点数 ≥2）的循环体
+        #   都会被误判为「循环外节点直连体内」而无法编译）
+        if target in body_node_ids and source not in body_node_ids and source != parent_id:
             src_name = nodes_map.get(source, {}).get("name", source)
             tgt_name = nodes_map.get(target, {}).get("name", target)
             raise ValueError(
@@ -121,8 +124,20 @@ def _validate_subgraph_boundaries(parent_id: str, body_node_ids: set[str], edges
             )
 
 
-def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = None) -> None:
-    """为单个条件节点注册 conditional edges，供主图和体子图复用。"""
+def _derive_conditional_config(node: dict, edges: list | None = None) -> dict:
+    """推导条件节点（condition/intent_classifier/switch）的路由配置并写入 config 副本。
+
+    返回值是 convert_keys_to_snake 生成的全新深拷贝，与原图 JSON 无别名引用。
+    只读契约：该对象会同时交给 create_node_runner（执行器）与 create_*_router
+    （路由器），两侧均不得修改嵌套结构（_compiled_body 注入发生在共享之前，不受限）。
+
+    修复（WF-P0-1）：此前 intent/switch 的 target_route 与 condition 的
+    true/false 边回退结果只存在于编译局部，执行器侧 config 拿不到——意图
+    分类的具名分支因此恒走 default_route。现在推导结果统一写回这份共享 config：
+    - condition: true_route / false_route（含从边 sourceHandle 的回退推导）；
+    - intent_classifier: intents[].target_route 与 default_route；
+    - switch: cases[].target_route 与 default_route。
+    """
     node_id = node["id"]
     node_type = node["type"]
     node_config = convert_keys_to_snake(node.get("config", {}))
@@ -140,15 +155,12 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                     true_route = e["target"]
                 elif sh == "false" and not false_route:
                     false_route = e["target"]
-        path_map = {END: END}
+        # 写回共享 config（此前只存局部变量，router 读 config 会拿到 None——
+        # 仅靠边回退、config 无 trueRoute 的图运行时路由必报错）
         if true_route:
-            path_map[true_route] = true_route
+            node_config["true_route"] = true_route
         if false_route:
-            path_map[false_route] = false_route
-        if len(path_map) > 1:
-            builder.add_conditional_edges(
-                node_id, WorkflowCompiler.create_conditional_router(node_id, node_config), path_map
-            )
+            node_config["false_route"] = false_route
 
     elif node_type == "intent_classifier":
         intents = list(node_config.get("intents", []))
@@ -168,19 +180,8 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                         match["target_route"] = e["target"]
                     elif rest.isdigit() and int(rest) < len(intents):
                         intents[int(rest)]["target_route"] = e["target"]
-        path_map = {}
-        for intent in intents:
-            target = intent.get("target_route")
-            if target:
-                path_map[target] = target
         if default_route:
             node_config["default_route"] = default_route
-            path_map[default_route] = default_route
-        path_map[END] = END
-        if path_map:
-            builder.add_conditional_edges(
-                node_id, WorkflowCompiler.create_intent_router(node_id, node_config), path_map
-            )
 
     elif node_type == "switch":
         cases = list(node_config.get("cases", []))
@@ -200,13 +201,54 @@ def _add_conditional_edges_for_node(builder, node: dict, edges: list | None = No
                         match["target_route"] = e["target"]
                     elif rest.isdigit() and int(rest) < len(cases):
                         cases[int(rest)]["target_route"] = e["target"]
+        if default_route:
+            node_config["default_route"] = default_route
+
+    return node_config
+
+
+def _register_conditional_edges(builder, node_id: str, node_type: str, node_config: dict) -> None:
+    """为已推导的条件节点注册 conditional edges（与 _derive_conditional_config 配对使用）。
+
+    path_map 只从传入的 node_config 读取——config 必须经 derive 写回过路由，
+    否则 intent/switch 的 target_route 与 condition 的回退路由不可见。
+    """
+    if node_type == "condition":
+        true_route = node_config.get("true_route")
+        false_route = node_config.get("false_route")
+        path_map = {END: END}
+        if true_route:
+            path_map[true_route] = true_route
+        if false_route:
+            path_map[false_route] = false_route
+        if len(path_map) > 1:
+            builder.add_conditional_edges(
+                node_id, WorkflowCompiler.create_conditional_router(node_id, node_config), path_map
+            )
+
+    elif node_type == "intent_classifier":
+        default_route = node_config.get("default_route")
         path_map = {}
-        for case in cases:
+        for intent in node_config.get("intents", []):
+            target = intent.get("target_route")
+            if target:
+                path_map[target] = target
+        if default_route:
+            path_map[default_route] = default_route
+        path_map[END] = END
+        if path_map:
+            builder.add_conditional_edges(
+                node_id, WorkflowCompiler.create_intent_router(node_id, node_config), path_map
+            )
+
+    elif node_type == "switch":
+        default_route = node_config.get("default_route")
+        path_map = {}
+        for case in node_config.get("cases", []):
             target = case.get("target_route")
             if target:
                 path_map[target] = target
         if default_route:
-            node_config["default_route"] = default_route
             path_map[default_route] = default_route
         path_map[END] = END
         if path_map:
@@ -219,19 +261,33 @@ def _compile_body_graph(body_nodes: list, body_edges: list, body_entry_id: str, 
     """将体节点编译为独立的 LangGraph StateGraph（无 checkpointer，瞬态执行）。"""
     builder = StateGraph(WorkflowState)
 
+    # 条件节点路由推导必须前置到体节点注册循环之前（WF-P0-1）：确保执行器与
+    # 路由器共享同一份带路由的 config。
+    # 注意：与主图不同，register 名单仍以「在体边中作为 source 出现」为准——
+    # 体子图零出边的条件节点不注册条件边（分支自然终结），不得改为注册
+    # {END: END}（那会把死分支变成跳 default_route 的活分支，属行为变更）。
+    conditional_configs = {
+        node["id"]: _derive_conditional_config(node, body_edges)
+        for node in body_nodes
+        if node["type"] in CONDITIONAL_NODE_TYPES
+    }
+
     # 注册体节点（复用 create_node_runner）
     for node in body_nodes:
         node_id = node["id"]
         node_type = node["type"]
-        node_config = convert_keys_to_snake(node.get("config", {}))
+        if node_id in conditional_configs:
+            node_config = conditional_configs[node_id]
+        else:
+            node_config = convert_keys_to_snake(node.get("config", {}))
         builder.add_node(node_id, WorkflowCompiler.create_node_runner(node_id, node_type, node_config))
 
     # START → 体入口
     builder.add_edge(START, body_entry_id)
 
     # 体内部边 + 条件节点处理
-    # 先收集条件节点，后续统一处理
-    body_condition_nodes = []
+    # 先收集需要注册条件边的条件节点，后续统一处理
+    body_condition_ids: list[str] = []
     for edge in body_edges:
         source = edge["source"]
         target = edge["target"]
@@ -244,14 +300,16 @@ def _compile_body_graph(body_nodes: list, body_edges: list, body_entry_id: str, 
         # 检查 source 是否是条件节点（需要 add_conditional_edges 而非 add_edge）
         source_node = next((n for n in body_nodes if n["id"] == source), None)
         if source_node and source_node["type"] in CONDITIONAL_NODE_TYPES:
-            body_condition_nodes.append(source_node)
+            if source not in body_condition_ids:
+                body_condition_ids.append(source)
             continue
 
         builder.add_edge(source, target)
 
-    # 处理体内部的条件节点（复用共享注册函数）
-    for cond_node in body_condition_nodes:
-        _add_conditional_edges_for_node(builder, cond_node, body_edges)
+    # 处理体内部的条件节点（路由已在上方前置推导，config 与执行器共享）
+    for cond_id in body_condition_ids:
+        cond_node = next(n for n in body_nodes if n["id"] == cond_id)
+        _register_conditional_edges(builder, cond_id, cond_node["type"], conditional_configs[cond_id])
     for node in body_nodes:
         if node["type"] == "end":
             builder.add_edge(node["id"], END)
@@ -367,11 +425,19 @@ class WorkflowCompiler:
         # 创建主图
         builder = StateGraph(WorkflowState)
 
+        # 0.5 条件节点路由推导（WF-P0-1）：把边推导出的 target_route/default_route
+        # 写回 config 副本，执行器与路由器自此共享同一份带路由的 config。
+        # 主图语义：全部条件节点（含零出边）都参与推导，register 阶段逐个处理。
+        conditional_configs = {
+            node["id"]: _derive_conditional_config(node, edges)
+            for node in nodes
+            if node["type"] in CONDITIONAL_NODE_TYPES and node["id"] not in all_body_node_ids
+        }
+
         # 1. 遍历注册所有工作节点（跳过体节点和 group 容器）
         for node in nodes:
             node_id = node["id"]
             node_type = node["type"]
-            node_config = convert_keys_to_snake(node.get("config", {}))
 
             # 跳过开始辅助节点
             if node_type == "start":
@@ -384,6 +450,12 @@ class WorkflowCompiler:
             # 跳过子图体节点（它们已被编译到各自的子图中）
             if node_id in all_body_node_ids:
                 continue
+
+            # 条件节点使用 0.5 推导后的共享 config（含边推导的路由），其余走原键名转换
+            if node_id in conditional_configs:
+                node_config = conditional_configs[node_id]
+            else:
+                node_config = convert_keys_to_snake(node.get("config", {}))
 
             # 对子图执行节点，注入已编译的体子图
             if node_id in subgraph_configs:
@@ -461,17 +533,10 @@ class WorkflowCompiler:
             if node.get("type") == "end" and node["id"] not in all_body_node_ids:
                 builder.add_edge(node["id"], END)
 
-        # 3. 遍历并处理条件边与分流节点
-        for node in nodes:
-            node_id = node["id"]
-            node_type = node["type"]
-            # 跳过体节点中的条件节点（已编译进子图）
-            if node_id in all_body_node_ids:
-                continue
-            node_config = convert_keys_to_snake(node.get("config", {}))
-
-            if node_type in CONDITIONAL_NODE_TYPES:
-                _add_conditional_edges_for_node(builder, node, edges)
+        # 3. 注册条件边与分流节点（路由推导已在 0.5 完成并写回共享 config）
+        for cond_id, cond_config in conditional_configs.items():
+            cond_type = nodes_map[cond_id].get("type")
+            _register_conditional_edges(builder, cond_id, cond_type, cond_config)
 
         logger.info("[Compiler] Graph build complete: nodes=%s", list(builder.nodes.keys()))
 

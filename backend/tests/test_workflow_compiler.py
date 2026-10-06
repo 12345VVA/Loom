@@ -569,5 +569,337 @@ class SafeEvalTestCase(unittest.TestCase):
             safe_eval("{**{'a': 1}}", {})
 
 
+# --- WF-P0-1 条件路由推导/注册拆分测试 ---
+
+# 执行器经定义模块全局查找 run_ai_chat，patch 必须落在定义处（node_executors）
+_MOCK_AI_CHAT_PATH = "app.modules.workflow.service.node_executors.run_ai_chat"
+
+
+def _intent_node(node_id: str = "intent_1") -> dict:
+    return {
+        "id": node_id,
+        "type": "intent_classifier",
+        "name": f"Intent-{node_id}",
+        "config": {
+            "modelProfileCode": "p1",
+            "intents": [
+                {"id": "i1", "name": "A", "description": ""},
+                {"id": "i2", "name": "B", "description": ""},
+            ],
+        },
+    }
+
+
+def _handle_edge(src: str, tgt: str, handle: str) -> dict:
+    return {"id": f"e_{src}_{tgt}", "source": src, "target": tgt, "sourceHandle": handle}
+
+
+class DeriveConditionalConfigTestCase(unittest.TestCase):
+    """_derive_conditional_config：边推导结果必须写回返回的 config（WF-P0-1 核心）。"""
+
+    def test_intent_target_route_written_back_by_id(self):
+        node = _intent_node()
+        cfg = compiler_mod._derive_conditional_config(node, [_handle_edge("intent_1", "branch_a", "intent_i1")])
+        self.assertEqual(cfg["intents"][0]["target_route"], "branch_a")
+
+    def test_intent_numeric_index_fallback(self):
+        """handle 携带的数字无法匹配任何 intent id 时，按下标回退。"""
+        node = _intent_node()  # ids: i1 / i2，handle "intent_1" 的 rest="1" 不匹配任何 id
+        cfg = compiler_mod._derive_conditional_config(node, [_handle_edge("intent_1", "branch_b", "intent_1")])
+        self.assertEqual(cfg["intents"][1]["target_route"], "branch_b")
+        self.assertIsNone(cfg["intents"][0].get("target_route"))
+
+    def test_intent_id_match_priority_over_index(self):
+        """同一条边既可按 id 匹配又可按数字下标命中时，id 匹配优先（既有语义锚定）。"""
+        node = _intent_node()
+        node["config"]["intents"] = [{"id": "1", "name": "A"}, {"id": "i2", "name": "B"}]
+        cfg = compiler_mod._derive_conditional_config(node, [_handle_edge("intent_1", "branch_a", "intent_1")])
+        self.assertEqual(cfg["intents"][0]["target_route"], "branch_a")
+        self.assertIsNone(cfg["intents"][1].get("target_route"))
+
+    def test_intent_default_handle_writes_default_route(self):
+        node = _intent_node()
+        cfg = compiler_mod._derive_conditional_config(node, [_handle_edge("intent_1", "branch_c", "default")])
+        self.assertEqual(cfg["default_route"], "branch_c")
+
+    def test_switch_case_written_back(self):
+        node = {
+            "id": "switch_1",
+            "type": "switch",
+            "name": "Switch",
+            "config": {"variable": "mode", "cases": [{"id": "c1", "value": "x"}]},
+        }
+        cfg = compiler_mod._derive_conditional_config(node, [_handle_edge("switch_1", "branch_x", "case_c1")])
+        self.assertEqual(cfg["cases"][0]["target_route"], "branch_x")
+
+    def test_condition_fallback_written_back(self):
+        """condition 双路由全靠边回退时，true_route/false_route 必须写回 config。"""
+        node = {
+            "id": "cond_1",
+            "type": "condition",
+            "name": "Cond",
+            "config": {"expression": "1 == 1"},
+        }
+        edges = [_handle_edge("cond_1", "branch_a", "true"), _handle_edge("cond_1", "branch_b", "false")]
+        cfg = compiler_mod._derive_conditional_config(node, edges)
+        self.assertEqual(cfg["true_route"], "branch_a")
+        self.assertEqual(cfg["false_route"], "branch_b")
+
+    def test_condition_half_missing_filled_from_edge(self):
+        """半缺形态：config 已有 falseRoute、true 靠边补齐——两者都应在返回值中。"""
+        node = {
+            "id": "cond_1",
+            "type": "condition",
+            "name": "Cond",
+            "config": {"expression": "1 == 1", "falseRoute": "branch_b"},
+        }
+        cfg = compiler_mod._derive_conditional_config(node, [_handle_edge("cond_1", "branch_a", "true")])
+        self.assertEqual(cfg["true_route"], "branch_a")
+        self.assertEqual(cfg["false_route"], "branch_b")
+
+    def test_returns_fresh_copy_no_alias(self):
+        """返回对象与输入 config 无共享引用（深拷贝契约）：改返回值不得影响原图。"""
+        node = _intent_node()
+        original = node["config"]
+        cfg = compiler_mod._derive_conditional_config(node, [_handle_edge("intent_1", "branch_a", "intent_i1")])
+        cfg["intents"][0]["target_route"] = "mutated"
+        cfg["default_route"] = "mutated"
+        self.assertIsNone(original["intents"][0].get("target_route"))
+        self.assertNotIn("default_route", original)
+
+
+class RegisterConditionalEdgesGuardsTestCase(unittest.TestCase):
+    """_register_conditional_edges 的守卫语义（与重构前逐字节等价）。"""
+
+    def test_condition_without_routes_not_registered(self):
+        """condition 无任何路由：len(path_map)==1 守卫 → 不注册条件边。"""
+        graph = {
+            "nodes": [
+                _start_node(),
+                {"id": "cond_1", "type": "condition", "name": "Cond", "config": {"expression": "True"}},
+                _end_node(),
+            ],
+            "edges": [_edge("start_1", "cond_1"), _edge("cond_1", "end_1")],
+        }
+        builder = WorkflowCompiler.compile_graph(graph)
+        self.assertFalse(getattr(builder, "branches", {}).get("cond_1"))
+
+    def test_intent_with_config_default_still_registered(self):
+        """intent 无任何边但有 config defaultRoute：仍注册条件边（END 兜底 + default）。"""
+        intent = _intent_node()
+        intent["config"]["defaultRoute"] = "end_1"
+        graph = {
+            "nodes": [_start_node(), intent, _end_node()],
+            "edges": [_edge("start_1", "intent_1")],
+        }
+        builder = WorkflowCompiler.compile_graph(graph)
+        self.assertTrue(getattr(builder, "branches", {}).get("intent_1"))
+
+
+class IntentRoutingHardGateTestCase(unittest.TestCase):
+    """编译级硬门禁：判出意图 A 必须走 A 分支（修前执行器 config 无 target_route，恒走 default）。"""
+
+    def _intent_graph(self) -> dict:
+        return {
+            "nodes": [
+                _start_node(),
+                _intent_node(),
+                _llm_node("branch_a"),
+                _llm_node("branch_b"),
+                _llm_node("branch_c"),
+                _end_node(),
+            ],
+            "edges": [
+                _edge("start_1", "intent_1"),
+                _handle_edge("intent_1", "branch_a", "intent_i1"),
+                _handle_edge("intent_1", "branch_b", "intent_i2"),
+                _handle_edge("intent_1", "branch_c", "default"),
+                _edge("branch_a", "end_1"),
+                _edge("branch_b", "end_1"),
+                _edge("branch_c", "end_1"),
+            ],
+        }
+
+    def _run_graph(self, graph: dict, model_reply: str, variables: dict | None = None) -> list[str]:
+        builder = WorkflowCompiler.compile_graph(graph)
+        compiled = builder.compile()
+        call_order: list[str] = []
+        real_get = compiler_mod.node_registry.get
+
+        def recording_get(node_type):
+            real_executor = real_get(node_type)
+            if node_type != "llm":
+                return real_executor
+
+            async def recorder(node_variables, config):
+                call_order.append(config.get("id"))
+                return {}
+
+            return recorder
+
+        with (
+            patch.object(compiler_mod.node_registry, "get", new=recording_get),
+            patch(_MOCK_AI_CHAT_PATH, return_value=model_reply),
+        ):
+            asyncio.run(compiled.ainvoke({"variables": variables or {"query": "hello"}, "current_node": "start_1"}))
+        return call_order
+
+    def test_named_intent_routes_to_named_branch(self):
+        """判出意图 A → 走 A 分支（本用例在修复前失败且 call_order==['branch_c']）。"""
+        call_order = self._run_graph(self._intent_graph(), "A")
+        self.assertEqual(call_order, ["branch_a"])
+
+    def test_unknown_intent_routes_to_default(self):
+        """未命中任何意图 → 走 default 分支。"""
+        call_order = self._run_graph(self._intent_graph(), "完全未知的意图xyz")
+        self.assertEqual(call_order, ["branch_c"])
+
+    def test_intent_inside_loop_body_routes_to_named_branch(self):
+        """体子图内的 intent 同样命中具名分支（守护 _compile_body_graph 的推导前置）。"""
+        loop_node = {
+            "id": "loop_1",
+            "type": "loop_controller",
+            "name": "Loop",
+            "config": {
+                "loopBodyRoute": "intent_1",
+                "listVariable": "items",
+                "itemVariable": "item",
+                "outputVariable": "results",
+            },
+        }
+        graph = {
+            "nodes": [
+                _start_node(),
+                loop_node,
+                _intent_node("intent_1"),
+                _llm_node("branch_a"),
+                _llm_node("branch_c"),
+                _end_node(),
+            ],
+            "edges": [
+                _edge("start_1", "loop_1"),
+                _edge("loop_1", "end_1"),
+                _handle_edge("intent_1", "branch_a", "intent_i1"),
+                _handle_edge("intent_1", "branch_c", "default"),
+                _edge("branch_a", "loop_1"),
+                _edge("branch_c", "loop_1"),
+            ],
+        }
+        call_order = self._run_graph(graph, "A", variables={"items": ["x"], "query": "hello"})
+        self.assertEqual(call_order, ["branch_a"])
+
+
+class ConditionEdgeFallbackActivationTestCase(unittest.TestCase):
+    """condition 双路由全靠边回退（config 无 trueRoute/falseRoute）的图必须可用。
+
+    修复前：回退结果只存编译局部变量，router 读 config 拿到 None，表达式为真时
+    返回 None → path_map 无此键 → LangGraph 路由报错。derive 写回后恢复可用。
+    """
+
+    def test_condition_routes_via_source_handle_only(self):
+        cond = {"id": "cond_1", "type": "condition", "name": "Cond", "config": {"expression": "1 == 1"}}
+        graph = {
+            "nodes": [
+                _start_node(),
+                cond,
+                _llm_node("branch_a"),
+                _llm_node("branch_b"),
+                _end_node(),
+            ],
+            "edges": [
+                _edge("start_1", "cond_1"),
+                _handle_edge("cond_1", "branch_a", "true"),
+                _handle_edge("cond_1", "branch_b", "false"),
+                _edge("branch_a", "end_1"),
+                _edge("branch_b", "end_1"),
+            ],
+        }
+        builder = WorkflowCompiler.compile_graph(graph)
+        compiled = builder.compile()
+        call_order: list[str] = []
+        real_get = compiler_mod.node_registry.get
+
+        def recording_get(node_type):
+            real_executor = real_get(node_type)
+            if node_type != "llm":
+                return real_executor
+
+            async def recorder(node_variables, config):
+                call_order.append(config.get("id"))
+                return {}
+
+            return recorder
+
+        with patch.object(compiler_mod.node_registry, "get", new=recording_get):
+            asyncio.run(compiled.ainvoke({"variables": {}, "current_node": "start_1"}))
+        self.assertEqual(call_order, ["branch_a"])
+
+
+class BodyZeroOutEdgeConditionalGuardTestCase(unittest.TestCase):
+    """R1 守护：体子图零出边的条件节点不注册条件边（分支自然终结，不得变为跳 default 的活分支）。"""
+
+    def test_zero_out_edge_condition_in_body_registers_no_branch(self):
+        from app.modules.workflow.service.compiler import _compile_body_graph
+
+        cond = {"id": "cond_1", "type": "condition", "name": "C", "config": {"expression": "True"}}
+        builder = _compile_body_graph([cond], [], "cond_1", "loop_1")
+        self.assertFalse(getattr(builder, "branches", {}).get("cond_1"))
+
+
+class MultiNodeLoopBodyCompileTestCase(unittest.TestCase):
+    """多节点循环体（体内部有连线）必须可编译可执行。
+
+    回归锚：_validate_subgraph_boundaries 第二分支曾缺 source not in body_node_ids，
+    任何体节点数 ≥2 的循环体都被误判为「循环外节点直连体内」而无法编译。
+    """
+
+    def test_two_node_body_compiles_and_executes(self):
+        graph = {
+            "nodes": [
+                _start_node(),
+                {
+                    "id": "loop_1",
+                    "type": "loop_controller",
+                    "name": "Loop",
+                    "config": {
+                        "loopBodyRoute": "body_a",
+                        "listVariable": "items",
+                        "itemVariable": "item",
+                        "outputVariable": "results",
+                    },
+                },
+                _llm_node("body_a"),
+                _llm_node("body_b"),
+                _end_node(),
+            ],
+            "edges": [
+                _edge("start_1", "loop_1"),
+                _edge("loop_1", "end_1"),
+                _edge("body_a", "body_b"),  # 体内部连线
+                _edge("body_b", "loop_1"),  # 回边
+            ],
+        }
+        builder = WorkflowCompiler.compile_graph(graph)
+        compiled = builder.compile()
+        call_order: list[str] = []
+        real_get = compiler_mod.node_registry.get
+
+        def recording_get(node_type):
+            real_executor = real_get(node_type)
+            if node_type != "llm":
+                return real_executor
+
+            async def recorder(node_variables, config):
+                call_order.append(config.get("id"))
+                return {}
+
+            return recorder
+
+        with patch.object(compiler_mod.node_registry, "get", new=recording_get):
+            asyncio.run(compiled.ainvoke({"variables": {"items": ["x", "y"]}, "current_node": "start_1"}))
+        # 2 项 × 2 体节点，串联执行
+        self.assertEqual(call_order, ["body_a", "body_b", "body_a", "body_b"])
+
+
 if __name__ == "__main__":
     unittest.main()
