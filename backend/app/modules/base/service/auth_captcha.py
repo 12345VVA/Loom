@@ -105,7 +105,8 @@ class CaptchaMixin:
 
         §18.7 模式开关：伪缺口禁用（DECOY=0）时拼图块不染色（piece_tint_alpha=0）——
         高饱和染色的拼图块与洞在 RGB 空间直接相似，会把 §13 求解器复活到 100%；
-        单缺口模式下染色无判别意义，不染反而保住寄存器防御。"""
+        单缺口模式下染色无判别意义，不染使 S1=0%（击败通用模板匹配工具链；
+        对定制定位器无防御，见 §19 口径）。"""
         from app.modules.base.service.auth_captcha_render import RenderParams
 
         decoys_on = settings.CAPTCHA_HARDEN_DECOY_MAX > 0

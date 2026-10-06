@@ -1,17 +1,27 @@
-"""滑块验证码解题基准（专项 §17/§18：P1 图像加固验收 + 验收复审二次修复）。
+"""滑块验证码解题基准（专项 §17/§18/§19：图像加固验收 + 二次修复 + 二次验收红线）。
 
-**教训（§18）**：第一轮基准只测了自家求解器（S1），得出「命中 12-16%≈盲猜」的错误
+**教训一（§18）**：第一轮基准只测了自家求解器（S1），得出「命中 12-16%≈盲猜」的错误
 结论——验收方换三条路径（形状 IoU / 明度 argmax / sliderY 侧信道）即 96.7-100%。
-本轮基准固定包含全策略套件，任何单一策略不优于「定位后随机挑候选」下界才算过关。
+**教训二（§19，二次验收）**：单缺口模式下 1/k 下界恒等于 100%（k=1），把「定位」
+这一最难步骤的收益记作免费——必须改用**真实盲猜下界**（不放图直接猜 x，
+P=(2·tol+1)/(max_x+1)≈9.7%），且必须固定包含**定位策略**。
 
 策略清单（全部只用响应公开字段 bg/slider/sliderY/tolerance/sliderWidth）：
 - S1 §13 亮度补偿 ×255/145 + 滑窗模板 MAD（内容匹配）
-- S2 定位缺口后随机挑候选（真实盲猜下界）
+- S2 定位缺口后随机挑候选（多缺口判别下界）
 - S3 取锚点 y 最接近 sliderY 的候选（sliderY 侧信道）
 - S4 候选掩码内均值色相与拼图块均值色相距离最小（色调通道）
 - S5 候选掩码内均值明度最暗
 - S6 候选掩码 bbox 归一化后与拼图块 alpha 求 IoU 取最大（形状比较器）
 - S7 候选掩码内均值明度最亮（明度通道）
+- A1 色度连通块定位（HSV S>70 → 开运算 → 最大连通块 bbox 左上 x）——单缺口模式下定位即答案
+- A2 色度滑窗定位（S 通道 44×44 滑窗均值 argmax，不用 sliderY）
+- A3 亮度滑窗定位（L 通道 44×44 滑窗均值 argmin，**完全不用色调**——洞内 0.57×背景
+  的 43% 灰度落差是独立于色调的定位通道）
+
+红线（§19）：hardened 的任一定位/判别策略不显著优于真实盲猜下界 9.7% 才可宣称
+「抗解」；当前单缺口模式下 A1/A2 = 100% 属**已接受的范式终态**（UX 减速带定位，
+见专项报告 §18.7/§19 与设计文档 §7），基准只负责如实测量、防止宣称漂移。
 
 - legacy profile：复现基线自证基准器有效（§13 实测 ≈36/36、偏差 0px），无伪缺口故只跑 S1。
 - hardened profile：加固渲染管线（auth_captcha_render）下全策略命中率/偏差分布/
@@ -53,6 +63,8 @@ _DARK_ALPHA = 110
 _TOLERANCE = settings.CAPTCHA_SLIDER_TOLERANCE
 _TRACK_WIDTH = CAPTCHA_RENDER_WIDTH
 _TRACK_HEIGHT = CAPTCHA_RENDER_HEIGHT
+# 真实盲猜下界（§19）：不放图、x~U[0, track−size]，命中带 = 2·tol+1（服务端只比 x）
+_BLIND_FLOOR = (2 * _TOLERANCE + 1) / (_TRACK_WIDTH - _SIZE + 1)
 
 STRATEGIES = ("S1", "S2", "S3", "S4", "S5", "S6", "S7")
 STRATEGY_LABELS = {
@@ -63,6 +75,12 @@ STRATEGY_LABELS = {
     "S5": "S5 最暗候选",
     "S6": "S6 形状IoU",
     "S7": "S7 最亮候选",
+}
+LOC_STRATEGIES = ("A1", "A2", "A3")
+LOC_LABELS = {
+    "A1": "A1 色度连通块定位",
+    "A2": "A2 色度滑窗定位",
+    "A3": "A3 亮度滑窗定位",
 }
 
 
@@ -192,6 +210,36 @@ def _normalized_mask(hole: dict, width: int) -> Image.Image:
     return mask.resize((_SIZE, _SIZE), Image.NEAREST)
 
 
+def _box_extreme(channel: Image.Image, puzzle_size: int, mode: str) -> tuple[int, int] | None:
+    """A2/A3 定位（二次验收同款手法，纯 PIL）：BoxBlur(size//2) ≈ size×size 滑窗均值，
+    取 argmax（mode="max"）或 argmin（mode="min"）像素，返回窗口左上角 (x, y)。
+
+    不用 sliderY（y 亦由定位给出）——比「y 已知」口径更保守。"""
+    half = puzzle_size // 2
+    blurred = channel.filter(ImageFilter.BoxBlur(half))
+    width, height = blurred.size
+    data = blurred.getdata()
+    best_index = 0
+    best_value = data[0]
+    for index, value in enumerate(data):
+        if (mode == "max" and value > best_value) or (mode == "min" and value < best_value):
+            best_value = value
+            best_index = index
+    x, y = best_index % width, best_index // width
+    return (max(0, x - half), max(0, y - half))
+
+
+def _localization_strategies(bg: Image.Image) -> dict[str, int | None]:
+    """A1-A3：定位类攻击。单缺口模式下定位即答案（k=1），这是范式终态的既知度量。"""
+    holes = _extract_holes(bg)
+    a1 = max(holes, key=lambda hole: len(hole["pixels"]))["x0"] if holes else None
+    saturation = bg.convert("HSV").getchannel("S")
+    luminance = bg.convert("L")
+    a2 = _box_extreme(saturation, _SIZE, "max")
+    a3 = _box_extreme(luminance, _SIZE, "min")
+    return {"A1": a1, "A2": a2[0] if a2 else None, "A3": a3[0] if a3 else None}
+
+
 def _candidate_strategies(
     bg: Image.Image,
     piece: Image.Image,
@@ -267,6 +315,7 @@ def _run(
     n = len(truths)
     hits = {key: 0 for key in STRATEGIES}
     attempts = {key: 0 for key in STRATEGIES}
+    loc_hits = {key: 0 for key in LOC_STRATEGIES}
     zero = 0
     mispicks = 0
     buckets = {"0": 0, "1-3": 0, "4-12": 0, ">12": 0}
@@ -293,17 +342,21 @@ def _run(
             mispicks += 1
         margins.append(margin)
 
-        # S2-S7 候选策略（仅 hardened：legacy 无伪缺口，候选恒唯一）
+        # A1-A3 定位策略（§19 红线：单缺口模式下定位即答案，必测）
+        # S2-S7 判别策略仅在多缺口（k>1）下有意义——k=1 时恒中，打印只会制造噪音
         if profile != "legacy":
-            predictions = _candidate_strategies(bg, slider, ty, pick_rng)
+            for strategy, predicted in _localization_strategies(bg).items():
+                if predicted is not None:
+                    loc_hits[strategy] += abs(predicted - tx) <= _TOLERANCE
             candidates = _extract_holes(bg)
             cand_total += len(candidates)
-            rand_floor += 1.0 / len(candidates) if candidates else 0.0
-            for strategy, predicted in predictions.items():
-                if predicted is None:
-                    continue
-                attempts[strategy] += 1
-                hits[strategy] += abs(predicted - tx) <= _TOLERANCE
+            if len(candidates) > 1:
+                rand_floor += 1.0 / len(candidates)
+                for strategy, predicted in _candidate_strategies(bg, slider, ty, pick_rng).items():
+                    if predicted is None:
+                        continue
+                    attempts[strategy] += 1
+                    hits[strategy] += abs(predicted - tx) <= _TOLERANCE
 
         if dump_dir and index < 10:
             path = Path(dump_dir)
@@ -318,6 +371,7 @@ def _run(
         "zero_rate": zero / n,
         "buckets": buckets,
         "strategy_hits": {key: (hits[key] / attempts[key] if attempts[key] else None) for key in STRATEGIES},
+        "loc_hits": {key: loc_hits[key] / n for key in LOC_STRATEGIES} if profile != "legacy" else None,
         "cand_per_img": (cand_total / n) if profile != "legacy" else None,
         "rand_floor": (rand_floor / n) if profile != "legacy" else None,
         "decoy_mispick_rate": (mispicks / n) if profile != "legacy" else None,
@@ -351,14 +405,18 @@ def _main() -> None:
         print(f"S1 命中率(±{_TOLERANCE}) : {table['hit_rate']:.1%}")
         print(f"S1 0px 偏差占比     : {table['zero_rate']:.1%}")
         print(f"S1 偏差分布          : {table['buckets']}")
-        if table["rand_floor"] is not None:
-            print(f"候选/图             : {table['cand_per_img']:.3f}（1=单缺口模式，判别类策略恒中属预期）")
-            print(f"随机下界(1/k)       : {table['rand_floor']:.1%}")
-            for key in ("S2", "S3", "S4", "S5", "S6", "S7"):
-                rate = table["strategy_hits"][key]
-                print(f"{STRATEGY_LABELS[key]:<18} : {rate:.1%}" if rate is not None else f"{key}: n/a")
-        if table["decoy_mispick_rate"] is not None:
-            print(f"伪缺口误选占比      : {table['decoy_mispick_rate']:.1%}")
+        if table["loc_hits"] is not None:
+            multi = (table["cand_per_img"] or 0) > 1.0
+            print(f"真实盲猜下界        : {_BLIND_FLOOR:.1%}（不放图猜 x；单缺口下 1/k 恒 100% 不可用，§19）")
+            print(f"候选/图             : {table['cand_per_img']:.3f}")
+            for key in LOC_STRATEGIES:
+                print(f"{LOC_LABELS[key]:<18} : {table['loc_hits'][key]:.1%}")
+            if multi:
+                print(f"随机下界(1/k)       : {table['rand_floor']:.1%}")
+                for key in ("S2", "S3", "S4", "S5", "S6", "S7"):
+                    rate = table["strategy_hits"][key]
+                    print(f"{STRATEGY_LABELS[key]:<18} : {rate:.1%}" if rate is not None else f"{key}: n/a")
+                print(f"伪缺口误选占比      : {table['decoy_mispick_rate']:.1%}")
         print(f"argmin margin p50   : {table['margin_p50']:.2f}")
         if table["render_p50_ms"] is not None:
             print(f"渲染耗时 p50/p95    : {table['render_p50_ms']:.1f}ms / {table['render_p95_ms']:.1f}ms")

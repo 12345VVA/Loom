@@ -179,6 +179,32 @@ class RenderPipelineTests(unittest.TestCase):
         self.assertLess(brightest, rounds * 0.9, "真缺口恒为最亮档（S7 明度通道泄漏）")
         self.assertLess(darkest, rounds * 0.9, "真缺口恒为最暗档（反向明度通道泄漏）")
 
+    def test_brightness_channel_localizes_without_tint(self):
+        """§19 P1 防回归：tint_alpha=0（完全去色调）时，纯亮度滑窗定位（A3 同款：
+        BoxBlur(22)≈44×44 窗口均值 argmin）仍能找到真缺口——洞内 0.57×背景的 43%
+        灰度落差是独立于色调的定位通道。「去色调提升安全性」不成立，任何未来把
+        去色调当抗解手段的改动必须先推翻本断言。"""
+        tolerance = settings.CAPTCHA_SLIDER_TOLERANCE
+        half = _PUZZLE_SIZE // 2
+        hits = 0
+        rounds = 20
+        for seed in range(rounds):
+            result = render_slider_captcha(
+                _TRACK_WIDTH,
+                _TRACK_HEIGHT,
+                60 + seed,
+                20,
+                _PUZZLE_SIZE,
+                rng=random.Random(seed),
+                params=RenderParams(tint_alpha=0, decoy_min=0, decoy_max=0),
+            )
+            blurred = result.bg.convert("L").filter(ImageFilter.BoxBlur(half))
+            data = list(blurred.getdata())
+            best = min(range(len(data)), key=data.__getitem__)
+            x = max(0, best % blurred.width - half)
+            hits += abs(x - (60 + seed)) <= tolerance
+        self.assertGreaterEqual(hits, rounds * 0.7, f"去色调后亮度定位命中率异常低: {hits}/{rounds}")
+
     def test_decoy_shapes_carry_no_signal(self):
         """S6 防回归（形状零信号）：输出级提取全部缺口，与拼图块 alpha 的归一化 IoU
         必须**两两打平**——任何「互异保证」（异形/异旋转）都会让 IoU 排序确定性指认
