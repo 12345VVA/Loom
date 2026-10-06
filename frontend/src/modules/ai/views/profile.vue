@@ -153,6 +153,76 @@ function renderSection(title: string, desc?: string) {
 		]);
 }
 
+// 跟踪用户是否手动修改过名称与编码
+const isCodeManuallyEdited = ref(false);
+const isNameManuallyEdited = ref(false);
+
+function deriveProfileSlug(text: string): string {
+	if (!text) return '';
+	return text
+		.toLowerCase()
+		.replace(/[^a-z0-9\s-_]/g, '')
+		.replace(/[\s_]+/g, '-')
+		.replace(/-+/g, '-')
+		.replace(/^-+|-+$/g, '');
+}
+
+function handleModelChange(val: any) {
+	const mid = normalizeSingleId(val);
+	if (!mid) return;
+	const m = modelsList.value.find((item: any) => item.id == mid);
+	if (!m) return;
+
+	const currentScenario = Upsert.value?.getForm('scenario') || 'default';
+	const modelName = m.name || m.code || '';
+	const modelCode = m.code || '';
+
+	// 1. 若名称未手动修改，建议名称："{模型名} ({场景})"
+	if (!isNameManuallyEdited.value && modelName) {
+		Upsert.value?.setForm('name', `${modelName} (${currentScenario})`);
+	}
+
+	// 2. 若编码未手动修改，建议编码："{modelCode/slug}-{scenario}"
+	if (!isCodeManuallyEdited.value) {
+		const base = (modelCode || deriveProfileSlug(modelName)).toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+		const scen = String(currentScenario).toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+		const code = `${base}-${scen}`.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+		if (code) {
+			Upsert.value?.setForm('code', code);
+		}
+	}
+}
+
+function handleScenarioInput(scenVal: string) {
+	const currentMid = normalizeSingleId(Upsert.value?.getForm('modelId'));
+	const m = currentMid ? modelsList.value.find((item: any) => item.id == currentMid) : null;
+	const scen = String(scenVal || 'default').trim();
+
+	if (!isNameManuallyEdited.value && m) {
+		const modelName = m.name || m.code || '';
+		Upsert.value?.setForm('name', `${modelName} (${scen})`);
+	}
+
+	if (!isCodeManuallyEdited.value) {
+		const base = (m?.code || deriveProfileSlug(Upsert.value?.getForm('name') || '')).toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+		if (base) {
+			const scenSlug = scen.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+			const code = `${base}-${scenSlug}`.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+			Upsert.value?.setForm('code', code);
+		}
+	}
+}
+
+function handleNameInput(nameVal: string) {
+	isNameManuallyEdited.value = true;
+	if (!isCodeManuallyEdited.value) {
+		const slug = deriveProfileSlug(nameVal);
+		if (slug) {
+			Upsert.value?.setForm('code', slug);
+		}
+	}
+}
+
 const Upsert = useUpsert({
 	dialog: { width: '840px' },
 	props: { labelWidth: '120px' },
@@ -161,21 +231,7 @@ const Upsert = useUpsert({
 		{
 			prop: '_sec_base',
 			span: 24,
-			component: { vm: renderSection(t('基本信息'), t('配置调用编码、关联模型与业务场景')) }
-		},
-		{
-			label: t('编码'),
-			prop: 'code',
-			required: true,
-			span: 12,
-			component: { name: 'el-input', props: { placeholder: '例如: gpt-image-flare-vip' } }
-		},
-		{
-			label: t('名称'),
-			prop: 'name',
-			required: true,
-			span: 12,
-			component: { name: 'el-input', props: { placeholder: '例如: GPT-Image-2.5 Flare VIP' } }
+			component: { vm: renderSection(t('基本信息'), t('配置关联模型、业务场景、调用编码与展示名称')) }
 		},
 		{
 			label: t('模型'),
@@ -192,7 +248,10 @@ const Upsert = useUpsert({
 						{ label: t('厂商'), prop: 'providerName', minWidth: 140 },
 						{ label: t('编码'), prop: 'code', minWidth: 160 },
 						{ label: t('类型'), prop: 'modelType', minWidth: 110 }
-					]
+					],
+					onChange(val: any) {
+						handleModelChange(val);
+					}
 				}
 			}
 		},
@@ -202,7 +261,45 @@ const Upsert = useUpsert({
 			value: 'default',
 			required: true,
 			span: 12,
-			component: { name: 'el-input', props: { placeholder: 'default / workflow / image' } }
+			component: {
+				name: 'el-input',
+				props: {
+					placeholder: 'default / workflow / image',
+					onInput(val: string) {
+						handleScenarioInput(val);
+					}
+				}
+			}
+		},
+		{
+			label: t('名称'),
+			prop: 'name',
+			required: true,
+			span: 12,
+			component: {
+				name: 'el-input',
+				props: {
+					placeholder: '例如: GPT-Image-2.5 Flare VIP',
+					onInput(val: string) {
+						handleNameInput(val);
+					}
+				}
+			}
+		},
+		{
+			label: t('编码'),
+			prop: 'code',
+			required: false,
+			span: 12,
+			component: {
+				name: 'el-input',
+				props: {
+					placeholder: t('例如: deepseek-v3-default (留空自动生成)'),
+					onInput() {
+						isCodeManuallyEdited.value = true;
+					}
+				}
+			}
 		},
 
 		// --- 2. 模型推理参数 ---
@@ -392,6 +489,10 @@ const Upsert = useUpsert({
 	],
 	onOpen() {
 		const data = Upsert.value?.form;
+		// 编辑已有配置时保持 manual 标记，避免修改模型/场景时意外改写已有编码与名称；新增时重置
+		isCodeManuallyEdited.value = Boolean(data?.id && data?.code);
+		isNameManuallyEdited.value = Boolean(data?.id && data?.name);
+
 		if (data && data.modelId && !data.modelType) {
 			const m = modelsList.value.find((item: any) => item.id == data.modelId);
 			if (m) data.modelType = m.modelType;
@@ -399,6 +500,13 @@ const Upsert = useUpsert({
 	},
 	onSubmit(data, { next }) {
 		const payload = { ...data };
+		if (!payload.code || !String(payload.code).trim()) {
+			const currentMid = normalizeSingleId(payload.modelId);
+			const m = currentMid ? modelsList.value.find((item: any) => item.id == currentMid) : null;
+			const base = (m?.code || deriveProfileSlug(payload.name || '') || 'profile').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+			const scen = String(payload.scenario || 'default').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+			payload.code = `${base}-${scen}`.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+		}
 		Object.keys(payload).forEach(key => {
 			if (key.startsWith('_')) {
 				delete payload[key];

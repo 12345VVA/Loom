@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -26,8 +27,39 @@ class AiModelProfileService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, AiModelProfile)
 
+    def _derive_code(self, name: str | None, model_id: int | None, scenario: str | None) -> str:
+        base = ""
+        if name:
+            slug = re.sub(r"[^a-zA-Z0-9\s-_]", "", str(name)).strip()
+            slug = re.sub(r"[\s_]+", "-", slug).lower()
+            slug = re.sub(r"-+", "-", slug).strip("-")
+            base = slug
+        if not base and model_id:
+            model = self.session.get(AiModel, model_id)
+            if model and model.code:
+                model_slug = re.sub(r"[^a-zA-Z0-9\s-_]", "", model.code).strip()
+                model_slug = re.sub(r"[\s_]+", "-", model_slug).lower()
+                scenario_slug = (scenario or "default").replace("_", "-").lower()
+                base = f"{model_slug}-{scenario_slug}"
+        if not base:
+            scenario_slug = (scenario or "default").replace("_", "-").lower()
+            base = f"profile-{scenario_slug}"
+
+        code = base
+        suffix = 1
+        while True:
+            statement = select(AiModelProfile).where(AiModelProfile.code == code)
+            if not self.session.exec(statement).first():
+                return code
+            suffix += 1
+            code = f"{base}-{suffix}"
+
     def _before_add(self, data: dict) -> dict:
         self._ensure_model(data.get("model_id"))
+        code = str(data.get("code") or "").strip()
+        if not code:
+            code = self._derive_code(data.get("name"), data.get("model_id"), data.get("scenario"))
+            data["code"] = code
         self._ensure_unique_code(data.get("code"))
         self._ensure_fallback_acyclic(None, data.get("fallback_profile_id"))
         _validate_json_config(data.get("response_format"), "responseFormat")
@@ -39,6 +71,8 @@ class AiModelProfileService(BaseAdminCrudService):
         return data
 
     def _before_update(self, data: dict, entity: AiModelProfile) -> dict:
+        if "code" in data and not str(data["code"] or "").strip():
+            data["code"] = entity.code
         # 部分更新：仅当显式传了 model_id 才校验模型存在（_ensure_model 对 None 会报错）
         if data.get("model_id") is not None:
             self._ensure_model(data.get("model_id"))

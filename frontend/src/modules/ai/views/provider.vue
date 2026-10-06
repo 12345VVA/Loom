@@ -44,11 +44,11 @@
 		</cl-upsert>
 	</cl-crud>
 
-	<el-drawer v-model="catalog.visible" :title="$t('导入模型厂商预设')" size="520px">
+	<el-drawer v-model="catalog.visible" :title="$t('导入模型厂商预设')" size="720px">
 		<el-table :data="catalog.items" border>
 			<el-table-column prop="name" :label="$t('厂商')" min-width="140" />
 			<el-table-column prop="adapter" :label="$t('适配器')" min-width="150" />
-			<el-table-column :label="$t('模型')" min-width="150">
+			<el-table-column :label="$t('模型')" min-width="180">
 				<template #default="{ row }">
 					<div class="catalog-types">
 						<el-tag
@@ -62,7 +62,7 @@
 					</div>
 				</template>
 			</el-table-column>
-			<el-table-column :label="$t('操作')" width="100">
+			<el-table-column :label="$t('操作')" width="90" align="center">
 				<template #default="{ row }">
 					<el-button text type="primary" @click="importCatalog(row)">{{
 						$t('导入')
@@ -80,7 +80,7 @@ defineOptions({
 
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { ElMessage } from 'element-plus';
-import { h, reactive } from 'vue';
+import { h, reactive, ref } from 'vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 
@@ -142,6 +142,31 @@ function renderSection(title: string, desc?: string) {
 		]);
 }
 
+// 跟踪用户是否手动修改过编码
+const isCodeManuallyEdited = ref(false);
+
+/**
+ * 将名称/适配器转换为小写规范化 slug 编码
+ */
+function deriveCode(name?: string, adapter?: string): string {
+	const text = String(name || '').trim();
+	if (text) {
+		const slug = text
+			.toLowerCase()
+			.replace(/[^a-z0-9\s-_]/g, '')
+			.replace(/[\s_]+/g, '-')
+			.replace(/-+/g, '-')
+			.replace(/^-+|-+$/g, '');
+		if (slug) {
+			return slug;
+		}
+	}
+	if (adapter && adapter !== 'openai-compatible') {
+		return adapter.toLowerCase().replace(/_/g, '-');
+	}
+	return '';
+}
+
 const Upsert = useUpsert({
 	dialog: { width: '800px' },
 	props: { labelWidth: '120px' },
@@ -150,21 +175,43 @@ const Upsert = useUpsert({
 		{
 			prop: '_sec_base',
 			span: 24,
-			component: { vm: renderSection(t('基本信息'), t('配置厂商唯一标识、展示名称与适配器通道')) }
-		},
-		{
-			label: t('编码'),
-			prop: 'code',
-			required: true,
-			span: 12,
-			component: { name: 'el-input', props: { placeholder: '例如: toapis / openai' } }
+			component: { vm: renderSection(t('基本信息'), t('配置厂商展示名称、唯一标识与适配器通道')) }
 		},
 		{
 			label: t('名称'),
 			prop: 'name',
 			required: true,
 			span: 12,
-			component: { name: 'el-input', props: { placeholder: '例如: ToAPIs 官方 / OpenAI' } }
+			component: {
+				name: 'el-input',
+				props: {
+					placeholder: '例如: ToAPIs 官方 / OpenAI',
+					onInput(val: string) {
+						if (!isCodeManuallyEdited.value) {
+							const currentAdapter = Upsert.value?.getForm('adapter');
+							const derived = deriveCode(val, currentAdapter);
+							if (derived) {
+								Upsert.value?.setForm('code', derived);
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			label: t('编码'),
+			prop: 'code',
+			required: false,
+			span: 12,
+			component: {
+				name: 'el-input',
+				props: {
+					placeholder: t('例如: toapis (留空根据名称自动生成)'),
+					onInput() {
+						isCodeManuallyEdited.value = true;
+					}
+				}
+			}
 		},
 		{
 			label: t('适配器'),
@@ -172,7 +219,24 @@ const Upsert = useUpsert({
 			value: 'openai-compatible',
 			required: true,
 			span: 12,
-			component: { name: 'cl-select', props: { options: adapterOptions } }
+			component: {
+				name: 'cl-select',
+				props: {
+					options: adapterOptions,
+					onChange(adapterVal: string) {
+						if (!isCodeManuallyEdited.value) {
+							const currentCode = Upsert.value?.getForm('code');
+							if (!currentCode) {
+								const currentName = Upsert.value?.getForm('name');
+								const derived = deriveCode(currentName, adapterVal);
+								if (derived) {
+									Upsert.value?.setForm('code', derived);
+								}
+							}
+						}
+					}
+				}
+			}
 		},
 		{
 			label: t('排序'),
@@ -270,8 +334,11 @@ const Upsert = useUpsert({
 		}
 	],
 	onOpen() {
-		// 旧数据可能为 null，编辑器需有初始 JSON 串（仅在空值时兜底，避免覆盖编辑回填）
 		const data = Upsert.value?.form;
+		// 编辑已有厂商时保持 manual 标记，避免修改名称时意外改写已有编码；新增时重置
+		isCodeManuallyEdited.value = Boolean(data?.id && data?.code);
+
+		// 旧数据可能为 null，编辑器需有初始 JSON 串（仅在空值时兜底，避免覆盖编辑回填）
 		if (data && data.extraConfig == null) {
 			data.extraConfig = '{}';
 		}
@@ -281,6 +348,9 @@ const Upsert = useUpsert({
 	},
 	onSubmit(data, { next }) {
 		const payload = { ...data };
+		if (!payload.code || !String(payload.code).trim()) {
+			payload.code = deriveCode(payload.name, payload.adapter);
+		}
 		Object.keys(payload).forEach(key => {
 			if (key.startsWith('_')) {
 				delete payload[key];
@@ -293,10 +363,10 @@ const Upsert = useUpsert({
 const Table = useTable({
 	columns: [
 		{ type: 'selection' },
-		{ label: t('编码'), prop: 'code', minWidth: 150 },
+		{ label: t('编码'), prop: 'code', minWidth: 150, hidden: true },
 		{ label: t('名称'), prop: 'name', minWidth: 150 },
 		{ label: t('适配器'), prop: 'adapter', minWidth: 150 },
-		{ label: 'Base URL', prop: 'baseUrl', minWidth: 240, showOverflowTooltip: true },
+		{ label: 'Base URL', prop: 'baseUrl', minWidth: 240, showOverflowTooltip: true, hidden: true },
 		{ label: 'API Key', prop: 'apiKeyMask', minWidth: 130 },
 		{ label: t('管理 AK'), prop: 'adminAccessKeyMask', minWidth: 130 },
 		{ label: t('启用'), prop: 'status', width: 100 },

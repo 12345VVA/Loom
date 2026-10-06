@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -22,7 +23,30 @@ class AiProviderService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, AiProvider)
 
+    def _derive_code(self, name: str | None, adapter: str | None) -> str:
+        base = ""
+        if name:
+            slug = re.sub(r"[^a-zA-Z0-9\s-_]", "", str(name)).strip()
+            slug = re.sub(r"[\s_]+", "-", slug).lower()
+            slug = re.sub(r"-+", "-", slug).strip("-")
+            base = slug
+        if not base:
+            base = (adapter or "provider").replace("_", "-").lower()
+
+        code = base
+        suffix = 1
+        while True:
+            statement = select(AiProvider).where(AiProvider.code == code)
+            if not self.session.exec(statement).first():
+                return code
+            suffix += 1
+            code = f"{base}-{suffix}"
+
     def _before_add(self, data: dict) -> dict:
+        code = str(data.get("code") or "").strip()
+        if not code:
+            code = self._derive_code(data.get("name"), data.get("adapter"))
+            data["code"] = code
         self._ensure_unique_code(data.get("code"))
         _validate_json_config(data.get("extra_config"), "extraConfig", expected_type=dict)
         api_key = data.pop("api_key", None)
@@ -33,6 +57,8 @@ class AiProviderService(BaseAdminCrudService):
         return data
 
     def _before_update(self, data: dict, entity: AiProvider) -> dict:
+        if "code" in data and not str(data["code"] or "").strip():
+            data["code"] = entity.code
         self._ensure_unique_code(data.get("code"), exclude_id=entity.id)
         _validate_json_config(data.get("extra_config"), "extraConfig", expected_type=dict)
         data.pop("api_key_cipher", None)

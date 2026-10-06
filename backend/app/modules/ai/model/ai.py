@@ -251,7 +251,7 @@ class AiProviderRead(BaseModel):
 class AiProviderCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    code: str
+    code: str | None = None
     name: str
     adapter: str = "openai-compatible"
     base_url: str | None = None
@@ -383,7 +383,7 @@ class AiModelProfileRead(BaseModel):
 class AiModelProfileCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    code: str
+    code: str | None = None
     name: str
     model_id: int
     scenario: str = "default"
