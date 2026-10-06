@@ -461,9 +461,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
             return
         defs = {
             d.id: d.name
-            for d in self.session.exec(
-                select(WorkflowDefinition).where(WorkflowDefinition.id.in_(dids))
-            ).all()
+            for d in self.session.exec(select(WorkflowDefinition).where(WorkflowDefinition.id.in_(dids))).all()
         }
         for it in items:
             if isinstance(it, dict):

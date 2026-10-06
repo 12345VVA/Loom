@@ -61,7 +61,9 @@ def test_unknown_keys_preserved():
 
 def test_packaged_workflow_13_declares_default_10():
     """随仓库分发的参数化绘本工作流：start 声明 image_count 默认 10。"""
-    path = Path(__file__).resolve().parents[2] / "examples" / "workflows" / "13_XHS_PictureBook_Pipeline_Parametric.json"
+    path = (
+        Path(__file__).resolve().parents[2] / "examples" / "workflows" / "13_XHS_PictureBook_Pipeline_Parametric.json"
+    )
     if not path.exists():
         return
     graph = json.loads(json.loads(path.read_text(encoding="utf-8"))["graph_json"])
