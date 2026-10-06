@@ -370,7 +370,7 @@ const Table = useTable({
 		{ label: 'API Key', prop: 'apiKeyMask', minWidth: 130 },
 		{ label: t('管理 AK'), prop: 'adminAccessKeyMask', minWidth: 130 },
 		{ label: t('启用'), prop: 'status', width: 100 },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
 			width: 340,

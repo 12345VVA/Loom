@@ -89,7 +89,7 @@ const Table = useTable({
 		{ label: t('限制值'), prop: 'limitValue', minWidth: 100 },
 		{ label: t('已通知'), prop: 'notified', minWidth: 90 },
 		{ label: t('消息'), prop: 'message', minWidth: 260, showOverflowTooltip: true },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 }
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } }
 	]
 });
 

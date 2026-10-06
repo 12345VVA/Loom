@@ -309,7 +309,7 @@ const Table = useTable({
 			minWidth: 110,
 			formatter: ({ costUsd }: any) => (costUsd != null ? Number(costUsd).toFixed(4) : '-')
 		},
-		{ label: t('更新时间'), prop: 'updateTime', sortable: 'desc', minWidth: 170 },
+		{ label: t('更新时间'), prop: 'updateTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
 			width: 260,

@@ -256,7 +256,7 @@ const Table = useTable({
 			dictColor: true
 		},
 		{ label: t('启用'), prop: 'status', width: 90 },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{ type: 'op', width: 260, buttons: ['edit', 'delete', 'slot-toggle'] }
 	]
 });

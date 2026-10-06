@@ -149,7 +149,7 @@ const Table = useTable({
 		{ label: 'Cost(USD)', prop: 'costUsd', minWidth: 110 },
 		{ label: 'Request ID', prop: 'requestId', minWidth: 180, showOverflowTooltip: true },
 		{ label: t('错误信息'), prop: 'errorMessage', minWidth: 240, showOverflowTooltip: true },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 }
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } }
 	]
 });
 

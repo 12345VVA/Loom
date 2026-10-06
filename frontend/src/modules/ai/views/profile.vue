@@ -538,7 +538,7 @@ const Table = useTable({
 		{ label: t('厂商'), prop: 'providerName', minWidth: 140 },
 		{ label: t('默认'), prop: 'isDefault', width: 90 },
 		{ label: t('启用'), prop: 'status', width: 90 },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
 			width: 280,

@@ -176,7 +176,7 @@ const Table = useTable({
 		{ label: t('进度'), prop: 'progress', minWidth: 90 },
 		{ label: t('重试'), prop: 'retryCount', minWidth: 80 },
 		{ label: t('错误信息'), prop: 'errorMessage', minWidth: 220, showOverflowTooltip: true },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{ type: 'op', width: 220, buttons: ['slot-op'] }
 	]
 });
