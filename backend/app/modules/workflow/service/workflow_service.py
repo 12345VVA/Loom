@@ -595,20 +595,23 @@ class WorkflowInstanceService(BaseAdminCrudService):
                 two_seconds_ago = datetime.now(UTC) - timedelta(seconds=2)
                 stmt = select(WorkflowInstance).where(
                     WorkflowInstance.definition_id == definition_id,
-                    WorkflowInstance.status == "running",
+                    # 两段式下排队中的 pending 实例同样是「重复启动」的去重对象
+                    WorkflowInstance.status.in_(["running", "pending"]),
                     WorkflowInstance.created_at >= two_seconds_ago,
                 )
                 for inst in self.session.exec(stmt).all():
                     if inst.state_data == json.dumps(inputs):
                         raise HTTPException(status_code=400, detail="检测到重复的启动请求，请稍后再试。")
 
-        # 初始化实例记录
+        # 初始化实例记录：两段式启动段一——先落 pending（已入队待执行），
+        # Celery worker / eval 执行体真正开跑时由 _promote_pending_to_running
+        # CAS 提升为 running；队列积压期间列表页如实显示「待运行」。
         thread_id = str(uuid4())
         instance = WorkflowInstance(
             definition_id=definition.id,
             version_id=version_id,
             thread_id=thread_id,
-            status="running",
+            status="pending",
             state_data=json.dumps(inputs),
             current_node=None,
             user_id=current_user.id if current_user else None,

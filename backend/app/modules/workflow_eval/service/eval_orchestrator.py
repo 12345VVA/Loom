@@ -180,13 +180,17 @@ def read_instance_result(instance_id: int) -> dict:
 
 
 def cancel_eval_instance(instance_id: int) -> None:
-    """超时收尾：CAS running→cancelled，避免孤儿实例。"""
+    """超时收尾：CAS running/pending→cancelled，避免孤儿实例。
+
+    pending 纳入：用例超时时协程可能尚未执行到 async_execute 的
+    pending→running promote，状态仍为排队态——同样要收尾。
+    """
     with Session(engine) as session:
         session.execute(
             update(WorkflowInstance)
             .where(
                 WorkflowInstance.id == instance_id,
-                WorkflowInstance.status == "running",
+                WorkflowInstance.status.in_(["running", "pending"]),
             )
             .values(status="cancelled")
         )

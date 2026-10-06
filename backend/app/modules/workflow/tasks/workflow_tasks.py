@@ -245,17 +245,42 @@ async def _drain_flush(queue: asyncio.Queue, task: asyncio.Task) -> None:
         task.cancel()
 
 
-def _mark_instance_failed(instance_id: int, message: str, expected: str = "running") -> None:
-    """Celery 任务入口兜底：把实例置为 failed 并发布事件（仅当当前状态==expected，避免覆盖 cancelled）。
+def _promote_pending_to_running(instance_id: int) -> bool:
+    """两段式启动段二：CAS pending→running，执行体真正开跑时调用（async_execute 第一步）。
+
+    rowcount=0 时复查最新状态（commit 已 expire，get 必发新查询）：
+    - running → True：eval 侧直建 running 的实例（不经 Celery 队列）与重复 promote；
+    - cancelled / failed / 行不存在 → False：排队中被取消、被 sweep/recover 回收、
+      被删除——终态与事件已由触发方落定，调用方静默退出，不产生任何执行副作用。
+    """
+    with Session(engine) as session:
+        result = session.execute(
+            update(WorkflowInstance)
+            .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == "pending")
+            .values(status="running")
+        )
+        session.commit()
+        if result.rowcount:
+            return True
+        inst = session.get(WorkflowInstance, instance_id)
+        return bool(inst and inst.status == "running")
+
+
+def _mark_instance_failed(
+    instance_id: int, message: str, expected: str | tuple[str, ...] = ("running", "pending")
+) -> None:
+    """Celery 任务入口兜底：把实例置为 failed 并发布事件（仅当当前状态在 expected 内，避免覆盖 cancelled）。
 
     用于 execute_workflow 在 asyncio.run 之前就失败的场景（如参数 JSON 解析失败）：
-    此时实例仍为 running，若不主动写终态，需等进程重启由 recover_orphaned_instances 兜底（最长 30 分钟）。
+    此时实例仍为 pending/running（两段式下 JSON 解析先于 promote），若不主动写终态，
+    需等进程重启由 recover_orphaned_instances 兜底（最长 30 分钟）。
     """
     try:
+        expected_statuses = expected if isinstance(expected, tuple) else (expected,)
         with Session(engine) as session:
             result = session.execute(
                 update(WorkflowInstance)
-                .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == expected)
+                .where(WorkflowInstance.id == instance_id, WorkflowInstance.status.in_(expected_statuses))
                 .values(status="failed", error_message=(message or "")[:500])
             )
             session.commit()
@@ -478,6 +503,12 @@ async def async_execute(
     _inst_ctx_token = workflow_instance_id_ctx.set(instance_id)
 
     try:
+        # 0. 两段式启动段二：pending→running。eval 直建 running 的实例经复查容错放行；
+        # 排队中被取消/回收/删除的实例在此静默退出（终态与事件已由触发方落定）。
+        if not _promote_pending_to_running(instance_id):
+            logger.info("[Workflow] 实例 %d 已非可执行状态（排队中被取消或回收），跳过执行", instance_id)
+            return
+
         # 1. 编译拓扑：解析 graph_json + thread_id（实例/定义/版本缺失则提前退出）
         with Session(engine) as session:
             resolved = _resolve_execution_graph(session, instance_id, definition_id, version_id, graph_json_override)
@@ -690,8 +721,22 @@ async def async_execute(
                     inst_definition_id = instance.definition_id
                     inst_version_id = instance.version_id
                     inst_user_id = instance.user_id
-                    _cas(session, "running", status="success")
+                    cas_rc = _cas(session, "running", status="success")
                     session.commit()
+                    if cas_rc == 0:
+                        # CAS 未命中：get 之后、CAS 之前的极小窗口内状态被并发改走——
+                        # 以 DB 最新状态收尾，不发 success 不落产物（核实清单 WF-P2-20）
+                        session.expire(instance)
+                        latest_status = instance.status
+                        if latest_status == "cancelled":
+                            publish_event(instance_id, "cancelled", {"status": "cancelled"})
+                        else:
+                            logger.warning(
+                                "[Workflow] 实例 %d success 收尾时状态已变为 %s，跳过 success 广播",
+                                instance_id,
+                                latest_status,
+                            )
+                        return
 
             final_vars = json.loads(state_data_str)
             workflow_output = final_vars.pop("workflow_output", None)

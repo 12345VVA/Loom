@@ -116,7 +116,8 @@ class StartInstanceDedupTestCase(_BaseDBTestCase):
         with patch("app.core.redis.redis_client") as mock_rc:
             mock_rc.set.side_effect = redis.exceptions.ConnectionError("no redis")
             instance = self._start(definition, {"q": "a"})
-        self.assertEqual(instance.status, "running")
+        # 两段式启动（WF-P1-7）：创建即 pending，执行体开跑时才 CAS 提升 running
+        self.assertEqual(instance.status, "pending")
         # mock_rc.set 被调用过（尝试抢锁），但异常被降级吞掉
         mock_rc.set.assert_called_once()
 

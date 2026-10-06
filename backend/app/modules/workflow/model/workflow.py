@@ -41,7 +41,9 @@ class WorkflowInstance(BaseEntity, table=True):
     definition_id: int = Field(index=True)
     version_id: int | None = Field(default=None, index=True)  # 本次执行所用 definition_version_id（存量 NULL）
     thread_id: str = Field(index=True, max_length=100)  # LangGraph checkpoint 隔离 thread
-    status: str = Field(default="pending", index=True, max_length=50)  # pending, running, paused, success, failed
+    # 状态机（两段式启动）：pending 已入队待执行（创建即落，执行体开跑时 CAS→running）
+    # → running → paused（human_input 中断，可 resume）/ success / failed / cancelled（终态）
+    status: str = Field(default="pending", index=True, max_length=50)
     current_node: str | None = Field(default=None, max_length=100)
     # 运行中的上下文变量快照（T8 超阈值载荷分离到对象存储后，此处存空串并置状态快照引用）
     state_data: str = Field(default="{}", max_length=100000)
@@ -51,7 +53,7 @@ class WorkflowInstance(BaseEntity, table=True):
     celery_task_id: str | None = Field(default=None, max_length=200, index=True)
     user_id: int | None = Field(default=None, index=True)  # 启动者，用于数据权限隔离
     failed_node_id: str | None = Field(default=None, max_length=100)  # 失败节点ID（可观测性 + 为断点续跑铺路）
-    # 运行类型：production 正式 | trial 编辑器试运行（草稿版）| eval 批量评估。
+    # 运行类型：production 正式 | trial 编辑器试运行（草稿版）| eval 批量评估 | test_node 单节点测试。
     # 测试实例的产物打同款标记、失败不发通知、列表默认过滤（见 _notify_workflow_failure / QueryConfig field_eq）
     run_type: str = Field(default="production", index=True, max_length=20)
     eval_run_id: int | None = Field(
@@ -60,7 +62,7 @@ class WorkflowInstance(BaseEntity, table=True):
 
     @property
     def is_test(self) -> bool:
-        """便捷判断：非正式运行（trial/eval）。派生自 run_type，不落库。"""
+        """便捷判断：非正式运行（trial/eval/test_node）。派生自 run_type，不落库。"""
         return self.run_type != "production"
 
 
@@ -163,7 +165,7 @@ class WorkflowInstanceRead(BaseModel):
     state_data: str
     error_message: str | None = None
     failed_node_id: str | None = None  # 失败节点ID（透传给前端定位失败节点）
-    run_type: str = "production"  # production | trial | eval（前端徽标 + 默认列表过滤）
+    run_type: str = "production"  # production | trial | eval | test_node（前端徽标 + 默认列表过滤）
     eval_run_id: int | None = None
     user_id: int | None = None
     created_at: datetime
