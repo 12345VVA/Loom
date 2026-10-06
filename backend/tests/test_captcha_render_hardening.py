@@ -341,5 +341,89 @@ class IssuanceContractTests(unittest.TestCase):
         service.captcha_check(captcha_id, verify_code, client_ip="10.7.7.7")  # 不抛即通过
 
 
+class TerminalStateInvariants(unittest.TestCase):
+    """§19/§20 终态不变式（P1-2，三次验收建议）：范式假设以测试固化，防静默漂移。
+
+    若任一断言失败 = 渲染语义发生范式级变更（定位不再平凡 / 通用模板工具链防线失守）。
+    正确动作是先同步专项报告口径与设计文档 §7，再改断言——而非静默放宽阈值。
+    S1 刻意在测试内独立复刻（不复用 bench）：红线的测量实现必须独立于被测方的基准。"""
+
+    ROUNDS = 15
+
+    @staticmethod
+    def _render_production(seed: int, tx: int, ty: int):
+        """单缺口生产形态：拼图块不染色（piece_tint_alpha=0，与服务适配层一致）。"""
+        return render_slider_captcha(
+            _TRACK_WIDTH,
+            _TRACK_HEIGHT,
+            tx,
+            ty,
+            _PUZZLE_SIZE,
+            rng=random.Random(9000 + seed),
+            params=RenderParams(decoy_min=0, decoy_max=0, piece_tint_alpha=0),
+        )
+
+    def test_a1_localization_is_trivial(self):
+        """A1 色度连通块定位 ≥95%：单缺口模式「定位即答案」是**已接受的范式终态**——
+        本断言守护的不是安全性，而是口径诚实性（有人改渲染让定位变难时，必须意识到
+        这同时改变了 §19 的全部论证前提）。"""
+        tolerance = settings.CAPTCHA_SLIDER_TOLERANCE
+        hits = 0
+        for seed in range(self.ROUNDS):
+            tx = 8 + (seed * 37) % 240
+            ty = (seed * 23) % (_TRACK_HEIGHT - _PUZZLE_SIZE + 1)
+            result = self._render_production(seed, tx, ty)
+            holes = _segment_holes(result.bg)
+            if holes:
+                largest = max(holes, key=lambda hole: len(hole[4]))
+                hits += abs(largest[0] - tx) <= tolerance
+        self.assertGreaterEqual(hits / self.ROUNDS, 0.95, f"A1 定位率异常：{hits}/{self.ROUNDS}（范式假设变更？）")
+
+    def test_generic_template_solver_stays_defeated(self):
+        """§13 通用模板匹配（亮度补偿+滑窗 MAD）≤1/3：反通用工具链防线未失守。"""
+        tolerance = settings.CAPTCHA_SLIDER_TOLERANCE
+        factor = 255.0 / (255.0 - 110)
+        hits = 0
+        for seed in range(self.ROUNDS):
+            tx = 8 + (seed * 41) % 240
+            ty = (seed * 19) % (_TRACK_HEIGHT - _PUZZLE_SIZE + 1)
+            result = self._render_production(seed, tx, ty)
+            bg, piece = result.bg, result.slider
+
+            # 补偿背景（§13 手法）
+            comp = [
+                (
+                    min(255, round(r * factor)),
+                    min(255, round(g * factor)),
+                    min(255, round(b * factor)),
+                )
+                for r, g, b in bg.convert("RGB").getdata()
+            ]
+            # 模板：拼图块 alpha 腐蚀收缩后的形状内像素（避开轮廓）
+            alpha = piece.getchannel("A")
+            core = alpha.filter(ImageFilter.MinFilter(7))
+            rgb = piece.convert("RGB")
+            template = [
+                (x, y, *rgb.getpixel((x, y)))
+                for y in range(_PUZZLE_SIZE)
+                for x in range(_PUZZLE_SIZE)
+                if core.getpixel((x, y)) > 128
+            ]
+            self.assertGreater(len(template), 100, "模板过小（渲染异常）")
+
+            best_u, best_mad = 0, None
+            for u in range(_TRACK_WIDTH - _PUZZLE_SIZE + 1):
+                total = 0
+                for x, y, pr, pg, pb in template:
+                    br, bgc, bb = comp[(ty + y) * _TRACK_WIDTH + u + x]
+                    total += abs(pr - br) + abs(pg - bgc) + abs(pb - bb)
+                mad = total / (len(template) * 3)
+                if best_mad is None or mad < best_mad:
+                    best_mad, best_u = mad, u
+            hits += abs(best_u - tx) <= tolerance
+
+        self.assertLessEqual(hits, self.ROUNDS // 3, f"通用模板求解命中率异常: {hits}/{self.ROUNDS}（防线失守？）")
+
+
 if __name__ == "__main__":
     unittest.main()
