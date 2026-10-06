@@ -307,7 +307,7 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
     for idx, item in enumerate(items):
         iter_vars[item_var] = item
         iter_vars[index_key] = idx
-        body_state = {"messages": [], "variables": iter_vars, "current_node": "start"}
+        body_state = {"variables": iter_vars, "current_node": "start"}
         try:
             body_result = await compiled_body.ainvoke(body_state)
             iter_vars = body_result.get("variables", {})
@@ -351,7 +351,7 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
         async with semaphore:
             iter_vars = copy.deepcopy(variables)
             iter_vars[item_var] = item
-            body_state = {"messages": [], "variables": iter_vars, "current_node": "start"}
+            body_state = {"variables": iter_vars, "current_node": "start"}
             body_result = await compiled_body.ainvoke(body_state)
             return body_result.get("variables", {})
 

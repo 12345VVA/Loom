@@ -24,9 +24,12 @@ def _last_writer_wins(left: str, right: str) -> str:
 class WorkflowState(TypedDict):
     """
     工作流运行时状态共享上下文
+
+    （原 messages 死字段已移除：带拼接 reducer 却无任何执行器读写，白占
+    checkpoint 与循环迭代拷贝——核实清单 WF-P2-13。如未来需要对话历史，
+    按需以独立通道 reintroduce。）
     """
 
-    messages: Annotated[list, lambda left, right: (left or []) + (right or [])]
     variables: Annotated[dict[str, Any], _merge_dicts]
     current_node: Annotated[str, _last_writer_wins]
 

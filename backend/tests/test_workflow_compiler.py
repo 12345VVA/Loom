@@ -327,7 +327,7 @@ class CompileGraphTestCase(unittest.TestCase):
         compiled = builder.compile()
 
         with patch.object(compiler_mod.node_registry, "get", return_value=recorder):
-            asyncio.run(compiled.ainvoke({"variables": {}, "messages": [], "current_node": "start_1"}))
+            asyncio.run(compiled.ainvoke({"variables": {}, "current_node": "start_1"}))
 
         self.assertEqual(call_order, ["a", "b", "end_1"])
 
@@ -416,7 +416,7 @@ class CompileGraphTestCase(unittest.TestCase):
         compiled = builder.compile()
 
         async def _run():
-            await compiled.ainvoke({"variables": {}, "messages": [], "current_node": "start_1"})
+            await compiled.ainvoke({"variables": {}, "current_node": "start_1"})
 
         # node_registry.get 返回 None（未注册），node_runner 应抛 ValueError
         with self.assertRaises(ValueError) as cm:

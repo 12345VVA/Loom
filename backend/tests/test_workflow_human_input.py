@@ -47,7 +47,7 @@ class HumanInputInterruptTestCase(unittest.TestCase):
         return [
             event
             async for event in graph.astream(
-                {"variables": {"a": 1}, "messages": [], "current_node": ""},
+                {"variables": {"a": 1}, "current_node": ""},
                 config=config,
                 stream_mode="updates",
             )

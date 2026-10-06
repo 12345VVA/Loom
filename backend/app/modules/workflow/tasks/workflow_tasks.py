@@ -516,7 +516,7 @@ async def async_execute(
             if resume_val is not None:
                 events = compiled.astream(Command(resume=resume_val), config=config, stream_mode="updates")
             else:
-                initial_state = {"messages": [], "variables": initial_vars, "current_node": "start"}
+                initial_state = {"variables": initial_vars, "current_node": "start"}
                 events = compiled.astream(initial_state, config=config, stream_mode="updates")
 
             last_step_time = time.perf_counter()
