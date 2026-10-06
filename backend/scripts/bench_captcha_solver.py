@@ -119,14 +119,16 @@ def _solve(bg: Image.Image, piece: Image.Image, ty: int) -> tuple[int, float]:
 
 
 def _extract_holes(bg: Image.Image, min_area: int = 260) -> list[dict]:
-    """返回候选缺口 [{x0, y0, w, h, pixels}]，坐标与 target_x/target_y 同系。"""
-    gray = bg.convert("L")
-    width, height = gray.size
-    data = list(gray.getdata())
-    threshold = min(sorted(data)[int(len(data) * 0.42)], 135)
-    dark = Image.new("L", (width, height))
-    dark.putdata([255 if value < threshold else 0 for value in data])
-    opened = list(dark.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3)).getdata())
+    """返回候选缺口 [{x0, y0, w, h, pixels}]，坐标与 target_x/target_y 同系。
+
+    §18.7 后缺口=灰底上的高饱和色块（洞内可能亮于背景），分割依据从「暗区」
+    改「色度」（HSV S>70）——与真实攻击者视角一致。"""
+    saturation = bg.convert("HSV").getchannel("S")
+    width, height = saturation.size
+    data = list(saturation.getdata())
+    colored = Image.new("L", (width, height))
+    colored.putdata([255 if value > 70 else 0 for value in data])
+    opened = list(colored.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3)).getdata())
 
     holes: list[dict] = []
     visited = bytearray(len(opened))
@@ -271,6 +273,7 @@ def _run(
     margins: list[float] = []
     durations: list[float] = []
     rand_floor = 0.0
+    cand_total = 0
     pick_rng = random.Random(97531)  # S2 专用（与真值 rng 隔离，不影响可复现性）
     for index, (tx, ty) in enumerate(truths):
         start = time.perf_counter()
@@ -294,6 +297,7 @@ def _run(
         if profile != "legacy":
             predictions = _candidate_strategies(bg, slider, ty, pick_rng)
             candidates = _extract_holes(bg)
+            cand_total += len(candidates)
             rand_floor += 1.0 / len(candidates) if candidates else 0.0
             for strategy, predicted in predictions.items():
                 if predicted is None:
@@ -314,6 +318,7 @@ def _run(
         "zero_rate": zero / n,
         "buckets": buckets,
         "strategy_hits": {key: (hits[key] / attempts[key] if attempts[key] else None) for key in STRATEGIES},
+        "cand_per_img": (cand_total / n) if profile != "legacy" else None,
         "rand_floor": (rand_floor / n) if profile != "legacy" else None,
         "decoy_mispick_rate": (mispicks / n) if profile != "legacy" else None,
         "margin_p50": statistics.median(margins),
@@ -347,6 +352,7 @@ def _main() -> None:
         print(f"S1 0px 偏差占比     : {table['zero_rate']:.1%}")
         print(f"S1 偏差分布          : {table['buckets']}")
         if table["rand_floor"] is not None:
+            print(f"候选/图             : {table['cand_per_img']:.3f}（1=单缺口模式，判别类策略恒中属预期）")
             print(f"随机下界(1/k)       : {table['rand_floor']:.1%}")
             for key in ("S2", "S3", "S4", "S5", "S6", "S7"):
                 rate = table["strategy_hits"][key]

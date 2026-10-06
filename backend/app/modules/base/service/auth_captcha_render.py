@@ -21,6 +21,23 @@
 - **伪缺口与真缺口同行**：sliderY（=target_y）随响应公开、校验只比 x，伪缺口若异行，
   「锚点 y 最接近 sliderY」即成确定性指路标（S3 浏览器实测 96.7% 命中）。
 
+2026-10-06 用户浏览器实测反馈（§18.7）——可用性回归与终局设计：
+- **初版判别通道视觉上不成立**：alpha 52 + 洞内调制下限 0.25× 令有效色度低至
+  ~13/255，人眼无法完成「拼图块↔缺口」跨亮度基线的色调匹配（教训：可用性必须
+  真人浏览器验证；「缺口彼此可分」≠「任务可解」）。
+- **色调拉满暴露第二个死结**：拼图块一旦高饱和染色（判别人眼所需），其平坦色调与
+  洞内平坦色调在 RGB 空间直接相似——§13 求解器不读内容、纯模板匹配即 100% 复活
+  （实测）。「拼图块染色浓度」是单一旋钮：S1 防御要它低、人类判别要它高，不可兼得。
+- **终局：默认单缺口模式**（DECOY=0）：判别问题消失 → 拼图块不染色（piece_tint
+  =0）→ 寄存器防御保住（S1 回落 ~10%）→ 可用性满分。判别模式（DECOY>0）保留全部
+  机制（同形状/同行/洗牌/烧票）+ 高饱和色调，但明示接受 S1≈S4≈100% 的既知代价。
+- **描边全部移除**（缺口外环/拼图块内环，用户要求）：定位缺口本就不是安全边界
+  （验收 §3.4 定性），描边只增加视觉噪音。
+- **背景必须真灰**（三通道同值）：通道独立随机会让背景自带色度（S 可达 96），
+  污染唯一色调通道的信噪比。
+- 安全定位不变（UX 减速带 + 失败锁定/限流/一次性票据）——「人类判别线索必然
+  机器可读」，滑块范式内不存在既可用又抗解的判别通道。
+
 模块约束：
 - 纯函数：不 import FastAPI、不读 settings、不碰 Redis——基准脚本
   （scripts/bench_captcha_solver.py）可脱离应用直接复用同一路径，保证
@@ -28,7 +45,7 @@
 - 前端零改动是硬约束：拼图块画布恒 size×size（pic-captcha.vue 以 <img> 直出 PNG、
   CSS 硬编码高 44px），非形状区域依赖 PNG alpha 透明。
 - 咬合由「单实例遮罩」构造性保证：拼图块 alpha、真缺口、伪缺口共用同一张旋转后
-  遮罩与描边环，±容差（12px）只需吸收人手停位误差。
+  遮罩，±容差（12px）只需吸收人手停位误差。
 """
 
 from __future__ import annotations
@@ -37,7 +54,7 @@ import colorsys
 import random
 from dataclasses import dataclass
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageStat
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageStat
 
 # 形状库注册表键（hexagon 剔除：44px + 2px 描边 + 暗块叠加下与 circle 几乎不可分，
 # 真人误选成本（烧票）不能反噬真人）
@@ -49,10 +66,8 @@ _DECOY_MIN_GAP_EXTRA: int = 20
 _SUPERSAMPLE: int = 4
 # 拼图块源裁剪余量（size+2×5=54 源，覆盖 8° 旋转 + 5% 缩放的最坏内接需求）
 _ROTATE_PAD: int = 10
-# 缺口暗块与描边样式（与 legacy 渲染保持一致：暗块 alpha 同为 110，不给 alpha 差异线索）
+# 缺口暗块样式（与 legacy 渲染保持一致：暗块 alpha 同为 110，不给 alpha 差异线索）
 _HOLE_DARK_ALPHA: int = 110
-_RING_ALPHA: int = 220
-_PIECE_RING_RGB: tuple[int, int, int] = (40, 40, 40)
 # §13 求解器的亮度还原 LUT：x → min(255, x×255/(255−110))。拼图块以该寄存器呈现，
 # 使模板亮度对齐补偿后的场域而非补偿后的暗洞（render_slider_captcha 内注释详述）
 _COMPENSATE_LUT = [min(255, round(i * 255.0 / (255.0 - _HOLE_DARK_ALPHA))) for i in range(256)]
@@ -67,7 +82,8 @@ class RenderParams:
     brightness: float = 0.20  # 拼图块亮度乘性扰动 ±20%
     contrast: float = 0.15  # 对比度 ±15%
     hue_shift: int = 30  # HSV 色相偏移幅度（0-255 刻度，30 ≈ 42°）
-    tint_alpha: int = 52  # 判别色调叠加不透明度（0-255）
+    tint_alpha: int = 150  # 判别色调叠加不透明度（0-255）——§18.7：52 时人眼不可辨，判别通道等于不存在
+    piece_tint_alpha: int | None = None  # 拼图块染色不透明度；None=跟随 tint_alpha（判别模式），0=不染（单缺口模式）
     noise_sigma: int = 0  # 拼图块独立高斯噪声 σ（0=关；基准实测对 argmin 无效，默认关）
     hole_noise_sigma: int = 25  # 洞内内容替换噪声 σ：洞内不再保留原图内容（**结构性切断**
     # 内容匹配——「亮度反向补偿+滑窗 MAD」依赖洞内=原图×常数的确定性关系，内容被
@@ -133,26 +149,6 @@ def build_puzzle_mask(shape: str, size: int, theta: float, rng: random.Random) -
     return rotated.resize((size, size), Image.LANCZOS)
 
 
-def mask_ring(mask: Image.Image, width: int = 2) -> Image.Image:
-    """形态学外环：膨胀(mask) − mask，返回 L 模式描边 alpha（环上 255）。
-
-    用于缺口：白描边框住洞口边缘。三处缺口共用同一份环 → 描边样式天然一致，
-    不给任何一方「描边差异」捷径（一致描边是设计内选择：迫使判别走色调通道）。
-    """
-    dilated = mask.filter(ImageFilter.MaxFilter(2 * width + 1))
-    return ImageChops.subtract(dilated, mask)
-
-
-def mask_ring_inner(mask: Image.Image, width: int = 2) -> Image.Image:
-    """形态学内环：mask − 腐蚀(mask)。
-
-    拼图块描边必须走内环：外环会让拼图块 alpha 超出遮罩轮廓，破坏
-    「拼图块 alpha == 洞口遮罩」的构造性咬合（test_bite_mask_identity）。
-    """
-    eroded = mask.filter(ImageFilter.MinFilter(2 * width + 1))
-    return ImageChops.subtract(mask, eroded)
-
-
 def hue_shift(img: Image.Image, delta: int) -> Image.Image:
     """RGB 色相偏移：H 带 (v+delta) mod 256 一次 LUT 查表（环形色相），无需 numpy。"""
     hsv = img.convert("HSV")
@@ -199,6 +195,10 @@ def pick_tints(rng: random.Random, count: int) -> list[tuple[int, int, int]]:
     区分候选），**生成后随机洗牌**——真/伪分配与明度次序解绑（验收 S7：洗牌前
     「掩码内均值明度 argmax」99.2% 命中，真缺口恒为 tints[0]=最亮档）。
 
+    §18.7 可用性修复：饱和度取 0.95（初版 0.55 + alpha 52 + 调制下限 0.25× 的组合
+    令洞内有效色度低至 ~13/255，人眼无法完成「拼图块↔缺口」的跨亮度基线色调匹配）。
+    色调是本方案唯一判别通道，必须**高饱和呈现**才有讨论机器可读性的资格。
+
     无障碍性不受损：拼图块与真缺口恒为同一色调，匹配依据是「色调相等」而非
     「明度排序」；明度错开只承担「候选两两可分」，不承担「指认真缺口」。"""
     start = rng.randint(0, 255)
@@ -206,7 +206,7 @@ def pick_tints(rng: random.Random, count: int) -> list[tuple[int, int, int]]:
     for index in range(count):
         hue = (start + index * 256 // max(1, count)) % 256
         value = 235 - index * 40  # 明度错开兜底（40 档间隔 > 同档噪声扰动幅度）
-        r, g, b = colorsys.hsv_to_rgb(hue / 255.0, 0.55, max(120, value) / 255.0)
+        r, g, b = colorsys.hsv_to_rgb(hue / 255.0, 0.95, max(120, value) / 255.0)
         tints.append((round(r * 255), round(g * 255), round(b * 255)))
     rng.shuffle(tints)
     return tints
@@ -265,8 +265,6 @@ def render_slider_captcha(
     theta = rng.uniform(3.0, max(3.0, params.rotate_deg)) * rng.choice((-1, 1))
     shape = rng.choice(PUZZLE_SHAPES)
     hole_mask = build_puzzle_mask(shape, puzzle_size, theta, rng)
-    ring = mask_ring(hole_mask, width=2)  # 缺口外环（白描边框住洞口）
-    piece_ring = mask_ring_inner(hole_mask, width=2)  # 拼图块内环（不越遮罩轮廓，保咬合）
 
     decoy_count = rng.randint(max(0, params.decoy_min), max(0, params.decoy_max))
     decoys = layout_decoys(rng, (target_x, target_y), decoy_count, puzzle_size, width)
@@ -306,12 +304,16 @@ def render_slider_captcha(
     src = perturb_piece(src, rng, params)
     piece = src.convert("RGBA").crop((pad, pad, pad + puzzle_size, pad + puzzle_size))
     piece.putalpha(hole_mask)  # 轮廓=旋转后形状遮罩 → 画布恒 size×size，非形状区透明
-    piece = _alpha_blend_masked(piece, true_tint, hole_mask, params.tint_alpha)
-    piece = _alpha_blend_masked(piece, _PIECE_RING_RGB, piece_ring, 255)
+    # 拼图块染色（§18.7）：单缺口模式取 0——拼图块一旦高饱和染色，其平坦色调与洞内
+    # 平坦色调在 RGB 空间直接相似，§13 求解器无需内容信息即可模板命中（实测 100%）；
+    # 判别模式（伪缺口启用）跟随 tint_alpha，人眼靠「拼图块↔缺口同色」完成任务。
+    piece_alpha = params.tint_alpha if params.piece_tint_alpha is None else params.piece_tint_alpha
+    if piece_alpha > 0:
+        piece = _alpha_blend_masked(piece, true_tint, hole_mask, piece_alpha)
     piece.putalpha(hole_mask)  # 终末钳制：alpha 恒等于遮罩，构造性保证逐字节咬合
 
-    # ── 阶段 4：真缺口 + 伪缺口（同遮罩/描边/噪声统计/同行，仅色调互异）──
-    # 形状/旋转/描边/暗块样式在真假缺口间**构造性一致**：任何「互异保证」（异形、异行、
+    # ── 阶段 4：真缺口 + 伪缺口（同遮罩/噪声统计/同行，仅色调互异）──
+    # 形状/旋转/暗块样式在真假缺口间**构造性一致**：任何「互异保证」（异形、异行、
     # 明度排序）都是给比较器留的确定性信号（验收 S3/S6/S7）。唯一判别通道=色调相等。
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     true_mean = _hole_noise_mean(bg, target_x, target_y, puzzle_size)
@@ -321,7 +323,6 @@ def render_slider_captcha(
         target_y,
         true_tint,
         hole_mask,
-        ring,
         params.tint_alpha,
         params.hole_noise_sigma,
         true_mean,
@@ -335,7 +336,6 @@ def render_slider_captcha(
             dy,
             tints[1 + index],
             hole_mask,
-            ring,
             params.tint_alpha,
             params.hole_noise_sigma,
             decoy_mean,
@@ -352,13 +352,12 @@ def paste_hole(
     y: int,
     tint: tuple[int, int, int],
     hole_mask: Image.Image,
-    ring: Image.Image,
     tint_alpha: int,
     noise_sigma: int = 0,
     noise_mean: int = 75,
     rng: random.Random | None = None,
 ) -> None:
-    """在 overlay 上烧一个缺口：暗块 → 洞内噪声替换（均值≈0.57×局部亮度）→ 判别色调 → 白描边。
+    """在 overlay 上烧一个缺口：暗块 → 洞内噪声替换（均值≈0.57×局部亮度）→ 判别色调。
 
     洞内替换的两大作用（§17 基准实证）：
     - 内容_destroyed：「洞内=原图×常数」的补偿还原关系不复存在；
@@ -376,25 +375,28 @@ def paste_hole(
         noise.putalpha(hole_mask)
         overlay.alpha_composite(noise, (x, y))
     if tint_alpha > 0:
-        # 色调 alpha 逐像素随机调制：hue 方向不变（真人按色相方向判别，无感），
-        # 破坏「拼图块恒定偏移 vs 洞内恒定偏移在真位互相抵消」的加性模型
-        mod = Image.effect_noise(size, 128).point(lambda v: 64 + v * 3 // 4)  # ≈0.25-1.0 倍
+        # 色调 alpha 逐像素随机调制（下限 0.70×）：hue 方向不变（真人按色相方向判别，
+        # 无感），破坏「拼图块恒定偏移 vs 洞内恒定偏移在真位互相抵消」的加性模型；
+        # 下限刻意取 0.70 而非 0.25——调制会把有效色度压到人眼不可辨（§18.7 教训）
+        mod = Image.effect_noise(size, 128).point(lambda v: 178 + v // 4)  # ≈0.70-0.95 倍
         modulated_alpha = ImageChops.multiply(hole_mask.point(lambda v: v * tint_alpha // 255), mod)
         layer = Image.new("RGBA", size, (*tint, 0))
         layer.putalpha(modulated_alpha)
         overlay.alpha_composite(layer, (x, y))
-    _alpha_blend_masked_into(overlay, (255, 255, 255), ring, _RING_ALPHA, (x, y))
 
 
 def _random_bg_color(rng: random.Random) -> tuple[int, int, int]:
-    """中灰随机背景色（100-160，legacy 为 180-230 浅色）。
+    """中性灰（三通道同值，100-160，legacy 为 180-230 浅色）。
 
     真实目的：§13 求解器的亮度反向补偿（×1.76）会把浅色背景整体饱和成 255 白场，
     使洞成为全图唯一暗结构、求解器退化为暗块探测器；中灰下补偿不饱和，该信号消失。
-    （验收报告勘误：早期版本注释「防 OCR 定位缺口」不成立——压暗背景实际**放大**了
-    白描边对比度 95-155。这是**接受的取舍**：定位缺口本就不是安全边界，真人同样
-    靠描边定位，且真伪缺口共用同一描边样式——难点必须全部落在「区分真假」上。）"""
-    return (rng.randint(100, 160), rng.randint(100, 160), rng.randint(100, 160))
+    （验收报告勘误：早期版本注释「防 OCR 定位缺口」不成立——压暗背景与缺口可定位性
+    无关，定位缺口本就不是安全边界：真人同样需要定位缺口，难点必须全部落在
+    「区分真假」上。2026-10-06 起描边已按用户要求全部移除，洞=暗色调色块。）
+    三通道必须同值（§18.7）：通道独立随机会让背景自带色度（S 可达 96），既污染
+    唯一判别通道（高饱和色调）的信噪比，也让色度分割无从下手。"""
+    value = rng.randint(100, 160)
+    return (value, value, value)
 
 
 def _hole_noise_mean(bg: Image.Image, x: int, y: int, size: int) -> int:
@@ -417,16 +419,3 @@ def _alpha_blend_masked(
     layer = Image.new("RGBA", base.size, (*color, 0))
     layer.putalpha(_masked_alpha(mask, alpha))
     return Image.alpha_composite(base, layer)
-
-
-def _alpha_blend_masked_into(
-    target: Image.Image,
-    color: tuple[int, int, int],
-    mask: Image.Image,
-    alpha: int,
-    dest: tuple[int, int],
-) -> None:
-    """同 _alpha_blend_masked，但就地合成到 target 的 (dest) 偏移处。"""
-    layer = Image.new("RGBA", mask.size, (*color, 0))
-    layer.putalpha(_masked_alpha(mask, alpha))
-    target.alpha_composite(layer, dest)

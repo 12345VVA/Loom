@@ -101,9 +101,14 @@ class CaptchaMixin:
 
     @staticmethod
     def _captcha_render_params():
-        """settings.CAPTCHA_HARDEN_* → RenderParams（幅度可 env 调档，§15.1 实测对标）。"""
+        """settings.CAPTCHA_HARDEN_* → RenderParams（幅度可 env 调档，§15.1 实测对标）。
+
+        §18.7 模式开关：伪缺口禁用（DECOY=0）时拼图块不染色（piece_tint_alpha=0）——
+        高饱和染色的拼图块与洞在 RGB 空间直接相似，会把 §13 求解器复活到 100%；
+        单缺口模式下染色无判别意义，不染反而保住寄存器防御。"""
         from app.modules.base.service.auth_captcha_render import RenderParams
 
+        decoys_on = settings.CAPTCHA_HARDEN_DECOY_MAX > 0
         return RenderParams(
             brightness=settings.CAPTCHA_HARDEN_BRIGHTNESS,
             contrast=settings.CAPTCHA_HARDEN_CONTRAST,
@@ -111,6 +116,7 @@ class CaptchaMixin:
             rotate_deg=settings.CAPTCHA_HARDEN_ROTATE_DEG,
             scale=settings.CAPTCHA_HARDEN_SCALE,
             tint_alpha=settings.CAPTCHA_HARDEN_TINT_ALPHA,
+            piece_tint_alpha=None if decoys_on else 0,
             noise_sigma=0,
             hole_noise_sigma=settings.CAPTCHA_HARDEN_HOLE_NOISE_SIGMA,
             decoy_min=settings.CAPTCHA_HARDEN_DECOY_MIN,
@@ -253,7 +259,11 @@ class CaptchaMixin:
                 "trackWidth": width_int,
                 "tolerance": tolerance,
                 "expireSeconds": settings.CAPTCHA_EXPIRE_SECONDS,
-                "label": "拖动滑块对齐缺口完成验证",
+                "label": (
+                    "拖动滑块对齐与拼图块同色的缺口"
+                    if settings.CAPTCHA_HARDEN_DECOY_MAX > 0
+                    else "拖动滑块对齐缺口完成验证"
+                ),
             },
         )
 

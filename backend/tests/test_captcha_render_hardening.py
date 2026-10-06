@@ -38,16 +38,16 @@ _TRACK_HEIGHT = 120
 
 
 def _segment_holes(bg: Image.Image, min_area: int = 260) -> list[tuple[int, int, int, int, list[int]]]:
-    """输出级缺口提取（验收 S6 同款手法，纯 PIL）：暗区分位阈值 → 3×3 开运算 → BFS 连通域。
+    """输出级缺口提取（纯 PIL）：HSV 饱和度阈值 → 3×3 开运算 → BFS 连通域。
 
-    返回 [(x0, y0, bbox_w, bbox_h, 像素下标列表)]，坐标系与 target_x/target_y 一致。"""
-    gray = bg.convert("L")
-    width, height = gray.size
-    data = list(gray.getdata())
-    threshold = min(sorted(data)[int(len(data) * 0.42)], 135)
-    dark = Image.new("L", (width, height))
-    dark.putdata([255 if value < threshold else 0 for value in data])
-    opened = list(dark.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3)).getdata())
+    §18.7 后缺口=灰底上的高饱和色块（洞内可能亮于背景），分割依据从「暗区」改
+    「色度」——与真实攻击者视角一致。返回 [(x0, y0, bbox_w, bbox_h, 像素下标列表)]。"""
+    saturation = bg.convert("HSV").getchannel("S")
+    width, height = saturation.size
+    data = list(saturation.getdata())
+    colored = Image.new("L", (width, height))
+    colored.putdata([255 if value > 70 else 0 for value in data])
+    opened = list(colored.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3)).getdata())
 
     holes: list[tuple[int, int, int, int, list[int]]] = []
     visited = bytearray(len(opened))

@@ -99,15 +99,16 @@ class Settings(BaseSettings):
     # 该变换可被亮度反向补偿+滑窗匹配 100% 解出）──
     # 总开关=回滚保险：False 走原渲染路径（legacy），单点切换、免回滚部署
     CAPTCHA_PUZZLE_HARDENING: bool = True
-    CAPTCHA_HARDEN_DECOY_MIN: int = 1  # 伪缺口数量下限（0=禁用伪缺口，仅保留扰动）
-    CAPTCHA_HARDEN_DECOY_MAX: int = 2
+    CAPTCHA_HARDEN_DECOY_MIN: int = 0  # 伪缺口数量下限。默认 0=单缺口模式（§18.7：可用性优先，
+    # 且高饱和判别通道下 S1/S4 均≈100%，伪缺口只剩真人摩擦）；>0 启用判别模式（接受既知代价）
+    CAPTCHA_HARDEN_DECOY_MAX: int = 0
     # 扰动幅度可 env 调档：需与解题基准/真人可用性实测对标（专项 §15.1）
     CAPTCHA_HARDEN_BRIGHTNESS: float = 0.20  # 拼图块亮度扰动幅度（±比例）
     CAPTCHA_HARDEN_CONTRAST: float = 0.15
     CAPTCHA_HARDEN_HUE: int = 30  # HSV 色相偏移幅度（0-255 刻度）
     CAPTCHA_HARDEN_ROTATE_DEG: float = 6.0  # 内容旋转上限（实际 ±uniform(3, 此值)°）
     CAPTCHA_HARDEN_SCALE: float = 0.05  # 内容缩放抖动 ±5%（只缩内容不缩轮廓）
-    CAPTCHA_HARDEN_TINT_ALPHA: int = 52  # 判别色调叠加不透明度（0-255）
+    CAPTCHA_HARDEN_TINT_ALPHA: int = 150  # 判别色调叠加不透明度（0-255）；52 时人眼不可辨（§18.7）
     # 洞内内容替换噪声 σ：洞内不再保留原图内容——结构性切断「亮度补偿+滑窗内容匹配」
     # 的确定性信号（§17 基准实证：色彩/形变/拼图块噪声均不改变 argmin 排序，唯此有效）
     CAPTCHA_HARDEN_HOLE_NOISE_SIGMA: int = 25
