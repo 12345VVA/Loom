@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from unittest.mock import patch
 
 import app.modules.workflow.service.node_executors as ne
 import app.modules.workflow.service.workflow_service as ws  # noqa: F401  触发执行器注册
@@ -292,6 +293,56 @@ class ResolveNodeForTestDeriveTestCase(unittest.TestCase):
         ctx = asyncio.run(svc._resolve_node_for_test(definition.id, "intent_1", None))
         self.assertEqual(ctx["config"]["intents"][0]["target_route"], "branch_a")
         self.assertEqual(ctx["config"]["default_route"], "branch_c")
+
+
+class MockToolProductionRaiseTestCase(unittest.TestCase):
+    """WF-P0-2：mock 占位工具在非 DEBUG 环境直接失败，DEBUG 保留演示行为。
+
+    修复前：mock 工具生产环境仅打 warning 返回演示数据（节点假 success），
+    执行异常也被吞成字符串返回。
+    """
+
+    def test_tool_executor_raises_for_mock_codes_in_production(self) -> None:
+        from app.core.config import settings as app_settings
+
+        for code in ("web_search", "file_system", "mock_weather_api"):
+            with self.subTest(code=code):
+                with patch.object(app_settings, "DEBUG", False):
+                    with self.assertRaises(ValueError) as cm:
+                        asyncio.run(ne.execute_tool_executor_node({}, {"tool_code": code}))
+                self.assertIn(code, str(cm.exception))
+
+    def test_tool_executor_keeps_demo_behavior_in_debug(self) -> None:
+        from app.core.config import settings as app_settings
+
+        with patch.object(app_settings, "DEBUG", True):
+            result = asyncio.run(ne.execute_tool_executor_node({}, {"tool_code": "web_search"}))
+        self.assertIsInstance(result.get("tool_result"), str)
+        self.assertIn("tool_result", result)
+
+    def test_tool_executor_unknown_code_raises_in_production(self) -> None:
+        """未登记的 tool_code 在生产环境显式失败（原实现返回可疑文案且节点假 success）。"""
+        from app.core.config import settings as app_settings
+
+        with patch.object(app_settings, "DEBUG", False):
+            with self.assertRaises(ValueError) as cm:
+                asyncio.run(ne.execute_tool_executor_node({}, {"tool_code": "no_such_tool"}))
+        self.assertIn("no_such_tool", str(cm.exception))
+
+    def test_deprecated_tool_node_raises_in_production(self) -> None:
+        from app.core.config import settings as app_settings
+
+        with patch.object(app_settings, "DEBUG", False):
+            with self.assertRaises(ValueError) as cm:
+                asyncio.run(ne.execute_tool_node({}, {"tool_name": "search"}))
+        self.assertIn("search", str(cm.exception))
+
+    def test_deprecated_tool_node_keeps_demo_behavior_in_debug(self) -> None:
+        from app.core.config import settings as app_settings
+
+        with patch.object(app_settings, "DEBUG", True):
+            result = asyncio.run(ne.execute_tool_node({}, {"tool_name": "search"}))
+        self.assertIn("tool_result", result)
 
 
 if __name__ == "__main__":

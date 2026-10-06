@@ -25,6 +25,15 @@ UNTESTABLE_NODE_TYPES = {"start", "end", "loop_controller", "batch_processor", "
 # 图内不含这类节点时执行全程无断点需求，可跳过 checkpointer（省 O(N²) checkpoint 写放大）。
 INTERRUPT_NODE_TYPES = {"human_input"}
 
+# Mock 占位工具集合（WF-P0-2）：tool_executor 的这三个内置 tool_code 为演示实现，
+# 非 DEBUG 环境执行直接失败（见 node_executors.execute_tool_executor_node），
+# 杜绝演示数据以 success 流入下游与产物。
+# ⚠️ 前端镜像在 frontend/src/modules/workflow/components/constants.ts 的 MOCK_TOOL_CODES
+# （DEMO 徽标依据），改动任一侧必须同步另一侧（跨栈比对守护见
+# tests/test_workflow_untestable_sync.py 的同款模式）。
+# deprecated 的 `tool` 节点类型整体为 mock（无真实实现路径），不在此列、单独拦截。
+MOCK_TOOL_CODES = {"web_search", "file_system", "mock_weather_api"}
+
 
 def graph_has_interrupt_nodes(graph_json: dict[str, Any]) -> bool:
     """判断图内是否存在依赖 checkpointer 断点续跑的中断类节点（空图/缺 nodes 字段返回 False）。"""

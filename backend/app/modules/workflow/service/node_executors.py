@@ -29,6 +29,7 @@ from app.modules.workflow.service.compiler import (
     strip_braces,
 )
 from app.modules.workflow.service.error_format import friendly_error_message
+from app.modules.workflow.service.graph_validate import MOCK_TOOL_CODES
 from app.modules.workflow.service.llm_io import (
     _build_llm_response_format,
     _parse_llm_output,
@@ -150,8 +151,17 @@ async def execute_llm_node(variables: dict[str, Any], config: dict[str, Any]) ->
 async def execute_tool_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     [Mock] 工具节点执行逻辑 (Mock 工具动作)
+
+    WF-P0-2：deprecated `tool` 节点整体为 mock 占位（无真实实现路径），
+    生产环境（非 DEBUG）直接失败，杜绝假数据以 success 流入下游。
     """
+    from app.core.config import settings
+
     tool_name = config.get("tool_name", "unknown")
+    if not settings.DEBUG:
+        raise ValueError(
+            f"工具 '{tool_name}' 为演示占位实现（deprecated tool 节点），生产环境不可用；如需演示请在 DEBUG 模式运行"
+        )
     output_variable = config.get("output_variable", "tool_result")
 
     # 优先使用 mock_data 配置，否则返回通用模拟结果
@@ -555,9 +565,11 @@ async def execute_tool_executor_node(variables: dict[str, Any], config: dict[str
     from app.core.config import settings
 
     tool_code = config.get("tool_code", "unknown")
-    # 生产环境保护：调用 mock 占位工具时告警，避免演示数据被误当真实结果
-    if tool_code in ("web_search", "file_system", "mock_weather_api") and not settings.DEBUG:
-        logger.warning("[Mock] 工具 '%s' 为占位实现，返回演示数据，生产环境请替换为真实工具", tool_code)
+    # WF-P0-2：mock 占位工具在生产环境（非 DEBUG）直接失败，杜绝演示数据
+    # 以 success 流入下游与产物；DEBUG 保留演示行为。异常不再吞成字符串返回
+    # （原 :593-594 的 except 会把工具执行异常伪装成成功输出），交由重试/失败链路。
+    if tool_code in MOCK_TOOL_CODES and not settings.DEBUG:
+        raise ValueError(f"工具 '{tool_code}' 为演示占位实现，生产环境不可用；如需演示请在 DEBUG 模式运行")
     arguments = variables.get("arguments") or config.get("arguments") or {}
     if not arguments:
         arguments_json_str = config.get("arguments_json", "")
@@ -589,9 +601,13 @@ async def execute_tool_executor_node(variables: dict[str, Any], config: dict[str
             location = resolved_args.get("location", "未知")
             res = await tool_mock_weather_api(location)
         else:
-            res = f"[工具中心] 找不到系统工具 Code: '{tool_code}'"
+            # 未登记的 tool_code：显式失败而非返回可疑文案（调用方按节点失败处理）
+            raise ValueError(f"[工具中心] 找不到系统工具 Code: '{tool_code}'")
     except Exception as e:
-        res = f"[工具中心报错] 执行异常: {e}"
+        # WF-P0-2：执行异常原样冒泡（原实现吞成字符串返回，节点假 success），
+        # 交由节点级重试/失败链路处理
+        logger.error("工具执行器 '%s' 执行失败: %s", tool_code, e)
+        raise
 
     return {output_variable: res}
 
