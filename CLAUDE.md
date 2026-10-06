@@ -131,6 +131,7 @@ Loom 是一个全栈 AI 内容生成平台，基于 Vue 3 + FastAPI + Celery。�
 - 后端代码修改：运行相关 `pytest`；涉及路由/EPS/权限/响应结构时跑 `tests/test_framework_alignment.py`
 - 前端代码修改：运行 `npm run type-check` 或 `npm run build`
 - 跨前后端联动：确认后端 EPS 输出与前端 `build/cool/eps.d.ts` 同步
+- 推送前一键自检（CI 早期门禁预演，秒级）：后端 `python scripts/check.py`（ruff 双查 + EPS 契约基线，可 `--pytest` 透传测试）；前端 `npm run check`（type-check + lint + 单测）
 
 ### 通用约定
 

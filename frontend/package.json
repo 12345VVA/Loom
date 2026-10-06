@@ -16,6 +16,7 @@
 		"preview": "vite preview",
 		"type-check": "vue-tsc --build --force",
 		"type-check:cool": "vue-tsc -p tsconfig.cool.json --noEmit",
+		"check": "npm run type-check && npm run lint:check && npm run test:unit",
 		"test:unit": "vitest run",
 		"test:unit:watch": "vitest",
 		"test:e2e": "playwright test",
