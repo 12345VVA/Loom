@@ -27,10 +27,10 @@
 								<small>{{ v.nodeLabel }}</small>
 							</div>
 						</div>
-						<div v-if="upstreamOutputVars?.length" class="var-group">
-							<div class="var-group-title">{{ $t('上游输出') }}</div>
+						<div v-if="scopeVars?.length" class="var-group">
+							<div class="var-group-title">{{ $t(scopeTitle) }}</div>
 							<div
-								v-for="v in upstreamOutputVars"
+								v-for="v in scopeVars"
 								:key="v.key"
 								class="var-item"
 								@click="insert(v.refText)"
@@ -39,10 +39,7 @@
 								<small>{{ v.nodeLabel }}</small>
 							</div>
 						</div>
-						<div
-							v-if="!loopContextVars?.length && !upstreamOutputVars?.length"
-							class="empty-hint"
-						>
+						<div v-if="!loopContextVars?.length && !scopeVars?.length" class="empty-hint">
 							{{ $t('暂无可用变量') }}
 						</div>
 					</div>
@@ -53,10 +50,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, inject } from 'vue';
+import { computed, ref, inject } from 'vue';
 import { Link } from '@element-plus/icons-vue';
-import type { Ref } from 'vue';
-import { UPSTREAM_OUTPUT_VARS_KEY, LOOP_CONTEXT_VARS_KEY } from './constants';
+import { UPSTREAM_OUTPUT_VARS_KEY, UPSTREAM_VARIABLES_KEY, LOOP_CONTEXT_VARS_KEY } from './constants';
 
 defineOptions({
 	name: 'cl-variable-input'
@@ -66,16 +62,31 @@ const props = withDefaults(
 	defineProps<{
 		modelValue: string;
 		showVariableBtn?: boolean;
+		/**
+		 * 变量数据源口径（复审 P0-2）：按字段的执行器读取语义选择。
+		 * - local：本节点 inputs 名（prompt 模板插值类字段——llm/end/image 模板经
+		 *   node_inputs 渲染，本地名口径）；
+		 * - global：全局上游变量（执行器经 _global_vars 读取的字段——switch 判断
+		 *   变量 / transform 输入变量 / condition 表达式 / assignment 表达式）。
+		 * 此前一刀切给本节点输入名，全局读取类字段选中的 input_1 在整图执行时
+		 * 静默取 None（单节点测试因 mock 预填同名恰好通过）。
+		 */
+		scope?: 'local' | 'global';
 	}>(),
 	{
-		showVariableBtn: true
+		showVariableBtn: true,
+		scope: 'local'
 	}
 );
 
 const emit = defineEmits(['update:modelValue']);
 
 const upstreamOutputVars = inject(UPSTREAM_OUTPUT_VARS_KEY, ref([]));
+const globalUpstreamVars = inject(UPSTREAM_VARIABLES_KEY, ref([]));
 const loopContextVars = inject(LOOP_CONTEXT_VARS_KEY, ref([]));
+
+const scopeVars = computed(() => (props.scope === 'global' ? globalUpstreamVars.value : upstreamOutputVars.value));
+const scopeTitle = computed(() => (props.scope === 'global' ? '上游输出' : '本节点输入'));
 
 const inputRef = ref();
 const lastCursorPosition = ref<number | null>(null);

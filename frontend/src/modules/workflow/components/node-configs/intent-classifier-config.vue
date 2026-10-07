@@ -12,6 +12,16 @@
 		</el-form-item>
 	</node-config-section>
 	<node-config-section :title="$t('意图分类')">
+		<el-form-item :label="$t('待分类文本变量')" style="margin-bottom: 12px">
+			<cl-variable-input
+				v-model="config.inputVariable"
+				scope="global"
+				placeholder="留空则依次回落 query / user_query"
+			/>
+			<div style="font-size: 12px; color: #999; line-height: 1.2; margin-top: 4px">
+				{{ $t('从上游输出中选择待分类的文本来源变量；留空时依次使用全局 query / user_query 变量。') }}
+			</div>
+		</el-form-item>
 		<el-form-item style="margin-bottom: 0">
 			<div
 				v-for="(intent, index) in config.intents || []"
@@ -69,6 +79,7 @@
 import { Delete, Plus } from '@element-plus/icons-vue';
 import NodeConfigHint from './node-config-hint.vue';
 import NodeConfigSection from './node-config-section.vue';
+import ClVariableInput from '../cl-variable-input.vue';
 import { useVueFlow } from '@vue-flow/core';
 import { genId } from '../../utils';
 

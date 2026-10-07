@@ -31,7 +31,7 @@ export const NODE_DEFAULT_CONFIGS: Record<string, DefaultConfigSpec> = {
 	},
 	switch: { base: { variable: '', cases: [], defaultRoute: '' } },
 	human_input: { base: { message: '' } },
-	intent_classifier: { base: { modelProfileCode: '', intents: [], defaultRoute: '' } },
+	intent_classifier: { base: { modelProfileCode: '', inputVariable: '', intents: [], defaultRoute: '' } },
 	loop_controller: {
 		base: {
 			listVariable: 'list_variable',

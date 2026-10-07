@@ -4,6 +4,7 @@
 			<el-form-item :label="$t('输入变量')" required style="margin-bottom: 0">
 				<cl-variable-input
 					v-model="config.inputVariable"
+					scope="global"
 					placeholder="例如: loop_results"
 				/>
 			</el-form-item>
@@ -30,6 +31,7 @@
 			>
 				<cl-variable-input
 					v-model="config.transformArgs.path"
+					:show-variable-btn="false"
 					placeholder="例如: data.user.name"
 				/>
 				<div style="font-size: 12px; color: #999; line-height: 1.2; margin-top: 4px">
@@ -44,6 +46,7 @@
 			>
 				<cl-variable-input
 					v-model="config.transformArgs.expression"
+					scope="global"
 					type="textarea"
 					:rows="3"
 					placeholder="例如: ', '.join(input_value)"

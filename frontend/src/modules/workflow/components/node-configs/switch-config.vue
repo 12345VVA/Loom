@@ -1,7 +1,7 @@
 <template>
 	<node-config-section :title="$t('条件分支')">
 		<el-form-item :label="$t('匹配变量名')" required>
-			<cl-variable-input v-model="config.variable" placeholder="例如: status" />
+			<cl-variable-input v-model="config.variable" scope="global" placeholder="例如: status" />
 			<div class="field-hint">
 				支持输入变量路径（如 variables.status 或 status）来进行值匹配。
 			</div>

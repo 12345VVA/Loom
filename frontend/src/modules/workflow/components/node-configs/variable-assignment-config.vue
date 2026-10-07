@@ -33,6 +33,7 @@
 					:rows="2"
 					:placeholder="item.value_type === 'expression' ? '输入表达式' : '输入值'"
 					:show-variable-btn="item.value_type === 'expression'"
+					:scope="item.value_type === 'expression' ? 'global' : 'local'"
 				/>
 			</el-form-item>
 		</div>

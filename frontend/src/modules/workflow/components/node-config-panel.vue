@@ -435,7 +435,10 @@ const localInputsVars = computed(() => {
 });
 
 // 向下提供变量上下文，供底层组件直接引用（如 cl-variable-input, cl-editor-markdown）
-provide(UPSTREAM_VARIABLES_KEY, flattenedVariables);
+// UPSTREAM_VARIABLES_KEY：全局上游变量（复审 P0-2 起 cl-variable-input 的 scope="global"
+// 消费——variable_transform/switch/condition/assignment 等执行器按全局口径读取的字段），
+// 排除循环上下文项（循环上下文由 LOOP_CONTEXT_VARS_KEY 独立分组展示）
+provide(UPSTREAM_VARIABLES_KEY, upstreamOutputVarsOriginal);
 provide(LOOP_CONTEXT_VARS_KEY, loopContextVars);
 provide(UPSTREAM_OUTPUT_VARS_KEY, localInputsVars);
 provide(

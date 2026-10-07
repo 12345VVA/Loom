@@ -6,7 +6,7 @@
 	</node-config-section>
 	<node-config-section :title="$t('输出')">
 		<el-form-item :label="$t('输出变量写入')" required style="margin-bottom: 0">
-			<el-input v-model="config.outputVariable" placeholder="默认: approval_status" />
+			<el-input v-model="config.outputVariable" placeholder="默认: approval_result" />
 		</el-form-item>
 	</node-config-section>
 </template>

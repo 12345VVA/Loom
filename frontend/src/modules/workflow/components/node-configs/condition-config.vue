@@ -3,6 +3,7 @@
 		<el-form-item :label="$t('条件表达式')" required style="margin-bottom: 0">
 			<cl-variable-input
 				v-model="config.expression"
+				scope="global"
 				placeholder="例如: score > 80"
 				@blur="validateExpression"
 			/>
