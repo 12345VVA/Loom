@@ -70,6 +70,15 @@ class Settings(BaseSettings):
     WORKFLOW_EVAL_REGRESSION_THRESHOLD: float = 0.1
     # 评测回归对比：整体 score diff 的 bootstrap 重采样次数（CI 跨 0 即不显著）
     WORKFLOW_EVAL_BOOTSTRAP_SAMPLES: int = 1000
+    # 长期记忆节点（Workflow Memory，设计文档 docs/工作流长期记忆节点设计方案-2026-10-07.md §10）
+    WORKFLOW_MEMORY_DEFAULT_TOP_K: int = 5  # recall 默认返回上限（节点 topK 可覆盖，clamp 1..20）
+    WORKFLOW_MEMORY_SIMILARITY_THRESHOLD: float = 0.35  # 余弦召回阈值（占位值，批次 2 benchmark 实测校准）
+    WORKFLOW_MEMORY_MAX_CONTEXT_CHARS: int = 4000  # 召回总字符预算（整条原子截取 + 首条豁免）
+    WORKFLOW_MEMORY_SCOPE_CAP: int = 1000  # 每 definition+memory_env 活跃行上限（超出淘汰最旧一批）
+    WORKFLOW_MEMORY_EVICTION_BATCH: int = 50  # 容量淘汰批量（软删入墓碑）
+    WORKFLOW_MEMORY_DEDUPE_SIMILARITY: float = 0.95  # 语义相似提示阈值（仅 warning 不丢弃）
+    WORKFLOW_MEMORY_DEDUPE_WINDOW: int = 200  # 语义相似比对窗口（最近 N 条活跃行）
+    WORKFLOW_MEMORY_MAX_CONTENT_LENGTH: int = 4000  # 单条记忆内容上限（超长 fail-fast 不截断）
     # 节点载荷冷热分离阈值（T8）：单字段字节超此值则落对象存储、主表存引用
     PAYLOAD_STORAGE_THRESHOLD: int = 32 * 1024
 

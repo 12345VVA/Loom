@@ -44309,6 +44309,11 @@
                           "title": "Id",
                           "type": "number"
                         },
+                        "memoryWriteEnabled": {
+                          "default": true,
+                          "title": "Memorywriteenabled",
+                          "type": "boolean"
+                        },
                         "name": {
                           "title": "Name",
                           "type": "string"
@@ -44629,6 +44634,11 @@
                           "title": "Id",
                           "type": "number"
                         },
+                        "memoryWriteEnabled": {
+                          "default": true,
+                          "title": "Memorywriteenabled",
+                          "type": "boolean"
+                        },
                         "name": {
                           "title": "Name",
                           "type": "string"
@@ -44884,6 +44894,11 @@
                           "id": {
                             "title": "Id",
                             "type": "number"
+                          },
+                          "memoryWriteEnabled": {
+                            "default": true,
+                            "title": "Memorywriteenabled",
+                            "type": "boolean"
                           },
                           "name": {
                             "title": "Name",
@@ -45169,6 +45184,11 @@
                               "id": {
                                 "title": "Id",
                                 "type": "number"
+                              },
+                              "memoryWriteEnabled": {
+                                "default": true,
+                                "title": "Memorywriteenabled",
+                                "type": "boolean"
                               },
                               "name": {
                                 "title": "Name",
@@ -45503,6 +45523,11 @@
                           "title": "Id",
                           "type": "number"
                         },
+                        "memoryWriteEnabled": {
+                          "default": true,
+                          "title": "Memorywriteenabled",
+                          "type": "boolean"
+                        },
                         "name": {
                           "title": "Name",
                           "type": "string"
@@ -45684,6 +45709,18 @@
           "validate": null
         },
         {
+          "comment": "memory_write_enabled",
+          "dict": null,
+          "label": "memoryWriteEnabled",
+          "nullable": true,
+          "prop": "memoryWriteEnabled",
+          "propertyName": "memoryWriteEnabled",
+          "required": false,
+          "source": "memory_write_enabled",
+          "type": "boolean",
+          "validate": null
+        },
+        {
           "comment": "user_id",
           "dict": null,
           "label": "userId",
@@ -45853,6 +45890,18 @@
             "value": true
           },
           "source": "is_active",
+          "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "memory_write_enabled",
+          "dict": null,
+          "label": "memoryWriteEnabled",
+          "nullable": true,
+          "prop": "memoryWriteEnabled",
+          "propertyName": "memoryWriteEnabled",
+          "required": false,
+          "source": "memory_write_enabled",
           "type": "boolean",
           "validate": null
         },

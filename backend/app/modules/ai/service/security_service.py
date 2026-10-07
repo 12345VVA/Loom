@@ -38,6 +38,35 @@ ID_CARD_REGEX = re.compile(r"(?<!\d)(\d{6})(\d{8})(\d{3}[0-9Xx])(?!\d)")
 # 邮箱
 EMAIL_REGEX = re.compile(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)")
 
+# 凭据入库检测正则（长期记忆节点写入路径使用，设计 §9.3）：少量高置信模式。
+# 现有 PII 正则不含凭据形态（现状核实 §2.3），此集为其补位；
+# 定位是「入库质量提示」而非拦截——命中仅 warning 不阻断（讨论密钥管理是
+# 合法内容），由管理页凭据警告列承接人工审计。
+CREDENTIAL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    # OpenAI 风格 API key（\bsk- 词边界排除 risk-value 等英文单词内误伤）
+    ("openai_style_key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
+    # PEM 私钥头
+    ("pem_private_key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    # AWS Access Key ID（固定 AKIA 前缀 + 16 位大写字母数字）
+    ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    # 通用赋值形态：password=xxxx / "apiKey": "xxxx"（值 ≥16 字符，短词不触发；
+    # 键后允许引号以覆盖 JSON "token": "value" 形态）
+    (
+        "credential_assignment",
+        re.compile(
+            r"\b(api[_-]?key|secret|token|password|passwd|pwd)\b['\"]?\s*[=:]\s*['\"]?[A-Za-z0-9+/_=-]{16,}",
+            re.IGNORECASE,
+        ),
+    ),
+]
+
+
+def detect_credential_patterns(text: str) -> list[str]:
+    """检测文本中的高置信凭据形态，返回命中模式名列表（warning 日志 / 管理页标记用）。"""
+    if not text:
+        return []
+    return [name for name, pattern in CREDENTIAL_PATTERNS if pattern.search(text)]
+
 
 class AiSecurityService:
     @staticmethod

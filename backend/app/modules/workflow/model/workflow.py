@@ -27,6 +27,9 @@ class WorkflowDefinition(BaseEntity, table=True):
     current_version_id: int | None = Field(default=None, index=True)  # 线上发布版指针（实例/eval 默认走此版）
     draft_version_id: int | None = Field(default=None, index=True)  # 草稿指针（editor/test_node 走此版）
     is_active: bool = Field(default=True, index=True)  # 启停开关（is_active=False 不可启动实例/发起评估）
+    # 记忆写入总开关（长期记忆节点）：纯共享下每次写入都影响所有后续运行，关闭时
+    # memory_store 节点 fail-fast（「能运行 ≠ 能写知识」）；已写入记忆仍可召回
+    memory_write_enabled: bool = Field(default=True, index=True)
     user_id: int | None = Field(default=None, index=True)  # 创建者，用于数据权限隔离
 
 
@@ -103,6 +106,7 @@ class WorkflowDefinitionRead(BaseModel):
     name: str
     description: str | None = None
     is_active: bool
+    memory_write_enabled: bool = True
     user_id: int | None = None
     current_version_id: int | None = None
     draft_version_id: int | None = None
@@ -125,6 +129,7 @@ class WorkflowDefinitionCreateRequest(BaseModel):
     name: str
     description: str | None = None
     is_active: bool = True
+    memory_write_enabled: bool = True
 
     @field_validator("is_active", mode="before")
     @classmethod
@@ -142,6 +147,7 @@ class WorkflowDefinitionUpdateRequest(BaseModel):
     name: str | None = None
     description: str | None = None
     is_active: bool | None = None
+    memory_write_enabled: bool | None = None
 
     @field_validator("is_active", mode="before")
     @classmethod
