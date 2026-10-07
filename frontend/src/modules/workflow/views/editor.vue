@@ -68,28 +68,24 @@
 						:saving="saving"
 						:panel-open="!!selectedNode"
 						:panel-width="configPanelWidth"
-						:can-undo="canUndo"
-						:can-redo="canRedo"
-						@drag-start="onDragStart"
-						@add-node="onAddNodeClick"
 						@open-test-dialog="openTestDialog"
 						@clear-test-status="clearTestStatus"
 						@reopen-test-log-drawer="reopenTestLogDrawer"
-						@export-workflow="exportWorkflow"
 						@save-workflow="saveWorkflow"
 						@publish-workflow="publishWorkflow"
-						@undo="undo()"
-						@redo="redo()"
 					/>
 				</vue-flow>
 
-				<!-- MiniMap 显隐切换（#28） -->
-				<el-tooltip
-					:content="miniMapVisible ? $t('隐藏缩略图') : $t('显示缩略图')"
-					placement="right"
-				>
-					<el-button class="minimap-toggle" circle :icon="Grid" @click="toggleMiniMap" />
-				</el-tooltip>
+				<!-- 左上角操作与构建中心（整合节点添加、工程菜单、MiniMap 视图切换） -->
+				<editor-top-left-hub
+					:mini-map-visible="miniMapVisible"
+					:workflow-name="workflowName"
+					:workflow-code="workflowCode"
+					@drag-start="onDragStart"
+					@add-node="onAddNodeClick"
+					@export-workflow="exportWorkflow"
+					@toggle-minimap="toggleMiniMap"
+				/>
 
 				<!-- 右键上下文菜单（组件化，键盘 a11y 在组件内） -->
 				<context-menu
@@ -280,7 +276,7 @@ import { MiniMap } from '@vue-flow/minimap';
 import '@vue-flow/minimap/dist/style.css';
 
 // 导入 Element Plus 图标
-import { ArrowDown, Grid } from '@element-plus/icons-vue';
+import { ArrowDown, InfoFilled } from '@element-plus/icons-vue';
 
 // Vue Flow 样式文件
 import '@vue-flow/core/dist/style.css';
@@ -311,6 +307,7 @@ import { useWorkflowIO } from '../composables/useWorkflowIO';
 // 导入重构的子组件
 import NodeConfigPanel from '../components/node-config-panel.vue';
 import EditorBottomToolbar from '../components/editor-bottom-toolbar.vue';
+import EditorTopLeftHub from '../components/editor-top-left-hub.vue';
 import ContextMenu from '../components/context-menu.vue';
 
 const { service } = useCool();
@@ -788,15 +785,6 @@ function deleteSelectedNode() {
 	position: relative;
 	background-color: #f7f9fb;
 	overflow: hidden;
-}
-
-.minimap-toggle {
-	position: absolute;
-	top: 16px;
-	left: 16px;
-	z-index: 5;
-	background: rgba(255, 255, 255, 0.85);
-	backdrop-filter: blur(8px);
 }
 
 // 半透明遮罩

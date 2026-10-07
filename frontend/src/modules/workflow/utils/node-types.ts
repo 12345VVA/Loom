@@ -1,4 +1,4 @@
-import { defineComponent, h, type Component } from 'vue';
+import { defineComponent, h, markRaw, type Component } from 'vue';
 
 import { isRequiredConfigMissing } from '../utils';
 import LabelEdge from '../components/custom-edges/label-edge.vue';
@@ -24,20 +24,22 @@ import VariableTransformNode from '../components/custom-nodes/variable-transform
  * data/事件等 Vue Flow 下发 props）原样透传。
  */
 function withIncompleteBadge(type: string, Comp: Component): Component {
-	return defineComponent({
-		name: `workflow-node-${type}`,
-		inheritAttrs: false,
-		setup(_, { attrs }) {
-			return () =>
-				h(Comp, {
-					...attrs,
-					incomplete: isRequiredConfigMissing({
-						type,
-						data: attrs.data as { config?: Record<string, unknown> } | undefined
-					})
-				});
-		}
-	});
+	return markRaw(
+		defineComponent({
+			name: `workflow-node-${type}`,
+			inheritAttrs: false,
+			setup(_, { attrs }) {
+				return () =>
+					h(Comp, {
+						...attrs,
+						incomplete: isRequiredConfigMissing({
+							type,
+							data: attrs.data as { config?: Record<string, unknown> } | undefined
+						})
+					});
+			}
+		})
+	);
 }
 
 /**
@@ -45,7 +47,7 @@ function withIncompleteBadge(type: string, Comp: Component): Component {
  * deprecated `tool` 已下架（三期B7 / WF-P2-10）：后端加载入口自动迁移为
  * tool_executor，画布不再渲染该类型。
  */
-export const nodeTypes: Record<string, Component> = {
+export const nodeTypes: Record<string, Component> = markRaw({
 	start: withIncompleteBadge('start', StartNode),
 	end: withIncompleteBadge('end', EndNode),
 	llm: withIncompleteBadge('llm', LlmNode),
@@ -60,9 +62,9 @@ export const nodeTypes: Record<string, Component> = {
 	loop_body_group: withIncompleteBadge('loop_body_group', LoopBodyGroupNode),
 	variable_assignment: withIncompleteBadge('variable_assignment', VariableAssignmentNode),
 	variable_transform: withIncompleteBadge('variable_transform', VariableTransformNode)
-};
+});
 
 /**
  * 注册自定义边组件
  */
-export const edgeTypes: Record<string, Component> = { label: LabelEdge };
+export const edgeTypes: Record<string, Component> = markRaw({ label: markRaw(LabelEdge) });
