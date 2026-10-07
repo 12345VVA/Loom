@@ -134,16 +134,6 @@
       "count": 1
     }
   },
-  "src/modules/ai/views/model.vue": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    }
-  },
-  "src/modules/ai/views/profile.vue": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 14
-    }
-  },
   "src/modules/ai/views/provider.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 9
@@ -457,11 +447,6 @@
   "src/modules/workflow/components/custom-nodes/variable-transform-node.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
-    }
-  },
-  "src/modules/workflow/components/editor-bottom-toolbar.vue": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
     }
   },
   "src/modules/workflow/components/log-content-preview.vue": {
