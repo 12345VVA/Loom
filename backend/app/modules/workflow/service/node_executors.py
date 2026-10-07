@@ -539,7 +539,10 @@ def _persist_image_to_media(
 
     归属：instance 框架信息（instance_id/definition_id/user_id）从 workflow_instance_id_ctx
     读取（asyncio.to_thread 复制上下文，同 runtime_service._log_call 打标机制）；node_id 由
-    executor_config 显式传入。单节点测试路径不设置 ctx，转存资产归属为空（仅超管可见）。
+    executor_config 显式传入。ctx 由调用方设置：整图执行指向运行实例（workflow_tasks），
+    单节点测试指向 test_node 实例（workflow_service.test_node，执行后重置）。ctx 缺失
+    （直调执行器的测试路径 / 实例已被删）时归属为空、不抛错——防御分支见
+    test_media_workflow_attribution。
     """
     from app.core.database import SessionLocal
     from app.core.logging import workflow_instance_id_ctx

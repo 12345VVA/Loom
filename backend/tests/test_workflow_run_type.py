@@ -181,6 +181,91 @@ class NodeTestPersistTestCase(unittest.TestCase):
         self.assertEqual(resp.error, instance.error_message)
 
 
+class NodeTestInstanceContextTestCase(unittest.TestCase):
+    """单节点测试路径设置 workflow_instance_id_ctx（指向 test_node 实例）。
+
+    执行器内归属与环境推导依赖运行时上下文（AI 调用打标、媒体转存归属、
+    长期记忆节点的 definition_id/run_type 推导），ctx 缺失会让这类节点在
+    单节点测试路径拿不到身份。执行结束后 ctx 必须重置。
+    """
+
+    def setUp(self):
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+        graph = json.dumps({"nodes": [{"id": "n1", "type": "llm", "name": "测试节点", "config": {}}], "edges": []})
+        from app.modules.workflow.model.workflow_version import (
+            WorkflowDefinitionVersion,
+            WorkflowVersionStatus,
+        )
+
+        definition = WorkflowDefinition(code="wf1", name="WF1", is_active=True, user_id=1)
+        self.session.add(definition)
+        self.session.commit()
+        self.session.refresh(definition)
+        draft = WorkflowDefinitionVersion(
+            definition_id=definition.id,
+            version_no=1,
+            status=WorkflowVersionStatus.DRAFT,
+            graph_json=graph,
+            user_id=1,
+        )
+        self.session.add(draft)
+        self.session.commit()
+        self.session.refresh(draft)
+        definition.draft_version_id = draft.id
+        self.session.add(definition)
+        self.session.commit()
+        self.def_id = definition.id
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def _run(self, executor):
+        from app.core.logging import workflow_instance_id_ctx
+        from app.modules.workflow.service import compiler as compiler_mod
+        from app.modules.workflow.service.workflow_service import WorkflowInstanceService
+
+        svc = WorkflowInstanceService(self.session)
+        with (
+            patch.object(compiler_mod.node_registry, "get", return_value=executor),
+            patch("app.core.redis.redis_client") as mock_redis,
+        ):
+            mock_redis.set.return_value = True
+            resp = asyncio.run(svc.test_node(self.def_id, "n1", {"q": "hi"}, _user(1)))
+        return resp, workflow_instance_id_ctx.get()
+
+    def test_ctx_points_to_test_node_instance_during_execution(self):
+        captured = {}
+
+        async def executor(inputs, config):
+            from app.core.logging import workflow_instance_id_ctx
+
+            captured["instance_id"] = workflow_instance_id_ctx.get()
+            return {"answer": "ok"}
+
+        resp, ctx_after = self._run(executor)
+        instance = self.session.exec(
+            select(WorkflowInstance).where(WorkflowInstance.definition_id == self.def_id)
+        ).first()
+        # 执行期间 ctx 指向 test_node 实例（响应透传同一 id）
+        self.assertEqual(captured["instance_id"], instance.id)
+        self.assertEqual(resp.instance_id, instance.id)
+        # 执行结束后 ctx 重置，不污染外层
+        self.assertIsNone(ctx_after)
+
+    def test_ctx_reset_even_on_executor_failure(self):
+        async def boom(inputs, config):
+            from app.core.logging import workflow_instance_id_ctx
+
+            assert workflow_instance_id_ctx.get() is not None
+            raise RuntimeError("炸了")
+
+        _, ctx_after = self._run(boom)
+        self.assertIsNone(ctx_after)
+
+
 class ArtifactRunTypeMarkTestCase(unittest.TestCase):
     """产物打标：测试实例的产物冗余 run_type，可区分/批量清理。"""
 

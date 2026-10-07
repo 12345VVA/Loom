@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from app.core.logging import workflow_instance_id_ctx
 from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.base.service.authority_service import is_super_admin
@@ -865,6 +866,11 @@ class WorkflowInstanceService(BaseAdminCrudService):
         error_msg = None
         is_timeout = False
         updates = {}
+        # 单节点测试同样设置 instance ctx（指向 test_node 实例）：执行器内归属与环境
+        # 推导依赖运行时上下文（AI 调用打标、媒体转存归属、长期记忆节点的
+        # definition_id/run_type 推导），ctx 缺失会让这类节点在测试路径拿不到身份。
+        # finally 保证重置，不污染请求级上下文。
+        _inst_ctx_token = workflow_instance_id_ctx.set(instance.id)
         try:
             updates = await asyncio.wait_for(
                 WorkflowCompiler.run_node_standalone(node_id, node_type, config, mock_variables),
@@ -878,6 +884,8 @@ class WorkflowInstanceService(BaseAdminCrudService):
             logger.error("单节点测试执行失败 [%s]: %s", node_id, e, exc_info=True)
             error_msg = friendly_error_message(e)
             is_timeout = False
+        finally:
+            workflow_instance_id_ctx.reset(_inst_ctx_token)
 
         latency_ms = int((time.perf_counter() - start_time) * 1000)
 
