@@ -32,7 +32,7 @@ from app.modules.workflow.service.compiler import (
     node_registry,
     render_template,
     safe_eval,
-    strip_braces,
+    strip_var_prefix,
 )
 from app.modules.workflow.service.error_format import friendly_error_message
 from app.modules.workflow.service.graph_validate import MOCK_TOOL_CODES
@@ -216,7 +216,7 @@ async def execute_intent_classifier_node(variables: dict[str, Any], config: dict
     globals_ = _globals_from(config, variables)
     input_var = config.get("input_variable", "")
     if input_var:
-        var_name = strip_braces(input_var.strip())
+        var_name = strip_var_prefix(input_var.strip())
         val = _deep_get(globals_, var_name)
         query = str(val) if val is not None else ""
     else:
@@ -306,7 +306,7 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
         raise ValueError(
             "循环控制器节点缺少已编译的体子图。请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。"
         )
-    list_var = strip_braces(config.get("list_variable") or config.get("array_variable", "list_variable"))
+    list_var = strip_var_prefix(config.get("list_variable") or config.get("array_variable", "list_variable"))
     item_var = config.get("item_variable", "loop_item")
     globals_ = _globals_from(config, variables)
     output_var = config.get("output_variable", "loop_results")
@@ -390,7 +390,7 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
     compiled_body = config.get("_compiled_body")
     if not compiled_body:
         raise ValueError("批处理节点缺少已编译的体子图。请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。")
-    list_var = strip_braces(config.get("list_variable") or config.get("array_variable", "batch_list_variable"))
+    list_var = strip_var_prefix(config.get("list_variable") or config.get("array_variable", "batch_list_variable"))
     item_var = config.get("item_variable", "batch_item")
     globals_ = _globals_from(config, variables)
     output_var = config.get("output_variable", "batch_results")
@@ -774,7 +774,7 @@ async def execute_variable_transform_node(variables: dict[str, Any], config: dic
     eval_expression 上下文与 variable_assignment 同口径（全局打底、声明覆盖）。
     """
     globals_ = _globals_from(config, variables)
-    input_var = strip_braces(config.get("input_variable", ""))
+    input_var = strip_var_prefix(config.get("input_variable", ""))
     transform_type = config.get("transform_type", "join_array")
     transform_args = config.get("transform_args", {})
     output_var = config.get("output_variable", "transformed_value")

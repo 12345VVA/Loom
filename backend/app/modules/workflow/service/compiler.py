@@ -35,6 +35,9 @@ from app.modules.workflow.service.expressions import (  # noqa: F401
 from app.modules.workflow.service.expressions import (  # noqa: F401
     strip_braces as strip_braces,
 )
+from app.modules.workflow.service.expressions import (  # noqa: F401
+    strip_var_prefix as strip_var_prefix,
+)
 from app.modules.workflow.service.graph_validate import (  # noqa: F401
     CONDITIONAL_NODE_TYPES as CONDITIONAL_NODE_TYPES,
 )
@@ -740,9 +743,16 @@ class WorkflowCompiler:
             true_route = config.get("true_route")
             false_route = config.get("false_route")
 
-            # 安全的评估上下文
+            # 安全的评估上下文。
+            # "variables" 只读视图（复审 P0-1）：前端变量下拉/语法提示统一引导
+            # `variables.变量名` 写法（node-config-panel.getVariableRefText / editor
+            # 语法提示 / condition-config 校验器三级一致），此前上下文无该键 →
+            # NameError → D3 fail-fast 必现节点失败。注入后两种写法（裸名 /
+            # variables. 前缀）均可求值；即使用户变量恰好也叫 "variables"，
+            # 两者指向同一份 dict，语义等价、无覆盖风险。
             eval_context = {
                 **state.get("variables", {}),
+                "variables": state.get("variables", {}),
                 "len": len,
                 "str": str,
                 "int": int,
@@ -796,13 +806,11 @@ class WorkflowCompiler:
         """
 
         def switch_router(state: WorkflowState) -> str:
-            var_name = strip_braces(config.get("variable", ""))
-            val = state.get("variables", {})
-            if var_name.startswith("variables."):
-                var_key = var_name.removeprefix("variables.")
-                val = val.get(var_key)
-            else:
-                val = val.get(var_name)
+            # 复审 P1：改 _deep_get 支持点路径（前端变量选择器天然产生嵌套路径如
+            # llm_output.topic，原浅层 get 恒 None → 静默走 default）；
+            # strip_var_prefix 归一 `variables.` 前缀（与 condition/tool 引用语法统一）
+            var_name = strip_var_prefix(config.get("variable", ""))
+            val = _deep_get(state.get("variables", {}), var_name)
 
             for case in config.get("cases", []):
                 if str(case.get("value")) == str(val):

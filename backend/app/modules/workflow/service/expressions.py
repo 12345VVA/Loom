@@ -159,13 +159,16 @@ def safe_eval(expr_str: str, context: dict) -> Any:
 
 
 def _deep_get(val: Any, path: str) -> Any:
-    """支持点号分割的深层字典结构值获取"""
+    """支持点号分割的深层字典结构值获取（list 支持数字索引段，口径与 render_template 一致）"""
     if not path:
         return None
     keys = path.split(".")
     for k in keys:
         if isinstance(val, dict):
             val = val.get(k)
+        elif isinstance(val, list) and k.isdigit():
+            idx = int(k)
+            val = val[idx] if 0 <= idx < len(val) else None
         else:
             return None
     return val
@@ -220,6 +223,18 @@ def strip_braces(val: str) -> str:
     if val.startswith("{") and val.endswith("}"):
         return val[1:-1].strip()
     return val
+
+
+def strip_var_prefix(val: str) -> str:
+    """全局变量名归一（复审 P0/P1 修复）：剥花括号后再剥 `variables.` 前缀。
+
+    前端变量引用文案（getVariableRefText）对 condition/tool_executor 生成
+    `variables.变量名`，用户复制进 switch 判断变量 / transform 输入变量 /
+    loop 列表变量等字段时保持该形态——所有「跨节点全局读取」入口统一经本
+    helper 归一为裸键名，`variables.foo` 与 `foo` 两种写法等价。
+    """
+    name = strip_braces(val or "")
+    return name.removeprefix("variables.")
 
 
 def camel_to_snake(s: str) -> str:
