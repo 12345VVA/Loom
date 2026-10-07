@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     WORKFLOW_CHECKPOINT_SKIP_WITHOUT_INTERRUPT: bool = True
     WORKFLOW_NODE_TEST_TIMEOUT: int = 180  # 单节点测试超时秒数（LLM 节点常需 60-180 秒）
     WORKFLOW_NODE_TIMEOUT: int = 600  # 正式执行单节点超时秒数（比 30 分钟硬上限短，留足图像节点空间）
+    # LangGraph recursion_limit（三期B7 / WF-P2-24）：单次图执行的最大 superstep 数。
+    # 超限时 GraphRecursionError → 实例 failed；深循环图可调大，注意配合体子图超时
+    WORKFLOW_RECURSION_LIMIT: int = 100
     # 循环/批处理体子图整体执行超时秒数（节点 config timeoutSeconds 可覆盖为更紧的值）。
     # ⚠️ 生效前提：外层 WORKFLOW_NODE_TIMEOUT(600s) 的 superstep 兜底先于一切——默认 1800 > 600，
     # 即默认部署下内层超时不可达（由外层先触发）；本值的实际价值是 (a) 节点 timeoutSeconds

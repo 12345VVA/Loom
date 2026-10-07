@@ -155,7 +155,8 @@ async function refresh() {
 		query.messageType = filter.value;
 	}
 	const res = await service.notification.message.mine({
-		...query
+		...query,
+		limit: 50
 	});
 	list.value = res || [];
 	await refreshCount();

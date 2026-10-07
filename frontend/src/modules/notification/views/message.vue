@@ -148,9 +148,13 @@
 			<el-table :data="recipients.list" height="420">
 				<el-table-column prop="username" :label="$t('账号')" min-width="140" />
 				<el-table-column prop="name" :label="$t('名称')" min-width="140" />
-				<el-table-column prop="isRead" :label="$t('已读')" width="90" />
+				<el-table-column prop="isRead" :label="$t('已读')" width="90">
+					<template #default="{ row }">{{ row.isRead ? $t('是') : $t('否') }}</template>
+				</el-table-column>
 				<el-table-column prop="readTime" :label="$t('读取时间')" min-width="170" />
-				<el-table-column prop="isArchived" :label="$t('归档')" width="90" />
+				<el-table-column prop="isArchived" :label="$t('归档')" width="90">
+					<template #default="{ row }">{{ row.isArchived ? $t('是') : $t('否') }}</template>
+				</el-table-column>
 			</el-table>
 		</el-dialog>
 	</div>
@@ -288,13 +292,16 @@ async function nextStep() {
 				audience: send.form.audience
 			})
 		);
+		if (!preview.count) {
+			return ElMessage.warning(t('当前受众未匹配到任何接收人，请重新选择'));
+		}
 	}
 	send.step++;
 }
 
 async function submitSend() {
-	await service.notification.message.send(send.form);
-	ElMessage.success(t('发送成功'));
+	const res = await service.notification.message.send(send.form);
+	ElMessage.success(`${t('发送成功')}，${t('接收人数')}：${res?.recipientCount ?? 0}`);
 	send.visible = false;
 	refresh();
 }

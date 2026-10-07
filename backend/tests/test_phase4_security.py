@@ -68,9 +68,17 @@ class NotificationSenderIdTests(unittest.TestCase):
     """Task 4.2 (P1-14): notification sender_id 防伪造"""
 
     def setUp(self):
+        from app.modules.base.model.auth import User
+
         self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
+        # 空受众现已被显式拒绝（避免 0 收件人的孤儿消息），因此这里预置一个可解析的接收人。
+        admin = User(username="admin", full_name="admin", password_hash="x", is_active=True, is_super_admin=True)
+        self.session.add(admin)
+        self.session.commit()
+        self.session.refresh(admin)
+        self.audience = {"users": [admin.id]}
 
     def tearDown(self):
         self.session.close()
@@ -88,6 +96,7 @@ class NotificationSenderIdTests(unittest.TestCase):
             "sender_id": 999,  # 客户端伪造的 sender_id
             "message_type": "business",
             "level": "info",
+            "audience": self.audience,
         }
 
         service = NotificationMessageService(self.session)
@@ -106,6 +115,7 @@ class NotificationSenderIdTests(unittest.TestCase):
             "sender_id": 555,
             "message_type": "business",
             "level": "info",
+            "audience": self.audience,
         }
 
         service = NotificationMessageService(self.session)
@@ -127,6 +137,7 @@ class NotificationSenderIdTests(unittest.TestCase):
                 "sender_id": 111,
                 "message_type": "business",
                 "level": "info",
+                "audience": self.audience,
             },
             {
                 "title": "批量通知2",
@@ -134,6 +145,7 @@ class NotificationSenderIdTests(unittest.TestCase):
                 "sender_id": 222,
                 "message_type": "business",
                 "level": "info",
+                "audience": self.audience,
             },
         ]
 

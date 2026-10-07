@@ -243,3 +243,4 @@ class NodeTestResponse(BaseModel):
     error: str | None = None
     is_timeout: bool = False
     instance_id: int | None = None  # 落库的测试实例 ID（run_type='test_node'，可跳转运行记录页）
+    hint: str | None = None  # 附加提示（三期B6：条件节点的路由逻辑需整图试运行验证）

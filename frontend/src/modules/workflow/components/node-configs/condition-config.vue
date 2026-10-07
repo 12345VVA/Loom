@@ -11,6 +11,19 @@
 				{{ $t('如果求值结果为 True，走 T 端口；反之走 F 端口。') }}
 			</div>
 		</el-form-item>
+		<el-form-item :label="$t('表达式出错时')">
+			<el-radio-group v-model="config.onExpressionError">
+				<el-radio value="fail">{{ $t('节点失败（推荐）') }}</el-radio>
+				<el-radio value="fallback">{{ $t('回落 F 分支') }}</el-radio>
+			</el-radio-group>
+			<div class="field-hint">
+				{{
+					$t(
+						'表达式求值失败时的行为：默认以节点失败收尾（可在运行日志定位问题）；选择回落则走 F 分支继续执行（兼容旧版行为）。'
+					)
+				}}
+			</div>
+		</el-form-item>
 		<node-config-hint style="margin-top: 8px">
 			<span>从节点的 T (True) / F (False) 端口直接连线到目标节点。</span>
 		</node-config-hint>

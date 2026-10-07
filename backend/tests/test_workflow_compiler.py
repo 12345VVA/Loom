@@ -340,7 +340,8 @@ class CompileGraphTestCase(unittest.TestCase):
                     "id": "loop_1",
                     "type": "loop_controller",
                     "name": "Loop",
-                    "config": {"bodyGroupId": "group_1"},
+                    # 三期B6 schema 校验要求必填 listVariable（此前简化图缺省）
+                    "config": {"bodyGroupId": "group_1", "listVariable": "list_variable"},
                 },
                 {
                     "id": "group_1",
@@ -671,8 +672,9 @@ class DeriveConditionalConfigTestCase(unittest.TestCase):
 class RegisterConditionalEdgesGuardsTestCase(unittest.TestCase):
     """_register_conditional_edges 的守卫语义（与重构前逐字节等价）。"""
 
-    def test_condition_without_routes_not_registered(self):
-        """condition 无任何路由：len(path_map)==1 守卫 → 不注册条件边。"""
+    def test_condition_without_routes_rejected_at_validation(self):
+        """condition 无任何路由：三期B6 起 validate_graph 拒绝（原「len(path_map)==1
+        守卫 → 静默不注册条件边」语义被显式校验取代——静默终结即静默失败）。"""
         graph = {
             "nodes": [
                 _start_node(),
@@ -681,8 +683,9 @@ class RegisterConditionalEdgesGuardsTestCase(unittest.TestCase):
             ],
             "edges": [_edge("start_1", "cond_1"), _edge("cond_1", "end_1")],
         }
-        builder = WorkflowCompiler.compile_graph(graph)
-        self.assertFalse(getattr(builder, "branches", {}).get("cond_1"))
+        with self.assertRaises(ValueError) as cm:
+            WorkflowCompiler.compile_graph(graph)
+        self.assertIn("没有任何可解析的路由", str(cm.exception))
 
     def test_intent_with_config_default_still_registered(self):
         """intent 无任何边但有 config defaultRoute：仍注册条件边（END 兜底 + default）。"""

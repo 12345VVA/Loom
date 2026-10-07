@@ -130,16 +130,8 @@ export const NODE_REGISTRY = [
 		category: 'system',
 		descKey: '格式转换与数据提取'
 	},
-	{
-		type: 'tool',
-		labelKey: '工具执行',
-		icon: MagicStick,
-		colorClass: 'node-tool',
-		colorHex: '#8a2be2',
-		category: 'system',
-		descKey: '旧版工具节点',
-		deprecated: true
-	},
+	// deprecated `tool` 条目已删除（三期B7 / WF-P2-10 下架）：存量图加载时后端
+	// 自动迁移为 tool_executor，前端物料/画布/配置面板不再注册该类型。
 	{
 		type: 'loop_body_group',
 		labelKey: '循环体',

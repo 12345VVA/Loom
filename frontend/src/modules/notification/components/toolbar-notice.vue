@@ -137,7 +137,8 @@ async function refresh() {
 
 	const res = await service.notification.message.mine({
 		includeArchived: false,
-		readStatus: 'unread'
+		readStatus: 'unread',
+		limit: 8
 	});
 	list.value = (res || []).slice(0, 8);
 	await refreshCount();
@@ -147,11 +148,10 @@ async function showDetail(item: NoticeItem) {
 	if (!item.isRead) {
 		await service.notification.message.read({ ids: [item.id] });
 		item.isRead = true;
-		await refreshCount();
+		unreadCount.value = Math.max(0, unreadCount.value - 1);
 	}
 	detail.item = await service.notification.message.myInfo({ id: item.id });
 	detail.visible = true;
-	await refresh();
 }
 
 function goLink(item: NoticeItem) {
@@ -177,15 +177,30 @@ function goCenter() {
 	router.push('/my/notification');
 }
 
-onMounted(() => {
+function tick() {
+	if (document.hidden) {
+		return;
+	}
 	refreshCount();
-	timer = window.setInterval(refreshCount, 60000);
+}
+
+function onVisibility() {
+	if (!document.hidden) {
+		refreshCount();
+	}
+}
+
+onMounted(() => {
+	tick();
+	timer = window.setInterval(tick, 60000);
+	document.addEventListener('visibilitychange', onVisibility);
 });
 
 onBeforeUnmount(() => {
 	if (timer) {
 		window.clearInterval(timer);
 	}
+	document.removeEventListener('visibilitychange', onVisibility);
 });
 </script>
 

@@ -162,27 +162,34 @@ def _write_task_log(session: Session, task_id: int, status: int, detail: str, co
 def _maybe_send_task_notification(
     session: Session, task: TaskInfo, status_value: int, detail: str, consume_time: int
 ) -> None:
-    if not task.notify_enabled:
-        return
-    timed_out = task.notify_timeout_ms > 0 and consume_time >= task.notify_timeout_ms
-    should_notify = (
-        (status_value == 1 and task.notify_on_success)
-        or (status_value == 0 and task.notify_on_failure)
-        or (timed_out and task.notify_on_timeout)
-    )
-    if not should_notify:
-        return
-    audience = task.notify_recipients or {"allAdmins": True}
-    NotificationService(session).send_task(
-        task_name=task.name,
-        task_id=task.id,
-        status_value=status_value,
-        consume_time=consume_time,
-        detail=detail,
-        audience=audience,
-        template_code=task.notify_template_code,
-        timeout=timed_out,
-    )
+    """任务通知为 best-effort 副作用：任何异常只记 warning，绝不影响任务终态与日志（M3）。
+
+    此前无异常隔离，模板缺失 / 受众畸形会从 finally 块抛出，把已成功的任务记为运行失败。
+    """
+    try:
+        if not task.notify_enabled:
+            return
+        timed_out = task.notify_timeout_ms > 0 and consume_time >= task.notify_timeout_ms
+        should_notify = (
+            (status_value == 1 and task.notify_on_success)
+            or (status_value == 0 and task.notify_on_failure)
+            or (timed_out and task.notify_on_timeout)
+        )
+        if not should_notify:
+            return
+        audience = task.notify_recipients or {"allAdmins": True}
+        NotificationService(session).send_task(
+            task_name=task.name,
+            task_id=task.id,
+            status_value=status_value,
+            consume_time=consume_time,
+            detail=detail,
+            audience=audience,
+            template_code=task.notify_template_code,
+            timeout=timed_out,
+        )
+    except Exception:
+        logger.warning("任务通知发送失败 task_id=%s", getattr(task, "id", None), exc_info=True)
 
 
 @celery_app.task(name="task.clean_expired_logs")

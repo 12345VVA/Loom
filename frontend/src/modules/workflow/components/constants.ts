@@ -7,21 +7,11 @@ export const VARIABLE_SYNTAX_HINTS_KEY = 'variableSyntaxHints' as unknown as Inj
 	Ref<any[]>
 >;
 
-// 不可单节点测试的节点类型。⚠️ 权威来源是后端
-// backend/app/modules/workflow/service/graph_validate.py 的 UNTESTABLE_NODE_TYPES，
-// 两处需保持一致（后端 /testNode 400 兜底拦截；改动任一侧必须同步另一侧）。
-export const UNTESTABLE_NODE_TYPES = [
-	'start',
-	'end',
-	'loop_controller',
-	'batch_processor',
-	'human_input',
-	'loop_body_group'
-];
-// mock 占位工具集合（DEMO 徽标依据）。⚠️ 权威来源是后端
-// backend/app/modules/workflow/service/graph_validate.py 的 MOCK_TOOL_CODES，
-// 两处需保持一致（后端非 DEBUG 下执行这些工具直接失败；改动任一侧必须同步另一侧）。
-export const MOCK_TOOL_CODES = ['web_search', 'file_system', 'mock_weather_api'];
+// 不可单节点测试的节点类型 / mock 占位工具集合：由后端生成的节点元数据 manifest
+// 派生（三期B7 / WF-P2-7 单一来源化）。权威来源 backend 的注册表与 graph_validate
+// 常量集；跨栈守卫 backend/tests/test_workflow_untestable_sync.py 比对生成产物。
+// 再生成：cd backend && python scripts/dump_node_manifest.py
+export { UNTESTABLE_NODE_TYPES, MOCK_TOOL_CODES } from '../generated/node-manifest';
 export const OPEN_NODE_TEST_DIALOG_KEY = 'openNodeTestDialog' as unknown as InjectionKey<
 	(node: any) => void
 >;

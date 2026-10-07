@@ -161,7 +161,6 @@ import { getMissingConfigFields } from '../utils';
 import StartConfig from './node-configs/start-config.vue';
 import EndConfig from './node-configs/end-config.vue';
 import LlmConfig from './node-configs/llm-config.vue';
-import ToolConfig from './node-configs/tool-config.vue';
 import ConditionConfig from './node-configs/condition-config.vue';
 import SwitchConfig from './node-configs/switch-config.vue';
 import HumanInputConfig from './node-configs/human-input-config.vue';
@@ -194,7 +193,6 @@ const CONFIG_COMPONENTS: Record<string, any> = {
 	start: StartConfig,
 	end: EndConfig,
 	llm: LlmConfig,
-	tool: ToolConfig,
 	condition: ConditionConfig,
 	switch: SwitchConfig,
 	human_input: HumanInputConfig,

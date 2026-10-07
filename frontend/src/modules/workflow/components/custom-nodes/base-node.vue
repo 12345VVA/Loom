@@ -194,12 +194,10 @@ const canTestNode = computed(() => {
 	return !UNTESTABLE_NODE_TYPES.includes(node.type);
 });
 
-// WF-P0-2：mock 占位工具打 DEMO 徽标（deprecated `tool` 节点整体为 mock，恒显）
+// WF-P0-2：mock 占位工具打 DEMO 徽标。deprecated `tool` 已下架（三期B7），
+// 存量图加载即迁移，画布不再出现该类型。
 const isMockTool = computed(() => {
-	return (
-		(node.type === 'tool_executor' && MOCK_TOOL_CODES.includes(node.data?.config?.toolCode)) ||
-		node.type === 'tool'
-	);
+	return node.type === 'tool_executor' && MOCK_TOOL_CODES.includes(node.data?.config?.toolCode);
 });
 
 function handleTestNode() {

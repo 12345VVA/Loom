@@ -184,16 +184,12 @@ def cancel_eval_instance(instance_id: int) -> None:
 
     pending 纳入：用例超时时协程可能尚未执行到 async_execute 的
     pending→running promote，状态仍为排队态——同样要收尾。
+    三期B7（WF-P2-16）：迁移合法性由 status_flow 表校验。
     """
+    from app.modules.workflow.service.status_flow import cas_transition
+
     with Session(engine) as session:
-        session.execute(
-            update(WorkflowInstance)
-            .where(
-                WorkflowInstance.id == instance_id,
-                WorkflowInstance.status.in_(["running", "pending"]),
-            )
-            .values(status="cancelled")
-        )
+        cas_transition(session, instance_id, ("running", "pending"), "cancelled")
         session.commit()
 
 

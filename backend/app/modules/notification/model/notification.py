@@ -129,11 +129,35 @@ class NotificationMessageCreateRequest(BaseModel):
     audience: AudienceRule = PydanticField(default_factory=AudienceRule)
 
 
-class NotificationMessageUpdateRequest(NotificationMessageCreateRequest):
+class NotificationMessageUpdateRequest(BaseModel):
+    """通知消息更新请求（独立定义，不继承 Create）。
+
+    安全约束：显式排除服务端独占字段（`sender_id` / `is_recalled` / `recalled_at` /
+    `recalled_by` / `send_status` / `scheduled_at`）与仅发送用的 `audience`。
+    否则客户端可借 `/update` 冒名发送者、绕过 `/recall` 直接置召回态（mass-assignment），
+    且提交 `audience` 会因实体无该字段而触发 500。
+    """
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
     id: int
-    # 放开继承自 Create 的必填字段，支持部分更新（如召回 is_recalled、改 level）
     title: str | None = None
     content: str | None = None
+    message_type: str | None = None
+    level: str | None = None
+    source_module: str | None = None
+    business_key: str | None = None
+    link_url: str | None = None
+    expired_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class NotificationIdsRequest(BaseModel):
+    """按 id 批量操作（标记已读 / 归档 / 取消归档）的请求体，兼容单 id 与 ids 两种形态。"""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    ids: list[int] = PydanticField(default_factory=list)
+    id: int | None = None
 
 
 class NotificationMessageSendRequest(BaseModel):

@@ -39,6 +39,7 @@
 	"详情": "Details",
 	"接收人": "Recipient",
 	"请填写标题和内容": "Please fill in title and content",
+	"当前受众未匹配到任何接收人，请重新选择": "No recipients matched the current audience, please reselect",
 	"发送成功": "Sent successfully",
 	"撤回后用户侧将不再显示该通知，是否继续？": "After withdrawal, this notification will no longer be shown to users. Continue?",
 	"操作成功": "Operation succeeded",

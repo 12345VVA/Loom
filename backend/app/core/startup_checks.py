@@ -54,7 +54,11 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
     elif is_prod and config.WORKFLOW_CHECKPOINT_BACKEND == "memory":
         results.append(
             StartupCheckResult(
-                "error", "WORKFLOW_CHECKPOINT_BACKEND", "生产环境不能使用 MemorySaver（重启后 paused 实例无法恢复）"
+                "error",
+                "WORKFLOW_CHECKPOINT_BACKEND",
+                "生产环境不能使用 MemorySaver：内存态不跨进程共享，Celery 多 Worker 下"
+                " paused 实例无法恢复（resume 找不到 checkpoint），重启后全部丢失。"
+                "生产必须配置 postgres（WORKFLOW_CHECKPOINT_BACKEND=postgres）。",
             )
         )
 

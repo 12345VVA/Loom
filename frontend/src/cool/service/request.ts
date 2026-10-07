@@ -182,7 +182,10 @@ request.interceptors.response.use(
 			}
 		}
 
-		return Promise.reject({ message: error.response?.data?.message || error.message }); // 返回错误信息
+		// FastAPI 的 HTTPException 文本在 detail 字段（业务包装异常在 message），
+		// 两者都取——否则工作流校验等 400 的具体文案到不了前端 toast
+		const detail = error.response?.data?.detail || error.response?.data?.message || error.message;
+		return Promise.reject({ message: detail }); // 返回错误信息
 	}
 );
 

@@ -329,20 +329,58 @@ class MockToolProductionRaiseTestCase(unittest.TestCase):
                 asyncio.run(ne.execute_tool_executor_node({}, {"tool_code": "no_such_tool"}))
         self.assertIn("no_such_tool", str(cm.exception))
 
-    def test_deprecated_tool_node_raises_in_production(self) -> None:
-        from app.core.config import settings as app_settings
+    # 三期B7（WF-P2-10）：deprecated `tool` 执行器已随下架删除，生产拦截/DEBUG 演示
+    # 两组用例随之移除——存量图迁移语义见 test_workflow_tool_migration.py。
 
-        with patch.object(app_settings, "DEBUG", False):
-            with self.assertRaises(ValueError) as cm:
-                asyncio.run(ne.execute_tool_node({}, {"tool_name": "search"}))
-        self.assertIn("search", str(cm.exception))
 
-    def test_deprecated_tool_node_keeps_demo_behavior_in_debug(self) -> None:
-        from app.core.config import settings as app_settings
+class X1SilentDegradeTestCase(unittest.TestCase):
+    """三期B6 X-1 静默降级治理：执行器内语义性失败显性化（默认 fail-fast）。
 
-        with patch.object(app_settings, "DEBUG", True):
-            result = asyncio.run(ne.execute_tool_node({}, {"tool_name": "search"}))
-        self.assertIn("tool_result", result)
+    - tool_executor argumentsJson 解析失败：静默 {} → raise；
+    - variable_assignment 表达式失败：静默赋 None → raise（fallback 显式保留）；
+    - variable_transform 整体异常：静默 result=None → raise。
+    """
+
+    def test_tool_executor_bad_arguments_json_raises(self) -> None:
+        with self.assertRaises(ValueError) as cm:
+            asyncio.run(
+                ne.execute_tool_executor_node({}, {"tool_code": "http_request", "arguments_json": "{not valid"})
+            )
+        self.assertIn("argumentsJson", str(cm.exception))
+
+    def test_assignment_expression_fail_fast_by_default(self) -> None:
+        config = {"assignments": [{"variable_name": "out", "value_type": "expression", "value": "undefined_var + 1"}]}
+        with self.assertRaises(ValueError):
+            asyncio.run(ne.execute_variable_assignment_node({}, config))
+
+    def test_assignment_expression_fallback_keeps_none(self) -> None:
+        config = {
+            "on_expression_error": "fallback",
+            "assignments": [{"variable_name": "out", "value_type": "expression", "value": "undefined_var + 1"}],
+        }
+        result = asyncio.run(ne.execute_variable_assignment_node({}, config))
+        self.assertIsNone(result["out"])
+
+    def test_variable_transform_error_raises(self) -> None:
+        """transform 异常以节点失败收尾（原静默 result=None 流入下游）。"""
+        config = {
+            "input_variable": "val",
+            "transform_type": "eval_expression",
+            "transform_args": {"expression": "undefined_var > 1"},
+            "output_variable": "transformed_value",
+        }
+        with self.assertRaises(ValueError):
+            asyncio.run(ne.execute_variable_transform_node({"val": 1}, config))
+
+    def test_variable_transform_valid_path_still_works(self) -> None:
+        config = {
+            "input_variable": "val",
+            "transform_type": "extract_json_path",
+            "transform_args": {"path": "a"},
+            "output_variable": "transformed_value",
+        }
+        result = asyncio.run(ne.execute_variable_transform_node({"val": '{"a": 1}'}, config))
+        self.assertEqual(result["transformed_value"], 1)
 
 
 if __name__ == "__main__":

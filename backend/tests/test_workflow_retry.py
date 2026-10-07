@@ -13,10 +13,16 @@ from unittest.mock import patch
 from helpers import make_test_engine
 from sqlmodel import Session, SQLModel
 
+import app.modules.workflow.service.node_executors  # noqa: F401  (import 副作用：注册执行器与幂等元数据)
 from app.core.config import settings
 from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
 from app.modules.workflow.service import compiler as compiler_mod
 from app.modules.workflow.service.compiler import NodeExecutionError, WorkflowCompiler
+
+
+async def _fake_sleep(delay):
+    """退避等待置零：只验证抖动参数与调用，不真等。"""
+    return None
 
 
 class NodeRunnerRetryTestCase(unittest.TestCase):
@@ -30,10 +36,10 @@ class NodeRunnerRetryTestCase(unittest.TestCase):
         return asyncio.run(runner(state))
 
     def _patch_helpers(self):
-        """隔离重试逻辑：跳过输入映射 / 输出合并的真实处理。"""
+        """隔离重试逻辑：跳过输入映射 / 输出 delta 的真实处理（三期B5 起为 compute_output_delta）。"""
         return (
             patch.object(compiler_mod, "resolve_node_inputs", return_value={}),
-            patch.object(compiler_mod, "apply_output_mappings", side_effect=lambda v, u, m: {**v, **u}),
+            patch.object(compiler_mod, "compute_output_delta", side_effect=lambda u, m: dict(u or {})),
         )
 
     def test_no_retry_by_default_first_failure_raises(self):
@@ -129,6 +135,27 @@ class NodeRunnerRetryTestCase(unittest.TestCase):
                 self._run(runner)
         self.assertEqual(calls, 1)
 
+    def test_backoff_jitter_bounds(self):
+        """指数退避叠加 ±50% 全抖动（三期B6 / WF-P2-3）：uniform(0.5, 1.5) 乘入。"""
+        jitter_calls = []
+
+        async def failer(inputs, config):
+            raise RuntimeError("boom")
+
+        captured_uniform = patch("random.uniform", side_effect=lambda lo, hi: (jitter_calls.append((lo, hi)), 1.0)[1])
+        p1, p2 = self._patch_helpers()
+        with (
+            p1,
+            p2,
+            patch.object(compiler_mod.node_registry, "get", return_value=failer),
+            captured_uniform,
+            patch("asyncio.sleep", new=_fake_sleep),
+        ):
+            runner = self._make_runner({"retry_max_attempts": 2, "retry_backoff_base": 2.0})
+            with self.assertRaises(NodeExecutionError):
+                self._run(runner)
+        self.assertEqual(jitter_calls, [(0.5, 1.5)])
+
     def test_graph_interrupt_not_retried(self):
         """GraphInterrupt（人工审批中断）必须原样上抛：不重试、不包装为 NodeExecutionError。
 
@@ -169,6 +196,65 @@ class NodeRunnerRetryTestCase(unittest.TestCase):
             with self.assertRaises(GraphDrained):
                 self._run(runner)
         self.assertEqual(calls, 1)
+
+
+class IdempotencyRetryGuardTestCase(unittest.TestCase):
+    """非幂等节点强制 max_attempts=1（三期B6 / WF-P2-3）：重试 = 整体重跑/重复计费。
+
+    依赖真实注册表元数据：import node_executors 触发注册副作用。
+    """
+
+    def _run_with_type(self, node_type: str, config: dict):
+        """以指定 node_type 构建 runner 并执行（executor patch 为恒失败），返回 (异常, 调用次数)。
+
+        仅 patch registry.get（executor 实现），node_type 元数据查真实注册表。
+        """
+        calls = 0
+
+        async def failer(inputs, cfg):
+            nonlocal calls
+            calls += 1
+            raise RuntimeError("boom")
+
+        state = {"variables": {}, "current_node": "start"}
+
+        async def _go():
+            runner = WorkflowCompiler.create_node_runner("n1", node_type, config)
+            try:
+                await runner(state)
+                return None, calls
+            except NodeExecutionError as e:
+                return e, calls
+
+        with patch.object(compiler_mod.node_registry, "get", return_value=failer):
+            return asyncio.run(_go())
+
+    def test_non_idempotent_forced_single_attempt(self):
+        """image_generator（注册表 idempotent=False）请求 3 次重试 → 仅执行 1 次。"""
+        err, calls = self._run_with_type("image_generator", {"retry_max_attempts": 3})
+        self.assertEqual(calls, 1)
+        self.assertEqual(err.attempts, 1)
+
+    def test_idempotent_node_retries_normally(self):
+        """幂等节点（llm）同 config 正常重试到耗尽。"""
+        err, calls = self._run_with_type("llm", {"retry_max_attempts": 3, "retry_backoff_base": 0.0})
+        self.assertEqual(calls, 3)
+        self.assertEqual(err.attempts, 3)
+
+    def test_unregistered_type_defaults_idempotent(self):
+        """未注册类型防御性默认幂等（执行前另有拦截，此处仅锁定 is_idempotent 默认）。"""
+        self.assertTrue(compiler_mod.node_registry.is_idempotent("__no_such_type__"))
+
+    def test_registry_metadata_declared(self):
+        """非幂等声明清单：image_generator / loop_controller / batch_processor。
+
+        deprecated `tool` 已随三期B7 下架（不再注册，迁移见 test_workflow_tool_migration）。
+        """
+        registry = compiler_mod.node_registry
+        for node_type in ("image_generator", "loop_controller", "batch_processor"):
+            self.assertFalse(registry.is_idempotent(node_type), node_type)
+        self.assertIsNone(registry.get("tool"))
+        self.assertFalse(registry.is_deprecated("llm"))
 
 
 class RunNodeStandaloneTestCase(unittest.TestCase):
@@ -212,6 +298,14 @@ class RunNodeStandaloneTestCase(unittest.TestCase):
             with self.assertRaises(GraphInterrupt):
                 self._run_standalone({"retry_max_attempts": 3, "retry_backoff_base": 0.0})
         self.assertEqual(calls, 1)
+
+    def test_human_input_interrupt_via_minimal_graph(self):
+        """三期B6 最小图通道：human_input 真实执行器（interrupt）经图运行时转为
+        __interrupt__ updates 事件，standalone 检测后转译 GraphInterrupt 上抛。"""
+        from langgraph.errors import GraphInterrupt
+
+        with self.assertRaises(GraphInterrupt):
+            asyncio.run(WorkflowCompiler.run_node_standalone("h1", "human_input", {"message": "请审批"}, {}))
 
     def test_retry_exhausted_raises_node_execution_error(self):
         """重试耗尽抛 NodeExecutionError（携带 node_id），供前端显示可读错误。"""

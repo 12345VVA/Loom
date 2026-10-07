@@ -25,6 +25,7 @@ from app.modules.workflow.service.compiler import (
     node_registry,
 )
 from app.modules.workflow.service.error_format import friendly_error_message
+from app.modules.workflow.service.graph_validate import migrate_legacy_tool_nodes
 
 if TYPE_CHECKING:
     from app.modules.workflow.model.workflow import NodeTestResponse
@@ -97,9 +98,6 @@ from .node_executors import (
 )
 from .node_executors import (
     execute_tool_executor_node as execute_tool_executor_node,
-)
-from .node_executors import (
-    execute_tool_node as execute_tool_node,
 )
 from .node_executors import (
     execute_variable_assignment_node as execute_variable_assignment_node,
@@ -289,9 +287,31 @@ class WorkflowService(BaseAdminCrudService):
         if draft_vid is not None:
             v = self.session.get(WorkflowDefinitionVersion, draft_vid)
             if v:
-                data["draftGraphJson"] = v.graph_json
+                # 三期B7（WF-P2-10）：编辑器打开草稿即见迁移后形态（deprecated tool
+                # → tool_executor），保存时落库归一，旧图无感升级
+                data["draftGraphJson"] = json.dumps(migrate_legacy_tool_nodes(json.loads(v.graph_json)))
                 # 草稿乐观锁基线：editor 保存时经 baseUpdatedAt 回传比对
                 data["draftUpdatedAt"] = v.updated_at
+
+
+def _has_resumable_checkpoint(thread_id: str | None) -> bool:
+    """failed 实例断点续跑（WF-P2-17）前置检查：thread_id 上是否存在可恢复 checkpoint。
+
+    仅含 interrupt（human_input）节点的图在执行时挂 checkpointer，其断点在失败
+    路径不被立即清除（cleanup 仅按到期回收）；无 checkpoint 的 failed（普通节点
+    异常/超时）无从续跑。best-effort：checkpointer 访问异常按「无断点」处理
+    （拒绝 resume 是安全侧）。memory 后端与 HTTP 进程不共享内存态，天然返回 False。
+    """
+    if not thread_id:
+        return False
+    try:
+        from app.modules.workflow.service.checkpointer import get_checkpointer
+
+        snapshot = get_checkpointer().get_tuple({"configurable": {"thread_id": thread_id}})
+        return snapshot is not None
+    except Exception:
+        logger.warning("checkpoint 预检失败 thread_id=%s（按无可恢复断点处理）", thread_id, exc_info=True)
+        return False
 
 
 class WorkflowInstanceService(BaseAdminCrudService):
@@ -633,7 +653,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
 
     def resume_instance(self, instance_id: int, user_input: Any, current_user: User | None = None) -> WorkflowInstance:
         """
-        恢复暂停中的工作流实例并传入人类交互值
+        恢复挂起（paused）或失败（failed，有断点前提，WF-P2-17）的工作流实例并传入人类交互值
         """
         instance = self.session.get(WorkflowInstance, instance_id)
         if not instance:
@@ -643,22 +663,28 @@ class WorkflowInstanceService(BaseAdminCrudService):
         # S6 防御：user_input=None 时 json.dumps → "null" → 走 initial_state 从头重跑
         if user_input is None:
             raise HTTPException(status_code=400, detail="恢复值不能为空")
-        if instance.status != "paused":
-            raise HTTPException(status_code=400, detail="只有处于挂起暂停状态的工作流实例才可以恢复")
+        if instance.status not in ("paused", "failed"):
+            raise HTTPException(status_code=400, detail="只有处于挂起或失败状态的工作流实例才可以恢复")
 
         definition = self.session.get(WorkflowDefinition, instance.definition_id)
         if not definition:
             raise HTTPException(status_code=404, detail="关联的工作流定义丢失")
 
-        # S5：原子 CAS 把 paused → running，消除读-校验-写的 TOCTOU 竞态（避免并发 resume 重复扣费）
-        from sqlalchemy import update
+        # WF-P2-17（三期B7）：failed 实例仅当存在可恢复 checkpoint 时允许续跑——
+        # 只有含人工审批（interrupt）的图才挂 checkpointer，其断点在失败路径不清除
+        # （cleanup 仅按到期回收）；普通节点异常/超时失败的实例无断点可续，引导重跑。
+        if instance.status == "failed" and not _has_resumable_checkpoint(instance.thread_id):
+            raise HTTPException(
+                status_code=409,
+                detail="该失败实例没有可恢复的断点（仅人工审批中断会保留断点），请重新运行工作流",
+            )
 
-        result = self.session.execute(
-            update(WorkflowInstance)
-            .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == "paused")
-            .values(status="running")
-        )
-        if result.rowcount == 0:
+        # S5：原子 CAS 把 paused/failed → running，消除读-校验-写的 TOCTOU 竞态（避免并发 resume 重复扣费）。
+        # 三期B7（WF-P2-16）：迁移合法性由 status_flow 表校验
+        from app.modules.workflow.service.status_flow import cas_transition
+
+        rowcount = cas_transition(self.session, instance_id, ("paused", "failed"), "running")
+        if rowcount == 0:
             # 状态已被其他并发请求改走（恢复/取消/失败），拒绝本次
             self.session.rollback()
             raise HTTPException(status_code=409, detail="实例状态已变更，可能已被其他请求恢复，请刷新后重试")
@@ -694,18 +720,18 @@ class WorkflowInstanceService(BaseAdminCrudService):
         if instance.status in TERMINAL_STATUSES:
             raise HTTPException(status_code=400, detail="已结束的实例无法取消")
 
-        # 原子 CAS：仅 running/paused/pending 可取消，避免与 resume/执行循环的并发状态迁移冲突
-        from sqlalchemy import update
+        # 原子 CAS：仅 running/paused/pending 可取消，避免与 resume/执行循环的并发状态迁移冲突。
+        # 三期B7（WF-P2-16）：迁移合法性由 status_flow 表校验
+        from app.modules.workflow.service.status_flow import cas_transition
 
-        result = self.session.execute(
-            update(WorkflowInstance)
-            .where(
-                WorkflowInstance.id == instance_id,
-                WorkflowInstance.status.in_(["running", "paused", "pending"]),
-            )
-            .values(status="cancelled", error_message="用户主动取消")
+        rowcount = cas_transition(
+            self.session,
+            instance_id,
+            ("running", "paused", "pending"),
+            "cancelled",
+            extra_values={"error_message": "用户主动取消"},
         )
-        if result.rowcount == 0:
+        if rowcount == 0:
             self.session.rollback()
             raise HTTPException(status_code=409, detail="实例状态已变更，无法取消")
         self.session.commit()
@@ -761,7 +787,8 @@ class WorkflowInstanceService(BaseAdminCrudService):
         if not version:
             raise HTTPException(status_code=404, detail="版本不存在")
         try:
-            graph_json = json.loads(version.graph_json)
+            # 三期B7（WF-P2-10）：加载入口统一迁移 deprecated tool → tool_executor
+            graph_json = migrate_legacy_tool_nodes(json.loads(version.graph_json))
         except Exception:
             raise HTTPException(status_code=400, detail="工作流拓扑解析失败")
 
@@ -885,8 +912,20 @@ class WorkflowInstanceService(BaseAdminCrudService):
             logger.warning("单节点测试日志落库失败 instance=%d", instance.id, exc_info=True)
 
         # 单节点测试主要关心节点本身的输出增量（output_mappings 应用后），不关心完整 variables 状态
+        # 三期B6：条件节点的路由器（conditional/intent/switch router）不随最小图执行，
+        # 路由决策只能整图试运行验证——测试响应附提示引导
+        from app.modules.workflow.service.graph_validate import CONDITIONAL_NODE_TYPES
+
+        hint = None
+        if node_type in CONDITIONAL_NODE_TYPES and not error_msg:
+            hint = "条件节点的分支路由不随单节点测试执行（执行体仅返回空增量），路由逻辑需整图试运行验证。"
         return NodeTestResponse(
-            output=updates, latency_ms=latency_ms, error=error_msg, is_timeout=is_timeout, instance_id=instance.id
+            output=updates,
+            latency_ms=latency_ms,
+            error=error_msg,
+            is_timeout=is_timeout,
+            instance_id=instance.id,
+            hint=hint,
         )
 
 

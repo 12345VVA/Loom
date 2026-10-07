@@ -2,13 +2,16 @@
  * 各节点类型的默认 config 构建规则（从 editor.vue handleAddNode 抽出）。
  *
  * 静态部分放 `base`；`outputVariable` 类字段依赖节点 label 做全局去重，
- * 由 `buildDefaultConfig` 在调用时动态生成，故仅在此声明默认名与写入字段名。
+ * 由 `buildDefaultConfig` 在调用时动态生成。输出变量**默认名**的权威在后端
+ * （node_schema.NODE_OUTPUT_VAR_DEFAULTS，经 generated/node-manifest.ts 下发，
+ * 三期B7 / WF-P2-8），本文件不再手写默认名——此前 human_input 曾漂移为
+ * approval_status（后端运行时真实语义是 approval_result）。
  */
+import { NODE_MANIFEST } from '../generated/node-manifest';
+
 export interface DefaultConfigSpec {
 	/** 静态 config 字段（不含动态生成的 outputVariable） */
 	base: Record<string, any>;
-	/** 若该类型需要 outputVariable，指定其默认名（如 'output'），构建时按 label 拼前缀并去重 */
-	outputVarDefault?: string;
 	/** outputVariable 写入的字段名；绝大多数为 'outputVariable'，仅 variable_transform 用 'output_variable' */
 	outputVarKey?: string;
 }
@@ -22,11 +25,12 @@ export const NODE_DEFAULT_CONFIGS: Record<string, DefaultConfigSpec> = {
 			outputFormat: 'text',
 			jsonFields: []
 		},
-		outputVarDefault: 'output'
 	},
-	condition: { base: { expression: '', trueRoute: '', falseRoute: '' } },
+	condition: {
+		base: { expression: '', trueRoute: '', falseRoute: '', onExpressionError: 'fail' }
+	},
 	switch: { base: { variable: '', cases: [], defaultRoute: '' } },
-	human_input: { base: { message: '' }, outputVarDefault: 'approval_status' },
+	human_input: { base: { message: '' } },
 	intent_classifier: { base: { modelProfileCode: '', intents: [], defaultRoute: '' } },
 	loop_controller: {
 		base: {
@@ -36,8 +40,7 @@ export const NODE_DEFAULT_CONFIGS: Record<string, DefaultConfigSpec> = {
 			exitRoute: '',
 			collectKeys: [],
 			persistGlobals: false
-		},
-		outputVarDefault: 'loop_results'
+		}
 	},
 	batch_processor: {
 		base: {
@@ -47,8 +50,7 @@ export const NODE_DEFAULT_CONFIGS: Record<string, DefaultConfigSpec> = {
 			loopBodyRoute: '',
 			exitRoute: '',
 			collectKeys: []
-		},
-		outputVarDefault: 'batch_results'
+		}
 	},
 	image_generator: {
 		base: {
@@ -58,22 +60,21 @@ export const NODE_DEFAULT_CONFIGS: Record<string, DefaultConfigSpec> = {
 			imageVariable: '',
 			imageTemplate: '',
 			optionsJson: '{}'
-		},
-		outputVarDefault: 'image_url'
+		}
 	},
 	tool_executor: {
 		base: { toolCode: '', argumentsJson: '{}' },
-		outputVarDefault: 'tool_result'
 	},
 	variable_assignment: { base: { assignments: [] } },
 	variable_transform: {
+		// 三期B7（WF-P2-9）：键名统一 camelCase（存量 snake 图由配置面板打开时迁移、
+		// 后端 convert_keys_to_snake 编译期兜底，运行时零影响）
 		base: {
-			input_variable: '',
-			transform_type: 'join_array',
-			transform_args: {}
+			inputVariable: '',
+			transformType: 'join_array',
+			transformArgs: {}
 		},
-		outputVarDefault: 'transformed_value',
-		outputVarKey: 'output_variable'
+		outputVarKey: 'outputVariable'
 	},
 	end: { base: { outputFormat: 'json', outputFields: [] } }
 };
@@ -94,9 +95,11 @@ export function buildDefaultConfig(
 	const spec = NODE_DEFAULT_CONFIGS[type];
 	// JSON 深拷贝：base 含 cases/jsonFields 等数组/对象，必须每节点独立
 	const config: Record<string, any> = spec ? JSON.parse(JSON.stringify(spec.base)) : {};
-	if (spec?.outputVarDefault) {
-		const key = spec.outputVarKey || 'outputVariable';
-		config[key] = uniqueVar(label, spec.outputVarDefault);
+	// 输出变量默认名从后端权威 manifest 读取（WF-P2-8：单一来源，修 human_input 漂移）
+	const outputVarDefault = NODE_MANIFEST.find((n) => n.type === type)?.outputVarDefault;
+	if (outputVarDefault) {
+		const key = spec?.outputVarKey || 'outputVariable';
+		config[key] = uniqueVar(label, outputVarDefault);
 	}
 	return config;
 }

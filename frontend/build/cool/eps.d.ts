@@ -2516,7 +2516,7 @@ declare namespace Eps {
 
 	type json = any;
 
-	type DictKey = "status";
+	type DictKey = string;
 
 	interface PagePagination {
 		size: number;
@@ -3409,6 +3409,7 @@ declare namespace Eps {
 		/** error */ error?: string | null;
 		/** isTimeout */ isTimeout?: boolean;
 		/** instanceId */ instanceId?: number | null;
+		/** hint */ hint?: string | null;
 	}
 
 	interface WorkflowVersionPageResponse {
@@ -3512,7 +3513,7 @@ declare namespace Eps {
 
 	interface AiDashboard {
 		/**
-		 * AI 成本看板统计
+		 * cost
 		 */
 		cost(data?: any): Promise<any>;
 
@@ -3531,22 +3532,22 @@ declare namespace Eps {
 
 	interface AiGovernance_event {
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<governance_event>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<governance_event[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<AiGovernance_eventPageResponse>;
 
 		/**
-		 * AI 治理事件统计
+		 * stats
 		 */
 		stats(data?: any): Promise<any>;
 
@@ -3565,42 +3566,42 @@ declare namespace Eps {
 
 	interface AiGovernance_rule {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<AiGovernance_ruleAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<governance_rule>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<governance_rule[]>;
 
 		/**
-		 * 测试 AI 治理规则匹配
+		 * match
 		 */
 		match(data?: any): Promise<any>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<AiGovernance_rulePageResponse>;
 
 		/**
-		 * 启停 AI 治理规则
+		 * toggle
 		 */
 		toggle(data?: any): Promise<any>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<AiGovernance_ruleUpdateResponse>;
 
@@ -3637,22 +3638,22 @@ declare namespace Eps {
 
 	interface AiLog {
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<AiLog>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<AiLog[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<AiLogPageResponse>;
 
 		/**
-		 * AI 调用日志统计
+		 * stats
 		 */
 		stats(data?: any): Promise<any>;
 
@@ -3671,32 +3672,32 @@ declare namespace Eps {
 
 	interface AiModel {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<AiModelAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<model>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<model[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<AiModelPageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<AiModelUpdateResponse>;
 
@@ -3729,42 +3730,42 @@ declare namespace Eps {
 
 	interface AiProfile {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<AiProfileAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<profile>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<profile[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<AiProfilePageResponse>;
 
 		/**
-		 * 设为默认调用配置
+		 * setDefault
 		 */
 		setDefault(data?: any): Promise<any>;
 
 		/**
-		 * 测试模型调用配置
+		 * test
 		 */
 		test(data?: any): Promise<any>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<AiProfileUpdateResponse>;
 
@@ -3801,52 +3802,52 @@ declare namespace Eps {
 
 	interface AiProvider {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<AiProviderAddResponse>;
 
 		/**
-		 * 获取模型厂商预设清单
+		 * catalog
 		 */
 		catalog(data?: any): Promise<any>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 导入模型厂商预设
+		 * importCatalog
 		 */
 		importCatalog(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<provider>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<provider[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<AiProviderPageResponse>;
 
 		/**
-		 * 同步厂商模型列表
+		 * syncModels
 		 */
 		syncModels(data?: any): Promise<any>;
 
 		/**
-		 * 测试模型厂商连接
+		 * test
 		 */
 		test(data?: any): Promise<any>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<AiProviderUpdateResponse>;
 
@@ -3887,37 +3888,37 @@ declare namespace Eps {
 
 	interface AiTask {
 		/**
-		 * 取消 AI 生成任务
+		 * cancel
 		 */
 		cancel(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<task>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<task[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<AiTaskPageResponse>;
 
 		/**
-		 * 重试 AI 生成任务
+		 * retry
 		 */
 		retry(data?: any): Promise<any>;
 
 		/**
-		 * AI 生成任务统计
+		 * stats
 		 */
 		stats(data?: any): Promise<any>;
 
 		/**
-		 * 提交 AI 生成任务
+		 * submit
 		 */
 		submit(data?: any): Promise<any>;
 
@@ -3952,37 +3953,37 @@ declare namespace Eps {
 
 	interface BaseComm {
 		/**
-		 * 退出登录
+		 * logout
 		 */
 		logout(data?: any): Promise<any>;
 
 		/**
-		 * 获取权限与菜单
+		 * permmenu
 		 */
 		permmenu(data?: any): Promise<any>;
 
 		/**
-		 * 获取当前用户个人信息
+		 * person
 		 */
 		person(data?: any): Promise<BaseCommPersonResponse>;
 
 		/**
-		 * 修改当前用户信息
+		 * personUpdate
 		 */
 		personUpdate(data?: any): Promise<any>;
 
 		/**
-		 * 编程语言
+		 * program
 		 */
 		program(data?: any): Promise<string>;
 
 		/**
-		 * 文件上传
+		 * upload
 		 */
 		upload(data?: any): Promise<any>;
 
 		/**
-		 * 文件上传模式
+		 * uploadMode
 		 */
 		uploadMode(data?: any): Promise<any>;
 
@@ -4017,7 +4018,7 @@ declare namespace Eps {
 
 	interface BaseHealth {
 		/**
-		 * 健康检查接口
+		 * ping
 		 */
 		ping(data?: any): Promise<any>;
 
@@ -4036,7 +4037,7 @@ declare namespace Eps {
 
 	interface BaseOpen {
 		/**
-		 * 验证码
+		 * captcha
 		 */
 		captcha(data?: {
 			width?: number;
@@ -4045,37 +4046,37 @@ declare namespace Eps {
 		}): Promise<BaseOpenCaptchaResponse>;
 
 		/**
-		 * 登录页公开配置
+		 * config
 		 */
 		config(data?: any): Promise<any>;
 
 		/**
-		 * 导出 EPS 扫描元数据
+		 * eps
 		 */
 		eps(data?: any): Promise<any>;
 
 		/**
-		 * 账号密码登录
+		 * login
 		 */
 		login(data?: any): Promise<BaseOpenLoginResponse>;
 
 		/**
-		 * 退出登录并清理服务端登录态
+		 * logout
 		 */
 		logout(data?: any): Promise<any>;
 
 		/**
-		 * 刷新访问令牌
+		 * refresh
 		 */
 		refresh(data?: any): Promise<BaseOpenRefreshResponse>;
 
 		/**
-		 * 刷新访问令牌
+		 * refreshToken
 		 */
 		refreshToken(data?: any): Promise<BaseOpenRefreshTokenResponse>;
 
 		/**
-		 * 登出清理（仅凭 refresh cookie，无需有效 access token）
+		 * revoke
 		 */
 		revoke(data?: any): Promise<any>;
 
@@ -4112,12 +4113,12 @@ declare namespace Eps {
 
 	interface BaseSession {
 		/**
-		 * 当前用户设备列表
+		 * list
 		 */
 		list(data?: any): Promise<session[]>;
 
 		/**
-		 * 踢出指定设备
+		 * revoke
 		 */
 		revoke(data?: any): Promise<any>;
 
@@ -4136,37 +4137,37 @@ declare namespace Eps {
 
 	interface BaseSysDepartment {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<BaseSysDepartmentAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<department>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<department[]>;
 
 		/**
-		 * 部门排序
+		 * order
 		 */
 		order(data?: any): Promise<any>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<BaseSysDepartmentPageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<BaseSysDepartmentUpdateResponse>;
 
@@ -4201,22 +4202,22 @@ declare namespace Eps {
 
 	interface BaseSysLog {
 		/**
-		 * 清理
+		 * clear
 		 */
 		clear(data?: any): Promise<any>;
 
 		/**
-		 * 获得日志保存时间
+		 * getKeep
 		 */
 		getKeep(data?: any): Promise<string>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<BaseSysLogPageResponse>;
 
 		/**
-		 * 日志保存时间
+		 * setKeep
 		 */
 		setKeep(data?: any): Promise<any>;
 
@@ -4235,32 +4236,32 @@ declare namespace Eps {
 
 	interface BaseSysLogin_log {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<BaseSysLogin_logAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<login_log>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<login_log[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<BaseSysLogin_logPageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<BaseSysLogin_logUpdateResponse>;
 
@@ -4293,7 +4294,7 @@ declare namespace Eps {
 
 	interface BaseSysMenu {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(
 			data?: any
@@ -4337,7 +4338,7 @@ declare namespace Eps {
 		>;
 
 		/**
-		 * 快速创建菜单
+		 * create
 		 */
 		create(
 			data?: any
@@ -4363,7 +4364,7 @@ declare namespace Eps {
 		>;
 
 		/**
-		 * 获取当前用户菜单树
+		 * currentTree
 		 */
 		currentTree(
 			data?: any
@@ -4390,47 +4391,47 @@ declare namespace Eps {
 		>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 导出菜单
+		 * export
 		 */
 		export(data?: any): Promise<any[]>;
 
 		/**
-		 * 导入菜单
+		 * import
 		 */
 		import(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<menu>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<menu[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<BaseSysMenuPageResponse>;
 
 		/**
-		 * 解析菜单候选
+		 * parse
 		 */
 		parse(data?: any): Promise<BaseSysMenuParseResponse>;
 
 		/**
-		 * 获取角色菜单 ID 列表
+		 * roleMenuIds
 		 */
 		roleMenuIds(data: { role_id: number }): Promise<number[]>;
 
 		/**
-		 * 获取菜单树
+		 * tree
 		 */
 		tree(
 			data?: any
@@ -4457,7 +4458,7 @@ declare namespace Eps {
 		>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<BaseSysMenuUpdateResponse>;
 
@@ -4504,32 +4505,32 @@ declare namespace Eps {
 
 	interface BaseSysParam {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<BaseSysParamAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获得网页内容的参数值
+		 * html
 		 */
 		html(data: { key: string }): Promise<string>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<param>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<BaseSysParamPageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<BaseSysParamUpdateResponse>;
 
@@ -4562,37 +4563,37 @@ declare namespace Eps {
 
 	interface BaseSysRole {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<BaseSysRoleAddResponse>;
 
 		/**
-		 * 分配角色菜单
+		 * assignMenus
 		 */
 		assignMenus(data?: any): Promise<any>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<role>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<role[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<BaseSysRolePageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<BaseSysRoleUpdateResponse>;
 
@@ -4627,17 +4628,17 @@ declare namespace Eps {
 
 	interface BaseSysSecurity_log {
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<security_log>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<security_log[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<BaseSysSecurity_logPageResponse>;
 
@@ -4656,47 +4657,47 @@ declare namespace Eps {
 
 	interface BaseSysUser {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<BaseSysUserAddResponse>;
 
 		/**
-		 * 分配用户角色
+		 * assignRoles
 		 */
 		assignRoles(data?: any): Promise<BaseSysUserAssignRolesResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<user>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<user[]>;
 
 		/**
-		 * 获取当前登录用户信息
+		 * me
 		 */
 		me(data?: any): Promise<BaseSysUserMeResponse>;
 
 		/**
-		 * 移动部门
+		 * move
 		 */
 		move(data?: any): Promise<any>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<BaseSysUserPageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<BaseSysUserUpdateResponse>;
 
@@ -4735,42 +4736,42 @@ declare namespace Eps {
 
 	interface DictInfo {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<DictInfoAddResponse>;
 
 		/**
-		 * 获得字典数据
+		 * data
 		 */
 		data(data?: any): Promise<any>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<DictInfo>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<DictInfo[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<DictInfoPageResponse>;
 
 		/**
-		 * 获得所有字典类型
+		 * types
 		 */
 		types(data?: any): Promise<any[]>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<DictInfoUpdateResponse>;
 
@@ -4807,32 +4808,32 @@ declare namespace Eps {
 
 	interface DictType {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<DictTypeAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<DictType>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<DictType[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<DictTypePageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<DictTypeUpdateResponse>;
 
@@ -4865,62 +4866,62 @@ declare namespace Eps {
 
 	interface MediaAsset {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<MediaAssetAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 签发短期下载令牌
+		 * downloadToken
 		 */
 		downloadToken(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<asset>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<asset[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<MediaAssetPageResponse>;
 
 		/**
-		 * 远程媒体安全代理下载
+		 * proxyImage
 		 */
 		proxyImage(data: { url: string }): Promise<any>;
 
 		/**
-		 * 重试单个转存失败的媒体资产
+		 * retry
 		 */
 		retry(data?: any): Promise<any>;
 
 		/**
-		 * 批量重试失败的媒体资产
+		 * retryFailed
 		 */
 		retryFailed(data?: any): Promise<any>;
 
 		/**
-		 * 媒体资源统计
+		 * stats
 		 */
 		stats(data?: any): Promise<any>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<MediaAssetUpdateResponse>;
 
 		/**
-		 * 上传媒体资源
+		 * upload
 		 */
 		upload(data?: any): Promise<any>;
 
@@ -4965,96 +4966,98 @@ declare namespace Eps {
 
 	interface NotificationMessage {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<NotificationMessageAddResponse>;
 
 		/**
-		 * 归档通知
+		 * archive
 		 */
 		archive(data?: any): Promise<any>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<message>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<message[]>;
 
 		/**
-		 * 我的通知
+		 * mine
 		 */
 		mine(data?: {
 			includeArchived?: boolean;
 			messageType?: string;
 			readStatus?: string;
+			limit?: number;
+			offset?: number;
 		}): Promise<any>;
 
 		/**
-		 * 我的通知详情
+		 * myInfo
 		 */
 		myInfo(data: { id: number }): Promise<any>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<NotificationMessagePageResponse>;
 
 		/**
-		 * 预览通知接收人
+		 * previewRecipients
 		 */
 		previewRecipients(data?: any): Promise<any>;
 
 		/**
-		 * 标记已读
+		 * read
 		 */
 		read(data?: any): Promise<any>;
 
 		/**
-		 * 全部已读
+		 * readAll
 		 */
 		readAll(data?: any): Promise<any>;
 
 		/**
-		 * 撤回通知
+		 * recall
 		 */
 		recall(data?: any): Promise<any>;
 
 		/**
-		 * 通知接收人明细
+		 * recipients
 		 */
 		recipients(data: { id: number }): Promise<any>;
 
 		/**
-		 * 发送通知
+		 * send
 		 */
 		send(data?: any): Promise<any>;
 
 		/**
-		 * 通知统计
+		 * stats
 		 */
 		stats(data?: any): Promise<any>;
 
 		/**
-		 * 取消归档通知
+		 * unarchive
 		 */
 		unarchive(data?: any): Promise<any>;
 
 		/**
-		 * 未读数量
+		 * unreadCount
 		 */
 		unreadCount(data?: any): Promise<any>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<NotificationMessageUpdateResponse>;
 
@@ -5111,32 +5114,32 @@ declare namespace Eps {
 
 	interface NotificationRule {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<NotificationRuleAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<rule>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<rule[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<NotificationRulePageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<NotificationRuleUpdateResponse>;
 
@@ -5169,37 +5172,37 @@ declare namespace Eps {
 
 	interface NotificationTemplate {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<NotificationTemplateAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<template>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<template[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<NotificationTemplatePageResponse>;
 
 		/**
-		 * 预览通知模板
+		 * preview
 		 */
 		preview(data?: any): Promise<any>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<NotificationTemplateUpdateResponse>;
 
@@ -5234,52 +5237,52 @@ declare namespace Eps {
 
 	interface TaskInfo {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<TaskInfoAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<TaskInfo>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<TaskInfo[]>;
 
 		/**
-		 * 任务日志
+		 * log
 		 */
 		log(data?: any): Promise<any>;
 
 		/**
-		 * 立即执行一次
+		 * once
 		 */
 		once(data?: any): Promise<any>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<TaskInfoPageResponse>;
 
 		/**
-		 * 开始任务
+		 * start
 		 */
 		start(data?: any): Promise<any>;
 
 		/**
-		 * 停止任务
+		 * stop
 		 */
 		stop(data?: any): Promise<any>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<TaskInfoUpdateResponse>;
 
@@ -5320,17 +5323,17 @@ declare namespace Eps {
 
 	interface WorkflowArtifact {
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<artifact>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<WorkflowArtifactPageResponse>;
 
@@ -5349,37 +5352,37 @@ declare namespace Eps {
 
 	interface WorkflowDefinition {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<WorkflowDefinitionAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<definition>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<definition[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<WorkflowDefinitionPageResponse>;
 
 		/**
-		 * 保存草稿
+		 * saveDraft
 		 */
 		saveDraft(data?: any): Promise<any>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<WorkflowDefinitionUpdateResponse>;
 
@@ -5414,27 +5417,27 @@ declare namespace Eps {
 
 	interface WorkflowInstance {
 		/**
-		 * 取消运行中的工作流实例
+		 * cancel
 		 */
 		cancel(data?: any): Promise<any>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<instance>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<instance[]>;
 
 		/**
-		 * 获取执行日志步骤列表
+		 * logs
 		 */
 		logs(data: {
 			instanceId: number;
@@ -5459,32 +5462,32 @@ declare namespace Eps {
 		>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<WorkflowInstancePageResponse>;
 
 		/**
-		 * 提供人工确认恢复执行
+		 * resume
 		 */
 		resume(data?: any): Promise<any>;
 
 		/**
-		 * 启动工作流实例
+		 * start
 		 */
 		start(data?: any): Promise<any>;
 
 		/**
-		 * SSE 实时推送工作流进度
+		 * stream
 		 */
 		stream(data: { instanceId: number }): Promise<any>;
 
 		/**
-		 * 单节点测试运行
+		 * testNode
 		 */
 		testNode(data?: any): Promise<WorkflowInstanceTestNodeResponse>;
 
 		/**
-		 * 试运行工作流（草稿版）
+		 * trial
 		 */
 		trial(data?: any): Promise<any>;
 
@@ -5527,32 +5530,32 @@ declare namespace Eps {
 
 	interface WorkflowVersion {
 		/**
-		 * 两版本结构对比
+		 * diff
 		 */
 		diff(data: { versionA: number; versionB: number }): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<version>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<version[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<WorkflowVersionPageResponse>;
 
 		/**
-		 * 发布草稿
+		 * publish
 		 */
 		publish(data?: any): Promise<any>;
 
 		/**
-		 * 回滚到历史版本
+		 * rollback
 		 */
 		rollback(data?: any): Promise<any>;
 
@@ -5585,37 +5588,37 @@ declare namespace Eps {
 
 	interface Workflow_annotationAnnotation {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<Workflow_annotationAnnotationAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<annotation>;
 
 		/**
-		 * 计算 judge 与人工标注的 Cohen's κ
+		 * kappa
 		 */
 		kappa(data?: any): Promise<any>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<annotation[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<Workflow_annotationAnnotationPageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<Workflow_annotationAnnotationUpdateResponse>;
 
@@ -5650,42 +5653,42 @@ declare namespace Eps {
 
 	interface Workflow_evalEval_run {
 		/**
-		 * 取消评估运行
+		 * cancel
 		 */
 		cancel(data?: any): Promise<any>;
 
 		/**
-		 * 查看评估用例结果
+		 * cases
 		 */
 		cases(data: { evalRunId: number; page?: number; size?: number }): Promise<any>;
 
 		/**
-		 * 两次评估的回归对比
+		 * compare
 		 */
 		compare(data: { runA: number; runB: number }): Promise<any>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<eval_run>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<eval_run[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<Workflow_evalEval_runPageResponse>;
 
 		/**
-		 * 轮询评估运行结果（CI 门禁用）
+		 * poll
 		 */
 		poll(data: {
 			evalRunId: number;
@@ -5696,12 +5699,12 @@ declare namespace Eps {
 		}): Promise<any>;
 
 		/**
-		 * 采样生产实例入黄金集（在线评测）
+		 * sampleProduction
 		 */
 		sampleProduction(data?: any): Promise<any>;
 
 		/**
-		 * 发起批量评估
+		 * start
 		 */
 		start(data?: any): Promise<any>;
 
@@ -5742,32 +5745,32 @@ declare namespace Eps {
 
 	interface Workflow_evalTest_case {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<Workflow_evalTest_caseAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<test_case>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<test_case[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<Workflow_evalTest_casePageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<Workflow_evalTest_caseUpdateResponse>;
 
@@ -5800,37 +5803,37 @@ declare namespace Eps {
 
 	interface Workflow_evalTest_set {
 		/**
-		 * 新增
+		 * add
 		 */
 		add(data?: any): Promise<Workflow_evalTest_setAddResponse>;
 
 		/**
-		 * 删除
+		 * delete
 		 */
 		delete(data?: any): Promise<any>;
 
 		/**
-		 * 批量导入测试用例
+		 * importCases
 		 */
 		importCases(data?: any): Promise<any>;
 
 		/**
-		 * 获取详情
+		 * info
 		 */
 		info(data: { id: number }): Promise<test_set>;
 
 		/**
-		 * 获取列表
+		 * list
 		 */
 		list(data?: any): Promise<test_set[]>;
 
 		/**
-		 * 获取分页
+		 * page
 		 */
 		page(data?: any): Promise<Workflow_evalTest_setPageResponse>;
 
 		/**
-		 * 更新
+		 * update
 		 */
 		update(data?: any): Promise<Workflow_evalTest_setUpdateResponse>;
 

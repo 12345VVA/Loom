@@ -1,13 +1,18 @@
 """
 工作流图拓扑校验（由 compiler.py 门面 re-export）。
 
-validate_graph 在编译前验证图完整性与防错；子图体节点定位辅助函数供校验与编译共用。
+validate_graph 在编译前验证图完整性与防错；子图体节点定位辅助函数供校验与编译共用；
+存量图加载迁移（deprecated tool → tool_executor）也在此模块。
 """
 
 import collections
+import logging
 from typing import Any
 
 from app.modules.workflow.service.expressions import convert_keys_to_snake
+from app.modules.workflow.service.node_schema import validate_node_config
+
+logger = logging.getLogger(__name__)
 
 # 条件分流节点类型集合：这些节点的出边由运行时条件路由决定，不参与静态边处理和环检测
 CONDITIONAL_NODE_TYPES = {"condition", "intent_classifier", "switch"}
@@ -28,16 +33,79 @@ INTERRUPT_NODE_TYPES = {"human_input"}
 # Mock 占位工具集合（WF-P0-2）：tool_executor 的这三个内置 tool_code 为演示实现，
 # 非 DEBUG 环境执行直接失败（见 node_executors.execute_tool_executor_node），
 # 杜绝演示数据以 success 流入下游与产物。
-# ⚠️ 前端镜像在 frontend/src/modules/workflow/components/constants.ts 的 MOCK_TOOL_CODES
-# （DEMO 徽标依据），改动任一侧必须同步另一侧（跨栈比对守护见
-# tests/test_workflow_untestable_sync.py 的同款模式）。
-# deprecated 的 `tool` 节点类型整体为 mock（无真实实现路径），不在此列、单独拦截。
+# ⚠️ 前端不再手写镜像：由 scripts/dump_node_manifest.py 生成产物下发（三期B7），
+# 守卫见 tests/test_workflow_untestable_sync.py。
 MOCK_TOOL_CODES = {"web_search", "file_system", "mock_weather_api"}
+
+# deprecated `tool` 节点已下架（三期B7 / WF-P2-10）：正常加载路径经
+# migrate_legacy_tool_nodes 自动迁移为 tool_executor；绕过加载入口直造 graph_json
+# 的由 validate_graph 显式拒绝。
+LEGACY_TOOL_NODE_TYPE = "tool"
+
+
+def migrate_legacy_tool_nodes(graph_json: dict[str, Any]) -> dict[str, Any]:
+    """存量图 deprecated `tool` 节点自动迁移为 `tool_executor`（三期B7 / WF-P2-10）。
+
+    在图加载入口（执行/试运行/编辑器草稿回填/单节点测试）统一执行，旧图无感升级：
+    config 映射 tool_name→toolCode、output_variable→outputVariable；mock_data 无
+    真实执行语义，迁移时丢弃并告警（tool 在生产本就直接失败，仅 DEBUG 演示可用，
+    迁移后 DEBUG 演示图需改用 tool_executor + 真实/mock tool_code）。
+    原地修改并返回 graph_json。
+    """
+    nodes = (graph_json or {}).get("nodes") or []
+    migrated = 0
+    for node in nodes:
+        if node.get("type") != LEGACY_TOOL_NODE_TYPE:
+            continue
+        migrated += 1
+        config = node.get("config") or {}
+        new_config: dict[str, Any] = {}
+        if config.get("tool_name"):
+            new_config["toolCode"] = config["tool_name"]
+        legacy_output = config.get("outputVariable") or config.get("output_variable")
+        if legacy_output:
+            new_config["outputVariable"] = legacy_output
+        if config.get("mock_data"):
+            logger.warning(
+                "节点 '%s'（原 tool）的 mock_data 配置无真实执行语义，已随下架迁移丢弃",
+                node.get("name", node.get("id")),
+            )
+        node["config"] = new_config
+        node["type"] = "tool_executor"
+    if migrated:
+        logger.info("存量图迁移：%d 个 deprecated tool 节点已转为 tool_executor", migrated)
+    return graph_json
 
 
 def graph_has_interrupt_nodes(graph_json: dict[str, Any]) -> bool:
     """判断图内是否存在依赖 checkpointer 断点续跑的中断类节点（空图/缺 nodes 字段返回 False）。"""
     return any(n.get("type") in INTERRUPT_NODE_TYPES for n in (graph_json or {}).get("nodes", []))
+
+
+def _conditional_has_route(node: dict[str, Any], edges: list) -> bool:
+    """条件节点是否至少解析出一条非 END 路由（三期B6 / WF-P2-5）。
+
+    两条判定线（任一满足即可）：
+    - 带 sourceHandle 的路由出边（true/false、case_*、intent_*、default）——正常图
+      的路由来源，编译期据此推导 target_route 并注册条件边；
+    - config 显式路由（condition 的 trueRoute/falseRoute、switch/intent 的
+      defaultRoute）——历史图/手工构造图的兜底，有 default 兜底即不会静默终结。
+    """
+    ntype = node.get("type")
+    config = node.get("config") or {}
+    if ntype == "condition" and (config.get("trueRoute") or config.get("falseRoute")):
+        return True
+    if ntype in ("switch", "intent_classifier") and config.get("defaultRoute"):
+        return True
+    for e in edges:
+        if e.get("source") != node.get("id"):
+            continue
+        handle = str(e.get("sourceHandle") or "")
+        if ntype == "condition" and handle in ("true", "false"):
+            return True
+        if handle == "default" or handle.startswith(("case_", "intent_")):
+            return True
+    return False
 
 
 def validate_graph(graph_json: dict[str, Any]) -> None:
@@ -53,6 +121,13 @@ def validate_graph(graph_json: dict[str, Any]) -> None:
             raise ValueError(f"第 {idx + 1} 个节点缺少 id 字段。")
         if not n.get("type"):
             raise ValueError(f"节点 '{n['id']}' 缺少 type 字段。")
+        if n.get("type") == LEGACY_TOOL_NODE_TYPE:
+            # 正常加载路径已在入口 migrate_legacy_tool_nodes 自动迁移，此处拦截
+            # 绕过加载入口直造 graph_json 的调用（防旧类型混入编译）
+            raise ValueError(
+                f"节点 '{n.get('name', n['id'])}' 使用了已下架的 'tool' 节点类型，"
+                "请改用工具执行器（tool_executor）节点。"
+            )
 
     nodes_map = {n["id"]: n for n in nodes if "id" in n}
 
@@ -256,10 +331,40 @@ def validate_graph(graph_json: dict[str, Any]) -> None:
             if not config:
                 node_name = n.get("name", n["id"])
                 raise ValueError(f"节点 '{node_name}' 缺少配置信息。")
+            if ntype == "intent_classifier":
+                # 三期B6：空 intents 的意图节点不经过 LLM（执行器直落 default_route），
+                # 不再强制 model；空 intents 本身由下方第 7 步的路由校验兜底提示
+                if not (config.get("intents") or []):
+                    continue
             profile_code = config.get("modelProfileCode", "")
             if not profile_code or not profile_code.strip():
                 node_name = n.get("name", n["id"])
                 raise ValueError(f"节点 '{node_name}' 未选择模型 Profile，请先在配置面板中选择一个模型。")
+
+    # 7. 条件类节点至少一条非 END 路由（三期B6 / WF-P2-5 + WF-P2-12）
+    # 路由边 = 带 sourceHandle（true/false、case_*、intent_*、default）的出边，编译期
+    # 由此推导 target_route 并注册条件边；config 显式路由（trueRoute/defaultRoute 等，
+    # 历史图/手工图）同样有效。两者皆无 → 编译后该节点无出边、执行静默终结——拒绝。
+    for n in nodes:
+        ntype = n.get("type")
+        if ntype not in CONDITIONAL_NODE_TYPES:
+            continue
+        if _conditional_has_route(n, edges):
+            continue
+        node_name = n.get("name", n["id"])
+        raise ValueError(
+            f"条件分支节点 '{node_name}'（{ntype}）没有任何可解析的路由：缺少带分支句柄的连线"
+            "（true/false、case、intent、default），编译后执行到该节点会静默终结。"
+            "请为它的各分支连接下游节点，或删除该节点。"
+        )
+
+    # 8. 节点 config schema 校验（三期B6 / WF-P2-5）：必填字段与类型，
+    # 消除「配置不全 → 运行期静默走默认/空转」（详见 node_schema.py）
+    for n in nodes:
+        config = n.get("config") or {}
+        if not config:
+            continue
+        validate_node_config(n.get("type", ""), config, n.get("name", n["id"]))
 
 
 def _build_group_to_controller_map(nodes: list, edges: list, nodes_map: dict) -> dict[str, str]:

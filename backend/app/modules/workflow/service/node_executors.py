@@ -7,6 +7,12 @@ compile_graph 与 workflow_tasks 依赖此入口）。
 
 注意：执行器经本模块全局查找 run_ai_chat/run_ai_image，
 测试 patch 目标应指向本模块（原 workflow_service 锚点已迁移）。
+
+执行器上下文契约（三期B4 / WF-P1-1）：
+- 绑定输入/模板渲染/表达式求值 = 第一形参 variables（node_inputs，声明优先——
+  由 resolve_node_inputs 按 inputs schema / input_mappings 提炼）；
+- 跨节点全局读取 = config["_global_vars"]（node_runner 运行时注入的只读快照，
+  经 _globals_from 取用，缺省降级 node_inputs 以兼容直调执行器的既有测试路径）。
 """
 
 import asyncio
@@ -36,6 +42,16 @@ from app.modules.workflow.service.llm_io import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _globals_from(config: dict[str, Any], variables: dict[str, Any]) -> dict[str, Any]:
+    """跨节点全局读取的统一入口（三期B4 / WF-P1-1）。
+
+    config["_global_vars"] 由 node_runner / run_node_standalone 运行时注入
+    （state["variables"] 只读快照）；缺省（直调执行器的测试路径、旧调用方）时
+    降级 node_inputs——未配置 inputs 的节点其 node_inputs 即全量变量，行为不变。
+    """
+    return config.get("_global_vars") or variables
 
 
 # 跨进程事件总线（Redis pub/sub + 进程内 fallback）
@@ -148,34 +164,6 @@ async def execute_llm_node(variables: dict[str, Any], config: dict[str, Any]) ->
     return _parse_llm_output(content, output_format, output_variable)
 
 
-async def execute_tool_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """
-    [Mock] 工具节点执行逻辑 (Mock 工具动作)
-
-    WF-P0-2：deprecated `tool` 节点整体为 mock 占位（无真实实现路径），
-    生产环境（非 DEBUG）直接失败，杜绝假数据以 success 流入下游。
-    """
-    from app.core.config import settings
-
-    tool_name = config.get("tool_name", "unknown")
-    if not settings.DEBUG:
-        raise ValueError(
-            f"工具 '{tool_name}' 为演示占位实现（deprecated tool 节点），生产环境不可用；如需演示请在 DEBUG 模式运行"
-        )
-    output_variable = config.get("output_variable", "tool_result")
-
-    # 优先使用 mock_data 配置，否则返回通用模拟结果
-    mock_data = config.get("mock_data")
-    if mock_data:
-        await asyncio.sleep(0.3)
-        return {output_variable: mock_data}
-
-    # 模拟工具执行延迟
-    await asyncio.sleep(0.5)
-
-    return {output_variable: f"Mock Tool '{tool_name}' executed successfully with context."}
-
-
 async def execute_human_input_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     人工输入/审批节点。
@@ -195,9 +183,10 @@ async def execute_human_input_node(variables: dict[str, Any], config: dict[str, 
     return {output_variable: user_response}
 
 
-# 注册至全局注册表
+# 注册至全局注册表（idempotent=False：重试 = 整体重跑或重复计费的非幂等节点）
+# deprecated `tool` 节点已下架（三期B7 / WF-P2-10）：存量图在加载入口自动迁移为
+# tool_executor（graph_validate.migrate_legacy_tool_nodes），不再注册执行器。
 node_registry.register("llm", execute_llm_node)
-node_registry.register("tool", execute_tool_node)
 node_registry.register("human_input", execute_human_input_node)
 
 
@@ -217,15 +206,21 @@ def _normalize_intent_label(text: str) -> str:
 
 async def execute_intent_classifier_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
-    意图识别与语义分流节点执行逻辑
+    意图识别与语义分流节点执行逻辑。
+
+    待分类文本属跨节点全局读取：input_variable / query / user_query 均从
+    _global_vars 取（支持点路径）；LLM 调用失败时降级为「其他」走 default_route
+    （业务性路由降级，非静默语义错误——见 X-1 审计口径）。
     """
     node_id = config.get("id", "intent_classifier")
+    globals_ = _globals_from(config, variables)
     input_var = config.get("input_variable", "")
     if input_var:
         var_name = strip_braces(input_var.strip())
-        query = str(variables.get(var_name, ""))
+        val = _deep_get(globals_, var_name)
+        query = str(val) if val is not None else ""
     else:
-        query = variables.get("query") or variables.get("user_query") or ""
+        query = globals_.get("query") or globals_.get("user_query") or ""
     intents = config.get("intents", [])
     default_route = config.get("default_route")
     profile_code = config.get("model_profile_code")
@@ -313,6 +308,7 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
         )
     list_var = strip_braces(config.get("list_variable") or config.get("array_variable", "list_variable"))
     item_var = config.get("item_variable", "loop_item")
+    globals_ = _globals_from(config, variables)
     output_var = config.get("output_variable", "loop_results")
     stop_on_error = config.get("stop_on_error", True)
     subgraph_timeout = float(config.get("timeout_seconds") or settings.WORKFLOW_SUBGRAPH_TIMEOUT)
@@ -323,8 +319,9 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
     persist_globals = bool(config.get("persist_globals", False))
 
     # 走 _deep_get：list_variable 可能被填成跨节点深层路径（如 llm_output.user_list），
-    # 直接用 variables.get() 会因键不存在而静默返回空列表，导致循环/批处理空转
-    items = _deep_get(variables, list_var) or []
+    # 直接用 get() 会因键不存在而静默返回空列表，导致循环/批处理空转；
+    # 三期B4：读取源改为 _global_vars（配 inputs 窄化 node_inputs 后仍能读到全局列表）
+    items = _deep_get(globals_, list_var) or []
     if not isinstance(items, list) or not items:
         return {output_var: []}
     if len(items) > 200:
@@ -395,6 +392,7 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
         raise ValueError("批处理节点缺少已编译的体子图。请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。")
     list_var = strip_braces(config.get("list_variable") or config.get("array_variable", "batch_list_variable"))
     item_var = config.get("item_variable", "batch_item")
+    globals_ = _globals_from(config, variables)
     output_var = config.get("output_variable", "batch_results")
     concurrency_limit = min(max(int(config.get("concurrency_limit", 5) or 5), 1), 20)
     subgraph_timeout = float(config.get("timeout_seconds") or settings.WORKFLOW_SUBGRAPH_TIMEOUT)
@@ -410,8 +408,9 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
         )
 
     # 走 _deep_get：list_variable 可能被填成跨节点深层路径（如 llm_output.user_list），
-    # 直接用 variables.get() 会因键不存在而静默返回空列表，导致循环/批处理空转
-    items = _deep_get(variables, list_var) or []
+    # 直接用 get() 会因键不存在而静默返回空列表，导致循环/批处理空转；
+    # 三期B4：读取源改为 _global_vars（配 inputs 窄化 node_inputs 后仍能读到全局列表）
+    items = _deep_get(globals_, list_var) or []
     if not isinstance(items, list) or not items:
         return {output_var: []}
     if len(items) > 200:
@@ -633,6 +632,8 @@ async def execute_tool_executor_node(variables: dict[str, Any], config: dict[str
     """
     通用工具执行器节点逻辑。
 
+    参数来源（三期B4 迁移）：arguments 整体与参数值的 variables. 引用均从
+    _global_vars 读取（支持点路径）；config 声明（arguments/arguments_json）优先。
     注意：web_search / file_system / mock_weather_api 当前为 [Mock] 占位实现，
     返回演示数据；生产部署请替换为真实工具接入（见 tool_web_search 等）。
     """
@@ -644,22 +645,25 @@ async def execute_tool_executor_node(variables: dict[str, Any], config: dict[str
     # （原 :593-594 的 except 会把工具执行异常伪装成成功输出），交由重试/失败链路。
     if tool_code in MOCK_TOOL_CODES and not settings.DEBUG:
         raise ValueError(f"工具 '{tool_code}' 为演示占位实现，生产环境不可用；如需演示请在 DEBUG 模式运行")
-    arguments = variables.get("arguments") or config.get("arguments") or {}
+    globals_ = _globals_from(config, variables)
+    arguments = globals_.get("arguments") or config.get("arguments") or {}
     if not arguments:
         arguments_json_str = config.get("arguments_json", "")
         if arguments_json_str:
             try:
                 arguments = json.loads(arguments_json_str)
-            except json.JSONDecodeError:
-                arguments = {}
+            except json.JSONDecodeError as e:
+                # X-1（三期B6）：参数 JSON 解析失败曾静默落 {}（工具以空参数执行、
+                # 节点假成功）——改为显式失败，交由节点失败链路定位
+                raise ValueError(f"工具 '{tool_code}' 的参数 JSON（argumentsJson）解析失败，请检查配置: {e}") from e
     output_variable = config.get("output_variable", "tool_result")
 
-    # 参数级联转换
+    # 参数级联转换：variables. 引用走 _deep_get（原浅层 get 不支持点路径）
     resolved_args = {}
     for arg_name, arg_val in arguments.items():
         if isinstance(arg_val, str) and arg_val.startswith("variables."):
             var_key = arg_val.removeprefix("variables.")
-            resolved_args[arg_name] = variables.get(var_key)
+            resolved_args[arg_name] = _deep_get(globals_, var_key)
         else:
             resolved_args[arg_name] = arg_val
 
@@ -718,7 +722,11 @@ def _render_output_field_recursive(field: dict, variables: dict[str, Any]) -> An
 async def execute_variable_assignment_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     变量赋值节点执行逻辑。支持按字面量或表达式计算赋值。
+
+    表达式求值上下文（三期B4）：全局变量打底（_global_vars，未注入时降级
+    node_inputs）、inputs 声明覆盖、本轮已算出的 updates 最优先（允许前后变量依赖）。
     """
+    globals_ = _globals_from(config, variables)
     assignments = config.get("assignments", [])
     updates = {}
     for assign in assignments:
@@ -740,11 +748,17 @@ async def execute_variable_assignment_node(variables: dict[str, Any], config: di
             updates[var_name] = str(val).lower() in ("true", "1", "yes")
         elif val_type == "expression":
             try:
-                # 包含 updates 允许前后变量依赖
-                ctx = {**variables, **updates}
+                # 全局打底 + 声明覆盖 + updates 最优先（允许前后变量依赖）
+                ctx = {**globals_, **variables, **updates}
                 updates[var_name] = safe_eval(str(val), ctx)
             except Exception as e:
-                logger.warning(f"变量赋值表达式 '{val}' 执行失败: {e}")
+                # X-1 / D3 同款语义（三期B6）：表达式失败曾静默赋 None 流入下游，
+                # 默认以节点失败收尾；节点 config onExpressionError="fallback"
+                # 显式选择保留旧行为（赋 None 继续）
+                if str(config.get("on_expression_error", "fail")).lower() != "fallback":
+                    logger.error("变量赋值表达式 '%s' 执行失败（fail-fast）: %s", val, e)
+                    raise
+                logger.warning(f"变量赋值表达式 '{val}' 执行失败，已按 fallback 赋 None: {e}")
                 updates[var_name] = None
         else:
             updates[var_name] = val
@@ -755,13 +769,17 @@ async def execute_variable_assignment_node(variables: dict[str, Any], config: di
 async def execute_variable_transform_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     变量转换/聚合节点执行逻辑。
+
+    input_variable 属跨节点全局读取（三期B4）：从 _global_vars 取并支持点路径；
+    eval_expression 上下文与 variable_assignment 同口径（全局打底、声明覆盖）。
     """
+    globals_ = _globals_from(config, variables)
     input_var = strip_braces(config.get("input_variable", ""))
     transform_type = config.get("transform_type", "join_array")
     transform_args = config.get("transform_args", {})
     output_var = config.get("output_variable", "transformed_value")
 
-    input_val = variables.get(input_var)
+    input_val = _deep_get(globals_, input_var)
     result = None
 
     try:
@@ -811,15 +829,17 @@ async def execute_variable_transform_node(variables: dict[str, Any], config: dic
 
         elif transform_type == "eval_expression":
             expression = transform_args.get("expression", "")
-            ctx = {**variables, "input_value": input_val}
+            ctx = {**globals_, **variables, "input_value": input_val}
             result = safe_eval(expression, ctx)
 
         else:
             result = input_val
 
     except Exception as e:
-        logger.warning(f"变量转换节点执行异常: {e}")
-        result = None
+        # X-1（三期B6）：转换整体异常曾静默落 result=None 流入下游（下游拿 None
+        # 继续运算，失败被推迟且难以归因）——改为以节点失败收尾
+        logger.error("变量转换节点执行失败: %s", e)
+        raise
 
     if not output_var:
         return {}
@@ -869,10 +889,12 @@ async def execute_switch_node(variables: dict[str, Any], config: dict[str, Any])
 
 
 # 注册新高级节点执行器至全局注册表
+# 非幂等声明（三期B6 / WF-P2-3）：loop/batch 超时经重试 = 整个子图从头重跑
+# （docstring 自警）；image_generator 重试 = 重复调用生图 API 重复计费。
 node_registry.register("intent_classifier", execute_intent_classifier_node)
-node_registry.register("loop_controller", execute_loop_controller_node)
-node_registry.register("batch_processor", execute_batch_processor_node)
-node_registry.register("image_generator", execute_image_generator_node)
+node_registry.register("loop_controller", execute_loop_controller_node, idempotent=False)
+node_registry.register("batch_processor", execute_batch_processor_node, idempotent=False)
+node_registry.register("image_generator", execute_image_generator_node, idempotent=False)
 node_registry.register("tool_executor", execute_tool_executor_node)
 node_registry.register("end", execute_end_node)
 node_registry.register("condition", execute_condition_node)

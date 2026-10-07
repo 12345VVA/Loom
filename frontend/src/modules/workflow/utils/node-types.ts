@@ -13,18 +13,18 @@ import LoopControllerNode from '../components/custom-nodes/loop-controller-node.
 import StartNode from '../components/custom-nodes/start-node.vue';
 import SwitchNode from '../components/custom-nodes/switch-node.vue';
 import ToolExecutorNode from '../components/custom-nodes/tool-executor-node.vue';
-import ToolNode from '../components/custom-nodes/tool-node.vue';
 import VariableAssignmentNode from '../components/custom-nodes/variable-assignment-node.vue';
 import VariableTransformNode from '../components/custom-nodes/variable-transform-node.vue';
 
 /**
- * 注册自定义节点组件（key 与后端编译器的节点 type 一一对应）
+ * 注册自定义节点组件（key 与后端编译器的节点 type 一一对应）。
+ * deprecated `tool` 已下架（三期B7 / WF-P2-10）：后端加载入口自动迁移为
+ * tool_executor，画布不再渲染该类型。
  */
 export const nodeTypes: Record<string, Component> = {
 	start: StartNode,
 	end: EndNode,
 	llm: LlmNode,
-	tool: ToolNode,
 	condition: ConditionNode,
 	switch: SwitchNode,
 	human_input: HumanInputNode,

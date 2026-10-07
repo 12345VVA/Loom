@@ -179,7 +179,8 @@ class WorkflowEvalRunService(BaseAdminCrudService):
         )
         cancelled = result.rowcount > 0
         if cancelled:
-            # 清理本次评估已建、仍在 running 的 case 实例（CAS，不覆盖已终结状态）
+            # 清理本次评估已建、仍在 running 的 case 实例（批量 IN-CAS，不覆盖已终结状态；
+            # 迁移合法性 running→cancelled 见 status_flow.ALLOWED_STATUS_TRANSITIONS，WF-P2-16）
             self.session.execute(
                 update(WorkflowInstance)
                 .where(

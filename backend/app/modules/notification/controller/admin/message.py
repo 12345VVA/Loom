@@ -2,7 +2,7 @@
 通知消息接口。
 """
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 from sqlmodel import Session
 
 from app.core.database import get_session
@@ -11,13 +11,31 @@ from app.framework.router.route_meta import Get, Post
 from app.modules.base.model.auth import User
 from app.modules.base.service.security_service import get_current_user
 from app.modules.notification.model.notification import (
+    NotificationIdsRequest,
     NotificationMessageCreateRequest,
     NotificationMessageRead,
     NotificationMessageSendRequest,
     NotificationMessageUpdateRequest,
     NotificationRecipientPreviewRequest,
 )
-from app.modules.notification.service.notification_service import NotificationMessageService, NotificationService
+from app.modules.notification.service.notification_service import (
+    MAX_IDS_PER_REQUEST,
+    MAX_LIST_LIMIT,
+    NotificationMessageService,
+    NotificationService,
+)
+
+
+def _resolve_ids(payload: NotificationIdsRequest) -> list[int]:
+    """归一化单 id / ids 两种形态，并强制数量上限（L7）。"""
+    ids = list(payload.ids)
+    if not ids and payload.id is not None:
+        ids = [payload.id]
+    if len(ids) > MAX_IDS_PER_REQUEST:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"单次操作数量不能超过 {MAX_IDS_PER_REQUEST}"
+        )
+    return ids
 
 
 @CoolController(
@@ -53,14 +71,24 @@ class NotificationMessageController(BaseController):
         includeArchived: bool = False,
         messageType: str | None = None,
         readStatus: str | None = None,
+        limit: int = 0,
+        offset: int = 0,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ):
+        # 可选分页（F3）：0 表示「不限制」，是默认值，保持既有行为不变（不传即返回全部）。
+        # 采用 int = 0 而非 int | None：EPS 生成器
+        # （frontend/packages/vite-plugin/src/eps/index.ts:469）取 `p.schema?.type || "string"`，
+        # 对 anyOf(number|null) 参数会回退成 `string`，与前端按 number 传参冲突（TS2322）。
+        limit = max(0, min(limit, MAX_LIST_LIMIT))
+        offset = max(0, offset)
         return NotificationMessageService(session).list_for_user(
             current_user.id,
             include_archived=includeArchived,
             message_type=messageType,
             read_status=readStatus,
+            limit=limit or None,
+            offset=offset or None,
         )
 
     @Get(
@@ -90,12 +118,11 @@ class NotificationMessageController(BaseController):
     @Post("/read", summary="标记已读", permission="notification:message:read", role_codes=("admin", "task_operator"))
     def read(
         self,
-        payload: dict,
+        payload: NotificationIdsRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ):
-        ids = payload.get("ids") or ([payload.get("id")] if payload.get("id") else [])
-        return NotificationMessageService(session).mark_read(current_user.id, ids)
+        return NotificationMessageService(session).mark_read(current_user.id, _resolve_ids(payload))
 
     @Post(
         "/readAll", summary="全部已读", permission="notification:message:readAll", role_codes=("admin", "task_operator")
@@ -112,12 +139,11 @@ class NotificationMessageController(BaseController):
     )
     def archive(
         self,
-        payload: dict,
+        payload: NotificationIdsRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ):
-        ids = payload.get("ids") or ([payload.get("id")] if payload.get("id") else [])
-        return NotificationMessageService(session).archive(current_user.id, ids)
+        return NotificationMessageService(session).archive(current_user.id, _resolve_ids(payload))
 
     @Post(
         "/unarchive",
@@ -127,12 +153,11 @@ class NotificationMessageController(BaseController):
     )
     def unarchive(
         self,
-        payload: dict,
+        payload: NotificationIdsRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ):
-        ids = payload.get("ids") or ([payload.get("id")] if payload.get("id") else [])
-        return NotificationMessageService(session).unarchive(current_user.id, ids)
+        return NotificationMessageService(session).unarchive(current_user.id, _resolve_ids(payload))
 
     @Post("/send", summary="发送通知", permission="notification:message:send")
     def send(
@@ -141,7 +166,7 @@ class NotificationMessageController(BaseController):
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ):
-        message = NotificationService(session).send(
+        result = NotificationService(session).send(
             title=payload.title,
             content=payload.content,
             audience=payload.audience,
@@ -152,7 +177,10 @@ class NotificationMessageController(BaseController):
             link_url=payload.link_url,
             sender_id=current_user.id,
         )
-        return NotificationMessageService(session)._finalize_data(message.model_dump())
+        data = NotificationMessageService(session)._finalize_data(result.message.model_dump())
+        # 回传实际投递人数，供前端确认「到底发给了多少人」（H3）
+        data["recipientCount"] = result.recipient_count
+        return data
 
     @Post("/previewRecipients", summary="预览通知接收人", permission="notification:message:previewRecipients")
     def preview_recipients(
@@ -183,12 +211,14 @@ class NotificationMessageController(BaseController):
     @Post("/recall", summary="撤回通知", permission="notification:message:recall")
     def recall(
         self,
-        payload: dict,
+        payload: NotificationIdsRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ):
-        message_id = payload.get("id")
-        return NotificationMessageService(session).recall(message_id, current_user.id)
+        message_id = payload.id if payload.id is not None else (payload.ids[0] if payload.ids else None)
+        if message_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少通知 id")
+        return NotificationMessageService(session).recall(message_id, current_user)
 
 
 router = NotificationMessageController.router

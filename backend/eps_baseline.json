@@ -34647,9 +34647,7 @@
               "content": {
                 "application/json": {
                   "schema": {
-                    "additionalProperties": true,
-                    "title": "Payload",
-                    "type": "object"
+                    "$ref": "#/components/schemas/NotificationIdsRequest"
                   }
                 }
               },
@@ -35409,6 +35407,26 @@
                   ],
                   "title": "Readstatus"
                 }
+              },
+              {
+                "in": "query",
+                "name": "limit",
+                "required": false,
+                "schema": {
+                  "default": 0,
+                  "title": "Limit",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "offset",
+                "required": false,
+                "schema": {
+                  "default": 0,
+                  "title": "Offset",
+                  "type": "number"
+                }
               }
             ],
             "requestBody": null,
@@ -36006,9 +36024,7 @@
               "content": {
                 "application/json": {
                   "schema": {
-                    "additionalProperties": true,
-                    "title": "Payload",
-                    "type": "object"
+                    "$ref": "#/components/schemas/NotificationIdsRequest"
                   }
                 }
               },
@@ -36118,9 +36134,7 @@
               "content": {
                 "application/json": {
                   "schema": {
-                    "additionalProperties": true,
-                    "title": "Payload",
-                    "type": "object"
+                    "$ref": "#/components/schemas/NotificationIdsRequest"
                   }
                 }
               },
@@ -36407,9 +36421,7 @@
               "content": {
                 "application/json": {
                   "schema": {
-                    "additionalProperties": true,
-                    "title": "Payload",
-                    "type": "object"
+                    "$ref": "#/components/schemas/NotificationIdsRequest"
                   }
                 }
               },
@@ -47481,6 +47493,17 @@
                             }
                           ],
                           "title": "Error"
+                        },
+                        "hint": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Hint"
                         },
                         "instanceId": {
                           "anyOf": [

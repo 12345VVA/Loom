@@ -16,7 +16,7 @@ from typing import Any
 
 # GraphBubbleUp 自 langgraph 0.2.54 起才在 langgraph.errors 中定义（0.2.53 及更早无此类，
 # 该版本以下此行为模块顶层硬导入，会导致整个 workflow 模块 ImportError）。下限见 requirements.txt。
-from langgraph.errors import GraphBubbleUp
+from langgraph.errors import GraphBubbleUp, GraphInterrupt
 from langgraph.graph import END, START, StateGraph
 
 from app.modules.workflow.service.expressions import (  # noqa: F401
@@ -64,7 +64,7 @@ from app.modules.workflow.service.state import (  # noqa: F401
     apply_input_mappings as apply_input_mappings,
 )
 from app.modules.workflow.service.state import (
-    apply_output_mappings,
+    compute_output_delta,
     resolve_node_inputs,
 )
 from app.modules.workflow.service.state import (  # noqa: F401
@@ -75,13 +75,17 @@ logger = logging.getLogger(__name__)
 
 
 class NodeExecutionError(Exception):
-    """节点执行失败（重试耗尽后抛出），携带 node_id 供上层记录 failed_node_id。"""
+    """节点执行失败（重试耗尽后抛出），携带 node_id 供上层记录 failed_node_id。
+
+    attempts=0 表示条件路由求值失败（三期B6 D3 fail-fast，非重试耗尽场景）。
+    """
 
     def __init__(self, node_id: str, attempts: int, cause: Exception):
         self.node_id = node_id
         self.attempts = attempts
         self.cause = cause
-        super().__init__(f"节点 '{node_id}' 执行失败（已尝试 {attempts} 次）: {cause}")
+        detail = "条件路由求值失败" if attempts == 0 else f"已尝试 {attempts} 次"
+        super().__init__(f"节点 '{node_id}' 执行失败（{detail}）: {cause}")
 
 
 def _safe_stream_writer() -> Callable[[Any], None]:
@@ -563,22 +567,40 @@ class WorkflowCompiler:
 
     @staticmethod
     async def _invoke_executor_with_retry(
-        executor, node_inputs: dict[str, Any], executor_config: dict[str, Any], config: dict[str, Any]
+        executor,
+        node_inputs: dict[str, Any],
+        executor_config: dict[str, Any],
+        config: dict[str, Any],
+        node_type: str = "",
     ) -> dict[str, Any]:
-        """带重试的执行器调用：节点级自动重试（全局默认 + 节点 config 覆盖；指数退避）。
+        """带重试的执行器调用：节点级自动重试（全局默认 + 节点 config 覆盖；指数退避 + 抖动）。
 
         create_node_runner（整图执行）与 run_node_standalone（单节点测试）共用，
         保证「节点测试」与「整图执行」的重试语义一致（修 P0-1 覆盖面假象）。
+        非幂等节点（注册表 idempotent=False，如生图/循环/批处理）强制 max_attempts=1
+        （三期B6 / WF-P2-3）：重试 = 整体重跑或重复计费，节点 config 显式请求重试
+        会被覆盖并告警。
         """
         import asyncio
+        import random
 
         from app.core.config import settings
 
         node_id = executor_config.get("id", "")
-        max_attempts = config.get("retry_max_attempts")
+        requested_attempts = config.get("retry_max_attempts")
+        max_attempts = requested_attempts
         if max_attempts is None:
             max_attempts = settings.WORKFLOW_NODE_RETRY_MAX_ATTEMPTS
         max_attempts = max(1, int(max_attempts))  # 至少尝试 1 次
+        if node_type and not node_registry.is_idempotent(node_type) and max_attempts > 1:
+            logger.warning(
+                "节点 '%s'（类型 %s）为非幂等节点，重试会导致整体重跑/重复计费，"
+                "已强制 max_attempts=1（config 请求值 %s 被覆盖）",
+                node_id,
+                node_type,
+                max_attempts,
+            )
+            max_attempts = 1
         backoff_base = config.get("retry_backoff_base")
         if backoff_base is None:
             backoff_base = settings.WORKFLOW_NODE_RETRY_BACKOFF_BASE
@@ -597,7 +619,8 @@ class WorkflowCompiler:
                 if attempt >= max_attempts:
                     # 重试耗尽：抛 NodeExecutionError 携带 node_id，供上层写 failed_node_id
                     raise NodeExecutionError(node_id, attempt, e) from e
-                delay = float(backoff_base) * (2 ** (attempt - 1))
+                # 指数退避 + ±50% 全抖动：避免多实例同时失败后同刻重试（惊群）
+                delay = float(backoff_base) * (2 ** (attempt - 1)) * random.uniform(0.5, 1.5)
                 logger.warning(
                     "节点 '%s' 第 %d/%d 次执行失败，%.1fs 后重试: %s",
                     node_id,
@@ -632,6 +655,9 @@ class WorkflowCompiler:
             # 2. 运行执行器（共享重试语义，见 _invoke_executor_with_retry）
             #    重试在 node_runner 内部，updates 在 return 后才 apply 到 state，故前次失败不污染 state
             executor_config = {**config, "id": node_id}
+            # 三期B4（WF-P1-1）：跨节点全局读取契约——运行时注入只读快照，
+            # 执行器经 _globals_from 取用（配 inputs 窄化 node_inputs 后仍能读全局）
+            executor_config["_global_vars"] = state["variables"]
 
             # custom 事件 + 真实耗时测量（WF-P1-6 / WF-P2-15）：
             # - node_start 在执行前发出，画布「运行中」高亮即时归因；
@@ -643,15 +669,18 @@ class WorkflowCompiler:
             emit = _safe_stream_writer()
             _t0 = time.perf_counter()
             emit({"type": "node_start", "node_id": node_id, "status": "running"})
-            updates = await cls._invoke_executor_with_retry(executor, node_inputs, executor_config, config)
+            updates = await cls._invoke_executor_with_retry(executor, node_inputs, executor_config, config, node_type)
             _latency_ms = int((time.perf_counter() - _t0) * 1000)
             emit({"type": "node_done", "node_id": node_id, "status": "done", "latency_ms": _latency_ms})
 
             # 3. 应用输出变量映射，写回全局状态
+            # 三期B5（WF-P1-3）：返回 applied delta（仅本节点写入的键）而非全量快照——
+            # reducer {**left, **right} 的键级合并使并行分支互不覆盖；图内 state 经
+            # reducer 累积仍是全量，路由器与 loop/batch 的 ainvoke 消费方不受影响。
             output_mappings = config.get("output_mappings", {})
-            new_variables = apply_output_mappings(state["variables"], updates, output_mappings)
+            delta = compute_output_delta(updates, output_mappings)
 
-            return {"variables": new_variables, "current_node": node_id}
+            return {"variables": delta, "current_node": node_id}
 
         return node_runner
 
@@ -659,22 +688,46 @@ class WorkflowCompiler:
     async def run_node_standalone(
         cls, node_id: str, node_type: str, config: dict[str, Any], mock_variables: dict[str, Any]
     ) -> dict[str, Any]:
-        """单节点测试执行体：复用整图执行的入参提炼/重试/输出映射语义，不建图不落库。
+        """单节点测试执行体：编译仅含该节点的最小 StateGraph 执行（三期B6 / WF-P2-4）。
 
-        返回「输出增量」：updates 经 output_mappings 应用到 mock_variables 后的差集，
-        与历史 test_node 的 NodeTestResponse.output 契约一致（前端零改动）。
+        与整图执行同走 node_runner 通道（入参提炼/重试/输出映射/全局注入/流上下文
+        全一致，「节点测试通过 ≈ 整图该节点能跑通」），并覆盖 GraphBubbleUp 经图
+        运行时的形态。不挂 checkpointer（单节点测试无断点续跑需求）、不落库。
+
+        返回「输出增量」：执行后变量相对 mock_variables 的差集，与历史 test_node 的
+        NodeTestResponse.output 契约一致（前端零改动）。
         """
-        executor = node_registry.get(node_type)
-        if not executor:
+        if not node_registry.get(node_type):
             raise ValueError(f"工作流中使用了未注册的节点类型: '{node_type}'")
 
-        node_inputs = resolve_node_inputs(mock_variables, config)
-        executor_config = {**config, "id": node_id}
-        updates = await cls._invoke_executor_with_retry(executor, node_inputs, executor_config, config)
+        builder = StateGraph(WorkflowState)
+        builder.add_node(node_id, cls.create_node_runner(node_id, node_type, config))
+        builder.add_edge(START, node_id)
+        builder.add_edge(node_id, END)
+        graph = builder.compile()
 
-        # 与 node_runner 一致地应用输出映射，再对 mock 取差集得到本节点实际产出的增量
-        merged = apply_output_mappings(dict(mock_variables), updates, config.get("output_mappings", {}))
-        return {k: v for k, v in merged.items() if k not in mock_variables or merged[k] != mock_variables[k]}
+        # 经 astream updates 消费（与 workflow_tasks 事件循环同构）。为何不用 ainvoke：
+        # interrupt（控制流信号）在 ainvoke 返回值中不可见——图运行时吞掉 GraphBubbleUp、
+        # 返回初值 state（有无 checkpointer 均如此），仅 updates 事件通道产出
+        # {"__interrupt__": ...}。检测到即转译为 GraphInterrupt（GraphBubbleUp 子类），
+        # 保持「单测路径控制流信号原样上抛、不重试、不包装」的既有契约（锚定于
+        # test_workflow_retry.test_bubble_up_not_swallowed）。
+        final_vars: dict[str, Any] = dict(mock_variables)
+        async for event in graph.astream(
+            {"variables": dict(mock_variables), "current_node": "start"},
+            stream_mode="updates",
+        ):
+            if isinstance(event, tuple) and len(event) == 2:  # 兼容 (mode, payload) 形态
+                event = event[1]
+            if not isinstance(event, dict):
+                continue
+            if "__interrupt__" in event:
+                raise GraphInterrupt()
+            for node_output in event.values():
+                if isinstance(node_output, dict) and "variables" in node_output:
+                    final_vars = {**final_vars, **(node_output["variables"] or {})}
+
+        return {k: v for k, v in final_vars.items() if k not in mock_variables or mock_variables[k] != v}
 
     @classmethod
     def create_conditional_router(cls, node_id: str, config: dict[str, Any]):
@@ -702,8 +755,18 @@ class WorkflowCompiler:
                 result = safe_eval(expression, eval_context)
                 return true_route if result else (false_route or END)
             except Exception as e:
-                # 求值失败仍按既有语义回落 false 路由，但日志必须能定位到具体节点：
-                # 否则用户只会看到「分支莫名走错」，排查成本极高
+                # D3（已决 fail-fast，三期B6 / WF-P2-5+12）：求值失败默认以节点失败收尾
+                # （X-1 契约：影响语义正确性的错误必须冒泡），经 NodeExecutionError 归因
+                # 写 failed_node_id；节点 config onExpressionError="fallback" 可显式选择
+                # 回落 false 路由（兼容存量图，日志必须能定位到具体节点）。
+                if str(config.get("on_expression_error", "fail")).lower() != "fallback":
+                    logger.error(
+                        "[Workflow Router Error] 节点 '%s' 条件表达式 '%s' 求值失败，按 fail-fast 以节点失败收尾: %s",
+                        node_id,
+                        expression,
+                        e,
+                    )
+                    raise NodeExecutionError(node_id, 0, e) from e
                 logger.error(
                     "[Workflow Router Error] 节点 '%s' 条件表达式 '%s' 求值失败，已回落 false 路由: %s",
                     node_id,

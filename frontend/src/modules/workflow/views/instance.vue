@@ -334,7 +334,9 @@ const Table = useTable({
 					{
 						label: t('人工确认'),
 						type: 'warning',
-						hidden: scope.row.status !== 'paused',
+						// paused 直接恢复；failed 为断点续跑（WF-P2-17，仅有人工审批断点的
+						// 实例可续，无断点的由后端 409 提示重跑）
+						hidden: !['paused', 'failed'].includes(scope.row.status),
 						onClick({ scope }: any) {
 							openApprovalDialog(scope.row);
 						}

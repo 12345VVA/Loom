@@ -18,7 +18,7 @@ import os
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, update
+from sqlalchemy import and_
 from sqlmodel import Session, select
 
 from app.core.config import settings
@@ -26,6 +26,7 @@ from app.framework.storage import StorageService
 from app.modules.workflow.model.workflow import WorkflowExecutionLog, WorkflowInstance
 from app.modules.workflow.model.workflow_artifact import WorkflowArtifact
 from app.modules.workflow.service.event_bus import publish_event
+from app.modules.workflow.service.status_flow import cas_transition
 
 logger = logging.getLogger(__name__)
 
@@ -230,12 +231,15 @@ class WorkflowCleanupService:
         message = f"实例假死回收：超过 {int(grace_minutes)} 分钟无进度更新（疑似 worker 中断），由周期清理置为 failed"
         swept_ids: list[int] = []
         for instance_id, status in stuck:
-            result = self.session.execute(
-                update(WorkflowInstance)
-                .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == status)
-                .values(status="failed", error_message=message[:500], updated_at=now)
+            # 三期B7（WF-P2-16）：pending/running → failed，迁移合法性由 status_flow 表校验
+            rowcount = cas_transition(
+                self.session,
+                instance_id,
+                (status,),
+                "failed",
+                extra_values={"error_message": message[:500], "updated_at": now},
             )
-            if result.rowcount:
+            if rowcount:
                 swept_ids.append(instance_id)
         self.session.commit()
         for instance_id in swept_ids:

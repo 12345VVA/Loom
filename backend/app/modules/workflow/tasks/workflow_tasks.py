@@ -17,7 +17,6 @@ from typing import Any
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from sqlalchemy import update
 from sqlmodel import select
 
 import app.modules.workflow.service.workflow_service as _workflow_service  # noqa: F401  冗余保险：compile_graph 入口已确保注册，此处保留双保险以防漏
@@ -37,7 +36,8 @@ from app.modules.workflow.service.checkpointer import get_async_checkpointer
 from app.modules.workflow.service.compiler import WorkflowCompiler
 from app.modules.workflow.service.error_format import friendly_error_message
 from app.modules.workflow.service.event_bus import publish_event
-from app.modules.workflow.service.graph_validate import graph_has_interrupt_nodes
+from app.modules.workflow.service.graph_validate import graph_has_interrupt_nodes, migrate_legacy_tool_nodes
+from app.modules.workflow.service.status_flow import cas_transition
 
 logger = logging.getLogger(__name__)
 
@@ -212,11 +212,8 @@ def _set_current_node_sync(instance_id: int, node_id: str) -> None:
     """
     try:
         with Session(engine) as session:
-            session.execute(
-                update(WorkflowInstance)
-                .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == "running")
-                .values(current_node=node_id)
-            )
+            # running → running（保持运行态，仅推进 current_node），走表驱动 CAS
+            cas_transition(session, instance_id, ("running",), "running", extra_values={"current_node": node_id})
             session.commit()
     except Exception:
         logger.warning("工作流实例 %d 推进 current_node=%s 失败", instance_id, node_id, exc_info=True)
@@ -293,13 +290,10 @@ def _promote_pending_to_running(instance_id: int) -> bool:
       被删除——终态与事件已由触发方落定，调用方静默退出，不产生任何执行副作用。
     """
     with Session(engine) as session:
-        result = session.execute(
-            update(WorkflowInstance)
-            .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == "pending")
-            .values(status="running")
-        )
+        # 表驱动 CAS（三期B7 / WF-P2-16，下同）
+        result_rc = cas_transition(session, instance_id, ("pending",), "running")
         session.commit()
-        if result.rowcount:
+        if result_rc:
             return True
         inst = session.get(WorkflowInstance, instance_id)
         return bool(inst and inst.status == "running")
@@ -317,13 +311,15 @@ def _mark_instance_failed(
     try:
         expected_statuses = expected if isinstance(expected, tuple) else (expected,)
         with Session(engine) as session:
-            result = session.execute(
-                update(WorkflowInstance)
-                .where(WorkflowInstance.id == instance_id, WorkflowInstance.status.in_(expected_statuses))
-                .values(status="failed", error_message=(message or "")[:500])
+            rowcount = cas_transition(
+                session,
+                instance_id,
+                expected_statuses,
+                "failed",
+                extra_values={"error_message": (message or "")[:500]},
             )
             session.commit()
-            if result.rowcount:
+            if rowcount:
                 publish_event(instance_id, "failed", {"status": "failed", "error": message, "node_id": None})
                 _notify_workflow_failure(instance_id)
     except Exception as se:
@@ -493,6 +489,9 @@ def _resolve_execution_graph(
             logger.error("工作流执行失败: 版本 %d 不存在", effective_vid)
             return None
         graph_json = json.loads(version.graph_json)
+    # 三期B7（WF-P2-10）：执行入口统一迁移 deprecated tool → tool_executor
+    # （override（eval 快照）与版本两分支都要过，eval 快照可能是旧图）
+    graph_json = migrate_legacy_tool_nodes(graph_json)
     return graph_json, thread_id
 
 
@@ -515,7 +514,6 @@ async def async_execute(
     （核实清单 WF-P2-18）。
     """
     from langgraph.types import Command
-    from sqlalchemy import update
 
     from app.core.config import settings
 
@@ -524,13 +522,10 @@ async def async_execute(
     def _cas(session, expected_status: str, **values) -> int:
         """对实例做条件更新（仅当当前状态等于 expected_status），返回受影响行数。
         避免执行循环的终态写入覆盖已被 cancel_instance 写入的 cancelled 状态。
+        三期B7（WF-P2-16）：迁移合法性由 status_flow 表校验。
         """
-        result = session.execute(
-            update(WorkflowInstance)
-            .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == expected_status)
-            .values(**values)
-        )
-        return result.rowcount
+        to_status = values.pop("status", expected_status)
+        return cas_transition(session, instance_id, (expected_status,), to_status, extra_values=values)
 
     # T4：批量落库后台协程（在 try 外创建，使外层 except 兜底可 drain；flush_worker 只用 engine，不依赖 checkpointer）
     flush_queue: asyncio.Queue = asyncio.Queue()
@@ -586,7 +581,11 @@ async def async_execute(
                 "[Workflow] Graph compiled successfully, instance=%d, checkpointer=%s", instance_id, use_checkpointer
             )
 
-            config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 100}
+            # 三期B7（WF-P2-24）：recursion_limit settings 化（原硬编码 100）
+            config = {
+                "configurable": {"thread_id": thread_id},
+                "recursion_limit": settings.WORKFLOW_RECURSION_LIMIT,
+            }
 
             # 2. 区分启动与恢复
             if resume_val is not None:
@@ -754,6 +753,12 @@ async def async_execute(
                             return
 
                         node_info = nodes_map.get(node_id, {})
+                        # 三期B5（WF-P1-3）：节点返回值即将改为 applied delta（键级增量），
+                        # 此处把增量键级累加进全量视图；对全量快照形态该合并幂等
+                        # （{**old, **full} == full），delta 化前后行为一致。
+                        # state_data 落库口径保持全量快照（展示/续跑需要），output_data
+                        # 保持本节点原始返回（delta 化后即「本节点产出」的更准确语义）。
+                        merged_vars = {**current_vars, **new_vars}
                         # T5：脱敏 + 序列化在入队前完成，保证落库 payload 已脱敏（不削弱 audit S2）。
                         # 脱敏副本同时用于 SSE 推送，避免重复脱敏。
                         input_masked = AiSecurityService.mask_sensitive_dict(current_vars)
@@ -763,14 +768,14 @@ async def async_execute(
                                 "node_id": node_id,
                                 "node_name": node_info.get("name") or node_id,
                                 "node_type": node_info.get("type") or "unknown",
-                                "state_data": json.dumps(new_vars),
+                                "state_data": json.dumps(merged_vars),
                                 "input_data": json.dumps(input_masked),
                                 "output_data": json.dumps(output_masked),
                                 "latency_ms": latency_ms,
                             }
                         )
 
-                        current_vars = new_vars
+                        current_vars = merged_vars
 
                         publish_event(
                             instance_id,
