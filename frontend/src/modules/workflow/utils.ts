@@ -67,9 +67,10 @@ export function genId(prefix = ''): string {
 /**
  * 读取节点输出变量名（兼容两种历史字段名）。
  *
- * 仅 variable_transform 使用下划线字段 output_variable，其余节点为驼峰 outputVariable
- * （写入侧见 node-default-configs.ts 的 outputVarKey）。任何只读驼峰的地方都会漏掉
- * 「数据转换」节点的输出变量，导致其在下游变量选择器不可见、重名去重失效。
+ * variable_transform 历史上使用下划线字段 output_variable，三期B7（WF-P2-9）起
+ * 权威统一驼峰（写入侧见 node-default-configs.ts 的 outputVarKey），此处 snake 仅
+ * 存量图兜底。任何只读单侧字段的地方都会漏读另一侧，导致其在下游变量选择器不可见、
+ * 重名去重失效。
  */
 export function resolveOutputVar(cfg: Record<string, any> | undefined | null): string {
 	if (!cfg) return '';
@@ -151,9 +152,11 @@ export function getMissingConfigFields(node: {
 			return !cfg.assignments?.length ? ['赋值规则'] : [];
 		case 'variable_transform': {
 			const miss: string[] = [];
-			if (!cfg.input_variable) miss.push('输入变量');
-			if (!cfg.transform_type) miss.push('转换类型');
-			if (!cfg.output_variable) miss.push('输出变量');
+			// 三期B7（WF-P2-9）起写入侧统一驼峰；snake 仅存量图兜底读取，
+			// 口径与 resolveOutputVar / 配置面板迁移一致
+			if (!cfg.inputVariable && !cfg.input_variable) miss.push('输入变量');
+			if (!cfg.transformType && !cfg.transform_type) miss.push('转换类型');
+			if (!resolveOutputVar(cfg)) miss.push('输出变量');
 			return miss;
 		}
 		default:

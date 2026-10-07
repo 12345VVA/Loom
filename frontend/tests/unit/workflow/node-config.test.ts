@@ -65,6 +65,35 @@ describe('workflow getMissingConfigFields', () => {
 		).toEqual([]);
 	});
 
+	it('variable_transform 驼峰配置同样视为完整（三期B7 权威键回归）', () => {
+		// 回归背景：三期B7 写入侧统一驼峰后，此处曾只读 snake 键，
+		// 导致新建/面板迁移后的节点被误报「三项必填全缺失」并阻断保存/测试
+		expect(
+			getMissingConfigFields(
+				node('variable_transform', {
+					inputVariable: 'a',
+					transformType: 'upper',
+					outputVariable: 'b'
+				})
+			)
+		).toEqual([]);
+		expect(
+			isRequiredConfigMissing(
+				node('variable_transform', { inputVariable: 'a', transformType: 'upper', outputVariable: 'b' })
+			)
+		).toBe(false);
+		// 双键混布：任一侧有值即视为已配置
+		expect(
+			getMissingConfigFields(
+				node('variable_transform', {
+					inputVariable: 'a',
+					transform_type: 'upper',
+					outputVariable: 'b'
+				})
+			)
+		).toEqual([]);
+	});
+
 	it('lists missing fields for intent_classifier', () => {
 		expect(getMissingConfigFields(node('intent_classifier'))).toEqual(['AI 模型', '意图分支']);
 		expect(

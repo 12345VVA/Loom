@@ -5,7 +5,8 @@ describe('workflow node-type-registry', () => {
 	// 冒烟测试：确认测试基建能加载 workflow 模块的纯数据导出，
 	// 并锁住节点注册表的关键不变量（后续批次补 CSS / 重构时会复用）。
 	it('registers all expected node types', () => {
-		expect(NODE_REGISTRY.length).toBe(15);
+		// 三期B7（WF-P2-10）：legacy tool 条目下架（后端自动迁移为 tool_executor）
+		expect(NODE_REGISTRY.length).toBe(14);
 		const types = NODE_REGISTRY.map(n => n.type);
 		[
 			'start',
@@ -21,9 +22,9 @@ describe('workflow node-type-registry', () => {
 			'human_input',
 			'variable_assignment',
 			'variable_transform',
-			'tool',
 			'loop_body_group'
 		].forEach(t => expect(types).toContain(t));
+		expect(types).not.toContain('tool');
 	});
 
 	it('has unique node types and colorClasses', () => {
@@ -33,9 +34,9 @@ describe('workflow node-type-registry', () => {
 		expect(new Set(classes).size).toBe(classes.length);
 	});
 
-	it('marks only the legacy tool node as deprecated', () => {
+	it('no deprecated node types remain (legacy tool fully removed in B7)', () => {
 		const deprecatedTypes = NODE_REGISTRY.filter(n => 'deprecated' in n).map(n => n.type);
-		expect(deprecatedTypes).toEqual(['tool']);
+		expect(deprecatedTypes).toEqual([]);
 	});
 
 	it('keeps variable_assignment / variable_transform registered', () => {

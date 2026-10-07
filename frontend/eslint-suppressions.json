@@ -929,11 +929,6 @@
       "count": 4
     }
   },
-  "tests/unit/workflow/useNodeFactory-duplicate-outputvar.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    }
-  },
   "tests/unit/workflow/useNodeFactory.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 16

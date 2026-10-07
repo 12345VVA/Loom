@@ -209,11 +209,11 @@ export function useNodeFactory(
 			position: { x: newX, y: newY }
 		};
 
-		// 处理变量名去重。必须按该节点类型的权威字段名回写：仅 variable_transform 使用
-		// output_variable，其余节点用 outputVariable。字段名以 NODE_DEFAULT_CONFIGS 的
-		// outputVarKey 为准（与 buildDefaultConfig 写入侧同源），不再按现有 config 是否含
-		// 某键做启发式推断 —— 那会在缺失权威键（历史数据/导入）时写下划线「影子字段」（UI 不显示），
-		// 或在两字段并存时显示旧值而运行时用新值。
+		// 处理变量名去重。必须按该节点类型的权威字段名回写：三期B7（WF-P2-9）起全部
+		// 节点统一驼峰 outputVariable（读取经 resolveOutputVar 双风格兜底存量 snake 图）。
+		// 字段名以 NODE_DEFAULT_CONFIGS 的 outputVarKey 为准（与 buildDefaultConfig 写入
+		// 侧同源），不再按现有 config 是否含某键做启发式推断 —— 那会在缺失权威键（历史
+		// 数据/导入）时写「影子字段」（UI 不显示），或在两字段并存时显示旧值而运行时用新值。
 		if (newNode.data?.config) {
 			const cfg = newNode.data.config as Record<string, any>;
 			const key = NODE_DEFAULT_CONFIGS[newNode.type]?.outputVarKey || 'outputVariable';

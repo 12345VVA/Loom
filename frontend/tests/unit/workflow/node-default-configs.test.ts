@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildDefaultConfig, NODE_DEFAULT_CONFIGS } from '/$/workflow/utils/node-default-configs';
+import { NODE_MANIFEST } from '/$/workflow/generated/node-manifest';
+import { buildDefaultConfig } from '/$/workflow/utils/node-default-configs';
 
 // 测试用 uniqueVar：直接拼接，便于断言
 const uniqueVar = (label: string, d: string) => `${label}_${d}`;
@@ -20,11 +21,11 @@ describe('buildDefaultConfig', () => {
 		expect(cfg.outputVariable).toBeUndefined();
 	});
 
-	it('variable_transform：注入到 output_variable（snake_case）', () => {
+	it('variable_transform：注入到 outputVariable（三期B7 驼峰统一）', () => {
 		const cfg = buildDefaultConfig('variable_transform', '转换', uniqueVar);
-		expect(cfg.output_variable).toBe('转换_transformed_value');
-		expect(cfg.transform_type).toBe('join_array');
-		expect(cfg.outputVariable).toBeUndefined();
+		expect(cfg.outputVariable).toBe('转换_transformed_value');
+		expect(cfg.transformType).toBe('join_array');
+		expect(cfg.output_variable).toBeUndefined();
 	});
 
 	it('end：静态默认', () => {
@@ -46,10 +47,9 @@ describe('buildDefaultConfig', () => {
 		expect(c2.cases).toHaveLength(0);
 	});
 
-	it('NODE_DEFAULT_CONFIGS 覆盖所有需要 outputVariable 的核心类型', () => {
-		const withOutputVar = Object.entries(NODE_DEFAULT_CONFIGS)
-			.filter(([, spec]) => spec.outputVarDefault)
-			.map(([type]) => type);
+	it('NODE_MANIFEST 覆盖所有需要 outputVariable 的核心类型（后端权威）', () => {
+		// 三期B7（WF-P2-8）：默认名权威移至 generated/node-manifest.ts 的 outputVarDefault
+		const withOutputVar = NODE_MANIFEST.filter((n) => n.outputVarDefault).map((n) => n.type);
 		expect(withOutputVar).toEqual(
 			expect.arrayContaining([
 				'llm',

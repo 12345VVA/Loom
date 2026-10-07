@@ -12,7 +12,7 @@ import { NODE_MANIFEST } from '../generated/node-manifest';
 export interface DefaultConfigSpec {
 	/** 静态 config 字段（不含动态生成的 outputVariable） */
 	base: Record<string, any>;
-	/** outputVariable 写入的字段名；绝大多数为 'outputVariable'，仅 variable_transform 用 'output_variable' */
+	/** outputVariable 写入的字段名；三期B7 起统一 'outputVariable'，此字段留作非默认键类型的扩展点 */
 	outputVarKey?: string;
 }
 
