@@ -46,6 +46,20 @@ class SchemaValidationTestCase(unittest.TestCase):
             validate_graph(graph)
         self.assertIn("条件表达式", str(cm.exception))
 
+    def test_condition_missing_config_rejected(self):
+        """复审 P1-2：condition 完全无 config（仅有 handle 边）不再绕过必填校验——
+        此前 `if not config: continue` 放行，编译期 expression 缺失回落恒真兜底。"""
+        graph = _base_graph(cond={"id": "c1", "type": "condition", "name": "C"})
+        _chain(graph, "c1", "end_1", "true")
+        with self.assertRaises(ValueError) as cm:
+            validate_graph(graph)
+        self.assertIn("条件表达式", str(cm.exception))
+
+    def test_no_schema_type_with_empty_config_passes(self):
+        """无 schema 声明的节点类型（如 variable_assignment）空 config 不受影响。"""
+        graph = _base_graph(va={"id": "v1", "type": "variable_assignment", "name": "V", "config": {}})
+        validate_graph(graph)
+
     def test_condition_valid_expression_passes(self):
         graph = _base_graph(cond={"id": "c1", "type": "condition", "name": "C", "config": {"expression": "1 > 0"}})
         _chain(graph, "c1", "end_1", "true")

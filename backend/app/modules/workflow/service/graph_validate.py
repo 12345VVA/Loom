@@ -359,11 +359,13 @@ def validate_graph(graph_json: dict[str, Any]) -> None:
         )
 
     # 8. 节点 config schema 校验（三期B6 / WF-P2-5）：必填字段与类型，
-    # 消除「配置不全 → 运行期静默走默认/空转」（详见 node_schema.py）
+    # 消除「配置不全 → 运行期静默走默认/空转」（详见 node_schema.py）。
+    # 复审 P1-2：不再跳过空 config——validate_node_config 对无 schema 的类型
+    # 自然放行，此前 `if not config: continue` 让 condition 无 config 但有
+    # handle 边的图绕过必填校验，编译期 expression 缺失回落恒真 "True" 兜底
+    # （正是 schema 要消除的静默面）
     for n in nodes:
         config = n.get("config") or {}
-        if not config:
-            continue
         validate_node_config(n.get("type", ""), config, n.get("name", n["id"]))
 
 
