@@ -1,0 +1,144 @@
+---
+description: 工作流模块编码规范（模型/版本/实例状态机/服务/任务/事件/清理/跨端契约）
+globs: app/modules/workflow/**/*.py
+---
+
+# 工作流模块编码规范
+
+工作流模块（`app/modules/workflow/`）承载画布定义的版本管理、实例编排与运行可观测。
+LangGraph 运行时机制见 `langgraph.mdc`，节点执行器编写见 `workflow-node.mdc`，本文件管工程层。
+
+## 模块结构与职责
+
+```text
+app/modules/workflow/
+├── config.py                  # MODULE_CONFIG + bootstrap（幂等注册通知模板）
+├── controller/admin/          # definition / version / instance / artifact（CoolController）
+├── model/
+│   ├── workflow.py            # 定义/实例/执行日志实体 + 全部 DTO
+│   ├── workflow_version.py    # 版本表（draft/published/archived）
+│   └── workflow_artifact.py   # 运行产物
+├── service/
+│   ├── workflow_service.py        # 定义 CRUD + 实例 start/resume/cancel + 单节点测试
+│   ├── workflow_version_service.py# 草稿/发布/回滚/diff（纯版本表模型）
+│   ├── compiler.py                # LangGraph 门面（见 langgraph.mdc）
+│   ├── state.py / node_executors.py / node_schema.py / graph_validate.py
+│   ├── status_flow.py             # 实例状态机单一权威
+│   ├── event_bus.py               # Redis pub/sub 事件桥
+│   ├── checkpointer.py            # checkpoint 存储工厂
+│   ├── error_format.py            # 异常 → 可读中文消息
+│   ├── artifact_service.py        # 产物落地
+│   └── cleanup_service.py         # 日志/checkpoint/孤儿载荷/假死实例清理
+└── tasks/workflow_tasks.py        # Celery：执行、清理 sweep、回收
+```
+
+新增服务文件时沿用「门面 re-export」模式：拆出的纯函数/执行器模块由原门面保留全部
+历史符号 re-export，外部统一从门面 import，测试 patch 锚点随迁（见 compiler.py 头注释）。
+
+## 数据模型
+
+- **纯版本表模型**：`graph_json` 只存 `workflow_definition_version`，定义表只持指针
+  （`current_version_id` 线上版 / `draft_version_id` 草稿）。禁止把拓扑塞回定义表。
+- 实例绑定 `version_id`：发布新版本不影响运行中实例（按其 version_id 继续跑旧版）。
+- `thread_id` 是 LangGraph checkpoint 隔离键，建实例时 `uuid4()` 生成，resume 复用。
+- `run_type`：`production | trial | eval | test_node`。副作用（失败通知、产物落地、
+  列表展示）按 `run_type != "production"` 门控；新增实例创建路径必须显式声明 run_type。
+- 版本解析优先级（`_resolve_execution_graph`）：`graph_json_override`（eval 快照）>
+  `version_id` > `instance.version_id` > `definition.current_version_id`。
+
+## 版本操作
+
+草稿/发布全部走 CAS 条件更新（`WorkflowVersionService`）：
+
+- `save_draft`：可选乐观锁 `base_updated_at` 比对，不一致即 409，拒绝静默
+  last-write-wins；
+- `publish`：旧 published→archived、draft→published 两步 CAS + 主表指针迁移，
+  自动复制建下一条草稿；任何一步 rowcount=0 即 rollback 抛 409；
+- 校验分层：保存/发布只做基础结构校验（`validate_graph_json`，start 出边等），
+  完整校验（孤立节点/模型 profile/config schema）留给执行期 `validate_graph`，
+  以免影响测试用简化拓扑。
+
+## 实例状态机
+
+合法迁移的单一权威在 `service/status_flow.py` 的 `ALLOWED_STATUS_TRANSITIONS`：
+
+- `pending → running/cancelled/failed`；`running → running/paused/success/failed/cancelled`；
+  `paused → running/failed/cancelled`；`failed → running`（断点续跑）；终态零出边。
+- **一切状态迁移必须经 `cas_transition`**：非法迁移开发期即抛 ValueError，
+  rowcount=0 表示状态已被并发改走，调用方复查或拒绝（409）。新增位点禁止内联硬编码
+  from/to 的裸 UPDATE——那是被治理掉的反模式。
+- 业务终态判定用 `TERMINAL_STATUSES`（failed 有 running 出边但仍是业务终态），
+  不要用「迁移表零出边」推导。
+
+## 所有者校验（IDOR 防线）
+
+定义/实例的改、删、恢复、单节点测试等入口统一前置
+`assert_workflow_owner(session, entity, current_user)`：超管放行、无用户上下文放行、
+否则必须 `user_id` 匹配。新增写操作入口必须带；`start_instance` 有意不校验
+（任何用户可启动已启用工作流，实例归属启动者），不要顺手加。
+
+## 服务层模式
+
+- 继承 `BaseAdminCrudService`，钩子里做校验；`_before_update` 过滤 None 值以支持
+  cl-switch 局部更新（副作用：无法显式清空字段，保留注释提请维护注意）。
+- 列表/详情回填关联数据一律**一次 IN 查询**构建 map（`_enrich_definition_name` /
+  `_enrich_version_no` / `_enrich_token_cost`），禁止逐行查询 N+1。
+- 大字段三件套：
+  - **T5 脱敏**：落库/推送的 input/output 副本先过 `AiSecurityService.mask_sensitive_dict`；
+  - **T6 引用链**：节点日志 input 用 `payload_type=ref_prev` 引用上一条 log 的 output，
+    首条 full；
+  - **T8 载荷分离**：超阈值经 `offload_payload` 落对象存储，主表存 `*_storage_ref`，
+    读取端 `resolve_payload` 还原，失败降级空串不使接口 500。
+- 删除实例：拒绝删除 running/pending；级联软删日志/产物、清空 state_data，commit 后
+  best-effort 删文件与 checkpoint（失败仅留孤儿，由清理任务兜底）。
+
+## Celery 任务
+
+- 任务名 `{module}.{action}`；执行任务 `workflow.execute` 路由 `workflow` 队列，
+  评估 `workflow.eval.run` 走独立 `workflow.eval` 队列（生产用 `-Q` 独占 worker 防饿死），
+  清理类 sweep 走 `default`。新增任务在 `celery_app.py` 的 `task_routes` 显式登记。
+- 执行任务 `max_retries=0` + `task_time_limit=30*60`；入口先解析参数 JSON，畸形时
+  `_mark_instance_failed` 立即写终态（否则实例假死到进程重启兜底，最长 30 分钟）。
+- 失败通知 `_notify_workflow_failure`：best-effort（异常仅 warning）、独立 session、
+  按 `run_type` 门控；新增失败路径复用它，不要内联发通知。
+- 周期回收：`workflow.cleanup.sweep`（日志/checkpoint/孤儿载荷，保留天数走 SysParam）、
+  `workflow.cleanup.sweep_stuck_instances`（假死 running/pending，宽限期防误杀）、
+  `workflow.version.sweep_archived`；进程重启另有 `recover_orphaned_instances`
+  （30 分钟宽限）。新增长期态字段/大对象时同步评估是否需要纳入 sweep。
+
+## 事件与 SSE
+
+- 执行侧 `publish_event`（Celery Worker）双桥：Redis pub/sub 跨进程 + 心跳由订阅侧
+  维持；订阅侧 `subscribe_events` 优先原生 async pubsub，降级 to_thread。
+- 事件契约：`node_start` / `node_done` / `node_update` / `paused` / `success` /
+  `failed` / `cancelled`。payload 一律脱敏；产物/变量全文不随 SSE 推送（前端经 /logs 还原）。
+- `node_start` 先写 DB（current_node 归因）再广播，保证前端收到高亮时 DB 已就绪。
+
+## 配置项
+
+运行时旋钮集中在 `app/core/config.py`（前缀 `WORKFLOW_`）：checkpoint 后端与跳过开关、
+节点超时（600s）/测试超时（180s）/子图超时（1800s）、重试次数与退避基数、递归上限。
+保留期类参数走 SysParam（`workflowExecutionLogKeepDays` 等），不走 settings。
+
+## 跨端契约（与前端同步）
+
+- 节点元数据**后端唯一权威**：`scripts/dump_node_manifest.py` 生成
+  `frontend/src/modules/workflow/generated/node-manifest.ts`；改动节点注册表或
+  `graph_validate` 常量集后必须重新生成并一并提交（CI `--check` 守卫 +
+  `tests/test_workflow_untestable_sync.py`）。
+- 键名迁移类改动（节点 config 键、节点类型下架）必须 grep 全部读取点：
+  存量图加载入口（执行/试运行/草稿回填/单节点测试）统一过
+  `migrate_legacy_tool_nodes` 式迁移，绕过加载入口直造 graph_json 的由
+  `validate_graph` 显式拒绝。
+- 后端 EPS 输出与前端 `build/cool/eps.d.ts` 同步（框架通用义务，见 CLAUDE.md）。
+
+## 检查清单
+
+- [ ] 新实例路径显式声明 run_type，副作用按其门控
+- [ ] 状态迁移全部经 cas_transition，无裸 UPDATE
+- [ ] 写操作入口带 assert_workflow_owner
+- [ ] 列表回填无 N+1（IN 查询）
+- [ ] 落库/推送载荷已脱敏，超阈值已 offload
+- [ ] Celery 任务已在 task_routes 登记队列
+- [ ] 改动节点注册表/常量集后重新生成 manifest 并提交
+- [ ] 键名/类型迁移覆盖了全部加载入口且 validate_graph 拦截直造图

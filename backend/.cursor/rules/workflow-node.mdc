@@ -1,0 +1,162 @@
+---
+description: 工作流节点设计与编码规范（执行器契约/schema/变量读取/错误口径/子图）
+globs: app/modules/workflow/service/node_executors.py,app/modules/workflow/service/node_schema.py,app/modules/workflow/service/llm_io.py,app/modules/workflow/service/expressions.py,app/modules/workflow/service/graph_validate.py
+---
+
+# 工作流节点设计与编码规范
+
+节点是工作流的最小执行单元。执行器群在 `service/node_executors.py`，声明式 schema 在
+`node_schema.py`，拓扑校验在 `graph_validate.py`，表达式/模板纯函数在 `expressions.py`
+与 `llm_io.py`。运行时机制见 `langgraph.mdc`，模块工程层见 `workflow.mdc`。
+
+## 节点类型全景
+
+| 类型 | 类别 | 执行体 | 幂等 |
+|------|------|--------|------|
+| `llm` | 基础 | 分层 JSON 输出（json_schema → json_object → 纯文本） | ✅ |
+| `image_generator` | 基础 | 生图 + 媒体库转存 | ❌ 重试=重复计费 |
+| `tool_executor` | 基础 | 内置工具分发 | ✅ |
+| `variable_assignment` / `variable_transform` | 基础 | 赋值 / 聚合转换 | ✅ |
+| `condition` / `switch` / `intent_classifier` | 条件路由 | 执行体仅标记，路由在 conditional edges | ✅ |
+| `human_input` | 中断 | `interrupt()` 挂起，resume 经 Command 回执 | ✅ |
+| `loop_controller` / `batch_processor` | 子图 | 编译期提取体子图，串行/并发迭代 | ❌ 超时重试=整体重跑 |
+| `end` | 出口 | 结构化/模板输出 → `workflow_output` | ✅ |
+| `start` / `loop_body_group` | 辅助 | 不注册执行器（编译期特殊处理） | — |
+| ~~`tool`~~ | 已下架 | 加载入口自动迁移为 `tool_executor` | — |
+
+## 新增节点类型的固定步骤
+
+1. **执行器**：`node_executors.py` 写 `async def execute_xxx_node(variables, config) -> dict`；
+2. **注册**：模块体 `node_registry.register("xxx", execute_xxx_node, idempotent=…)`
+   （import 本模块即完成注册，注册副作用是 compiler/workflow_tasks 的依赖入口）；
+3. **元数据标记**：按语义加入 `graph_validate` 对应常量集——`UNTESTABLE_NODE_TYPES`
+   （不可单测）、`INTERRUPT_NODE_TYPES`（依赖 checkpointer）、`SUBGRAPH_NODE_TYPES`、
+   `CONDITIONAL_NODE_TYPES`；
+4. **config schema**：需要必填校验的字段加进 `node_schema.NODE_CONFIG_SCHEMA`；
+5. **输出默认名**：有 `output_variable` 的节点同步 `node_schema.NODE_OUTPUT_VAR_DEFAULTS`
+   （后端权威表，前端经 manifest 消费，禁止前端手写默认名）；
+6. **重新生成 manifest**：`cd backend && python scripts/dump_node_manifest.py`，
+   产物与代码变更一并提交（CI `--check` 守卫）。
+
+## 执行器签名与变量契约
+
+```py
+async def execute_xxx_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    ...  # 返回「要写入全局变量的增量」，而非全量状态快照
+```
+
+- **绑定输入**（节点声明的 inputs/模板渲染/表达式求值）＝ 第一形参 `variables`
+  （`resolve_node_inputs` 已按 inputs schema 或 input_mappings 提炼）；
+- **跨节点全局读取** ＝ `config["_global_vars"]`（node_runner 注入的只读快照），
+  统一经 `_globals_from(config, variables)` 取用——缺省时降级 `variables`，
+  兼容直调执行器的测试路径；
+- **变量名归一**：来自用户配置的变量引用先 `strip_var_prefix()`（剥 `{}` 与
+  `variables.` 前缀），取值用 `_deep_get()`（支持点路径与列表数字索引）。浅层
+  `variables.get()` 只允许取本节点声明过的绑定输入；
+- **返回值是 applied delta**：只含本节点写入的键。有 `output_mappings` 时仅映射
+  目标键进增量（`compute_output_delta` 语义）；返回全量快照会让并行分支互相覆盖。
+
+## config 键名与 schema 声明
+
+- 图 JSON 原生形态是**前端 camelCase（权威键名）**，编译期 `convert_keys_to_snake`
+  统一转 snake_case 后执行器才读得到。执行器内读取 snake_case 键；
+  `node_schema.get_config_value` 提供双风格取值（存量图兼容）。
+- 变量引用字符集必须与前端 `sanitizeLabel` 一致（`[a-zA-Z0-9_一-鿿]`）——改任一侧
+  会让中文变量名被模板渲染静默跳过（`expressions._VAR_REF_PATTERN` 注释）。
+- 必填判定依据执行器语义：缺失会导致**静默空转或恒真/恒假**的字段才进
+  `NODE_CONFIG_SCHEMA`（如 condition 的 `expression` 缺失编译期兜底恒真）。
+  空配置语义合法的不要列（如 intent 空 intents = 不经 LLM 直落 default）。
+- 校验只在执行/编译入口生效，不阻断保存草稿。
+
+## 错误处理口径（X-1 / D3）
+
+核心原则：**影响语义正确性的错误必须冒泡为节点失败，静默降级是缺陷不是容错。**
+
+- 默认 fail-fast：表达式求值失败（condition 路由 / assignment expression）以节点失败
+  收尾，经 `NodeExecutionError` 归因写 `failed_node_id`；节点 config
+  `onExpressionError="fallback"` 可显式选择回落（兼容存量图，日志必须能定位节点）。
+- 禁止静默假成功：工具/转换/JSON 解析失败不得吞成空串或 `{}` 返回（历史上三次踩坑：
+  工具异常伪装成功、参数 JSON 解析静默落 `{}`、转换异常静默落 None）——一律 raise
+  交由重试/失败链路。
+- 「危险值」不算容错：number 赋值解析失败禁止静默赋 0（下游拿 0 继续算，失败被推迟
+  且难归因）。
+- 业务性路由降级是合法的：意图分类 LLM 失败降级「其他」走 default_route——这是有
+  default 兜底的降级语义，与上述静默错误不同。
+- 面向用户的最终消息经 `friendly_error_message(e, node_names)` 折叠为单行中文
+  （实例终态 / SSE failed / 失败通知 / 单节点测试共用），各层不要自己拼错误文案。
+
+## 非幂等与重试
+
+副作用不可重放的节点注册时必须 `idempotent=False`：`image_generator`（重复计费）、
+`loop_controller`/`batch_processor`（超时重试=整个子图从头重跑）。重试框架会强制
+这类节点 `max_attempts=1`。子图节点的 docstring 必须自警「调大重试次数会整体重跑，
+务必配合 retry_max_attempts=1」。
+
+## AI 调用约定
+
+- 统一经 `run_ai_chat` / `run_ai_image` 驱动（含空响应拦截与错误透出），执行器内用
+  `asyncio.to_thread` 包裹（同步 Session 阻塞事件循环）；
+- 独立会话：执行器/Celery 上下文内新开 `SessionLocal()` 或 `Session(engine)` 的
+  `with` 块，勿复用请求级 session；若调用方持有请求 session 且测试用独立内存引擎
+  （`make_test_engine`），改用 `Session(session.get_bind())` 防写穿测试隔离
+  （先例：ai runtime_service._independent_session，勿回退）；
+- 实例归属打标：执行链路内新开 DB 操作需要归属时从 `workflow_instance_id_ctx`
+  contextvar 读 instance_id（`asyncio.to_thread` 会复制上下文），引用失效时整体置空，
+  不落孤儿 id；
+- LLM 结构化输出三层降级解析（`llm_io._parse_llm_output`）：直接解析 → markdown
+  代码块 → 首个候选 JSON 片段（对象优先、剔除内层被包含片段），全部失败保留原始
+  文本——保证下游拿到可读内容而不是异常；
+- 生图节点双输出契约：`{output_variable}` 存媒体库永久 URL，`{output_variable}__src`
+  存厂商临时 URL（约 24h）——后者专供下游生图节点 `imageVariable` 图生图引用
+  （本地部署 /uploads 地址厂商无法回源拉取），改输出结构时不得丢 `__src`。
+
+## 模板与表达式
+
+- 模板插值 `render_template`：`{var}` / `{var.field}` / `{var.list.0}`，缺失路径返回
+  空串，dict/list 自动 JSON 序列化；负向环视排除 JSON 字面量特征（`{a:1}` 不算变量）。
+- 表达式一律 `safe_eval`（白名单 AST 求值器），**禁止** `eval`/`str.format`/新开表达式
+  通道；求值上下文里 `variables` 是只读视图（裸名与 `variables.` 前缀两种写法等价）。
+- 未配置输入映射的节点透传全局变量——执行器直接用 `resolve_node_inputs` 返回值渲染
+  模板，不要假设它只会含声明过的键。
+
+## 子图节点（循环/批处理）专项
+
+- 体子图经 `config["_compiled_body"]` 注入，缺失时给中文友好错误（提示重新保存触发编译）；
+- **体内禁止中断类节点**（human_input）：体子图独立编译不挂 checkpointer，中断后无法
+  恢复——`validate_graph` 第 3 步拦截，新增子图类型沿用该校验；
+- 列表变量读取走 `_globals_from` + `_deep_get`（支持跨节点深层路径如
+  `llm_output.user_list`）；硬上限 200 项，超出显式报错；
+- `collect_keys` 白名单收集（键名须与运行时变量名完全一致，不做归一）；
+  `persist_globals` 仅循环控制器支持（键差集、只并入新增变量），批处理并发无全序
+  **不支持并忽略**（warning 提示改用循环控制器）；
+- 子图超时：`timeout_seconds`（前端 timeoutSeconds）或 `WORKFLOW_SUBGRAPH_TIMEOUT`
+  约束整个迭代过程；取消并发协程时已在 to_thread 中运行的调用无法中断（与外层
+  superstep 兜底行为一致，注释里说明即可）。
+
+## Mock 与占位实现
+
+`MOCK_TOOL_CODES`（web_search/file_system/mock_weather_api）为演示占位：
+非 DEBUG 环境执行直接失败，杜绝演示数据以 success 流入下游与产物。新增内置工具
+在 `execute_tool_executor_node` 分发并同步该集合；未登记的 tool_code 显式失败。
+
+## 条件节点路由
+
+- 路由推导与注册配对：`_derive_conditional_config`（边 sourceHandle → target_route
+  写回共享 config）+ `_register_conditional_edges`（只从写回后的 config 读）。新增
+  条件节点类型时两处都要接入，且单节点测试路径（`_resolve_node_for_test`）也要同源
+  推导，否则测试环境拿不到路由；
+- 执行体是空标记（返回 `{}`）：路由决策只能整图试运行验证，`test_node` 响应带
+  hint 说明；
+- 条件节点至少一条非 END 路由（`_conditional_has_route`：带 handle 的路由出边或
+  config 显式路由），否则 `validate_graph` 第 7 步拒绝——静默终结的分支不允许编译通过。
+
+## 检查清单
+
+- [ ] 注册时按语义声明 idempotent，不可重放的置 False
+- [ ] 绑定输入读 variables，全局读取走 _globals_from + _deep_get + strip_var_prefix
+- [ ] 返回 applied delta，非全量快照
+- [ ] 错误按 X-1/D3 口径冒泡，无静默假成功/危险值
+- [ ] 新增类型已更新常量集 + schema + 输出默认名 + manifest 已重新生成
+- [ ] AI 调用经 run_ai_chat/run_ai_image + asyncio.to_thread，独立会话不复用请求 session
+- [ ] 表达式走 safe_eval，未新开求值通道
+- [ ] 子图节点无中断类节点、有 200 上限与超时自警注释

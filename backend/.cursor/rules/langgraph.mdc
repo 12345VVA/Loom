@@ -1,0 +1,155 @@
+---
+description: LangGraph 运行时编码规范（图编译/状态通道/控制流/checkpoint/流式事件）
+globs: app/modules/workflow/service/compiler.py,app/modules/workflow/service/state.py,app/modules/workflow/service/checkpointer.py,app/modules/workflow/service/status_flow.py,app/modules/workflow/tasks/**/*.py
+---
+
+# LangGraph 编码规范
+
+Loom 用 LangGraph 把前端画布的拓扑 JSON 编译为可执行 StateGraph。运行时核心分四处：
+`service/compiler.py`（门面 + 编译主体）、`service/state.py`（状态/注册表/映射）、
+`service/checkpointer.py`（断点存储工厂）、`tasks/workflow_tasks.py`（Celery 执行事件循环）。
+
+## 依赖与版本约束
+
+- `langgraph` 下限由 `compiler.py` 顶层硬导入 `from langgraph.errors import GraphBubbleUp` 决定
+  （0.2.54 起才有该类）。调整导入或升级版本时必须同步更新 `requirements.txt` 的下限注释。
+- 升级 langgraph 后必须回归验证事件形态：`stream_mode` 为 list 时事件恒为 `(mode, payload)`
+  元组。消费端**严禁裸 `mode, payload = event` 解包**——dict 会按键解包造成静默错位，
+  必须 `isinstance(event, tuple) and len(event) == 2` 判别后取 `event[1]`。
+
+## 状态通道（WorkflowState）
+
+状态定义在 `service/state.py`，只保留真正被读写的通道：
+
+```py
+class WorkflowState(TypedDict):
+    variables: Annotated[dict[str, Any], _merge_dicts]   # 键级合并 reducer
+    current_node: Annotated[str, _last_writer_wins]
+```
+
+规则：
+
+- **最小通道原则**：新增通道前先确认有执行器读写它。带 reducer 却无读写的死字段
+  （如已移除的 `messages`）白占 checkpoint 与循环迭代拷贝，禁止 reintroduce。
+- 新通道必须显式声明 reducer；并行分支会并发更新同一通道，无 reducer 会直接报
+  `InvalidUpdateError`。
+- `variables` 的合并语义是 `{**left, **right}` 键级覆盖——节点必须返回 **applied delta**
+  （仅本节点写入的键，见 `compute_output_delta`），返回全量快照会让并行分支互相覆盖。
+
+## 图编译（WorkflowCompiler）
+
+入口 `compile_graph(graph_json)`，固定顺序不可调整：
+
+1. 结构校验：`graph_json` 必含 `nodes`/`edges`，随后 `validate_graph` 完整校验（含
+   `node_schema` 必填 config 校验）；
+2. 延迟导入 `app.modules.workflow.service.workflow_service` 触发执行器注册副作用——
+   这打破了 compiler → workflow_service 的循环依赖，**任何**新调用入口都会自动完成注册，
+   不要改成顶层 import，也不要在别的入口各自补注册；
+3. Pre-pass 递归编译子图（`loop_controller`/`batch_processor` 体，由内而外）；
+4. 条件节点路由推导 `_derive_conditional_config` **前置**到节点注册循环之前，推导结果
+   写回 config 副本，执行器与路由器共享同一份带路由的 config（WF-P0-1 契约）；
+5. 注册节点与边，`end` 节点统一连 END，条件节点出边交给 `add_conditional_edges`。
+
+共享 config 只读契约：`_derive_conditional_config` 的返回值同时交给 `create_node_runner`
+与 `create_*_router`，两侧均**不得修改嵌套结构**（编译期注入 `_compiled_body` 不受限）。
+
+体子图边界（`_validate_subgraph_boundaries`）：体节点只能连回父节点或体内部；外部节点
+不能直连体内部。体子图零出边的条件节点不注册条件边（分支自然终结）——不要改成注册
+`{END: END}`，那会把死分支变成跳 default 的活分支，属行为变更。
+
+## 节点运行函数（node_runner）契约
+
+`create_node_runner` 生成的运行函数是所有执行路径的统一通道：
+
+```py
+async def node_runner(state: WorkflowState) -> dict[str, Any]:
+    node_inputs = resolve_node_inputs(state["variables"], config)   # 1. 入参提炼
+    executor_config = {**config, "id": node_id}
+    executor_config["_global_vars"] = state["variables"]            # 2. 只读全局快照注入
+    updates = await cls._invoke_executor_with_retry(...)            # 3. 带重试执行
+    delta = compute_output_delta(updates, config.get("output_mappings", {}))
+    return {"variables": delta, "current_node": node_id}            # 4. 只返回增量
+```
+
+- 不直改入参 `state`（对图状态无效，且具误导性）；`current_node` 经返回值由 reducer 驱动。
+- 重试在 node_runner 内部、updates 在 return 后才 apply，故前次失败不污染 state。
+- 节点级 custom 事件（`node_start`/`node_done`）在 runner 内经 `_safe_stream_writer()` 发出。
+  writer 必须在**执行体内**获取（contextvar 只在图运行期有效），不得在工厂期缓存；
+  图上下文之外降级 no-op，不要 try/except 之外再包一层。
+
+## 控制流信号：GraphBubbleUp / interrupt
+
+- `interrupt`（当前唯一来源 `human_input`）抛出的 `GraphBubbleUp` 系控制流信号：
+  在重试包装、异常兜底里**必须原样 `raise`**——不重试、不包装成 `NodeExecutionError`，
+  否则人工审批永远无法进入 paused、停机信号会被误判为节点失败。
+- interrupt 仅在 **`astream` updates 通道**可见（`{"__interrupt__": ...}`），
+  `ainvoke` 返回值中不可见（图运行时吞掉并返回初值 state）。凡需要感知中断的消费方
+  一律走 `astream(stream_mode="updates")`，见 `run_node_standalone` 的转译注释。
+- 新增依赖 interrupt + checkpointer 的节点类型时，必须同步加入
+  `graph_validate.INTERRUPT_NODE_TYPES`（它决定是否挂 checkpointer），并重新生成
+  节点 manifest（见工作流节点规范）。
+
+## Checkpointer
+
+- **按需挂载**：无中断节点且非恢复路径的图跳过 checkpointer（省每步全量快照的 O(N²)
+  写放大）；resume 走 `Command(resume=…)` 硬依赖断点，强制挂载。开关
+  `WORKFLOW_CHECKPOINT_SKIP_WITHOUT_INTERRUPT` 为 kill-switch。
+- 同步 `get_checkpointer()` 进程级单例（PostgresSaver 显式 Connection + setup()）；
+  异步 `get_async_checkpointer()` 是**每任务新建**的上下文管理器——AsyncPostgresSaver
+  绑定创建时的 loop，Celery 每任务独立 `asyncio.run`，进程级单例复用会报跨 loop 错误。
+  `setup()` 幂等，进程级只跑一次（标志守卫，不加 asyncio.Lock）。
+- 未知 backend 抛 ValueError，**禁止静默降级** MemorySaver（会掩盖配置错误，paused
+  实例重启后无法恢复）。
+- memory backend 下暂停/恢复功能本就不成立（跨进程内存不共享），仅限本地测试。
+- 删 checkpoint 一律走 `delete_thread_best_effort`（多态调 saver 原生 delete_thread），
+  不手写 SQL；硬删实例行后当场删 thread，软删交由每日 sweep 按保留天数回收。
+
+## 执行事件循环（async_execute）
+
+Celery 任务 `workflow.execute` 的主循环固定形态：
+
+- 两段式启动：先 `_promote_pending_to_running`（CAS），失败即静默退出——排队中被
+  取消/回收的实例不产生任何执行副作用。
+- 单节点超时：用 `asyncio.wait_for(ait.__anext__(), timeout=…)` 包装（默认
+  `WORKFLOW_NODE_TIMEOUT=600s`），卡死节点不再烧满 30 分钟 Celery 硬上限。
+- 协作式取消：每个节点事件回查 `instance.status`（`_is_cancelled_sync`），被置
+  cancelled 则 drain 后优雅退出；所有终态写入走 `status_flow.cas_transition`，
+  **严禁**裸 `UPDATE status`（会覆盖 cancelled/failed，产生假终态）。
+- 节点日志先入 `asyncio.Queue`，由 `_flush_worker` 按「批大小或时间间隔」批量落库
+  （T4）。flush 消费循环**永不因落库失败退出**（失败计数进 stats，收尾汇总告警）；
+  任何提前 return 的路径（中断/超时/取消/成功/异常）都必须先 `_drain_flush`。
+- SSE 载荷脱敏：所有对外推送副本（事件、日志 input/output）经
+  `AiSecurityService.mask_sensitive_dict`，`state_data` 落库口径保持全量快照
+  （不脱敏，展示/续跑需要）；超阈值载荷经 `offload_payload` 分离到对象存储（T8）。
+
+## 节点级重试
+
+`_invoke_executor_with_retry` 是整图与单节点测试共用的唯一重试通道：
+
+- 全局默认 `WORKFLOW_NODE_RETRY_MAX_ATTEMPTS`（1）+ 节点 config
+  `retry_max_attempts`/`retry_backoff_base` 覆盖；
+- 指数退避 + ±50% 全抖动（防惊群）；
+- 非幂等节点（注册表 `idempotent=False`）强制 `max_attempts=1`，config 显式请求
+  重试会被覆盖并告警；
+- 重试耗尽抛 `NodeExecutionError(node_id, attempts, cause)`，携带 node_id 供上层
+  写 `failed_node_id`；`attempts=0` 保留给条件路由求值失败（fail-fast 场景）。
+
+## 单节点测试（run_node_standalone）
+
+- 与整图执行**同走 node_runner 通道**（入参提炼/重试/输出映射/全局注入/流上下文全一致），
+  保证「节点测试通过 ≈ 整图该节点能跑通」；新执行路径不得绕开。
+- 不挂 checkpointer、不落库；返回输出增量（相对 mock_variables 的差集）。
+- 经 astream updates 消费并检测 `__interrupt__`，转译为 `GraphInterrupt` 原样上抛，
+  保持「控制流信号不重试、不包装」契约（锚定测试
+  `tests/test_workflow_retry.py::test_bubble_up_not_swallowed`）。
+
+## 检查清单
+
+- [ ] 新消费端用 isinstance 判别事件元组形态，未裸解包
+- [ ] 新状态通道有 reducer 且有真实读写方
+- [ ] 执行器返回 delta 而非全量快照
+- [ ] GraphBubbleUp 路径原样冒泡，未被重试/包装吞掉
+- [ ] 中断类节点已纳入 INTERRUPT_NODE_TYPES 且 manifest 已重新生成
+- [ ] 终态写入全部经 cas_transition，无裸 UPDATE
+- [ ] 提前 return 的路径都已 _drain_flush
+- [ ] 异步 checkpointer 每任务新建，未做进程级单例

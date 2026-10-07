@@ -117,7 +117,7 @@ Loom 是一个全栈 AI 内容生成平台，基于 Vue 3 + FastAPI + Celery。�
 4. 查询字段映射使用 `QueryFieldConfig(column, request_param)`
 5. 初始化脚本保持幂等，白名单使用完整后端接口路径
 
-详细规范参考 `backend/.cursor/rules/` 下的 `.mdc` 文件：`module.mdc`、`controller.mdc`、`service-crud.mdc`、`model-schema.mdc`、`eps-response.mdc`、`task-celery.mdc`、`testing.mdc`
+详细规范参考 `backend/.cursor/rules/` 下的 `.mdc` 文件：`module.mdc`、`controller.mdc`、`service-crud.mdc`、`model-schema.mdc`、`eps-response.mdc`、`task-celery.mdc`、`testing.mdc`、`langgraph.mdc`（LangGraph 运行时）、`workflow.mdc`（工作流模块工程层）、`workflow-node.mdc`（工作流节点设计与编码）
 
 ### 前端新增模块
 
