@@ -16,10 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # 列类型用 VARCHAR 对齐 SQLModel 的 str→AutoString 映射（TEXT 会触发 alembic check 类型 drift）
     if op.get_bind().dialect.name == "sqlite":
-        _sqlite_add_column_if_missing("ai_model_profile", "custom_config", "TEXT")
+        _sqlite_add_column_if_missing("ai_model_profile", "custom_config", "VARCHAR")
     else:
-        op.execute("ALTER TABLE ai_model_profile ADD COLUMN IF NOT EXISTS custom_config TEXT")
+        op.execute("ALTER TABLE ai_model_profile ADD COLUMN IF NOT EXISTS custom_config VARCHAR")
 
 
 def downgrade() -> None:
