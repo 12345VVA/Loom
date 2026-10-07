@@ -275,7 +275,11 @@ async def execute_intent_classifier_node(variables: dict[str, Any], config: dict
         elif norm_hits:
             selected_route = norm_hits[0].get("target_route")
 
-    if _normalize_intent_label(matched_intent_name) == "其他" or not selected_route:
+    # 复审 P1-4：删去「模型输出 == 其他 → 强制 default」判定——未命中任何具名意图时
+    # selected_route 本就保持 default_route 初值（含模型输出「其他」的情况），该判定
+    # 反而会把用户显式配置的「其他」意图（exact/norm 命中、target_route 已解析）覆盖
+    # 回 default_route。保留仅兜底「命中的意图未配置路由」场景。
+    if not selected_route:
         selected_route = default_route
 
     return {f"{node_id}_selected_route": selected_route}
@@ -646,7 +650,10 @@ async def execute_tool_executor_node(variables: dict[str, Any], config: dict[str
     if tool_code in MOCK_TOOL_CODES and not settings.DEBUG:
         raise ValueError(f"工具 '{tool_code}' 为演示占位实现，生产环境不可用；如需演示请在 DEBUG 模式运行")
     globals_ = _globals_from(config, variables)
-    arguments = globals_.get("arguments") or config.get("arguments") or {}
+    # 复审 P1-5：config 声明（arguments/arguments_json）优先——原 `globals_.get("arguments")`
+    # 优先于节点配置，与 docstring 相反，且全局同名键会覆盖用户在面板配置的参数
+    # （B4 迁移残留的 mock fallback 遗迹）。参数值的 variables. 引用解析仍走 globals_。
+    arguments = config.get("arguments") or {}
     if not arguments:
         arguments_json_str = config.get("arguments_json", "")
         if arguments_json_str:
@@ -743,7 +750,9 @@ async def execute_variable_assignment_node(variables: dict[str, Any], config: di
             try:
                 updates[var_name] = float(val) if "." in str(val) else int(val)
             except ValueError:
-                updates[var_name] = 0
+                # X-1 口径（复审 P1-3）：静默赋 0 是危险值（下游计算拿 0 继续，
+                # 失败被推迟且难归因）——与同节点 expression 失败同语义，显式失败
+                raise ValueError(f"变量赋值 '{var_name}' 的 number 值 '{val}' 无法解析为数字，请检查赋值配置") from None
         elif val_type == "boolean":
             updates[var_name] = str(val).lower() in ("true", "1", "yes")
         elif val_type == "expression":

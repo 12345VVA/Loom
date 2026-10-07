@@ -171,8 +171,9 @@ class ToolExecutorGlobalsArgsTestCase(unittest.TestCase):
             result = asyncio.run(execute_tool_executor_node({}, config))
         self.assertEqual(result["tool_result"]["loc"], "杭州")
 
-    def test_arguments_dict_from_globals(self):
-        """arguments 整体不在 config 时从 _global_vars 顶层同名键读取（向后兼容）。"""
+    def test_arguments_dict_from_globals_not_read(self):
+        """复审 P1-5：globals 顶层 arguments 键不再被读取（B4 mock fallback 遗迹清除）——
+        参数以 config 声明（arguments/arguments_json）为唯一来源，全局同名键不覆盖。"""
 
         async def fake_weather(location: str) -> dict:
             return {"loc": location}
@@ -185,7 +186,8 @@ class ToolExecutorGlobalsArgsTestCase(unittest.TestCase):
         }
         with patch("app.modules.workflow.service.node_executors.tool_mock_weather_api", side_effect=fake_weather):
             result = asyncio.run(execute_tool_executor_node({}, config))
-        self.assertEqual(result["tool_result"]["loc"], "北京")
+        # globals 的 arguments 被忽略，无 config 声明 → 空 arguments → 工具默认 location
+        self.assertEqual(result["tool_result"]["loc"], "未知")
 
 
 class VariableAssignmentGlobalsCtxTestCase(unittest.TestCase):

@@ -215,6 +215,53 @@ class M2IntentRoutingTestCase(unittest.TestCase):
         intents = [{"name": "咨询", "target_route": "r1"}]
         self.assertEqual(self._route("别的", intents), "default")
 
+    def test_explicit_other_intent_respected(self) -> None:
+        """复审 P1-4：用户显式配置名为「其他」的意图，模型输出「其他」时走其
+        target_route——不再被「输出==其他 → 强制 default」判定覆盖。"""
+        intents = [{"name": "其他", "target_route": "r_explicit"}, {"name": "咨询", "target_route": "r1"}]
+        self.assertEqual(self._route("其他", intents), "r_explicit")
+
+    def test_model_says_other_without_explicit_intent_falls_back(self) -> None:
+        """未配置「其他」意图时模型输出「其他」→ 未命中 → default（回归）。"""
+        intents = [{"name": "咨询", "target_route": "r1"}]
+        self.assertEqual(self._route("其他", intents), "default")
+
+
+class R3AssignmentNumberFailTestCase(unittest.TestCase):
+    """复审 P1-3：variable_assignment 的 number 值解析失败显式失败（原静默赋 0）。"""
+
+    def test_unparseable_number_raises(self) -> None:
+        config = {"assignments": [{"variable_name": "n", "value_type": "number", "value": "abc"}]}
+        with self.assertRaises(ValueError) as cm:
+            asyncio.run(ne.execute_variable_assignment_node({}, config))
+        self.assertIn("n", str(cm.exception))
+        self.assertIn("number", str(cm.exception))
+
+    def test_valid_number_assignment(self) -> None:
+        config = {"assignments": [{"variable_name": "n", "value_type": "number", "value": "42"}]}
+        result = asyncio.run(ne.execute_variable_assignment_node({}, config))
+        self.assertEqual(result, {"n": 42})
+
+
+class R5ToolArgumentsPriorityTestCase(unittest.TestCase):
+    """复审 P1-5：tool_executor 参数以 config 声明优先（原 globals 同名键反超）。"""
+
+    def test_config_arguments_beats_globals_key(self) -> None:
+        """全局变量恰好有 arguments 键时不再覆盖节点面板配置的参数。"""
+        config = {
+            "id": "t1",
+            "tool_code": "mock_weather_api",
+            "arguments": {"location": "config-loc"},
+            "_global_vars": {"arguments": {"location": "globals-loc"}},
+        }
+        result = asyncio.run(ne.execute_tool_executor_node({}, config))
+        self.assertIn("config-loc", result["tool_result"])
+
+    def test_arguments_json_still_parsed_when_no_config_arguments(self) -> None:
+        config = {"id": "t2", "tool_code": "mock_weather_api", "arguments_json": '{"location": "json-loc"}'}
+        result = asyncio.run(ne.execute_tool_executor_node({}, config))
+        self.assertIn("json-loc", result["tool_result"])
+
 
 class M3FstringConversionTestCase(unittest.TestCase):
     """M3：f-string 的 conversion（!r/!s/!a）须生效，且先于 format_spec。"""
