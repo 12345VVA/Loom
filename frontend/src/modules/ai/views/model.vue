@@ -115,7 +115,7 @@ const modelTypeOptions = [
 	{ label: t('重排'), value: 'rerank', type: 'success' }
 ];
 
-function isChatModel(scope: any): boolean {
+function isChatModel(scope: Record<string, unknown>): boolean {
 	const type = scope?.modelType;
 	return type === 'chat' || type === 'llm';
 }
@@ -330,7 +330,7 @@ const Table = useTable({
 			prop: 'capabilities',
 			minWidth: 220,
 			showOverflowTooltip: true,
-			formatter: ({ capabilities }: any) => formatCapabilities(capabilities),
+			formatter: ({ capabilities }: { capabilities?: string | null }) => formatCapabilities(capabilities),
 			hidden: true
 		},
 		{ label: t('上下文'), prop: 'contextWindow', minWidth: 110 },
@@ -350,18 +350,18 @@ const Crud = useCrud(
 	}
 );
 
-function splitCapabilities(value?: string) {
+function splitCapabilities(value?: string | null) {
 	return String(value || '')
 		.split(',')
 		.map(item => item.trim())
 		.filter(Boolean);
 }
 
-function formatCapabilities(value?: string) {
+function formatCapabilities(value?: string | null) {
 	const list = splitCapabilities(value);
 	if (!list.length) return '-';
 	const dictItems = dict.get('ai_model_capability').value || [];
-	const map = new Map(dictItems.map((item: any) => [String(item.value), item.label]));
+	const map = new Map(dictItems.map((item: { value: unknown; label: string }) => [String(item.value), item.label]));
 	return list
 		.map(item => {
 			const label = map.get(item);
@@ -370,7 +370,7 @@ function formatCapabilities(value?: string) {
 		.join(' / ');
 }
 
-function defaultConfigHint(scope: any) {
+function defaultConfigHint(scope: Record<string, unknown>) {
 	if (scope.modelType === 'image') {
 		return t('图片模型：可配置 size, _size_format(pixel/ratio), _allow_custom_size, _sizes, _limits 等');
 	}
@@ -380,19 +380,19 @@ function defaultConfigHint(scope: any) {
 	return t('模型默认参数 JSON');
 }
 
-function defaultConfigPlaceholder(scope: any) {
+function defaultConfigPlaceholder(scope: Record<string, unknown>) {
 	return JSON.stringify(defaultConfigTemplate(scope), null, 2);
 }
 
-function fillDefaultConfig(scope: any) {
+function fillDefaultConfig(scope: Record<string, unknown>) {
 	scope.defaultConfig = defaultConfigPlaceholder(scope);
 }
 
-function fillPricingConfig(scope: any) {
+function fillPricingConfig(scope: Record<string, unknown>) {
 	scope.pricingConfig = JSON.stringify({ input: 0, output: 0 }, null, 2);
 }
 
-function defaultConfigTemplate(scope: any) {
+function defaultConfigTemplate(scope: Record<string, unknown>) {
 	if (scope.modelType === 'image') {
 		return {
 			size: '1024x1024',

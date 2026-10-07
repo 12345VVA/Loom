@@ -201,7 +201,7 @@ const dropdownVisible = ref(false);
 // 节点选择器
 const popoverVisible = ref(false);
 const nodeSearch = ref('');
-const searchInputRef = ref<any>();
+const searchInputRef = ref<{ focus: () => void } | null>(null);
 
 // 弹窗状态
 const shortcutsDialogVisible = ref(false);
@@ -231,7 +231,7 @@ const categories = computed(() => {
 
 	return cats.map(cat => {
 		const items = NODE_REGISTRY.filter(n => {
-			if ((n as any).deprecated) return false;
+			if ((n as { deprecated?: boolean }).deprecated) return false;
 			if (cat.key === 'basic') return n.type === 'start' || n.type === 'end';
 			return n.category === cat.key && n.type !== 'start' && n.type !== 'end';
 		}).map(n => ({

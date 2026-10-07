@@ -137,7 +137,16 @@ const tester = reactive({
 	imageItems: [] as { src: string; value: string; url?: string }[]
 });
 
-const modelsList = ref<any[]>([]);
+/** 模型下拉数据（service.ai.model.list 行对象的宽松子集） */
+interface ModelOption {
+	id?: number;
+	modelType?: string;
+	name?: string;
+	code?: string;
+	defaultConfig?: string | null;
+}
+
+const modelsList = ref<ModelOption[]>([]);
 
 onMounted(async () => {
 	try {
@@ -148,18 +157,18 @@ onMounted(async () => {
 	}
 });
 
-function getModelType(scope: any): string {
+function getModelType(scope: Record<string, unknown>): string {
 	if (!scope) return '';
-	if (scope.modelType) return scope.modelType;
+	if (scope.modelType) return String(scope.modelType);
 	if (scope.modelId) {
 		const mid = normalizeSingleId(scope.modelId);
-		const m = modelsList.value.find((item: any) => item.id == mid);
+		const m = modelsList.value.find(item => item.id == mid);
 		if (m) return m.modelType || '';
 	}
 	return '';
 }
 
-function isChatModel(scope: any): boolean {
+function isChatModel(scope: Record<string, unknown>): boolean {
 	const type = getModelType(scope);
 	return type === 'chat' || type === 'llm';
 }
@@ -201,10 +210,10 @@ function deriveProfileSlug(text: string): string {
 		.replace(/^-+|-+$/g, '');
 }
 
-function handleModelChange(val: any) {
+function handleModelChange(val: unknown) {
 	const mid = normalizeSingleId(val);
 	if (!mid) return;
-	const m = modelsList.value.find((item: any) => item.id == mid);
+	const m = modelsList.value.find(item => item.id == mid);
 	if (!m) return;
 
 	Upsert.value?.setForm('modelType', m.modelType || '');
@@ -240,13 +249,13 @@ function handleModelChange(val: any) {
 	}
 }
 
-function syncFromModelConfig(scope: any) {
+function syncFromModelConfig(scope: Record<string, unknown>) {
 	const mid = normalizeSingleId(scope?.modelId || Upsert.value?.getForm('modelId'));
 	if (!mid) {
 		ElMessage.warning(t('请先选择模型'));
 		return;
 	}
-	const m = modelsList.value.find((item: any) => item.id == mid);
+	const m = modelsList.value.find(item => item.id == mid);
 	if (!m) {
 		ElMessage.warning(t('未找到所选模型信息'));
 		return;
@@ -271,14 +280,14 @@ function syncFromModelConfig(scope: any) {
 	}
 }
 
-function clearCustomConfig(scope: any) {
+function clearCustomConfig(scope: Record<string, unknown>) {
 	scope.customConfig = '';
 	Upsert.value?.setForm('customConfig', '');
 }
 
 function handleScenarioInput(scenVal: string) {
 	const currentMid = normalizeSingleId(Upsert.value?.getForm('modelId'));
-	const m = currentMid ? modelsList.value.find((item: any) => item.id == currentMid) : null;
+	const m = currentMid ? modelsList.value.find(item => item.id == currentMid) : null;
 	const scen = String(scenVal || 'default').trim();
 
 	if (!isNameManuallyEdited.value && m) {
@@ -332,7 +341,7 @@ const Upsert = useUpsert({
 						{ label: t('编码'), prop: 'code', minWidth: 160 },
 						{ label: t('类型'), prop: 'modelType', minWidth: 110 }
 					],
-					onChange(val: any) {
+					onChange(val: unknown) {
 						handleModelChange(val);
 					}
 				}
@@ -585,7 +594,7 @@ const Upsert = useUpsert({
 
 		if (data && data.modelId && !data.modelType) {
 			const mid = normalizeSingleId(data.modelId);
-			const m = modelsList.value.find((item: any) => item.id == mid);
+			const m = modelsList.value.find(item => item.id == mid);
 			if (m) data.modelType = m.modelType;
 		}
 
@@ -597,7 +606,7 @@ const Upsert = useUpsert({
 			}
 		} else if (!data?.id && data?.modelId) {
 			const mid = normalizeSingleId(data.modelId);
-			const m = modelsList.value.find((item: any) => item.id == mid);
+			const m = modelsList.value.find(item => item.id == mid);
 			if (m?.defaultConfig) {
 				try {
 					data.customConfig = JSON.stringify(JSON.parse(m.defaultConfig), null, 2);
@@ -611,7 +620,7 @@ const Upsert = useUpsert({
 		const payload = { ...data };
 		if (!payload.code || !String(payload.code).trim()) {
 			const currentMid = normalizeSingleId(payload.modelId);
-			const m = currentMid ? modelsList.value.find((item: any) => item.id == currentMid) : null;
+			const m = currentMid ? modelsList.value.find(item => item.id == currentMid) : null;
 			const base = (m?.code || deriveProfileSlug(payload.name || '') || 'profile').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
 			const scen = String(payload.scenario || 'default').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
 			payload.code = `${base}-${scen}`.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
@@ -639,7 +648,7 @@ const Upsert = useUpsert({
 					return;
 				}
 				payload.customConfig = JSON.stringify(parsed);
-			} catch (err: any) {
+			} catch {
 				ElMessage.error(t('模型私有参数 JSON 格式不正确，请检查'));
 				return;
 			}
@@ -699,13 +708,13 @@ const Crud = useCrud(
 	}
 );
 
-async function setDefault(row: any) {
+async function setDefault(row: { id: number }) {
 	await service.ai.profile.setDefault({ id: row.id });
 	ElMessage.success(t('设置成功'));
 	Crud.value?.refresh();
 }
 
-function openTest(row: any) {
+function openTest(row: { id: number; modelType?: string }) {
 	tester.id = row.id;
 	tester.modelType = row.modelType || '';
 	tester.prompt =
@@ -722,12 +731,12 @@ async function runTest() {
 		const res = await service.ai.profile.test({ id: tester.id, prompt: tester.prompt });
 		tester.result = JSON.stringify(res, null, 2);
 		tester.imageItems = tester.modelType === 'image' ? extractImageItems(res) : [];
-	} catch (err: any) {
-		ElMessage.error(err.message || t('调用失败'));
+	} catch (err) {
+		ElMessage.error((err as Error).message || t('调用失败'));
 	}
 }
 
-function normalizeSingleId(value: any) {
+function normalizeSingleId(value: unknown) {
 	return Array.isArray(value) ? value[0] : value;
 }
 

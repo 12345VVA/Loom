@@ -8,10 +8,10 @@
 		<div class="toolbar-right">
 			<template v-if="testLogDrawerInstanceId">
 				<el-button plain type="info" @click="$emit('clear-test-status')">
-					<el-icon><Brush /></el-icon>{{ $t('清除') }}
+					<el-icon><brush /></el-icon>{{ $t('清除') }}
 				</el-button>
 				<el-button plain type="primary" @click="$emit('reopen-test-log-drawer')">
-					<el-icon><Document /></el-icon>{{ $t('日志') }}
+					<el-icon><document /></el-icon>{{ $t('日志') }}
 				</el-button>
 				<el-divider direction="vertical" style="margin: 0 8px" />
 			</template>
