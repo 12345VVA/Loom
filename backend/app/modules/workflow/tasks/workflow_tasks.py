@@ -204,38 +204,70 @@ def _is_cancelled_sync(instance_id: int) -> bool:
         return bool(inst and inst.status == "cancelled")
 
 
-async def _flush_worker(instance_id: int, queue: asyncio.Queue) -> None:
+def _set_current_node_sync(instance_id: int, node_id: str) -> None:
+    """节点开始执行时推进 instance.current_node（WF-P1-6：归因从滞后变即时）。
+
+    CAS status=='running' 防覆盖 paused/cancelled/failed 终态。best-effort：
+    失败仅告警，不阻断执行。
+    """
+    try:
+        with Session(engine) as session:
+            session.execute(
+                update(WorkflowInstance)
+                .where(WorkflowInstance.id == instance_id, WorkflowInstance.status == "running")
+                .values(current_node=node_id)
+            )
+            session.commit()
+    except Exception:
+        logger.warning("工作流实例 %d 推进 current_node=%s 失败", instance_id, node_id, exc_info=True)
+
+
+async def _flush_worker(instance_id: int, queue: asyncio.Queue, stats: dict) -> None:
     """后台批量落库协程：按批大小或时间间隔 flush，收到 SENTINEL 则处理剩余后退出。
 
     Queue/Task 均在 async_execute 的 asyncio.run 事件循环内创建与销毁，不跨 Celery prefork
     fork 复用。单消费者保证节点日志 FIFO。
+
+    stats 契约（WF-P2-2）：{"errors": 落库失败批次数, "dropped": 丢弃日志行数}——
+    单批落库失败时累加并丢弃该批、继续消费（消费循环永不因落库失败退出），
+    由 _drain_flush 收尾汇总告警。杜绝此前「单批失败 → 协程死亡 → 后续批次
+    无人消费 + 实例被落库异常误标 failed」的连锁。
     """
     batch: list[dict] = []
     last_flush = time.perf_counter()
+
+    async def _persist_batch() -> None:
+        if not batch:
+            return
+        try:
+            await asyncio.to_thread(_persist_node_payloads_sync, instance_id, batch)
+        except Exception:
+            stats["errors"] += 1
+            stats["dropped"] += len(batch)
+            logger.error("工作流实例 %d 节点日志批量落库失败，丢弃 %d 条", instance_id, len(batch), exc_info=True)
+        finally:
+            batch.clear()
+
     while True:
         timeout = max(0.01, _FLUSH_INTERVAL_SECONDS - (time.perf_counter() - last_flush))
         try:
             item = await asyncio.wait_for(queue.get(), timeout=timeout)
         except TimeoutError:
-            if batch:
-                await asyncio.to_thread(_persist_node_payloads_sync, instance_id, batch)
-                batch.clear()
+            await _persist_batch()
             last_flush = time.perf_counter()
             continue
 
         if item is _FLUSH_SENTINEL:
-            if batch:
-                await asyncio.to_thread(_persist_node_payloads_sync, instance_id, batch)
+            await _persist_batch()
             return
 
         batch.append(item)
         if len(batch) >= _FLUSH_BATCH_SIZE:
-            await asyncio.to_thread(_persist_node_payloads_sync, instance_id, batch)
-            batch.clear()
+            await _persist_batch()
             last_flush = time.perf_counter()
 
 
-async def _drain_flush(queue: asyncio.Queue, task: asyncio.Task) -> None:
+async def _drain_flush(queue: asyncio.Queue, task: asyncio.Task, instance_id: int, stats: dict) -> None:
     """收尾：通知 flush_worker 处理剩余 batch 并退出，保证退出前日志已落库。"""
     await queue.put(_FLUSH_SENTINEL)
     try:
@@ -243,6 +275,13 @@ async def _drain_flush(queue: asyncio.Queue, task: asyncio.Task) -> None:
     except TimeoutError:
         logger.warning("工作流 flush_worker 收尾超时，强制取消")
         task.cancel()
+    if stats.get("errors"):
+        logger.warning(
+            "工作流实例 %d flush 收尾汇总：%d 批节点日志落库失败，共丢弃 %d 条",
+            instance_id,
+            stats["errors"],
+            stats.get("dropped", 0),
+        )
 
 
 def _promote_pending_to_running(instance_id: int) -> bool:
@@ -495,7 +534,9 @@ async def async_execute(
 
     # T4：批量落库后台协程（在 try 外创建，使外层 except 兜底可 drain；flush_worker 只用 engine，不依赖 checkpointer）
     flush_queue: asyncio.Queue = asyncio.Queue()
-    flush_task = asyncio.create_task(_flush_worker(instance_id, flush_queue))
+    # 创建在 try 之外（与 flush_queue 同层）：编译前异常的兜底路径也可安全引用
+    flush_stats = {"errors": 0, "dropped": 0}
+    flush_task = asyncio.create_task(_flush_worker(instance_id, flush_queue, flush_stats))
 
     # 兜底异常路径引用的执行态：编译前异常（拓扑解析/编译失败）时事件循环未启动，
     # 预初始化避免 UnboundLocalError；正常路径由事件循环内赋值覆盖
@@ -549,14 +590,17 @@ async def async_execute(
 
             # 2. 区分启动与恢复
             if resume_val is not None:
-                events = compiled.astream(Command(resume=resume_val), config=config, stream_mode="updates")
+                events = compiled.astream(Command(resume=resume_val), config=config, stream_mode=["updates", "custom"])
             else:
                 initial_state = {"variables": initial_vars, "current_node": "start"}
-                events = compiled.astream(initial_state, config=config, stream_mode="updates")
+                events = compiled.astream(initial_state, config=config, stream_mode=["updates", "custom"])
 
             last_step_time = time.perf_counter()
             current_vars = initial_vars
             event_count = 0
+            # node_done custom 事件 → 同节点 updates 事件的 latency 关联
+            # （WF-P2-15：真实节点耗时，缺失时回退事件间隔计算）
+            _node_latency: dict[str, int] = {}
 
             # 预先构建节点字典映射，避免在事件循环中进行 O(N) 线性查找性能损耗
             nodes_map = {node["id"]: node for node in graph_json.get("nodes", [])}
@@ -572,21 +616,22 @@ async def async_execute(
                     except StopAsyncIteration:
                         break
                     except TimeoutError:
-                        await _drain_flush(flush_queue, flush_task)
+                        await _drain_flush(flush_queue, flush_task, instance_id, flush_stats)
                         timeout_node_id = None
                         with Session(engine) as session:
                             inst = session.get(WorkflowInstance, instance_id)
                             if inst:
                                 timeout_node_id = inst.current_node
-                            # current_node 是最后"完成"的节点而非超时节点（执行中节点无事件产出），
-                            # 文案以"最后完成节点"表述给出定位线索，不把超时归咎该节点
+                            # current_node 自 node_start 起由执行开始时写入（WF-P1-6），
+                            # 语义为「正在执行的节点」——超时归因从滞后的「最后完成节点」
+                            # 变为即时的「当前执行节点」
                             timeout_node_name = (
                                 ((nodes_map.get(timeout_node_id, {}) or {}).get("name") or timeout_node_id)
                                 if timeout_node_id
                                 else None
                             )
                             timeout_msg = (
-                                f"节点执行超时（{node_timeout}秒），最后完成节点：「{timeout_node_name}」"
+                                f"节点执行超时（{node_timeout}秒），当前执行节点：「{timeout_node_name}」"
                                 if timeout_node_name
                                 else f"节点执行超时（{node_timeout}秒）"
                             )
@@ -607,15 +652,51 @@ async def async_execute(
                         _notify_workflow_failure(instance_id)
                         return
 
-                    for node_id, node_output in event.items():
+                    # 双形态适配（WF-P1-6）：langgraph 1.2.1 list 模式恒产 (mode, payload) 元组。
+                    # 严禁裸 `mode, payload = event`——dict 会按键解包造成静默错位，必须 isinstance 判别。
+                    if isinstance(event, tuple) and len(event) == 2:
+                        mode, payload = event
+                    else:
+                        logger.error("[Workflow] 意外的事件形态: %r", event)
+                        continue
+
+                    if mode == "custom":
+                        # node_runner 发出的节点级执行事件：node_start（画布即时高亮 +
+                        # DB current_node 即时归因）/ node_done（真实耗时关联）。
+                        if not isinstance(payload, dict):
+                            continue
+                        etype = payload.get("type")
+                        if etype == "node_start":
+                            nid = payload.get("node_id")
+                            if nid:
+                                # 先写 DB 再广播，保证前端收到高亮事件时 DB 归因已就绪；
+                                # 串行等待保证 N 与 N+1 的写入不乱序
+                                await asyncio.to_thread(_set_current_node_sync, instance_id, nid)
+                            publish_event(instance_id, "node_start", payload)
+                        elif etype == "node_done":
+                            nid = payload.get("node_id")
+                            lat = payload.get("latency_ms")
+                            if nid and isinstance(lat, int):
+                                _node_latency[nid] = lat
+                            publish_event(instance_id, "node_done", payload)
+                        else:
+                            logger.debug("[Workflow] 忽略未知 custom 事件: %r", payload)
+                        continue
+
+                    # ── mode == "updates"：节点完成事件，现有处理逻辑 ──
+                    for node_id, node_output in payload.items():
                         event_count += 1
                         current_time = time.perf_counter()
-                        latency_ms = int((current_time - last_step_time) * 1000)
+                        # 真实节点耗时（node_done custom 事件携带）；缺失时回退事件间隔。
+                        # 无论是否命中都必须刷新 last_step_time，否则回退路径会算出虚高间隔
+                        latency_ms = _node_latency.pop(node_id, None)
+                        if latency_ms is None:
+                            latency_ms = int((current_time - last_step_time) * 1000)
                         last_step_time = current_time
 
                         if node_id == "__interrupt__":
                             # 中断前先把已入队的日志落库，再写 paused 终态
-                            await _drain_flush(flush_queue, flush_task)
+                            await _drain_flush(flush_queue, flush_task, instance_id, flush_stats)
                             if not use_checkpointer:
                                 # 防呆：图声称无中断节点却收到 __interrupt__（如未来新增中断节点类型
                                 # 未纳入 INTERRUPT_NODE_TYPES），无 checkpointer 时写 paused 将永远
@@ -667,7 +748,7 @@ async def async_execute(
 
                         # 协作式取消：同步探活 instance.status，被 cancel 则 drain 后退出
                         if await asyncio.to_thread(_is_cancelled_sync, instance_id):
-                            await _drain_flush(flush_queue, flush_task)
+                            await _drain_flush(flush_queue, flush_task, instance_id, flush_stats)
                             logger.info("[Workflow] 实例 %d 已取消，停止执行", instance_id)
                             publish_event(instance_id, "cancelled", {"status": "cancelled"})
                             return
@@ -707,7 +788,7 @@ async def async_execute(
             # 执行完毕
             logger.info("[Workflow] Execution completed: instance=%d, total_events=%d", instance_id, event_count)
             # 先 drain 剩余日志，再读 state_data 做 success 终态
-            await _drain_flush(flush_queue, flush_task)
+            await _drain_flush(flush_queue, flush_task, instance_id, flush_stats)
             state_data_str = "{}"
             inst_definition_id: int | None = None
             inst_version_id: int | None = None
@@ -778,7 +859,7 @@ async def async_execute(
                 logger.error("失败节点日志入队失败，该行日志丢失", exc_info=True)
         # 兜底 drain：异常路径也保证已入队的节点日志（含 error 行）落库
         try:
-            await _drain_flush(flush_queue, flush_task)
+            await _drain_flush(flush_queue, flush_task, instance_id, flush_stats)
         except Exception:
             logger.error("异常路径 drain flush_task 失败，节点日志可能部分丢失", exc_info=True)
         try:

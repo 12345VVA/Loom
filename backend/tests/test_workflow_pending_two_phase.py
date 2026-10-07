@@ -216,7 +216,8 @@ class AsyncExecutePromoteGateTestCase(_BaseDBTestCase):
         """eval 直建 running 的实例经复查放行，正常跑完置 success。"""
         definition = self._add_definition()
         instance = self._add_instance(definition, status="running")
-        self._run(instance, events=[{"n1": {"variables": {"a": 1}}}])
+        # 二期事件形态：stream_mode=["updates","custom"] 下事件为 (mode, payload) 元组
+        self._run(instance, events=[("updates", {"n1": {"variables": {"a": 1}}})])
         self.assertEqual(len(_FakeCompiled.compiled_instances), 1)
         with Session(self.engine) as verify:
             self.assertEqual(verify.get(WorkflowInstance, instance.id).status, "success")

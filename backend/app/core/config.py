@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     WORKFLOW_CHECKPOINT_SKIP_WITHOUT_INTERRUPT: bool = True
     WORKFLOW_NODE_TEST_TIMEOUT: int = 180  # 单节点测试超时秒数（LLM 节点常需 60-180 秒）
     WORKFLOW_NODE_TIMEOUT: int = 600  # 正式执行单节点超时秒数（比 30 分钟硬上限短，留足图像节点空间）
+    # 循环/批处理体子图整体执行超时秒数（节点 config timeoutSeconds 可覆盖为更紧的值）。
+    # ⚠️ 生效前提：外层 WORKFLOW_NODE_TIMEOUT(600s) 的 superstep 兜底先于一切——默认 1800 > 600，
+    # 即默认部署下内层超时不可达（由外层先触发）；本值的实际价值是 (a) 节点 timeoutSeconds
+    # 配置 < 600 时提供更紧的友好归因上限，(b) 运维调大 WORKFLOW_NODE_TIMEOUT 的长循环部署
+    # 中充当独立语义上限
+    WORKFLOW_SUBGRAPH_TIMEOUT: int = 1800
     # 节点级自动重试：失败后按指数退避重试，覆盖 LLM / 外部 API 临时故障
     # max_attempts 含首次（1=不重试）；delay = base * 2^(attempt-1)；节点 config 可覆盖（retry_max_attempts / retry_backoff_base）
     WORKFLOW_NODE_RETRY_MAX_ATTEMPTS: int = 1

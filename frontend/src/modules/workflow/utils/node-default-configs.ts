@@ -33,7 +33,9 @@ export const NODE_DEFAULT_CONFIGS: Record<string, DefaultConfigSpec> = {
 			listVariable: 'list_variable',
 			itemVariable: 'loop_item',
 			loopBodyRoute: '',
-			exitRoute: ''
+			exitRoute: '',
+			collectKeys: [],
+			persistGlobals: false
 		},
 		outputVarDefault: 'loop_results'
 	},
@@ -43,7 +45,8 @@ export const NODE_DEFAULT_CONFIGS: Record<string, DefaultConfigSpec> = {
 			itemVariable: 'batch_item',
 			concurrencyLimit: 5,
 			loopBodyRoute: '',
-			exitRoute: ''
+			exitRoute: '',
+			collectKeys: []
 		},
 		outputVarDefault: 'batch_results'
 	},

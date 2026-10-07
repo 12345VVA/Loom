@@ -290,7 +290,22 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
     """
     循环控制器节点执行逻辑（状态链式循环：上一次迭代的输出作为下一次的输入）。
     只在循环开始前做一次 deepcopy，后续迭代链式传递状态，支持跨迭代状态累积。
+
+    - collect_keys（list[str]，前端 collectKeys）：配置后每轮迭代只收集白名单键进
+      results（须与运行时变量名完全一致，不做大小写/命名归一）；未配置保持兼容行为
+      （收集除循环临时变量外的全量快照）。
+    - persist_globals（前端 persistGlobals，默认 False）：True 时把迭代期**新增**的
+      变量（键差集，排除循环临时变量）以原名并入返回值，进而合入全局状态；对既有
+      变量的改写不回写（防意外覆盖主图状态）。diff 键不受 output_mappings 路由，
+      恒以原变量名合并——若需重命名落点，应在循环体内用 variable_assignment 产出
+      目标名变量。
+    - 子图超时（WF-P1-5）：整个迭代过程受 timeout_seconds（前端 timeoutSeconds）或
+      WORKFLOW_SUBGRAPH_TIMEOUT 约束。⚠️ 超时抛 ValueError 会经节点级重试链路
+      （默认 max_attempts=1 无碍）；调大重试次数会导致整个循环从头重跑，务必配合
+      retry_max_attempts=1 使用。
     """
+    from app.core.config import settings
+
     compiled_body = config.get("_compiled_body")
     if not compiled_body:
         raise ValueError(
@@ -300,6 +315,12 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
     item_var = config.get("item_variable", "loop_item")
     output_var = config.get("output_variable", "loop_results")
     stop_on_error = config.get("stop_on_error", True)
+    subgraph_timeout = float(config.get("timeout_seconds") or settings.WORKFLOW_SUBGRAPH_TIMEOUT)
+    collect_keys_raw = config.get("collect_keys")
+    collect_keys = (
+        [str(k).strip() for k in collect_keys_raw if str(k).strip()] if isinstance(collect_keys_raw, list) else []
+    )
+    persist_globals = bool(config.get("persist_globals", False))
 
     # 走 _deep_get：list_variable 可能被填成跨节点深层路径（如 llm_output.user_list），
     # 直接用 variables.get() 会因键不存在而静默返回空列表，导致循环/批处理空转
@@ -311,34 +332,64 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
 
     # 只做一次初始拷贝，后续迭代链式传递状态
     iter_vars = copy.deepcopy(variables)
-    results = []
+    initial_keys = set(iter_vars.keys())  # persist_globals 键差集基准
+    results: list[dict[str, Any]] = []
     index_key = f"{item_var}_index"
 
-    for idx, item in enumerate(items):
-        iter_vars[item_var] = item
-        iter_vars[index_key] = idx
-        body_state = {"variables": iter_vars, "current_node": "start"}
-        try:
-            body_result = await compiled_body.ainvoke(body_state)
-            iter_vars = body_result.get("variables", {})
-            # 收集本次迭代的关键输出（排除临时注入的循环变量）
-            iter_output = {k: v for k, v in iter_vars.items() if k != item_var and k != index_key}
-            results.append(iter_output)
-            logger.info("[Loop] Iteration %d/%d complete: item=%s", idx + 1, len(items), str(item)[:80])
-        except Exception as e:
-            logger.error("[Loop] Iteration %d/%d failed: %s", idx + 1, len(items), e)
-            results.append({"error": str(e)})
-            if stop_on_error:
-                break
+    async def _iterate() -> None:
+        nonlocal iter_vars
+        for idx, item in enumerate(items):
+            iter_vars[item_var] = item
+            iter_vars[index_key] = idx
+            body_state = {"variables": iter_vars, "current_node": "start"}
+            try:
+                body_result = await compiled_body.ainvoke(body_state)
+                iter_vars = body_result.get("variables", {})
+                if collect_keys:
+                    iter_output = {k: iter_vars[k] for k in collect_keys if k in iter_vars}
+                else:
+                    # 兼容默认：收集除临时注入循环变量外的全量快照
+                    iter_output = {k: v for k, v in iter_vars.items() if k != item_var and k != index_key}
+                results.append(iter_output)
+                logger.info("[Loop] Iteration %d/%d complete: item=%s", idx + 1, len(items), str(item)[:80])
+            except Exception as e:
+                logger.error("[Loop] Iteration %d/%d failed: %s", idx + 1, len(items), e)
+                results.append({"error": str(e), "item_index": idx})
+                if stop_on_error:
+                    break
 
-    return {output_var: results}
+    try:
+        await asyncio.wait_for(_iterate(), timeout=subgraph_timeout)
+    except TimeoutError:
+        raise ValueError(
+            f"循环体执行超时（{int(subgraph_timeout)}秒，共 {len(items)} 项）。"
+            "可在节点配置 timeoutSeconds 收紧；注意调大节点重试次数会导致整个循环从头重跑。"
+        ) from None
+
+    result = {output_var: results}
+    if persist_globals:
+        diff = {k: v for k, v in iter_vars.items() if k not in initial_keys and k != item_var and k != index_key}
+        result.update(diff)
+    return result
 
 
 async def execute_batch_processor_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     批处理并发节点执行逻辑（子图模式：并发遍历列表，每项独立调用体子图）。
     使用 asyncio.gather + Semaphore 控制并发，return_exceptions=True 容错。
+
+    - collect_keys（list[str]，前端 collectKeys）：配置后每项结果只收集白名单键
+      （须与运行时变量名完全一致）；未配置保持兼容行为（返回全量变量快照）。
+    - persist_globals：**不支持并忽略**（warning）——并发迭代无全序，回写全局的
+      语义不明确；需要跨项累积全局状态请改用循环控制器。
+    - 子图超时（WF-P1-5）：整个 gather 过程受 timeout_seconds（前端 timeoutSeconds）
+      或 WORKFLOW_SUBGRAPH_TIMEOUT 约束。⚠️ 超时抛 ValueError 会经节点级重试链路
+      （默认 max_attempts=1 无碍）；调大重试次数会导致整个批处理从头重跑，务必配合
+      retry_max_attempts=1 使用。wait_for 取消并发协程时，已在 to_thread 中运行的
+      调用无法中断（线程自然耗尽），与外层 superstep 兜底行为一致。
     """
+    from app.core.config import settings
+
     compiled_body = config.get("_compiled_body")
     if not compiled_body:
         raise ValueError("批处理节点缺少已编译的体子图。请重新保存工作流以触发编译，或检查循环体入口节点配置是否正确。")
@@ -346,6 +397,17 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
     item_var = config.get("item_variable", "batch_item")
     output_var = config.get("output_variable", "batch_results")
     concurrency_limit = min(max(int(config.get("concurrency_limit", 5) or 5), 1), 20)
+    subgraph_timeout = float(config.get("timeout_seconds") or settings.WORKFLOW_SUBGRAPH_TIMEOUT)
+    collect_keys_raw = config.get("collect_keys")
+    collect_keys = (
+        [str(k).strip() for k in collect_keys_raw if str(k).strip()] if isinstance(collect_keys_raw, list) else []
+    )
+    if config.get("persist_globals"):
+        logger.warning(
+            "批处理节点 '%s' 配置了 persist_globals，因并发迭代无全序、回写全局语义不明确，已忽略；"
+            "需要跨项累积全局状态请改用循环控制器。",
+            config.get("id", "batch_processor"),
+        )
 
     # 走 _deep_get：list_variable 可能被填成跨节点深层路径（如 llm_output.user_list），
     # 直接用 variables.get() 会因键不存在而静默返回空列表，导致循环/批处理空转
@@ -363,15 +425,27 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
             iter_vars[item_var] = item
             body_state = {"variables": iter_vars, "current_node": "start"}
             body_result = await compiled_body.ainvoke(body_state)
-            return body_result.get("variables", {})
+            vs = body_result.get("variables", {})
+            if collect_keys:
+                return {k: vs[k] for k in collect_keys if k in vs}
+            return vs
 
-    raw_results = await asyncio.gather(*[run_body(item) for item in items], return_exceptions=True)
+    try:
+        raw_results = await asyncio.wait_for(
+            asyncio.gather(*[run_body(item) for item in items], return_exceptions=True),
+            timeout=subgraph_timeout,
+        )
+    except TimeoutError:
+        raise ValueError(
+            f"批处理体执行超时（{int(subgraph_timeout)}秒，共 {len(items)} 项，并发={concurrency_limit}）。"
+            "可在节点配置 timeoutSeconds 收紧；注意调大节点重试次数会导致整个批处理从头重跑。"
+        ) from None
 
     results = []
-    for r in raw_results:
+    for idx, r in enumerate(raw_results):
         if isinstance(r, Exception):
-            logger.error("[Batch] Single iteration failed: %s", r)
-            results.append({"error": str(r)})
+            logger.error("[Batch] Iteration %d failed: %s", idx, r)
+            results.append({"error": str(r), "item_index": idx})
         else:
             results.append(r)
 

@@ -106,6 +106,17 @@ def validate_graph(graph_json: dict[str, Any]) -> None:
                     raise ValueError(f"节点 '{node_name}' 的循环体入口 '{body_route}' 不存在。")
                 body_node_ids = _find_body_nodes(n["id"], body_route, edges)
 
+            # 体节点不得包含中断类节点（WF-P1-4）：体子图独立编译、不挂 checkpointer，
+            # 中断（human_input）在其中触发后无法恢复（主图 checkpointer 救不了子图）。
+            interrupt_hits = {nid for nid in body_node_ids if node_types.get(nid) in INTERRUPT_NODE_TYPES}
+            if interrupt_hits:
+                hit_names = "、".join((nodes_map[nid].get("name") or nid) for nid in interrupt_hits if nid in nodes_map)
+                raise ValueError(
+                    f"节点 '{node_name}' 的循环/批处理体内不能包含人工输入等中断类节点（{hit_names}）："
+                    "体子图独立执行、无断点挂载，运行到中断将无法恢复。"
+                    "请将该节点移出循环体，或把人工确认环节放到循环结束后。"
+                )
+
             # 从画布边推导退出路径：穿透 group 容器
             exit_targets = []
             for edge in edges:

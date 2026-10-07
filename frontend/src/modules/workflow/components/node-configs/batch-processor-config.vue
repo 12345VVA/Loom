@@ -23,6 +23,22 @@
 		<el-form-item :label="$t('输出变量写入')" required style="margin-bottom: 0">
 			<el-input v-model="config.outputVariable" placeholder="默认: batch_results" />
 		</el-form-item>
+		<el-form-item :label="$t('结果收集字段')" style="margin-top: 18px; margin-bottom: 0">
+			<el-select
+				v-model="config.collectKeys"
+				multiple
+				filterable
+				allow-create
+				default-first-option
+				:reserve-keyword="false"
+				:placeholder="$t('留空则收集全部变量')"
+				style="width: 100%"
+			/>
+			<div class="field-hint">{{ $t('填写后每项结果仅收集所选变量（须与变量名完全一致），减小结果体积。') }}</div>
+		</el-form-item>
+		<node-config-hint style="margin-top: 16px">
+			<span>{{ $t('批处理并发迭代无全序，不支持将迭代内变量回写全局（persist_globals 会被忽略）；如需累积全局状态请改用循环控制器。') }}</span>
+		</node-config-hint>
 	</node-config-section>
 </template>
 

@@ -327,7 +327,8 @@ class CheckpointerSkipTestCase(_BaseDBTestCase):
         instance, holder = self._run(
             {"nodes": [{"id": "n1", "type": "llm"}], "edges": []},
             compiler=_InterruptCompiler,
-            events=[{"__interrupt__": (object(),)}],
+            # 二期事件形态：stream_mode=["updates","custom"] 下事件为 (mode, payload) 元组
+            events=[("updates", {"__interrupt__": (object(),)})],
         )
         self.assertEqual(holder["cm_calls"], 0)
         with Session(self.engine) as verify:

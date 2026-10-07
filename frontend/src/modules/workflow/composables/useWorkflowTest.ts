@@ -194,14 +194,34 @@ export function useWorkflowTest(
 		reconnectTimer = setTimeout(() => startStream(), delay);
 	}
 
+	const doneNodeIds = new Set<string>();
+
 	function handleStreamEvent(data: any) {
+		// 新事件（WF-P1-6）：类型编码在 payload.type（parseSse 丢弃 SSE event: 行）
+		const type = data?.type;
+		if (type === 'node_start') {
+			if (data.node_id) {
+				highlightRunningNode(data.node_id);
+			}
+			return;
+		}
+		if (type === 'node_done') {
+			if (data.node_id) {
+				doneNodeIds.add(data.node_id);
+				markSuccessNode(data.node_id);
+				scheduleLogRefresh(data.node_id);
+			}
+			return;
+		}
+
+		// ── 回落现有 data.status 分支 ──
 		const status = data?.status;
 		if (!status) return;
 		const currentNode = data.node_id || null;
 		testLogDrawer.status = status;
 
 		// 即时高亮当前推进到的节点（不等 logs 刷新，避免 ~300ms 视觉延迟）
-		if (currentNode && status === 'running') {
+		if (currentNode && status === 'running' && !doneNodeIds.has(currentNode)) {
 			highlightRunningNode(currentNode);
 		}
 		// 失败时立即根据 payload 标记失败节点 + 写入错误信息（不等 logs 异步刷新，保证视觉即时反馈）
@@ -240,6 +260,19 @@ export function useWorkflowTest(
 					status: 'error',
 					errorMessage: errorMessage || ''
 				};
+			}
+		});
+	}
+
+	// node_done 即时成功反馈（与 markFailedNode 对称）；权威状态仍由 logs 刷新重建。
+	// 注意：此函数不得引入新的显式 any——eslint-suppressions.json 按文件计数抑制
+	// no-explicit-any，超量会使整个文件的抑制失效（el 本身已是 any，无需断言）
+	function markSuccessNode(nodeId: string) {
+		elements.value.forEach(el => {
+			if (!('source' in el) && el.id === nodeId) {
+				el.class = 'node-status-success';
+				if (!el.data) el.data = { config: {} };
+				el.data.runLog = { ...(el.data.runLog || {}), status: 'success' };
 			}
 		});
 	}
@@ -292,6 +325,7 @@ export function useWorkflowTest(
 	}
 
 	function clearNodeStatus() {
+		doneNodeIds.clear();
 		elements.value.forEach(el => {
 			if (!('source' in el)) {
 				(el as any).class = '';

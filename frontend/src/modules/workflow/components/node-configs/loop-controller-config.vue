@@ -16,6 +16,25 @@
 		<el-form-item :label="$t('输出变量写入')" required style="margin-bottom: 0">
 			<el-input v-model="config.outputVariable" placeholder="默认: loop_results" />
 		</el-form-item>
+		<el-form-item :label="$t('结果收集字段')" style="margin-top: 18px; margin-bottom: 0">
+			<el-select
+				v-model="config.collectKeys"
+				multiple
+				filterable
+				allow-create
+				default-first-option
+				:reserve-keyword="false"
+				:placeholder="$t('留空则收集全部变量')"
+				style="width: 100%"
+			/>
+			<div class="field-hint">{{ $t('填写后每次迭代仅收集所选变量（须与变量名完全一致），减小结果体积。') }}</div>
+		</el-form-item>
+		<el-form-item :label="$t('循环后保留新增变量')" style="margin-top: 18px; margin-bottom: 0">
+			<el-switch v-model="config.persistGlobals" />
+			<div class="field-hint">
+				{{ $t('开启后，循环体内新建的变量会以原名写入全局状态（取最后一次迭代结束时的值）；对既有变量的修改不会回写。') }}
+			</div>
+		</el-form-item>
 	</node-config-section>
 </template>
 

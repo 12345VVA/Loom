@@ -10,6 +10,8 @@
 """
 
 import logging
+import time
+from collections.abc import Callable
 from typing import Any
 
 # GraphBubbleUp 自 langgraph 0.2.54 起才在 langgraph.errors 中定义（0.2.53 及更早无此类，
@@ -80,6 +82,23 @@ class NodeExecutionError(Exception):
         self.attempts = attempts
         self.cause = cause
         super().__init__(f"节点 '{node_id}' 执行失败（已尝试 {attempts} 次）: {cause}")
+
+
+def _safe_stream_writer() -> Callable[[Any], None]:
+    """取当前图运行时的 custom stream writer；图上下文之外返回 no-op。
+
+    必须在 node_runner 执行体内调用（contextvar 只在图运行期有效），
+    不得在 create_node_runner 工厂期缓存。图上下文之外（单测直调 runner、
+    非流式路径）get_stream_writer 会抛 RuntimeError，此处降级为 no-op：
+    - stream_mode 不含 "custom" 时 langgraph 本身注入字面 no-op writer；
+    - 体子图经无 config 的 ainvoke 执行时同样取到 no-op，custom 事件不外泄。
+    """
+    try:
+        from langgraph.config import get_stream_writer
+
+        return get_stream_writer()
+    except Exception:
+        return lambda _payload: None
 
 
 def _extract_body_edges(body_node_ids: set[str], parent_id: str, edges: list) -> list[dict]:
@@ -613,7 +632,20 @@ class WorkflowCompiler:
             # 2. 运行执行器（共享重试语义，见 _invoke_executor_with_retry）
             #    重试在 node_runner 内部，updates 在 return 后才 apply 到 state，故前次失败不污染 state
             executor_config = {**config, "id": node_id}
+
+            # custom 事件 + 真实耗时测量（WF-P1-6 / WF-P2-15）：
+            # - node_start 在执行前发出，画布「运行中」高亮即时归因；
+            # - node_done 仅在成功完成时发出（异常/interrupt 路径不发——失败节点
+            #   不得画成成功，失败/中断由上层 failed/paused 事件收尾）；
+            # - latency 包住重试整体（含退避），为节点端到端真实耗时；
+            # - stream_mode 不含 custom 时 writer 为 no-op（langgraph 注入），
+            #   体子图/单测路径自然降级，零影响。
+            emit = _safe_stream_writer()
+            _t0 = time.perf_counter()
+            emit({"type": "node_start", "node_id": node_id, "status": "running"})
             updates = await cls._invoke_executor_with_retry(executor, node_inputs, executor_config, config)
+            _latency_ms = int((time.perf_counter() - _t0) * 1000)
+            emit({"type": "node_done", "node_id": node_id, "status": "done", "latency_ms": _latency_ms})
 
             # 3. 应用输出变量映射，写回全局状态
             output_mappings = config.get("output_mappings", {})

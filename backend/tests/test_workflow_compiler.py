@@ -901,5 +901,75 @@ class MultiNodeLoopBodyCompileTestCase(unittest.TestCase):
         self.assertEqual(call_order, ["body_a", "body_b", "body_a", "body_b"])
 
 
+class BodyInterruptForbiddenTestCase(unittest.TestCase):
+    """WF-P1-4：循环/批处理体不得包含中断类节点（体子图无断点，中断不可恢复）。"""
+
+    def _human_node(self, node_id: str = "hi", parent: str | None = None) -> dict:
+        node = {"id": node_id, "type": "human_input", "name": "审批", "config": {"message": "确认？"}}
+        if parent:
+            node["parentNode"] = parent
+        return node
+
+    def test_parent_mode_body_with_human_input_raises(self):
+        graph = {
+            "nodes": [
+                _start_node(),
+                {"id": "loop_1", "type": "loop_controller", "name": "Loop", "config": {"bodyGroupId": "group_1"}},
+                {"id": "group_1", "type": "loop_body_group", "name": "Group", "config": {"controllerNodeId": "loop_1"}},
+                self._human_node(parent="group_1"),
+                _end_node(),
+            ],
+            "edges": [
+                _edge("start_1", "loop_1"),
+                _edge("loop_1", "group_1"),
+                _edge("loop_1", "end_1"),
+                _edge("hi", "loop_1"),
+            ],
+        }
+        with self.assertRaises(ValueError) as cm:
+            validate_graph(graph)
+        self.assertIn("中断类节点", str(cm.exception))
+
+    def test_bfs_mode_body_with_human_input_raises(self):
+        graph = {
+            "nodes": [
+                _start_node(),
+                {
+                    "id": "loop_1",
+                    "type": "loop_controller",
+                    "name": "Loop",
+                    "config": {"loopBodyRoute": "hi", "listVariable": "items"},
+                },
+                self._human_node(),
+                _end_node(),
+            ],
+            "edges": [
+                _edge("start_1", "loop_1"),
+                _edge("loop_1", "end_1"),
+                _edge("hi", "loop_1"),
+            ],
+        }
+        with self.assertRaises(ValueError) as cm:
+            validate_graph(graph)
+        self.assertIn("中断类节点", str(cm.exception))
+
+    def test_main_graph_human_input_still_allowed(self):
+        """反向锚：主图（非循环体）的 human_input 不受影响。"""
+        graph = {
+            "nodes": [
+                _start_node(),
+                _llm_node("llm_1"),
+                self._human_node(),
+                _end_node(),
+            ],
+            "edges": [
+                _edge("start_1", "llm_1"),
+                _edge("llm_1", "hi"),
+                _edge("hi", "end_1"),
+            ],
+        }
+        validate_graph(graph)  # 不抛即通过
+
+
 if __name__ == "__main__":
     unittest.main()
