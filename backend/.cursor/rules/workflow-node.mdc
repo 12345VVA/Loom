@@ -129,9 +129,13 @@ async def execute_xxx_node(variables: dict[str, Any], config: dict[str, Any]) ->
 - `collect_keys` 白名单收集（键名须与运行时变量名完全一致，不做归一）；
   `persist_globals` 仅循环控制器支持（键差集、只并入新增变量），批处理并发无全序
   **不支持并忽略**（warning 提示改用循环控制器）；
-- 子图超时：`timeout_seconds`（前端 timeoutSeconds）或 `WORKFLOW_SUBGRAPH_TIMEOUT`
-  约束整个迭代过程；取消并发协程时已在 to_thread 中运行的调用无法中断（与外层
-  superstep 兜底行为一致，注释里说明即可）。
+- 子图超时：节点 config `timeoutSeconds`（编译期转 `timeout_seconds`）或
+  `WORKFLOW_SUBGRAPH_TIMEOUT`（默认 1800s）约束整个迭代过程。⚠️ 两个事实：
+  (a) 前端配置面板**当前未提供**该字段——后端注释声称的「前端 timeoutSeconds」未接线，
+  仅 API 直存图 JSON 可生效，接线前勿当作已可用旋钮宣传；(b) 默认 1800s > 外层
+  `WORKFLOW_NODE_TIMEOUT`（600s），默认部署下内层超时不可达（外层先触发），本值
+  只在运维调大外层或节点显式收紧时有意义；取消并发协程时已在 to_thread 中运行的
+  调用无法中断（与外层 superstep 兜底行为一致）。
 
 ## Mock 与占位实现
 
