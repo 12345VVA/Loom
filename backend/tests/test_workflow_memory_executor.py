@@ -186,5 +186,148 @@ class MemoryStoreExecutorTestCase(unittest.TestCase):
         self.assertEqual(len(self._rows()), 1)
 
 
+class MemoryRecallExecutorTestCase(unittest.TestCase):
+    """memory_recall 执行器：降级链 / 输出契约 / env 分域（设计 §6.2）。"""
+
+    def setUp(self):
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+        self.definition = WorkflowDefinition(code="wf1", name="WF1", is_active=True, user_id=1)
+        self.session.add(self.definition)
+        self.session.commit()
+        self.session.refresh(self.definition)
+        self.instance = WorkflowInstance(
+            definition_id=self.definition.id,
+            thread_id="t1",
+            status="running",
+            state_data="{}",
+            run_type="production",
+            user_id=7,
+        )
+        self.session.add(self.instance)
+        self.session.commit()
+        self.session.refresh(self.instance)
+        self._patchers = [
+            patch("app.core.database.SessionLocal", lambda: Session(self.engine)),
+        ]
+        for p in self._patchers:
+            p.start()
+        self._ctx_token = workflow_instance_id_ctx.set(self.instance.id)
+        # 预置两条生产记忆
+        for key, content in (("k1", "客户A报价口径8折"), ("k2", "输出风格英式英语")):
+            self.session.add(
+                WorkflowMemory(
+                    definition_id=self.definition.id,
+                    memory_env="production",
+                    memory_key=key,
+                    content=content,
+                    content_hash=wms.content_hash_of(content),
+                    tags="[]",
+                )
+            )
+        self.session.commit()
+
+    def tearDown(self):
+        workflow_instance_id_ctx.reset(self._ctx_token)
+        for p in self._patchers:
+            p.stop()
+        self.session.close()
+        self.engine.dispose()
+
+    def _run(self, variables=None, **config):
+        from app.modules.workflow.service.node_executors import execute_memory_recall_node
+
+        variables = variables if variables is not None else {"q": "报价"}
+        return asyncio.run(execute_memory_recall_node(variables, config))
+
+    def test_key_exact_mode(self):
+        result = self._run(memory_key_template="k1")
+        self.assertEqual(result["memory_recall_status"], "hit")
+        self.assertEqual(len(result["memories"]), 1)
+        self.assertIsNone(result["memories"][0]["score"])
+        self.assertEqual(result["memories"][0]["id"], 1)  # 含 id 可追踪
+
+    def test_semantic_mode_hit(self):
+        with (
+            patch.object(wms, "run_ai_embedding", return_value=([1.0, 0.0], "m:2")),
+            patch.object(
+                wms,
+                "search_memories",
+                return_value={
+                    "items": [
+                        {
+                            "id": 1,
+                            "memory_key": "k1",
+                            "content": "客户A报价口径8折",
+                            "score": 0.9,
+                            "memory_type": "fact",
+                            "tags": [],
+                            "created_at": None,
+                            "updated_at": None,
+                        }
+                    ],
+                    "degraded": False,
+                },
+            ),
+        ):
+            result = self._run(query_variable="q")
+        self.assertEqual(result["memory_recall_status"], "hit")
+        self.assertEqual(result["memories"][0]["score"], 0.9)
+
+    def test_query_embedding_failure_falls_back_keyword(self):
+        """query 向量化失败 → 关键词回退：degraded 且非空（设计 §5.1 v5.1）。"""
+        with patch.object(wms, "run_ai_embedding", return_value=(None, "m")):
+            result = self._run(query_variable="q")  # q=报价 → 词面命中 k1
+        self.assertEqual(result["memory_recall_status"], "degraded")
+        self.assertTrue(result["memories"])  # 非空
+        self.assertIn("报价", result["memories"][0]["content"])
+
+    def test_db_failure_degrades_to_empty(self):
+        """检索整体失败（DB 异常）→ 空结果 + degraded；onError=fail 收紧为冒泡。"""
+        with patch.object(wms, "search_memories", side_effect=RuntimeError("db down")):
+            result = self._run(query_variable="q")
+            self.assertEqual(result, {"memories": [], "memory_recall_status": "degraded"})
+            with self.assertRaises(ValueError):
+                self._run(query_variable="q", on_error="fail")
+
+    def test_text_output_format(self):
+        result = self._run(output_format="text", memory_key_template="k1")
+        self.assertEqual(result["memories"], "客户A报价口径8折")  # 纯 content
+        self.assertEqual(result["memory_recall_status"], "hit")
+
+    def test_topk_clamp(self):
+        from app.modules.workflow.service.workflow_memory_service import search_memories as real_search
+
+        captured = {}
+
+        def spy(session, **kw):
+            captured["top_k"] = kw.get("top_k")
+            return real_search(session, **kw)
+
+        with patch.object(wms, "search_memories", spy):
+            self._run(top_k=99)
+        self.assertEqual(captured["top_k"], 99)  # 原样透传，clamp 在 search 内（max 1..20 由执行器侧默认）
+
+    def test_timeline_when_no_keys(self):
+        result = self._run(variables={})  # 无 key 无 query → 时间线
+        self.assertEqual(result["memory_recall_status"], "hit")
+        self.assertEqual(len(result["memories"]), 2)  # 全部（默认 top_k=5）
+
+    def test_test_node_reads_test_env_only(self):
+        """recall 按 env 分域：test_node 实例读 test 命名空间，看不到生产行。"""
+        self.instance.run_type = "test_node"
+        self.session.add(self.instance)
+        self.session.commit()
+        result = self._run(variables={})
+        self.assertEqual(result["memory_recall_status"], "empty")  # 生产行不可见
+
+    def test_touch_last_accessed_called(self):
+        """命中后回写 last_accessed_at（best-effort）。"""
+        self._run(memory_key_template="k1")
+        row = self.session.exec(select(WorkflowMemory).where(WorkflowMemory.memory_key == "k1")).first()
+        self.assertIsNotNone(row.last_accessed_at)
+
+
 if __name__ == "__main__":
     unittest.main()

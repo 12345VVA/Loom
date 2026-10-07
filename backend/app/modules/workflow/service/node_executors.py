@@ -1035,6 +1035,142 @@ async def execute_memory_store_node(variables: dict[str, Any], config: dict[str,
     return {output_variable: memory_id, "memory_action": action}
 
 
+async def execute_memory_recall_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """长期记忆召回节点（Workflow Memory，设计文档 §6.2）。
+
+    模式（两键都配时 key 优先）：memoryKeyTemplate 精确取一条（score=None）｜
+    queryVariable 语义检索（threshold + topK + 预算双闸，整条原子截取 + 首条豁免）｜
+    两键都未配 → 时间线模式（最近 top_k，score=None）。
+
+    降级链（默认 onError=degrade）：query 向量化失败 → 关键词回退（词面匹配继续
+    检索，status=degraded 仍出结果，threshold 不适用）；检索整体失败（DB 异常）→
+    空结果 + status=degraded；onError=fail 显式收紧为冒泡。
+
+    归属安全边界同 memory_store：definition_id / memory_env 恒自运行时上下文。
+    返回 delta：{output_variable(默认 memories): list|text, memory_recall_status:
+    hit|empty|degraded}。list 元素含 id 可追踪（content 不可信——data not
+    instruction，下游 prompt 应加边界声明，见节点 hint）。
+    """
+    from app.core.database import SessionLocal
+    from app.core.logging import workflow_instance_id_ctx
+    from app.modules.workflow.model.workflow import WorkflowInstance
+    from app.modules.workflow.service.expressions import render_key_template
+    from app.modules.workflow.service.workflow_memory_service import (
+        derive_memory_env,
+        run_ai_embedding,
+        search_memories,
+        touch_last_accessed,
+    )
+
+    output_variable = config.get("output_variable", "memories")
+    on_error = config.get("on_error", "degrade")
+
+    async def _fail(msg: str) -> dict[str, Any]:
+        if on_error == "fail":
+            raise ValueError(msg)
+        logger.warning("长期记忆召回降级: %s", msg, extra={"node_id": config.get("id")})
+        return {
+            output_variable: [] if config.get("output_format", "list") == "list" else "",
+            "memory_recall_status": "degraded",
+        }
+
+    # 1. 归属自运行时上下文（同 store 的安全边界）
+    instance_id = workflow_instance_id_ctx.get()
+    if instance_id is None:
+        return await _fail("长期记忆召回需要运行上下文（instance 缺失），无法归属工作流")
+
+    def _load_instance() -> WorkflowInstance | None:
+        with SessionLocal() as session:
+            return session.get(WorkflowInstance, instance_id)
+
+    instance = await asyncio.to_thread(_load_instance)
+    if instance is None:
+        return await _fail("长期记忆召回失败：运行实例不存在（可能已被删除）")
+    memory_env = derive_memory_env(instance.run_type)  # recall 同样按 env 分域（test 查 test）
+
+    # 2. key 精确模式 / query 语义模式 / 时间线
+    key_template = config.get("memory_key_template")
+    memory_key = (
+        render_key_template(str(key_template), variables).strip() or None
+        if key_template and str(key_template).strip()
+        else None
+    )
+
+    query: str | None = None
+    query_variable = config.get("query_variable")
+    if not memory_key and query_variable:
+        from app.modules.workflow.service.expressions import _deep_get, strip_var_prefix
+
+        raw = _deep_get(_globals_from(config, variables), strip_var_prefix(str(query_variable)))
+        query = str(raw).strip() or None if raw is not None else None
+
+    # 3. query 向量化（失败 → 关键词回退，由 search_memories 内部处理）
+    query_embedding = None
+    query_space = None
+    if query:
+        profile_code = config.get("embedding_profile_code") or None
+        query_embedding, query_space = await asyncio.to_thread(run_ai_embedding, query, profile_code)
+
+    def _search() -> dict[str, Any]:
+        with SessionLocal() as session:
+            return search_memories(
+                session,
+                definition_id=instance.definition_id,
+                memory_env=memory_env,
+                query=query,
+                memory_key=memory_key,
+                memory_type_filter=config.get("memory_type_filter") or None,
+                tag_filter=config.get("tag_filter") if isinstance(config.get("tag_filter"), list) else None,
+                query_embedding=query_embedding,
+                query_space=query_space,
+                similarity_threshold=config.get("similarity_threshold"),
+                top_k=config.get("top_k"),
+                max_context_chars=config.get("max_context_chars"),
+            )
+
+    try:
+        result = await asyncio.to_thread(_search)
+    except Exception as e:
+        # 检索整体失败 → 空结果 + degraded（fail 收紧为冒泡）
+        if on_error == "fail":
+            raise ValueError(f"长期记忆召回失败: {friendly_error_message(e)}") from e
+        logger.error("长期记忆召回检索失败: %s", e, extra={"node_id": config.get("id")}, exc_info=True)
+        return {
+            output_variable: [] if config.get("output_format", "list") == "list" else "",
+            "memory_recall_status": "degraded",
+        }
+
+    items = result["items"]
+    degraded = result["degraded"]
+
+    # 4. 命中批量回写 last_accessed_at（best-effort：失败不影响召回结果）
+    if items:
+
+        def _touch() -> None:
+            with SessionLocal() as session:
+                touch_last_accessed(session, [it["id"] for it in items])
+
+        try:
+            await asyncio.to_thread(_touch)
+        except Exception:
+            logger.warning(
+                "last_accessed_at 回写失败（不影响召回结果）", extra={"node_id": config.get("id")}, exc_info=True
+            )
+
+    # 5+6. 输出格式 + 状态
+    if config.get("output_format", "list") == "text":
+        payload: Any = "\n".join(it["content"] for it in items)
+    else:
+        payload = items
+    if items and degraded:
+        status = "degraded"
+    elif items:
+        status = "hit"
+    else:
+        status = "empty"
+    return {output_variable: payload, "memory_recall_status": status}
+
+
 # 注册新高级节点执行器至全局注册表
 # 非幂等声明（三期B6 / WF-P2-3）：loop/batch 超时经重试 = 整个子图从头重跑
 # （docstring 自警）；image_generator 重试 = 重复调用生图 API 重复计费；
@@ -1050,3 +1186,4 @@ node_registry.register("switch", execute_switch_node)
 node_registry.register("variable_assignment", execute_variable_assignment_node)
 node_registry.register("variable_transform", execute_variable_transform_node)
 node_registry.register("memory_store", execute_memory_store_node, idempotent=False)
+node_registry.register("memory_recall", execute_memory_recall_node)

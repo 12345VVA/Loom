@@ -24,6 +24,7 @@ export const NODE_MANIFEST: readonly NodeManifestEntry[] = [
 	{ type: 'intent_classifier', untestable: false, interrupt: false, subgraph: false, conditional: true, idempotent: true, deprecated: false, outputVarDefault: null },
 	{ type: 'llm', untestable: false, interrupt: false, subgraph: false, conditional: false, idempotent: true, deprecated: false, outputVarDefault: 'output' },
 	{ type: 'loop_controller', untestable: true, interrupt: false, subgraph: true, conditional: false, idempotent: false, deprecated: false, outputVarDefault: 'loop_results' },
+	{ type: 'memory_recall', untestable: false, interrupt: false, subgraph: false, conditional: false, idempotent: true, deprecated: false, outputVarDefault: 'memories' },
 	{ type: 'memory_store', untestable: false, interrupt: false, subgraph: false, conditional: false, idempotent: false, deprecated: false, outputVarDefault: 'memory_id' },
 	{ type: 'switch', untestable: false, interrupt: false, subgraph: false, conditional: true, idempotent: true, deprecated: false, outputVarDefault: null },
 	{ type: 'tool_executor', untestable: false, interrupt: false, subgraph: false, conditional: false, idempotent: true, deprecated: false, outputVarDefault: 'tool_result' },

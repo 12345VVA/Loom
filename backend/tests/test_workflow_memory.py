@@ -480,5 +480,142 @@ class AdminAddTestCase(unittest.TestCase):
         self.assertIsNone(row.embedding)
 
 
+class SearchTestCase(unittest.TestCase):
+    """检索两阶段管线（设计 §5.1/§5.2）。"""
+
+    def setUp(self):
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def _search(self, **kw):
+        from app.modules.workflow.service.workflow_memory_service import search_memories
+
+        defaults = dict(definition_id=1, memory_env="production")
+        defaults.update(kw)
+        return search_memories(self.session, **defaults)
+
+    def test_key_exact_mode_score_none(self):
+        _upsert(self.session, memory_key="k1", content="精确命中")
+        result = self._search(memory_key="k1")
+        self.assertEqual(len(result["items"]), 1)
+        self.assertIsNone(result["items"][0]["score"])
+        self.assertFalse(result["degraded"])
+        # 未命中 → 空
+        self.assertEqual(self._search(memory_key="nope")["items"], [])
+
+    def test_semantic_mode_threshold_and_topk(self):
+        _upsert(self.session, content="相近A", embedding=[1.0, 0.0], embedding_space="m:2")
+        _upsert(self.session, content="相近B", embedding=[0.99, 0.14], embedding_space="m:2")  # 余弦≈0.99
+        _upsert(self.session, content="无关", embedding=[0.0, 1.0], embedding_space="m:2")  # 余弦=0
+        result = self._search(
+            query="查询", query_embedding=[1.0, 0.0], query_space="m:2", similarity_threshold=0.5, top_k=5
+        )
+        self.assertEqual(len(result["items"]), 2)  # threshold 过滤掉无关行
+        self.assertGreaterEqual(result["items"][0]["score"], result["items"][1]["score"])
+        # topK 截断
+        result_k1 = self._search(query="查询", query_embedding=[1.0, 0.0], query_space="m:2", top_k=1)
+        self.assertEqual(len(result_k1["items"]), 1)
+
+    def test_semantic_mode_space_filter(self):
+        """跨空间不可比：不同 space 的行不参与精排。"""
+        _upsert(self.session, content="同空间", embedding=[1.0, 0.0], embedding_space="m:2")
+        _upsert(self.session, content="异空间", embedding=[1.0, 0.0], embedding_space="other:2")
+        _upsert(self.session, content="裸code失败态", embedding=None, embedding_space="m")  # 非 ready
+        result = self._search(query="查询", query_embedding=[1.0, 0.0], query_space="m:2", similarity_threshold=0.1)
+        self.assertEqual([it["content"] for it in result["items"]], ["同空间"])
+
+    def test_budget_whole_item_and_first_exempt(self):
+        """预算整条原子截取 + 首条豁免（§5.2 v5.1）。时间线显式拉开 created_at（Core UPDATE
+        不触发事件覆盖）保证排序确定：c(10字符,最新) → b(60) → a(60)。"""
+        from sqlalchemy import update as sa_update
+
+        _upsert(self.session, memory_key="a", content="A" * 60)
+        _upsert(self.session, memory_key="b", content="B" * 60)
+        _upsert(self.session, memory_key="c", content="C" * 10)
+        now = datetime.now(UTC)
+        for key, minutes_ago in (("a", 30), ("b", 20), ("c", 10)):
+            self.session.execute(
+                sa_update(WorkflowMemory)
+                .where(WorkflowMemory.memory_key == key)
+                .values(created_at=now - timedelta(minutes=minutes_ago))
+            )
+        self.session.commit()
+        # 预算 100：c(10)+b(60)=70 ≤ 100；+a(60)=130 > 100 → 整条停（不切半条）→ [c, b]
+        result = self._search(top_k=3, max_context_chars=100)
+        self.assertEqual([it["memory_key"] for it in result["items"]], ["c", "b"])
+        # 首条豁免：预算(5)小于首条(10) 仍返回首条 1 条
+        result_exempt = self._search(top_k=3, max_context_chars=5)
+        self.assertEqual(len(result_exempt["items"]), 1)
+        self.assertEqual(result_exempt["items"][0]["memory_key"], "c")
+
+    def test_keyword_fallback_degraded(self):
+        """query 向量化失败 → 关键词回退：degraded=True 仍出结果；threshold 不适用。"""
+        _upsert(self.session, content="客户A的报价口径是8折")
+        _upsert(self.session, content="无关记忆内容")
+        result = self._search(query="报价 口径", query_embedding=None)  # 向量化失败
+        self.assertTrue(result["degraded"])
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["content"], "客户A的报价口径是8折")
+        self.assertGreater(result["items"][0]["score"], 0)
+
+    def test_keyword_fallback_no_hit_returns_empty(self):
+        _upsert(self.session, content="客户A的报价口径是8折")
+        result = self._search(query="完全不相关的查询词", query_embedding=None)
+        self.assertTrue(result["degraded"])
+        self.assertEqual(result["items"], [])
+
+    def test_chinese_bigram_tokenization(self):
+        """中文连续段切 2-gram：查询「报价口径」与内容「报价口径是8折」命中多个 token。"""
+        from app.modules.workflow.service.workflow_memory_service import _tokenize_query
+
+        tokens = _tokenize_query("报价 口径")
+        self.assertIn("报价", tokens)
+        self.assertIn("口径", tokens)
+        tokens2 = _tokenize_query("报价口径")
+        self.assertIn("报价", tokens2)
+        self.assertIn("价口", tokens2)  # 2-gram 跨词边界
+
+    def test_timeline_mode(self):
+        """两键都未配 → 时间线：最近 top_k，score=None，threshold 不适用。"""
+        _upsert(self.session, memory_key="t1", content="旧")
+        _upsert(self.session, memory_key="t2", content="新")
+        result = self._search(top_k=1)
+        self.assertEqual(len(result["items"]), 1)
+        self.assertIsNone(result["items"][0]["score"])
+        self.assertEqual(result["items"][0]["memory_key"], "t2")
+
+    def test_type_filter_and_tag_precision(self):
+        """memory_type 过滤 + tags 精筛（LIKE 误命中被 set 判交滤掉）。"""
+        _upsert(self.session, memory_key="f1", content="事实", memory_type="fact", tags=["vip", "urgent"])
+        _upsert(self.session, memory_key="f2", content="偏好", memory_type="preference", tags=["vipx"])  # LIKE 误命中
+        result_type = self._search(memory_type_filter="preference")
+        self.assertEqual([it["memory_key"] for it in result_type["items"]], ["f2"])
+        result_tag = self._search(tag_filter=["vip"])
+        self.assertEqual([it["memory_key"] for it in result_tag["items"]], ["f1"])  # vipx 被精筛滤掉
+
+    def test_search_env_isolation(self):
+        """生产检索不含 test 行（memory_env 分域）。"""
+        _upsert(self.session, memory_key="prod-k", content="生产记忆")
+        _upsert(self.session, memory_key="prod-k", content="测试记忆", memory_env="test")
+        result = self._search(memory_key="prod-k")
+        self.assertEqual(result["items"][0]["content"], "生产记忆")
+        result_kw = self._search(query="记忆", query_embedding=None)
+        self.assertEqual([it["content"] for it in result_kw["items"]], ["生产记忆"])
+
+    def test_touch_last_accessed(self):
+        from app.modules.workflow.service.workflow_memory_service import touch_last_accessed
+
+        mid, _ = _upsert(self.session, memory_key="k")
+        self.assertIsNone(self.session.get(WorkflowMemory, mid).last_accessed_at)
+        touched = touch_last_accessed(self.session, [mid, 99999])
+        self.assertEqual(touched, 1)
+        self.assertIsNotNone(self.session.get(WorkflowMemory, mid).last_accessed_at)
+
+
 if __name__ == "__main__":
     unittest.main()

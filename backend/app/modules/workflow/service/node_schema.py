@@ -102,4 +102,5 @@ NODE_OUTPUT_VAR_DEFAULTS: dict[str, str] = {
     # 转为 output_variable 后由执行器读取
     "variable_transform": "transformed_value",  # execute_variable_transform_node
     "memory_store": "memory_id",  # execute_memory_store_node（memory_action 为固定名次变量，不随改名）
+    "memory_recall": "memories",  # execute_memory_recall_node（memory_recall_status 为固定名次变量）
 }

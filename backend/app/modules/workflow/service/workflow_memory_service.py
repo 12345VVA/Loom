@@ -1,7 +1,7 @@
-"""工作流长期记忆服务：写路径（三级判定 + 并发防重 + 容量保护）、管理页 CRUD、生命周期。
+"""工作流长期记忆服务：写路径（三级判定 + 并发防重 + 容量保护）、检索（两阶段管线）、管理页 CRUD、生命周期。
 
 设计文档：docs/工作流长期记忆节点设计方案-2026-10-07.md（v5.2）。
-执行器（memory_store）与本服务（管理页 add）共用写入语义；检索（search）随批次 2 落地。
+执行器（memory_store / memory_recall）与本服务（管理页 add）共用读写语义。
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -375,6 +376,250 @@ def _enforce_scope_cap(session: Session, definition_id: int, memory_env: str) ->
         cap,
         len(victims),
     )
+
+
+# --- 检索（设计 §5：两阶段管线 + 双闸 + 关键词回退） ---
+
+
+def _tokenize_query(query: str) -> list[str]:
+    """关键词回退的 token 化（设计 §5.1 v5.1）：空白/标点切分，连续中文段再切 2-gram，
+    英文/数字保留原词（小写归一）。返回去重后的 token 集合（保序）。"""
+    segments = re.split(r"[^\w一-鿿]+", query, flags=re.UNICODE)
+    tokens: list[str] = []
+    for seg in segments:
+        if not seg:
+            continue
+        if re.fullmatch(r"[一-鿿]+", seg):
+            if len(seg) == 1:
+                tokens.append(seg)
+            else:
+                tokens.extend(seg[i : i + 2] for i in range(len(seg) - 1))
+        else:
+            tokens.append(seg.lower())
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for t in tokens:
+        if t not in seen:
+            seen.add(t)
+            ordered.append(t)
+    return ordered
+
+
+def _keyword_score_rows(query: str, rows: list[WorkflowMemory]) -> list[tuple[WorkflowMemory, float]]:
+    """词面匹配打分：score = 命中 token 数 / 总 token 数（0~1，非余弦量纲，
+    similarityThreshold 不适用）；无命中 token 的行不返回。排序 score desc → created_at desc
+    （先 created_at desc 再稳定排序 score desc，同分保持时间序）。"""
+    tokens = _tokenize_query(query)
+    if not tokens:
+        return []
+    scored: list[tuple[WorkflowMemory, float]] = []
+    for row in rows:
+        hits = sum(1 for t in tokens if t in row.content)
+        if hits > 0:
+            scored.append((row, hits / len(tokens)))
+    scored.sort(key=lambda p: p[0].created_at, reverse=True)
+    scored.sort(key=lambda p: p[1], reverse=True)
+    return scored
+
+
+def _apply_context_budget(items: list[dict], max_context_chars: int) -> list[dict]:
+    """召回预算：整条原子截取（一条记忆是语义原子，不切半条）+ 首条豁免（§5.2 v5.1：
+    预算小于首条时仍返回首条——「命中了但预算不够返回空」语义怪异；第二条起恢复约束）。"""
+    if not items:
+        return items
+    if len(items[0]["content"]) > max_context_chars:
+        return items[:1]
+    out: list[dict] = []
+    used = 0
+    for item in items:
+        if used + len(item["content"]) > max_context_chars:
+            break
+        out.append(item)
+        used += len(item["content"])
+    return out
+
+
+def _candidate_rows(
+    session: Session,
+    definition_id: int,
+    memory_env: str,
+    memory_type_filter: str | None,
+    tag_filter: list[str],
+    light: bool = False,
+) -> list[Any]:
+    """候选集（设计 §5.1）：归属 + 环境 + 活跃行 [+ 类型] [+ tags LIKE 粗滤（带引号）]。
+
+    light=True（语义模式两阶段第一阶段）只取精排所需轻量列（id/embedding/space/tags/
+    type/created_at）——不物化 4KB content 大字段，benchmark 实测 N=1000 物化开销显著；
+    关键词回退需要 content 做子串匹配，取全行（light=False）。
+    SQL 粗滤后 Python set 判交精筛（LIKE 会误命中子串）。候选集大小受
+    WORKFLOW_MEMORY_SCOPE_CAP 约束——cap 调大时内存余弦的性能假设同步失效（§5.1 v5.2）。
+    """
+    columns = (
+        (
+            WorkflowMemory.id,
+            WorkflowMemory.embedding,
+            WorkflowMemory.embedding_space,
+            WorkflowMemory.tags,
+            WorkflowMemory.memory_type,
+            WorkflowMemory.created_at,
+        )
+        if light
+        else None
+    )
+    base = select(*columns) if light else select(WorkflowMemory)
+    stmt = base.where(
+        WorkflowMemory.definition_id == definition_id,
+        WorkflowMemory.memory_env == memory_env,
+        WorkflowMemory.delete_time.is_(None),  # type: ignore[attr-defined]
+    )
+    if memory_type_filter:
+        stmt = stmt.where(WorkflowMemory.memory_type == memory_type_filter)
+    if tag_filter:
+        from sqlalchemy import or_
+
+        like_clauses = [WorkflowMemory.tags.like(f'%"{tag}"%') for tag in tag_filter]
+        stmt = stmt.where(or_(*like_clauses))
+    rows = list(session.exec(stmt).all())
+    if tag_filter:
+        wanted = set(tag_filter)
+        rows = [r for r in rows if wanted & set(_parse_tags(r.tags))]
+    return rows
+
+
+def _parse_tags(tags_json: str) -> list[str]:
+    try:
+        parsed = json.loads(tags_json)
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
+def _load_full_rows(session: Session, ids: list[int]) -> dict[int, WorkflowMemory]:
+    """两阶段取数的第二阶段：按 topK ids 取完整字段（一次 IN 查询）。"""
+    if not ids:
+        return {}
+    rows = session.exec(select(WorkflowMemory).where(WorkflowMemory.id.in_(ids))).all()
+    return {r.id: r for r in rows}
+
+
+def search_memories(
+    session: Session,
+    *,
+    definition_id: int,
+    memory_env: str,
+    query: str | None = None,
+    memory_key: str | None = None,
+    memory_type_filter: str | None = None,
+    tag_filter: list[str] | None = None,
+    query_embedding: list[float] | None = None,
+    query_space: str | None = None,
+    similarity_threshold: float | None = None,
+    top_k: int | None = None,
+    max_context_chars: int | None = None,
+) -> dict[str, Any]:
+    """记忆检索（设计 §5）。返回 {"items": [...], "degraded": bool}。
+
+    - **key 精确模式**（memory_key 非空）：精确取一条，score=None（不造假 1.0）；
+    - **语义模式**（query + query_embedding）：候选集 → space 一致性过滤（跨空间不可比）
+      → 余弦 → threshold 闸 → topK 闸 → 预算整条截取；
+    - **关键词回退**（query 有值但 query_embedding 为 None——availability fallback）：
+      token 词面匹配继续检索，degraded=True（与检索整体失败区分：降级仍出结果）；
+    - **时间线模式**（query 与 key 均无）：created_at DESC 最近 top_k，score=None，
+      threshold 不适用，仅预算生效。
+
+    items 元素：{id, memory_key, content, score, memory_type, tags, created_at, updated_at}。
+    """
+    threshold = (
+        similarity_threshold if similarity_threshold is not None else settings.WORKFLOW_MEMORY_SIMILARITY_THRESHOLD
+    )
+    k = max(1, int(top_k or settings.WORKFLOW_MEMORY_DEFAULT_TOP_K))
+    budget = max(1, int(max_context_chars or settings.WORKFLOW_MEMORY_MAX_CONTEXT_CHARS))
+    tag_filter = tag_filter or []
+    degraded = False
+
+    # key 精确模式：两键都配时 key 优先（设计 §6.2）
+    if memory_key:
+        row = session.exec(
+            select(WorkflowMemory).where(
+                WorkflowMemory.definition_id == definition_id,
+                WorkflowMemory.memory_env == memory_env,
+                WorkflowMemory.memory_key == memory_key,
+                WorkflowMemory.delete_time.is_(None),  # type: ignore[attr-defined]
+            )
+        ).first()
+        items = [_row_to_item(row, score=None)] if row else []
+        return {"items": _apply_context_budget(items, budget), "degraded": False}
+
+    if query and query_embedding is not None:
+        # 语义模式：两阶段第一阶段取轻量列（不物化 content 大字段），仅 space 一致的
+        # ready 行参与余弦精排（跨空间不可比防护）
+        rows = _candidate_rows(session, definition_id, memory_env, memory_type_filter, tag_filter, light=True)
+        comparable = [
+            r
+            for r in rows
+            if r.embedding and r.embedding_space and ":" in r.embedding_space and r.embedding_space == query_space
+        ]
+        scored: list[tuple[Any, float]] = []
+        for row in comparable:
+            try:
+                vector = json.loads(row.embedding)
+            except (TypeError, ValueError):
+                continue
+            scored.append((row, _cosine_similarity(query_embedding, vector)))
+        scored = [(r, s) for r, s in scored if s >= threshold]
+        scored.sort(key=lambda p: p[1], reverse=True)
+        top = scored[:k]
+        full = _load_full_rows(session, [r.id for r, _ in top])
+        items = [_row_to_item(full[r.id], score=s) for r, s in top if r.id in full]
+        items = _apply_context_budget(items, budget)
+    elif query:
+        # 关键词回退（availability fallback，非 quality fallback）：不返回空结果，
+        # 词面匹配继续检索（需 content，取全行）；threshold 不适用（score 量纲不同）
+        degraded = True
+        rows = _candidate_rows(session, definition_id, memory_env, memory_type_filter, tag_filter)
+        scored = _keyword_score_rows(query, rows)[:k]
+        full = _load_full_rows(session, [r.id for r, _ in scored])
+        items = [_row_to_item(full[r.id], score=s) for r, s in scored if r.id in full]
+        items = _apply_context_budget(items, budget)
+    else:
+        # 时间线模式：最近 top_k（轻量列排序 + 第二阶段取全行），threshold 不适用，仅预算生效
+        rows = _candidate_rows(session, definition_id, memory_env, memory_type_filter, tag_filter, light=True)
+        rows.sort(key=lambda r: r.created_at, reverse=True)
+        top = rows[:k]
+        full = _load_full_rows(session, [r.id for r in top])
+        items = _apply_context_budget([_row_to_item(full[r.id], score=None) for r in top if r.id in full], budget)
+
+    return {"items": items, "degraded": degraded}
+
+
+def _row_to_item(row: WorkflowMemory, score: float | None) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "memory_key": row.memory_key,
+        "content": row.content,
+        "score": score,
+        "memory_type": row.memory_type,
+        "tags": _parse_tags(row.tags),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def touch_last_accessed(session: Session, memory_ids: list[int]) -> int:
+    """命中行批量回写 last_accessed_at（容量保护排序依据之一）。单条 UPDATE ... IN，
+    一期不节流（设计 §6.2 v5.2 G：benchmark 显示写放大显著再引入按行节流）。
+    best-effort 由调用方兜底。"""
+    ids = [mid for mid in memory_ids if mid]
+    if not ids:
+        return 0
+    from sqlalchemy import update as sa_update
+
+    result = session.execute(
+        sa_update(WorkflowMemory).where(WorkflowMemory.id.in_(ids)).values(last_accessed_at=datetime.now(UTC))
+    )
+    session.commit()
+    return int(result.rowcount or 0)
 
 
 # --- 生命周期 ---
