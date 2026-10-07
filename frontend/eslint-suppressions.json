@@ -449,11 +449,6 @@
       "count": 1
     }
   },
-  "src/modules/workflow/components/custom-nodes/tool-node.vue": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "src/modules/workflow/components/custom-nodes/variable-assignment-node.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -540,11 +535,6 @@
     }
   },
   "src/modules/workflow/components/node-configs/switch-config.vue": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/modules/workflow/components/node-configs/tool-config.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
     }

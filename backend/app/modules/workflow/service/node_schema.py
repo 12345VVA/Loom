@@ -76,6 +76,12 @@ NODE_CONFIG_SCHEMA: dict[str, tuple[FieldSpec, ...]] = {
     # loop/batch 列表变量缺失/为空时执行器静默返回空 results（空转）——必填
     "loop_controller": (FieldSpec("listVariable", label="循环列表变量", required=True, types=(str,)),),
     "batch_processor": (FieldSpec("batchListVariable", label="批处理列表变量", required=True, types=(str,)),),
+    # 复审 P1-9：与前端 getMissingConfigFields 口径对齐——此前 UI 必填但 API 直存
+    # 的图后端放行，运行时空 prompt 直接调模型 / 空 toolCode 落 "unknown" 查找失败。
+    # intent 的 intents 不列（空 intents 语义合法：不经过 LLM 直落 default_route，
+    # 三期B6 决策）；modelProfileCode 由 graph_validate step6 既有检查覆盖。
+    "llm": (FieldSpec("promptTemplate", label="提示词模板", required=True, types=(str,)),),
+    "tool_executor": (FieldSpec("toolCode", label="工具 Code", required=True, types=(str,)),),
 }
 
 
@@ -90,5 +96,7 @@ NODE_OUTPUT_VAR_DEFAULTS: dict[str, str] = {
     "batch_processor": "batch_results",  # execute_batch_processor_node
     "image_generator": "image_url",  # execute_image_generator_node
     "tool_executor": "tool_result",  # execute_tool_executor_node
-    "variable_transform": "transformed_value",  # execute_variable_transform_node（写入键 output_variable）
+    # 前端写驼峰 outputVariable（三期B7 统一），编译期 convert_keys_to_snake
+    # 转为 output_variable 后由执行器读取
+    "variable_transform": "transformed_value",  # execute_variable_transform_node
 }

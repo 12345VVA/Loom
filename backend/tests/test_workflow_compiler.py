@@ -40,7 +40,8 @@ def _llm_node(node_id: str, profile_code: str = "p1") -> dict:
         "id": node_id,
         "type": "llm",
         "name": f"LLM-{node_id}",
-        "config": {"modelProfileCode": profile_code},
+        # promptTemplate 必填（复审 P1-9 前后端口径对齐）
+        "config": {"modelProfileCode": profile_code, "promptTemplate": "{query}"},
     }
 
 
@@ -353,7 +354,7 @@ class CompileGraphTestCase(unittest.TestCase):
                     "id": "body_1",
                     "type": "llm",
                     "name": "Body LLM",
-                    "config": {"modelProfileCode": "p1"},
+                    "config": {"modelProfileCode": "p1", "promptTemplate": "{query}"},
                     "parentNode": "group_1",
                 },
                 _end_node("end_1"),

@@ -644,8 +644,8 @@ class WorkflowCompiler:
         """
 
         async def node_runner(state: WorkflowState) -> dict[str, Any]:
-            # 记录当前执行节点
-            state["current_node"] = node_id
+            # current_node 经返回值驱动（LangGraph reducer），不直改入参 state
+            # （复审 P2 清理：原直改行对图状态无效，仅具误导性）
 
             # 获取对应的注册执行器
             executor = node_registry.get(node_type)

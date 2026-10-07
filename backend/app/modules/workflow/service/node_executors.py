@@ -605,7 +605,7 @@ async def tool_web_search(query: str, max_results: int = 3) -> str:
     return f"[搜索引擎结果] '{query}'：\n1. AI内容生成大屏看板与工作流完美整合。\n2. LangGraph 极力推荐用在复杂循环多步场景。"
 
 
-async def tool_file_system(filename: str, content: str = None) -> str:
+async def tool_file_system(filename: str, content: str | None = None) -> str:
     """
     [Mock] 本地文件系统读写占位工具实现
     """
