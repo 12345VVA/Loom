@@ -421,10 +421,16 @@ def sweep_workflow_cleanup() -> dict:
         orphans_removed = service.sweep_orphan_payloads()
         ckpt_keep_days = _int_param(SysParamService(session).get_value("workflowCheckpointKeepDays", "7"), 7)
         checkpoint_threads_removed = service.sweep_checkpoint_threads(keep_days=ckpt_keep_days)
+        # 记忆墓碑硬清：统一回收容量淘汰/手动删/definition 级联三种软删来源（设计 §4.4）
+        memory_keep_days = _int_param(SysParamService(session).get_value("workflowMemoryTombstoneKeepDays", "90"), 90)
+    from app.modules.workflow.service.workflow_memory_service import sweep_memory_tombstones
+
+    memory_tombstones_removed = sweep_memory_tombstones(memory_keep_days)
     return {
         "logsRemoved": logs_removed,
         "orphanPayloadsRemoved": orphans_removed,
         "checkpointThreadsRemoved": checkpoint_threads_removed,
+        "memoryTombstonesRemoved": memory_tombstones_removed,
         "keepDays": keep_days,
     }
 

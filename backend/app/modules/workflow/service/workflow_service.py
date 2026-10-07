@@ -232,6 +232,13 @@ class WorkflowService(BaseAdminCrudService):
             entity = self.session.get(self.model, entity_id)
             if entity is not None:
                 assert_workflow_owner(self.session, entity, current_user)
+        # 记忆级联软删（设计 §4.4）：记忆 ownership lifetime 与工作流一致，definition
+        # 删除后其记忆不再有任何写入入口，批量软删入墓碑由 sweep 统一硬清。
+        # 自治小事务（软删幂等，失败重试安全）。
+        from app.modules.workflow.service.workflow_memory_service import cascade_soft_delete_by_definition
+
+        for entity_id in ids or []:
+            cascade_soft_delete_by_definition(self.session, entity_id)
         return super().delete(ids, payload=payload, soft_delete=soft_delete)
 
     def info(self, id, current_user=None, relations=()):

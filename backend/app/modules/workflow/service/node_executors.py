@@ -900,9 +900,145 @@ async def execute_switch_node(variables: dict[str, Any], config: dict[str, Any])
     return {}
 
 
+async def execute_memory_store_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """长期记忆写入节点（Workflow Memory，设计文档 docs/工作流长期记忆节点设计方案-2026-10-07.md）。
+
+    流程：content 模板渲染 → 写权限校验（memoryWriteEnabled，关闭 fail 不静默 skip）→
+    env 门控（eval 跳过 / test_node 写 test 命名空间）→ 归属自运行时上下文 →
+    空/超长 fail-fast → 凭据模式 warning → key upsert / hash 去重（三级判定）→
+    embedding（失败降级 NULL 记 space）→ 落库 → 容量保护。
+
+    幂等性自警：节点逻辑具备去重能力（key upsert + hash 防重 + IntegrityError 重走），
+    但副作用一致性由节点逻辑保证而非框架——仍声明 idempotent=False，重试框架强制
+    max_attempts=1（调大重试次数不会更幂等，只会重复调用 embedding 计费）。
+
+    归属安全边界：definition_id / user_id 恒取自运行时上下文（workflow_instance_id_ctx
+    → instance），绝不读 variables 与节点 config——节点不能选择「写别的工作流」。
+
+    config 键（camelCase 权威，编译期已转 snake_case）：contentTemplate（必填）/
+    memoryKeyTemplate / memoryType / tags / embeddingProfileCode / onError(fail|degrade)。
+    返回 delta：{output_variable(默认 memory_id): id|None, memory_action: created|updated|
+    deduplicated|skipped|degraded}。
+    """
+    from app.core.database import SessionLocal
+    from app.core.logging import workflow_instance_id_ctx
+    from app.modules.ai.service.security_service import detect_credential_patterns
+    from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
+    from app.modules.workflow.service.workflow_memory_service import (
+        derive_memory_env,
+        run_ai_embedding,
+        upsert_memory,
+    )
+
+    output_variable = config.get("output_variable", "memory_id")
+    on_error = config.get("on_error", "fail")
+
+    def _degrade() -> dict[str, Any]:
+        return {output_variable: None, "memory_action": "degraded"}
+
+    # 1. 渲染内容模板（编译期 schema 已保证 contentTemplate 必填，此处防直造图空转）
+    content_template = config.get("content_template")
+    if not content_template or not str(content_template).strip():
+        raise ValueError("长期记忆写入节点缺少 contentTemplate 配置，无法确定要记忆的内容")
+    content = render_template(str(content_template), variables)
+
+    # 2. 归属自运行时上下文（绝不读 variables/config——安全边界）
+    instance_id = workflow_instance_id_ctx.get()
+    if instance_id is None:
+        # 直调执行器的测试路径（无 ctx）：归属不可知即拒绝，不猜测归属
+        raise ValueError("长期记忆写入需要运行上下文（instance 缺失），无法归属工作流；请通过单节点测试或整图执行运行")
+
+    def _load_context() -> tuple[WorkflowInstance, WorkflowDefinition] | None:
+        with SessionLocal() as session:
+            instance = session.get(WorkflowInstance, instance_id)
+            if instance is None:
+                return None
+            definition = session.get(WorkflowDefinition, instance.definition_id)
+            if definition is None:
+                return None
+            return instance, definition
+
+    context = await asyncio.to_thread(_load_context)
+    if context is None:
+        raise ValueError("长期记忆写入失败：运行实例或工作流定义不存在（可能已被删除）")
+    instance, definition = context
+
+    # 3. 写权限校验：「能运行 ≠ 能写知识」；关闭是可定位的运营状态，fail-fast 不静默 skip
+    if not definition.memory_write_enabled:
+        raise ValueError(f"工作流「{definition.name}」未开启记忆写入（memoryWriteEnabled 已关闭），无法保存长期记忆")
+
+    # 4. env 门控（设计 §8）：eval 跳过写入；test_node 写 test 命名空间（物理隔离）
+    if instance.run_type == "eval":
+        return {output_variable: None, "memory_action": "skipped"}
+    memory_env = derive_memory_env(instance.run_type)
+
+    # 5. 空内容 / 超长 fail-fast（不截断——一条记忆是语义原子）
+    if not content.strip():
+        raise ValueError("长期记忆内容渲染结果为空，拒绝写入空记忆")
+    from app.core.config import settings
+
+    max_len = settings.WORKFLOW_MEMORY_MAX_CONTENT_LENGTH
+    if len(content) > max_len:
+        raise ValueError(f"长期记忆内容超长（{len(content)} > {max_len} 字符），不截断直接拒绝")
+
+    # 6. 凭据模式检测：命中仅 warning 不阻断（讨论密钥管理是合法内容），管理页可按标记审计
+    if detect_credential_patterns(content):
+        logger.warning(
+            "长期记忆内容疑似包含凭据（已照常写入，请注意管理页审计）",
+            extra={"node_id": config.get("id"), "definition_id": instance.definition_id},
+        )
+
+    # 7. 渲染业务身份 key（配了时；渲染后空白视同未配）。用 render_key_template：
+    # key 主流分隔形态是冒号（customer:{id}:policy），全局 render_template 的字面量
+    # 环视会把「变量后紧跟冒号」静默跳过——key 语义域无 JSON 字面量，精确渲染
+    memory_key = None
+    key_template = config.get("memory_key_template")
+    if key_template and str(key_template).strip():
+        from app.modules.workflow.service.expressions import render_key_template
+
+        memory_key = render_key_template(str(key_template), variables).strip() or None
+
+    memory_type = config.get("memory_type") or "fact"
+    tags = config.get("tags") if isinstance(config.get("tags"), list) else []
+    profile_code = config.get("embedding_profile_code") or None
+    node_id = config.get("id")
+
+    # 8+9. embedding + 三级判定落库（独立会话，asyncio.to_thread 不阻塞事件循环）
+    def _persist() -> tuple[int, str]:
+        vector, space = run_ai_embedding(content, profile_code)
+        with SessionLocal() as session:
+            return upsert_memory(
+                session,
+                definition_id=instance.definition_id,
+                memory_env=memory_env,
+                content=content,
+                memory_key=memory_key,
+                memory_type=memory_type,
+                tags=tags,
+                embedding=vector,
+                embedding_space=space,
+                source_instance_id=instance.id,
+                source_node_id=str(node_id) if node_id else None,
+                source_run_type=instance.run_type,
+                user_id=instance.user_id,
+            )
+
+    try:
+        memory_id, action = await asyncio.to_thread(_persist)
+    except Exception as e:
+        # DB/校验失败冒泡（记忆静默丢失最难排查）；onError=degrade 显式选择降级
+        if on_error == "degrade":
+            logger.warning("长期记忆写入降级（onError=degrade）: %s", e, extra={"node_id": node_id})
+            return _degrade()
+        raise ValueError(f"长期记忆写入失败: {friendly_error_message(e)}") from e
+
+    return {output_variable: memory_id, "memory_action": action}
+
+
 # 注册新高级节点执行器至全局注册表
 # 非幂等声明（三期B6 / WF-P2-3）：loop/batch 超时经重试 = 整个子图从头重跑
-# （docstring 自警）；image_generator 重试 = 重复调用生图 API 重复计费。
+# （docstring 自警）；image_generator 重试 = 重复调用生图 API 重复计费；
+# memory_store 逻辑具备去重能力但副作用一致性由节点逻辑保证而非框架（同款保守语义）。
 node_registry.register("intent_classifier", execute_intent_classifier_node)
 node_registry.register("loop_controller", execute_loop_controller_node, idempotent=False)
 node_registry.register("batch_processor", execute_batch_processor_node, idempotent=False)
@@ -913,3 +1049,4 @@ node_registry.register("condition", execute_condition_node)
 node_registry.register("switch", execute_switch_node)
 node_registry.register("variable_assignment", execute_variable_assignment_node)
 node_registry.register("variable_transform", execute_variable_transform_node)
+node_registry.register("memory_store", execute_memory_store_node, idempotent=False)

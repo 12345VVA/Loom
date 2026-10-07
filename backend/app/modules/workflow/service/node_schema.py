@@ -82,6 +82,8 @@ NODE_CONFIG_SCHEMA: dict[str, tuple[FieldSpec, ...]] = {
     # 三期B6 决策）；modelProfileCode 由 graph_validate step6 既有检查覆盖。
     "llm": (FieldSpec("promptTemplate", label="提示词模板", required=True, types=(str,)),),
     "tool_executor": (FieldSpec("toolCode", label="工具 Code", required=True, types=(str,)),),
+    # 长期记忆写入：contentTemplate 缺失/为空时无内容可记（静默空转类），编译期 fail-fast
+    "memory_store": (FieldSpec("contentTemplate", label="记忆内容模板", required=True, types=(str,)),),
 }
 
 
@@ -99,4 +101,5 @@ NODE_OUTPUT_VAR_DEFAULTS: dict[str, str] = {
     # 前端写驼峰 outputVariable（三期B7 统一），编译期 convert_keys_to_snake
     # 转为 output_variable 后由执行器读取
     "variable_transform": "transformed_value",  # execute_variable_transform_node
+    "memory_store": "memory_id",  # execute_memory_store_node（memory_action 为固定名次变量，不随改名）
 }

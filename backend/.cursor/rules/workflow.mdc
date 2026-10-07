@@ -28,6 +28,7 @@ app/modules/workflow/
 │   ├── checkpointer.py            # checkpoint 存储工厂
 │   ├── error_format.py            # 异常 → 可读中文消息
 │   ├── artifact_service.py        # 产物落地
+│   ├── workflow_memory_service.py # 长期记忆写路径/管理页/墓碑清理（设计文档 docs/工作流长期记忆节点设计方案）
 │   └── cleanup_service.py         # 日志/checkpoint/孤儿载荷/假死实例清理
 └── tasks/workflow_tasks.py        # Celery：执行、清理 sweep、回收
 ```
@@ -43,6 +44,10 @@ app/modules/workflow/
 - `thread_id` 是 LangGraph checkpoint 隔离键，建实例时 `uuid4()` 生成，resume 复用。
 - `run_type`：`production | trial | eval | test_node`。副作用（失败通知、产物落地、
   列表展示）按 `run_type != "production"` 门控；新增实例创建路径必须显式声明 run_type。
+  记忆写入（memory_store）门控不同：eval 跳过写入；trial **有意写 production env**
+  （试运行必须真实反映节点语义）；test_node 写 `memory_env=test` 物理隔离命名空间。
+  归属（definition_id/user_id）恒自运行时上下文（`workflow_instance_id_ctx`），单节点
+  测试路径同样设置 ctx（指向 test_node 实例，执行后重置）。
 - 版本解析优先级（`_resolve_execution_graph`）：`graph_json_override`（eval 快照）>
   `version_id` > `instance.version_id` > `definition.current_version_id`。
 

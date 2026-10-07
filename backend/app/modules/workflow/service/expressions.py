@@ -189,33 +189,48 @@ def render_template(template: str, variables: dict) -> str:
     {var.list.0}  → variables["var"]["list"][0]
     dict/list 自动序列化为 JSON。
     """
-
-    def _resolve(match):
-        path = match.group(1).strip()
-        if not path:
-            return ""
-        parts = path.split(".")
-        value = variables
-        for part in parts:
-            if isinstance(value, dict) and part in value:
-                value = value[part]
-            elif isinstance(value, list) and part.isdigit():
-                idx = int(part)
-                if 0 <= idx < len(value):
-                    value = value[idx]
-                else:
-                    return ""
-            else:
-                return ""
-        if isinstance(value, (dict, list)):
-            return json.dumps(value, ensure_ascii=False)
-        return str(value)
-
     # (?!\s*[:,}])：排除 JSON/Python 字面量强特征——
     # `}` 后跟 冒号(dict)、逗号(集合/数组)、右花括号(嵌套结尾) 的不视为变量引用，
     # 避免模板里的 `{a:1}`/`{a,b}`/`{"k":1}}` 等字面量片段被当变量吞成空串。
     # （带引号 JSON `{"a":1}` 因 `"` 不在字符类本就不匹配，此处仅补防裸键字面量。）
-    return _VAR_REF_PATTERN.sub(_resolve, template)
+    return _VAR_REF_PATTERN.sub(lambda m: _resolve_var_path(m.group(1), variables), template)
+
+
+def _resolve_var_path(raw_path: str, variables: dict) -> str:
+    """解析单个点路径变量取值：dict 导航 + list 数字索引，缺失路径返回空串；dict/list 序列化 JSON。"""
+    path = raw_path.strip()
+    if not path:
+        return ""
+    parts = path.split(".")
+    value = variables
+    for part in parts:
+        if isinstance(value, dict) and part in value:
+            value = value[part]
+        elif isinstance(value, list) and part.isdigit():
+            idx = int(part)
+            if 0 <= idx < len(value):
+                value = value[idx]
+            else:
+                return ""
+        else:
+            return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+# memory_key 业务身份模板的变量引用（字符集与 _VAR_REF_PATTERN 一致，无环视）
+_KEY_REF_PATTERN = re.compile(r"\{([a-zA-Z0-9_.一-鿿]+)\}")
+
+
+def render_key_template(template: str, variables: dict) -> str:
+    """无环视版变量插值，专供 memory_key 业务身份模板（长期记忆节点）。
+
+    key 的主流分隔形态是冒号（customer:{customerId}:quote_policy），变量后紧跟
+    冒号/逗号会被全局 render_template 的字面量环视静默跳过（X-1 禁静默）；key
+    语义域不存在 JSON 字面量场景，故精确渲染。仅插值无求值。
+    """
+    return _KEY_REF_PATTERN.sub(lambda m: _resolve_var_path(m.group(1), variables), template)
 
 
 def strip_braces(val: str) -> str:
