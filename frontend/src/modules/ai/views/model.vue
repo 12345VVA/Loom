@@ -28,6 +28,32 @@
 		</cl-row>
 
 		<cl-upsert ref="Upsert">
+			<template #slot-capabilities="{ scope }">
+				<el-select
+					v-model="scope.capabilities"
+					multiple
+					filterable
+					allow-create
+					default-first-option
+					clearable
+					collapse-tags
+					collapse-tags-tooltip
+					:placeholder="$t('请选择或输入能力标签')"
+					style="width: 100%"
+				>
+					<el-option
+						v-for="item in capabilityOptions"
+						:key="item.value"
+						:label="item.label"
+						:value="item.value"
+					>
+						<div class="capability-option-item">
+							<span>{{ item.label }}</span>
+							<span class="capability-option-code">{{ item.value }}</span>
+						</div>
+					</el-option>
+				</el-select>
+			</template>
 			<template #slot-pricingConfig="{ scope }">
 				<div class="default-config-editor">
 					<div class="default-config-editor__tools">
@@ -59,14 +85,26 @@ defineOptions({
 	name: 'ai-model'
 });
 
-import { h } from 'vue';
+import { computed, h, onMounted } from 'vue';
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
+import { useDict } from '/$/dict';
 import { useI18n } from 'vue-i18n';
 import { InfoFilled } from '@element-plus/icons-vue';
 
 const { service } = useCool();
+const { dict } = useDict();
 const { t } = useI18n();
+
+const capabilityOptions = computed(() => {
+	return dict.get('ai_model_capability', 'asc').value || [];
+});
+
+onMounted(() => {
+	if (!dict.get('ai_model_capability').value?.length) {
+		dict.refresh(['ai_model_capability']);
+	}
+});
 
 const modelTypeOptions = [
 	{ label: t('对话'), value: 'chat', type: 'primary' },
@@ -147,10 +185,7 @@ const Upsert = useUpsert({
 			label: t('能力标签'),
 			prop: 'capabilities',
 			span: 24,
-			component: {
-				name: 'el-input',
-				props: { placeholder: '以逗号分隔，例如: image,text-to-image 或 chat,vision,tools,stream' }
-			}
+			component: { name: 'slot-capabilities' }
 		},
 
 		// --- 2. 上下文与Token规格（仅对话/LLM模型显示） ---
@@ -234,7 +269,29 @@ const Upsert = useUpsert({
 			if (data.defaultConfig == null) {
 				data.defaultConfig = '{}';
 			}
+			if (typeof data.capabilities === 'string') {
+				data.capabilities = splitCapabilities(data.capabilities);
+			} else if (!Array.isArray(data.capabilities)) {
+				data.capabilities = [];
+			}
 		}
+	},
+	async onInfo(data, { next, done }) {
+		const res = await next(data);
+		if (res) {
+			if (res.pricingConfig == null) {
+				res.pricingConfig = '{}';
+			}
+			if (res.defaultConfig == null) {
+				res.defaultConfig = '{}';
+			}
+			if (typeof res.capabilities === 'string') {
+				res.capabilities = splitCapabilities(res.capabilities);
+			} else if (!Array.isArray(res.capabilities)) {
+				res.capabilities = [];
+			}
+		}
+		done(res);
 	},
 	onSubmit(data, { next }) {
 		const payload = { ...data };
@@ -243,6 +300,9 @@ const Upsert = useUpsert({
 				delete payload[key];
 			}
 		});
+		if (Array.isArray(payload.capabilities)) {
+			payload.capabilities = payload.capabilities.filter(Boolean).join(',');
+		}
 		// 非对话模型清空上下文与最大输出（传 null 显式更新，防止被 exclude_unset 跳过）
 		if (!isChatModel(payload)) {
 			payload.contextWindow = null;
@@ -255,9 +315,9 @@ const Upsert = useUpsert({
 const Table = useTable({
 	columns: [
 		{ type: 'selection' },
-		{ label: t('厂商'), prop: 'providerName', minWidth: 150 },
-		{ label: t('编码'), prop: 'code', minWidth: 180 },
 		{ label: t('名称'), prop: 'name', minWidth: 160 },
+		{ label: t('厂商'), prop: 'providerName', minWidth: 150 },
+		{ label: t('编码'), prop: 'code', minWidth: 180, hidden: true },
 		{
 			label: t('类型'),
 			prop: 'modelType',
@@ -270,11 +330,12 @@ const Table = useTable({
 			prop: 'capabilities',
 			minWidth: 220,
 			showOverflowTooltip: true,
-			formatter: ({ capabilities }: any) => splitCapabilities(capabilities).join(' / ') || '-'
+			formatter: ({ capabilities }: any) => formatCapabilities(capabilities),
+			hidden: true
 		},
 		{ label: t('上下文'), prop: 'contextWindow', minWidth: 110 },
 		{ label: t('最大输出'), prop: 'maxOutputTokens', minWidth: 110 },
-		{ label: t('启用'), prop: 'status', width: 100 },
+		{ label: t('启用'), prop: 'status', width: 100, component: { name: 'cl-switch' } },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{ type: 'op', buttons: ['edit', 'delete'] }
 	]
@@ -294,6 +355,19 @@ function splitCapabilities(value?: string) {
 		.split(',')
 		.map(item => item.trim())
 		.filter(Boolean);
+}
+
+function formatCapabilities(value?: string) {
+	const list = splitCapabilities(value);
+	if (!list.length) return '-';
+	const dictItems = dict.get('ai_model_capability').value || [];
+	const map = new Map(dictItems.map((item: any) => [String(item.value), item.label]));
+	return list
+		.map(item => {
+			const label = map.get(item);
+			return label ? `${label} (${item})` : item;
+		})
+		.join(' / ');
 }
 
 function defaultConfigHint(scope: any) {
@@ -346,6 +420,19 @@ function defaultConfigTemplate(scope: any) {
 </script>
 
 <style lang="scss" scoped>
+.capability-option-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+
+	.capability-option-code {
+		font-size: 12px;
+		color: var(--el-text-color-secondary);
+		margin-left: 16px;
+	}
+}
+
 .capability-tip-icon {
 	font-size: 16px;
 	color: var(--el-text-color-placeholder);

@@ -34,7 +34,31 @@
 			<cl-pagination />
 		</cl-row>
 
-		<cl-upsert ref="Upsert" />
+		<cl-upsert ref="Upsert">
+			<template #slot-customConfig="{ scope }">
+				<div class="custom-config-editor">
+					<div class="custom-config-editor__tools">
+						<span class="custom-config-editor__hint">
+							{{ $t('覆盖模型的私有参数（不包含价格参数），可直接修改覆盖') }}
+						</span>
+						<div class="custom-config-editor__actions">
+							<el-button
+								size="small"
+								type="primary"
+								plain
+								@click="syncFromModelConfig(scope)"
+							>
+								{{ $t('获取模型参数') }}
+							</el-button>
+							<el-button size="small" text @click="clearCustomConfig(scope)">
+								{{ $t('清空') }}
+							</el-button>
+						</div>
+					</div>
+					<cl-editor-codemirror v-model="scope.customConfig" :height="180" />
+				</div>
+			</template>
+		</cl-upsert>
 	</cl-crud>
 
 	<el-drawer v-model="tester.visible" :title="$t('测试调用')" size="440px">
@@ -95,6 +119,15 @@ import ResponseFormatEditor from '../components/response-format-editor.vue';
 const { service } = useCool();
 const { t } = useI18n();
 
+const modelTypeOptions = [
+	{ label: t('对话'), value: 'chat', type: 'primary' },
+	{ label: t('向量'), value: 'embedding', type: 'success' },
+	{ label: t('图片'), value: 'image', type: 'warning' },
+	{ label: t('音频'), value: 'audio', type: 'danger' },
+	{ label: t('视频'), value: 'video', type: 'info' },
+	{ label: t('重排'), value: 'rerank', type: 'success' }
+];
+
 const tester = reactive({
 	visible: false,
 	id: 0,
@@ -119,7 +152,8 @@ function getModelType(scope: any): string {
 	if (!scope) return '';
 	if (scope.modelType) return scope.modelType;
 	if (scope.modelId) {
-		const m = modelsList.value.find((item: any) => item.id == scope.modelId);
+		const mid = normalizeSingleId(scope.modelId);
+		const m = modelsList.value.find((item: any) => item.id == mid);
 		if (m) return m.modelType || '';
 	}
 	return '';
@@ -173,6 +207,8 @@ function handleModelChange(val: any) {
 	const m = modelsList.value.find((item: any) => item.id == mid);
 	if (!m) return;
 
+	Upsert.value?.setForm('modelType', m.modelType || '');
+
 	const currentScenario = Upsert.value?.getForm('scenario') || 'default';
 	const modelName = m.name || m.code || '';
 	const modelCode = m.code || '';
@@ -191,6 +227,53 @@ function handleModelChange(val: any) {
 			Upsert.value?.setForm('code', code);
 		}
 	}
+
+	// 3. 若当前尚未配置私有参数，且所选模型有默认私有参数，自动带入
+	const currentCustom = Upsert.value?.getForm('customConfig');
+	if ((!currentCustom || !String(currentCustom).trim() || currentCustom === '{}') && m.defaultConfig) {
+		try {
+			const formatted = JSON.stringify(JSON.parse(m.defaultConfig), null, 2);
+			Upsert.value?.setForm('customConfig', formatted);
+		} catch {
+			Upsert.value?.setForm('customConfig', m.defaultConfig);
+		}
+	}
+}
+
+function syncFromModelConfig(scope: any) {
+	const mid = normalizeSingleId(scope?.modelId || Upsert.value?.getForm('modelId'));
+	if (!mid) {
+		ElMessage.warning(t('请先选择模型'));
+		return;
+	}
+	const m = modelsList.value.find((item: any) => item.id == mid);
+	if (!m) {
+		ElMessage.warning(t('未找到所选模型信息'));
+		return;
+	}
+	const configStr = m.defaultConfig;
+	if (!configStr || !String(configStr).trim() || configStr === '{}') {
+		ElMessage.info(t('该模型未配置私有默认参数'));
+		scope.customConfig = '{}';
+		Upsert.value?.setForm('customConfig', '{}');
+		return;
+	}
+	try {
+		const parsed = JSON.parse(configStr);
+		const formatted = JSON.stringify(parsed, null, 2);
+		scope.customConfig = formatted;
+		Upsert.value?.setForm('customConfig', formatted);
+		ElMessage.success(t('已成功获取模型私有参数配置'));
+	} catch {
+		scope.customConfig = configStr;
+		Upsert.value?.setForm('customConfig', configStr);
+		ElMessage.success(t('已成功获取模型私有参数配置'));
+	}
+}
+
+function clearCustomConfig(scope: any) {
+	scope.customConfig = '';
+	Upsert.value?.setForm('customConfig', '');
 }
 
 function handleScenarioInput(scenVal: string) {
@@ -306,6 +389,7 @@ const Upsert = useUpsert({
 		{
 			prop: '_sec_params',
 			span: 24,
+			hidden: ({ scope }) => !isChatModel(scope),
 			component: { vm: renderSection(t('模型推理参数'), t('控制输出随机性、长度限制、响应格式与函数工具')) }
 		},
 		{
@@ -313,6 +397,7 @@ const Upsert = useUpsert({
 			renderLabel: renderLabelWithTip(t('采样温度'), t('控制输出随机性，范围 0-2，精确任务建议调低')),
 			prop: 'temperature',
 			span: 8,
+			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
 				name: 'el-input-number',
 				props: {
@@ -333,6 +418,7 @@ const Upsert = useUpsert({
 			),
 			prop: 'topP',
 			span: 8,
+			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
 				name: 'el-input-number',
 				props: {
@@ -350,6 +436,7 @@ const Upsert = useUpsert({
 			renderLabel: renderLabelWithTip(t('单次最大 Token'), t('限制单次回复生成的最大 Token 数')),
 			prop: 'maxTokens',
 			span: 8,
+			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
 				name: 'el-input-number',
 				props: {
@@ -381,20 +468,23 @@ const Upsert = useUpsert({
 			hidden: ({ scope }) => !isChatModel(scope),
 			component: { name: 'cl-editor', props: { name: 'cl-editor-codemirror', height: 180 } }
 		},
+
+		// --- 3. 模型私有参数 ---
 		{
-			prop: '_hint_non_chat',
+			prop: '_sec_custom_config',
 			span: 24,
-			hidden: ({ scope }) => isChatModel(scope),
 			component: {
-				vm: () =>
-					h('div', { class: 'non-chat-tip' }, [
-						h(ElIcon, { class: 'mr-1' }, { default: () => h(InfoFilled) }),
-						h(
-							'span',
-							t('当前所选模型为非对话模型（如生图/视频/向量等），不需要且不支持设置响应格式与函数工具集。')
-						)
-					])
+				vm: renderSection(
+					t('模型私有参数'),
+					t('用于覆盖模型的默认私有参数（如生图尺寸、质量、步数或专用推理参数，价格参数除外）')
+				)
 			}
+		},
+		{
+			label: t('私有参数配置'),
+			prop: 'customConfig',
+			span: 24,
+			component: { name: 'slot-customConfig' }
 		},
 
 		// --- 3. 运行调度与容灾 ---
@@ -494,8 +584,27 @@ const Upsert = useUpsert({
 		isNameManuallyEdited.value = Boolean(data?.id && data?.name);
 
 		if (data && data.modelId && !data.modelType) {
-			const m = modelsList.value.find((item: any) => item.id == data.modelId);
+			const mid = normalizeSingleId(data.modelId);
+			const m = modelsList.value.find((item: any) => item.id == mid);
 			if (m) data.modelType = m.modelType;
+		}
+
+		if (data?.customConfig) {
+			try {
+				data.customConfig = JSON.stringify(JSON.parse(data.customConfig), null, 2);
+			} catch {
+				// 保持原样
+			}
+		} else if (!data?.id && data?.modelId) {
+			const mid = normalizeSingleId(data.modelId);
+			const m = modelsList.value.find((item: any) => item.id == mid);
+			if (m?.defaultConfig) {
+				try {
+					data.customConfig = JSON.stringify(JSON.parse(m.defaultConfig), null, 2);
+				} catch {
+					data.customConfig = m.defaultConfig;
+				}
+			}
 		}
 	},
 	onSubmit(data, { next }) {
@@ -512,11 +621,30 @@ const Upsert = useUpsert({
 				delete payload[key];
 			}
 		});
-		// 非对话模型时，清理响应格式与工具集（置 null 触发后端显式清空更新）
+		// 非对话模型时，清理对话专用参数（置 null 触发后端显式清空更新）
 		const type = getModelType(payload);
 		if (type && type !== 'chat' && type !== 'llm') {
+			payload.temperature = null;
+			payload.topP = null;
+			payload.maxTokens = null;
 			payload.responseFormat = null;
 			payload.toolsConfig = null;
+		}
+		// 校验并规范化 customConfig JSON 格式
+		if (payload.customConfig && String(payload.customConfig).trim()) {
+			try {
+				const parsed = JSON.parse(payload.customConfig);
+				if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+					ElMessage.error(t('模型私有参数必须为合法的 JSON 对象'));
+					return;
+				}
+				payload.customConfig = JSON.stringify(parsed);
+			} catch (err: any) {
+				ElMessage.error(t('模型私有参数 JSON 格式不正确，请检查'));
+				return;
+			}
+		} else {
+			payload.customConfig = null;
 		}
 		next({
 			...payload,
@@ -530,14 +658,29 @@ const Upsert = useUpsert({
 const Table = useTable({
 	columns: [
 		{ type: 'selection' },
-		{ label: t('编码'), prop: 'code', minWidth: 160 },
+		{ label: t('编码'), prop: 'code', minWidth: 160, hidden: true },
 		{ label: t('名称'), prop: 'name', minWidth: 150 },
 		{ label: t('场景'), prop: 'scenario', minWidth: 130 },
 		{ label: t('模型'), prop: 'modelName', minWidth: 160 },
-		{ label: t('类型'), prop: 'modelType', minWidth: 110 },
+		{
+			label: t('类型'),
+			prop: 'modelType',
+			minWidth: 110,
+			dict: modelTypeOptions,
+			dictColor: true
+		},
 		{ label: t('厂商'), prop: 'providerName', minWidth: 140 },
-		{ label: t('默认'), prop: 'isDefault', width: 90 },
-		{ label: t('启用'), prop: 'status', width: 90 },
+		{
+			label: t('默认'),
+			prop: 'isDefault',
+			width: 90,
+			dict: [
+				{ label: t('默认'), value: true, type: 'success' },
+				{ label: t('否'), value: false, type: 'info' }
+			],
+			dictColor: true
+		},
+		{ label: t('启用'), prop: 'status', width: 90, component: { name: 'cl-switch' } },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
@@ -669,16 +812,27 @@ async function copyText(value: string) {
 	}
 }
 
-:deep(.non-chat-tip) {
-	display: flex;
-	align-items: center;
-	padding: 8px 12px;
-	margin-top: 2px;
-	font-size: 12px;
-	line-height: 1.4;
-	color: var(--el-color-info);
-	background-color: var(--el-color-info-light-9);
-	border: 1px dashed var(--el-color-info-light-5);
-	border-radius: 4px;
+.custom-config-editor {
+	width: 100%;
+
+	&__tools {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 8px;
+		color: var(--el-text-color-secondary);
+		font-size: 13px;
+	}
+
+	&__hint {
+		font-size: 12px;
+		color: var(--el-text-color-placeholder);
+	}
+
+	&__actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
 }
 </style>

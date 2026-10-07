@@ -83,6 +83,28 @@ class AiModuleTestCase(unittest.TestCase):
     def tearDown(self):
         self.session.close()
 
+    def test_profile_custom_config_merges_and_overrides_model_default_config(self):
+        """Profile 的 custom_config 应能覆盖模型的 default_config（例如图片模型的 size/quality 透传参数）。"""
+        model = AiModel(
+            provider_id=1,
+            code="test-img-model",
+            name="Test Image Model",
+            model_type="image",
+            default_config=json.dumps({"size": "1024x1024", "quality": "standard", "keep_me": "yes"}),
+        )
+        profile = AiModelProfile(
+            code="test-img-profile",
+            name="Test Image Profile",
+            model_id=1,
+            custom_config=json.dumps({"size": "768x1024", "new_param": 123}),
+        )
+        registry = AiModelRegistryService(self.session)
+        options = registry._merge_options(model, profile)
+        self.assertEqual(options["size"], "768x1024")
+        self.assertEqual(options["quality"], "standard")
+        self.assertEqual(options["keep_me"], "yes")
+        self.assertEqual(options["new_param"], 123)
+
     def test_secret_encrypt_decrypt_and_mask(self):
         cipher = encrypt_secret("sk-test-secret")
 

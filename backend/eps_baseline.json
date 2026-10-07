@@ -7593,6 +7593,17 @@
                           "title": "Createtime",
                           "type": "string"
                         },
+                        "customConfig": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Customconfig"
+                        },
                         "fallbackProfileId": {
                           "anyOf": [
                             {
@@ -8030,6 +8041,17 @@
                           "title": "Createtime",
                           "type": "string"
                         },
+                        "customConfig": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Customconfig"
+                        },
                         "fallbackProfileId": {
                           "anyOf": [
                             {
@@ -8402,6 +8424,17 @@
                             "format": "date-time",
                             "title": "Createtime",
                             "type": "string"
+                          },
+                          "customConfig": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Customconfig"
                           },
                           "fallbackProfileId": {
                             "anyOf": [
@@ -8804,6 +8837,17 @@
                                 "format": "date-time",
                                 "title": "Createtime",
                                 "type": "string"
+                              },
+                              "customConfig": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Customconfig"
                               },
                               "fallbackProfileId": {
                                 "anyOf": [
@@ -9339,6 +9383,17 @@
                           "title": "Createtime",
                           "type": "string"
                         },
+                        "customConfig": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Customconfig"
+                        },
                         "fallbackProfileId": {
                           "anyOf": [
                             {
@@ -9864,6 +9919,18 @@
           "validate": null
         },
         {
+          "comment": "custom_config",
+          "dict": null,
+          "label": "customConfig",
+          "nullable": true,
+          "prop": "customConfig",
+          "propertyName": "customConfig",
+          "required": false,
+          "source": "custom_config",
+          "type": "string",
+          "validate": null
+        },
+        {
           "comment": "timeout",
           "dict": null,
           "label": "timeout",
@@ -10207,6 +10274,18 @@
           "propertyName": "toolsConfig",
           "required": false,
           "source": "tools_config",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "custom_config",
+          "dict": null,
+          "label": "customConfig",
+          "nullable": true,
+          "prop": "customConfig",
+          "propertyName": "customConfig",
+          "required": false,
+          "source": "custom_config",
           "type": "string",
           "validate": null
         },

@@ -104,6 +104,20 @@ class InitializationAlignmentTests(unittest.TestCase):
             values_after_second_run = session.exec(select(DictInfo).where(DictInfo.type_id == status_dict.id)).all()
             self.assertEqual(len(values_after_second_run), 2)
 
+            # 验证 AI 模型能力标签字典
+            cap_dict = session.exec(select(DictType).where(DictType.key == "ai_model_capability")).one()
+            cap_values = session.exec(
+                select(DictInfo).where(DictInfo.type_id == cap_dict.id).order_by(DictInfo.sort_order)
+            ).all()
+            self.assertTrue(len(cap_values) >= 10)
+            self.assertEqual(cap_values[0].value, "chat")
+            self.assertEqual(cap_values[0].name, "对话")
+
+            # 再次执行验证幂等性
+            init_dict(session)
+            cap_values_second = session.exec(select(DictInfo).where(DictInfo.type_id == cap_dict.id)).all()
+            self.assertEqual(len(cap_values_second), len(cap_values))
+
 
 if __name__ == "__main__":
     unittest.main()

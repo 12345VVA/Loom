@@ -369,7 +369,7 @@ const Table = useTable({
 		{ label: 'Base URL', prop: 'baseUrl', minWidth: 240, showOverflowTooltip: true, hidden: true },
 		{ label: 'API Key', prop: 'apiKeyMask', minWidth: 130 },
 		{ label: t('管理 AK'), prop: 'adminAccessKeyMask', minWidth: 130 },
-		{ label: t('启用'), prop: 'status', width: 100 },
+		{ label: t('启用'), prop: 'status', width: 100, component: { name: 'cl-switch' } },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',

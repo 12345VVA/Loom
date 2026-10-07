@@ -199,5 +199,18 @@
 	"两次重试之间的等待时间": "Waiting time between two retries",
 	"OpenAI Compatible、DeepSeek、百炼、火山方舟、混元、千帆、智谱、MiniMax 等兼容适配器会透传 response_format；Claude、Gemini、Ollama 暂不做协议转换，可能由上游拒绝或忽略。": "OpenAI Compatible, DeepSeek, Bailian, Volcengine Ark, Hunyuan, Qianfan, Zhipu, MiniMax and other compatible adapters pass response_format through; Claude, Gemini and Ollama do no protocol conversion and may reject or ignore it upstream.",
 	"schema_name 不能为空": "schema_name is required",
-	"schema JSON 格式错误": "Invalid schema JSON format"
+	"schema JSON 格式错误": "Invalid schema JSON format",
+	"能力标签": "Capability Tags",
+	"请选择或输入能力标签": "Please select or enter capability tags",
+	"模型私有参数": "Model Private Parameters",
+	"用于覆盖模型的默认私有参数（如生图尺寸、质量、步数或专用推理参数，价格参数除外）": "Override model default private parameters (e.g., image size, quality, steps, or dedicated inference parameters, excluding pricing)",
+	"私有参数配置": "Private Parameters Config",
+	"覆盖模型的私有参数（不包含价格参数），可直接修改覆盖": "Override model private parameters (excluding pricing), can be modified directly",
+	"获取模型参数": "Fetch Model Parameters",
+	"请先选择模型": "Please select a model first",
+	"未找到所选模型信息": "Selected model info not found",
+	"该模型未配置私有默认参数": "This model has no default private parameters configured",
+	"已成功获取模型私有参数配置": "Successfully fetched model private parameters configuration",
+	"模型私有参数必须为合法的 JSON 对象": "Model private parameters must be a valid JSON object",
+	"模型私有参数 JSON 格式不正确，请检查": "Invalid JSON format for model private parameters, please check"
 }

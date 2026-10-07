@@ -66,6 +66,7 @@ class AiModelProfileService(BaseAdminCrudService):
         if "response_format" in data:
             data["response_format"] = _dump_response_format(data.get("response_format"))
         _validate_json_config(data.get("tools_config"), "toolsConfig")
+        _validate_json_config(data.get("custom_config"), "customConfig")
         if data.get("is_default"):
             self._clear_default(data.get("model_id"), data.get("scenario"))
         return data
@@ -83,6 +84,7 @@ class AiModelProfileService(BaseAdminCrudService):
         if "response_format" in data:
             data["response_format"] = _dump_response_format(data.get("response_format"))
         _validate_json_config(data.get("tools_config"), "toolsConfig")
+        _validate_json_config(data.get("custom_config"), "customConfig")
         if data.get("is_default"):
             target_model_id = data.get("model_id") or entity.model_id
             target_scenario = data.get("scenario") or entity.scenario

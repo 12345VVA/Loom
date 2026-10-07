@@ -521,6 +521,11 @@ declare namespace Eps {
 		toolsConfig?: string;
 
 		/**
+		 * custom_config
+		 */
+		customConfig?: string;
+
+		/**
 		 * timeout
 		 */
 		timeout?: number;
@@ -2516,7 +2521,7 @@ declare namespace Eps {
 
 	type json = any;
 
-	type DictKey = string;
+	type DictKey = "ai_model_capability" | "status";
 
 	interface PagePagination {
 		size: number;
@@ -2650,6 +2655,7 @@ declare namespace Eps {
 		/** maxTokens */ maxTokens?: number | null;
 		/** responseFormat */ responseFormat?: string | null;
 		/** toolsConfig */ toolsConfig?: string | null;
+		/** customConfig */ customConfig?: string | null;
 		/** timeout */ timeout?: number | null;
 		/** retryCount */ retryCount?: number;
 		/** retryDelaySeconds */ retryDelaySeconds?: number;
@@ -2685,6 +2691,7 @@ declare namespace Eps {
 		/** maxTokens */ maxTokens?: number | null;
 		/** responseFormat */ responseFormat?: string | null;
 		/** toolsConfig */ toolsConfig?: string | null;
+		/** customConfig */ customConfig?: string | null;
 		/** timeout */ timeout?: number | null;
 		/** retryCount */ retryCount?: number;
 		/** retryDelaySeconds */ retryDelaySeconds?: number;
@@ -5834,6 +5841,115 @@ declare namespace Eps {
 
 		/**
 		 * update
+		 */
+		update(data?: any): Promise<Workflow_evalTest_setUpdateResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			add: string;
+			delete: string;
+			importCases: string;
+			info: string;
+			list: string;
+			page: string;
+			update: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			add: boolean;
+			delete: boolean;
+			importCases: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			update: boolean;
+		};
+
+		request: Request;
+	}
+
+	interface RequestOptions {
+		url: string;
+		method?: "OPTIONS" | "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "TRACE" | "CONNECT";
+		data?: any;
+		params?: any;
+		headers?: any;
+		timeout?: number;
+		[key: string]: any;
+	}
+
+	type Request = (options: RequestOptions) => Promise<any>;
+
+	type Service = {
+		request: Request;
+
+		ai: {
+			dashboard: AiDashboard;
+			governance_event: AiGovernance_event;
+			governance_rule: AiGovernance_rule;
+			log: AiLog;
+			model: AiModel;
+			profile: AiProfile;
+			provider: AiProvider;
+			task: AiTask;
+		};
+		base: {
+			comm: BaseComm;
+			health: BaseHealth;
+			open: BaseOpen;
+			session: BaseSession;
+			sys: {
+				department: BaseSysDepartment;
+				log: BaseSysLog;
+				login_log: BaseSysLogin_log;
+				menu: BaseSysMenu;
+				param: BaseSysParam;
+				role: BaseSysRole;
+				security_log: BaseSysSecurity_log;
+				user: BaseSysUser;
+			};
+		};
+		dict: { info: DictInfo; type: DictType };
+		media: { asset: MediaAsset };
+		notification: {
+			message: NotificationMessage;
+			rule: NotificationRule;
+			template: NotificationTemplate;
+		};
+		task: { info: TaskInfo };
+		workflow: {
+			artifact: WorkflowArtifact;
+			definition: WorkflowDefinition;
+			instance: WorkflowInstance;
+			version: WorkflowVersion;
+		};
+		workflow_annotation: { annotation: Workflow_annotationAnnotation };
+		workflow_eval: {
+			eval_run: Workflow_evalEval_run;
+			test_case: Workflow_evalTest_case;
+			test_set: Workflow_evalTest_set;
+		};
+	};
+}
+mber }): Promise<test_set>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<test_set[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<Workflow_evalTest_setPageResponse>;
+
+		/**
+		 * 更新
 		 */
 		update(data?: any): Promise<Workflow_evalTest_setUpdateResponse>;
 

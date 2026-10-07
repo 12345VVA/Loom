@@ -50,6 +50,10 @@ class AiModelRegistryService:
 
     def _merge_options(self, model: AiModel, profile: AiModelProfile) -> dict:
         options = _loads(model.default_config)
+        if profile.custom_config:
+            custom = _loads(profile.custom_config)
+            if isinstance(custom, dict):
+                options.update(custom)
         if profile.temperature is not None:
             options["temperature"] = profile.temperature
         if profile.top_p is not None:

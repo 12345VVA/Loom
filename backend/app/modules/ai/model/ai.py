@@ -84,6 +84,7 @@ class AiModelProfile(BaseEntity, table=True):
     max_tokens: int | None = None
     response_format: str | None = None
     tools_config: str | None = None
+    custom_config: str | None = None
     timeout: int | None = None
     retry_count: int = Field(default=0)
     retry_delay_seconds: int = Field(default=0)
@@ -369,6 +370,7 @@ class AiModelProfileRead(BaseModel):
     max_tokens: int | None = None
     response_format: str | None = None
     tools_config: str | None = None
+    custom_config: str | None = None
     timeout: int | None = None
     retry_count: int = 0
     retry_delay_seconds: int = 0
@@ -392,6 +394,7 @@ class AiModelProfileCreateRequest(BaseModel):
     max_tokens: int | None = None
     response_format: str | None = None
     tools_config: str | None = None
+    custom_config: str | None = None
     timeout: int | None = None
     retry_count: int = 0
     retry_delay_seconds: int = 0
