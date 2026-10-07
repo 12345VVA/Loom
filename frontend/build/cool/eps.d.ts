@@ -2032,6 +2032,11 @@ declare namespace Eps {
 		status?: boolean;
 
 		/**
+		 * memory_write_enabled
+		 */
+		memoryWriteEnabled?: boolean;
+
+		/**
 		 * user_id
 		 */
 		userId?: number;
@@ -3374,6 +3379,7 @@ declare namespace Eps {
 		/** name */ name: string;
 		/** description */ description?: string | null;
 		/** status */ status: number;
+		/** memoryWriteEnabled */ memoryWriteEnabled?: boolean;
 		/** userId */ userId?: number | null;
 		/** currentVersionId */ currentVersionId?: number | null;
 		/** draftVersionId */ draftVersionId?: number | null;
@@ -3395,6 +3401,7 @@ declare namespace Eps {
 		/** name */ name: string;
 		/** description */ description?: string | null;
 		/** status */ status: number;
+		/** memoryWriteEnabled */ memoryWriteEnabled?: boolean;
 		/** userId */ userId?: number | null;
 		/** currentVersionId */ currentVersionId?: number | null;
 		/** draftVersionId */ draftVersionId?: number | null;
