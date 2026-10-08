@@ -746,13 +746,13 @@ class WorkflowMemoryService(BaseAdminCrudService):
 
     def page(self, query: Any, current_user: User | None = None, relations: tuple = ()) -> Any:
         result = super().page(query, current_user, relations=relations)
-        self._enrich_definition_name(result.items)
+        self._enrich_rows(result.items)
         return result
 
     def info(self, id: Any, current_user: User | None = None, relations: tuple = ()) -> Any:
         result = super().info(id, current_user, relations)
         if isinstance(result, dict):
-            self._enrich_definition_name([result])
+            self._enrich_rows([result])
         return result
 
     def delete(
@@ -785,15 +785,24 @@ class WorkflowMemoryService(BaseAdminCrudService):
             statement = statement.where(WorkflowMemory.definition_id.in_(visible))
         return statement
 
-    def _enrich_definition_name(self, items: list[dict]) -> None:
-        """列表/详情回填 definition_name（一次 IN 查询，N+1 禁令）。"""
-        def_ids = {it.get("definition_id") for it in items if isinstance(it, dict) and it.get("definition_id")}
-        if not def_ids:
-            return
-        names = {
-            d.id: d.name
-            for d in self.session.exec(select(WorkflowDefinition).where(WorkflowDefinition.id.in_(def_ids))).all()
-        }
+    def _enrich_rows(self, items: list[dict]) -> None:
+        """列表/详情回填展示字段（响应期计算，不落库；items 为 _finalize_data 出口的
+        camelCase 键 dict）：
+        - definitionName：一次 IN 查询回填（N+1 禁令）；
+        - credentialHits：凭据模式命中（设计 §9.3 高置信正则、§11 管理页凭据警告列），
+          与写入时的 warning 日志同一检测函数，命中仅标记不阻断。
+        """
+        from app.modules.ai.service.security_service import detect_credential_patterns
+
+        def_ids = {it.get("definitionId") for it in items if isinstance(it, dict) and it.get("definitionId")}
+        if def_ids:
+            names = {
+                d.id: d.name
+                for d in self.session.exec(select(WorkflowDefinition).where(WorkflowDefinition.id.in_(def_ids))).all()
+            }
+            for it in items:
+                if isinstance(it, dict) and it.get("definitionId") in names:
+                    it["definitionName"] = names[it["definitionId"]]
         for it in items:
-            if isinstance(it, dict) and it.get("definition_id") in names:
-                it["definition_name"] = names[it["definition_id"]]
+            if isinstance(it, dict):
+                it["credentialHits"] = detect_credential_patterns(it.get("content") or "")

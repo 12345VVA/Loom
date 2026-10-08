@@ -480,6 +480,53 @@ class AdminAddTestCase(unittest.TestCase):
         self.assertIsNone(row.embedding)
 
 
+class AdminPageEnrichTestCase(unittest.TestCase):
+    """管理页 page/info enrich：definitionName 回填 + credentialHits 凭据标记（§9.3/§11）。
+
+    断言键为 camelCase——items 是 _finalize_data 统一出口（曾因 snake_case 键取值
+    导致 definition_name 回填静默失效，此测试即回归守卫）。"""
+
+    def setUp(self):
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+        self.session.add(WorkflowDefinition(code="wf1", name="WF1", is_active=True, user_id=1))
+        self.session.commit()
+        self.definition_id = self.session.exec(select(WorkflowDefinition)).first().id
+        _upsert(
+            self.session,
+            definition_id=self.definition_id,
+            memory_key="leaky",
+            content="密钥 sk-abcdefghijklmnopqrst123456",
+        )
+        _upsert(self.session, definition_id=self.definition_id, memory_key="clean", content="客户 X 报价口径 8 折")
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def _service(self):
+        from app.modules.workflow.service.workflow_memory_service import WorkflowMemoryService
+
+        return WorkflowMemoryService(self.session)
+
+    def test_page_enriches_definition_name_and_credential_hits(self):
+        from app.framework.controller_meta import CrudQuery
+
+        result = self._service().page(CrudQuery(page=1, size=10))
+        by_key = {it["memoryKey"]: it for it in result.items}
+        self.assertEqual(by_key["leaky"]["definitionName"], "WF1")
+        self.assertEqual(by_key["clean"]["definitionName"], "WF1")
+        self.assertIn("openai_style_key", by_key["leaky"]["credentialHits"])
+        self.assertEqual(by_key["clean"]["credentialHits"], [])
+
+    def test_info_enriches_credential_hits(self):
+        row_id = self.session.exec(select(WorkflowMemory).where(WorkflowMemory.memory_key == "leaky")).first().id
+        info = self._service().info(row_id)
+        self.assertEqual(info["definitionName"], "WF1")
+        self.assertIn("openai_style_key", info["credentialHits"])
+
+
 class SearchTestCase(unittest.TestCase):
     """检索两阶段管线（设计 §5.1/§5.2）。"""
 

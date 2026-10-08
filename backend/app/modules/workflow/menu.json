@@ -209,6 +209,58 @@
         ]
       },
       {
+        "code": "nav_workflow_memory",
+        "name": "记忆库",
+        "type": "menu",
+        "module": "workflow",
+        "resource": "memory",
+        "path": "/workflow/memory",
+        "component": "modules/workflow/views/memory.vue",
+        "icon": "icon-db",
+        "sort_order": 3,
+        "role_codes": [
+          "admin"
+        ],
+        "children": [
+          {
+            "code": "workflow_memory_add",
+            "name": "新增",
+            "type": "button",
+            "permission": "workflow:memory:add",
+            "role_codes": [
+              "admin"
+            ]
+          },
+          {
+            "code": "workflow_memory_delete",
+            "name": "删除",
+            "type": "button",
+            "permission": "workflow:memory:delete",
+            "role_codes": [
+              "admin"
+            ]
+          },
+          {
+            "code": "workflow_memory_page",
+            "name": "分页",
+            "type": "button",
+            "permission": "workflow:memory:page",
+            "role_codes": [
+              "admin"
+            ]
+          },
+          {
+            "code": "workflow_memory_info",
+            "name": "详情",
+            "type": "button",
+            "permission": "workflow:memory:info",
+            "role_codes": [
+              "admin"
+            ]
+          }
+        ]
+      },
+      {
         "code": "nav_workflow_version",
         "name": "版本管理",
         "type": "menu",

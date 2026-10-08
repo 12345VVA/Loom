@@ -48313,6 +48313,1482 @@
             "parameters": [
               {
                 "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "add",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/WorkflowMemoryAddRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "content": {
+                          "title": "Content",
+                          "type": "string"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdByUserId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdbyuserid"
+                        },
+                        "credentialHits": {
+                          "anyOf": [
+                            {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Credentialhits"
+                        },
+                        "definitionId": {
+                          "title": "Definitionid",
+                          "type": "number"
+                        },
+                        "definitionName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Definitionname"
+                        },
+                        "embeddingSpace": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Embeddingspace"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "lastAccessedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Lastaccessedat"
+                        },
+                        "memoryEnv": {
+                          "title": "Memoryenv",
+                          "type": "string"
+                        },
+                        "memoryKey": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Memorykey"
+                        },
+                        "memoryType": {
+                          "title": "Memorytype",
+                          "type": "string"
+                        },
+                        "sourceInstanceId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Sourceinstanceid"
+                        },
+                        "sourceNodeId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Sourcenodeid"
+                        },
+                        "sourceRunType": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Sourceruntype"
+                        },
+                        "tags": {
+                          "title": "Tags",
+                          "type": "string"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        },
+                        "updatedByUserId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Updatedbyuserid"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "definitionId",
+                        "memoryEnv",
+                        "memoryType",
+                        "content",
+                        "tags",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "WorkflowMemoryRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "add",
+          "path": "/add",
+          "prefix": "/admin/workflow/memory",
+          "summary": "新增",
+          "tag": "memory"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "delete",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/DeleteRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "additionalProperties": true,
+                      "title": "Response Endpoint Workflow Memory Delete Admin Workflow Memory Delete Post",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "delete",
+          "path": "/delete",
+          "prefix": "/admin/workflow/memory",
+          "summary": "删除",
+          "tag": "memory"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "minimum": 1,
+                  "title": "Id",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "info",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "content": {
+                          "title": "Content",
+                          "type": "string"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdByUserId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdbyuserid"
+                        },
+                        "credentialHits": {
+                          "anyOf": [
+                            {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Credentialhits"
+                        },
+                        "definitionId": {
+                          "title": "Definitionid",
+                          "type": "number"
+                        },
+                        "definitionName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Definitionname"
+                        },
+                        "embeddingSpace": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Embeddingspace"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "lastAccessedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Lastaccessedat"
+                        },
+                        "memoryEnv": {
+                          "title": "Memoryenv",
+                          "type": "string"
+                        },
+                        "memoryKey": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Memorykey"
+                        },
+                        "memoryType": {
+                          "title": "Memorytype",
+                          "type": "string"
+                        },
+                        "sourceInstanceId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Sourceinstanceid"
+                        },
+                        "sourceNodeId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Sourcenodeid"
+                        },
+                        "sourceRunType": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Sourceruntype"
+                        },
+                        "tags": {
+                          "title": "Tags",
+                          "type": "string"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        },
+                        "updatedByUserId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Updatedbyuserid"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "definitionId",
+                        "memoryEnv",
+                        "memoryType",
+                        "content",
+                        "tags",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "WorkflowMemoryRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "info",
+          "path": "/info",
+          "prefix": "/admin/workflow/memory",
+          "summary": "获取详情",
+          "tag": "memory"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "page",
+                "required": false,
+                "schema": {
+                  "default": 1,
+                  "maximum": 100000,
+                  "minimum": 1,
+                  "title": "Page",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "size",
+                "required": false,
+                "schema": {
+                  "default": 10,
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Size",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "page",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "properties": {
+                              "content": {
+                                "title": "Content",
+                                "type": "string"
+                              },
+                              "createTime": {
+                                "format": "date-time",
+                                "title": "Createtime",
+                                "type": "string"
+                              },
+                              "createdByUserId": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Createdbyuserid"
+                              },
+                              "credentialHits": {
+                                "anyOf": [
+                                  {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Credentialhits"
+                              },
+                              "definitionId": {
+                                "title": "Definitionid",
+                                "type": "number"
+                              },
+                              "definitionName": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Definitionname"
+                              },
+                              "embeddingSpace": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Embeddingspace"
+                              },
+                              "id": {
+                                "title": "Id",
+                                "type": "number"
+                              },
+                              "lastAccessedAt": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Lastaccessedat"
+                              },
+                              "memoryEnv": {
+                                "title": "Memoryenv",
+                                "type": "string"
+                              },
+                              "memoryKey": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Memorykey"
+                              },
+                              "memoryType": {
+                                "title": "Memorytype",
+                                "type": "string"
+                              },
+                              "sourceInstanceId": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Sourceinstanceid"
+                              },
+                              "sourceNodeId": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Sourcenodeid"
+                              },
+                              "sourceRunType": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Sourceruntype"
+                              },
+                              "tags": {
+                                "title": "Tags",
+                                "type": "string"
+                              },
+                              "updateTime": {
+                                "format": "date-time",
+                                "title": "Updatetime",
+                                "type": "string"
+                              },
+                              "updatedByUserId": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Updatedbyuserid"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "definitionId",
+                              "memoryEnv",
+                              "memoryType",
+                              "content",
+                              "tags",
+                              "createTime",
+                              "updateTime"
+                            ],
+                            "title": "WorkflowMemoryRead",
+                            "type": "object"
+                          },
+                          "title": "Items",
+                          "type": "array"
+                        },
+                        "page": {
+                          "title": "Page",
+                          "type": "number"
+                        },
+                        "page_size": {
+                          "title": "Page Size",
+                          "type": "number"
+                        },
+                        "total": {
+                          "title": "Total",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "page_size"
+                      ],
+                      "title": "PageResult[WorkflowMemoryRead]",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "page",
+          "path": "/page",
+          "prefix": "/admin/workflow/memory",
+          "summary": "获取分页",
+          "tag": "memory"
+        }
+      ],
+      "columns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "definition_id",
+          "dict": null,
+          "label": "definitionId",
+          "nullable": false,
+          "prop": "definitionId",
+          "propertyName": "definitionId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "definition_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "definition_name",
+          "dict": null,
+          "label": "definitionName",
+          "nullable": true,
+          "prop": "definitionName",
+          "propertyName": "definitionName",
+          "required": false,
+          "source": "definition_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "memory_env",
+          "dict": null,
+          "label": "memoryEnv",
+          "nullable": false,
+          "prop": "memoryEnv",
+          "propertyName": "memoryEnv",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "memory_env",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "memory_type",
+          "dict": null,
+          "label": "memoryType",
+          "nullable": false,
+          "prop": "memoryType",
+          "propertyName": "memoryType",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "memory_type",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "memory_key",
+          "dict": null,
+          "label": "memoryKey",
+          "nullable": true,
+          "prop": "memoryKey",
+          "propertyName": "memoryKey",
+          "required": false,
+          "search": {
+            "value": true
+          },
+          "source": "memory_key",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "content",
+          "dict": null,
+          "label": "content",
+          "nullable": false,
+          "prop": "content",
+          "propertyName": "content",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "content",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "tags",
+          "dict": null,
+          "label": "tags",
+          "nullable": false,
+          "prop": "tags",
+          "propertyName": "tags",
+          "required": true,
+          "source": "tags",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "embedding_space",
+          "dict": null,
+          "label": "embeddingSpace",
+          "nullable": true,
+          "prop": "embeddingSpace",
+          "propertyName": "embeddingSpace",
+          "required": false,
+          "source": "embedding_space",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "source_instance_id",
+          "dict": null,
+          "label": "sourceInstanceId",
+          "nullable": true,
+          "prop": "sourceInstanceId",
+          "propertyName": "sourceInstanceId",
+          "required": false,
+          "source": "source_instance_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "source_node_id",
+          "dict": null,
+          "label": "sourceNodeId",
+          "nullable": true,
+          "prop": "sourceNodeId",
+          "propertyName": "sourceNodeId",
+          "required": false,
+          "source": "source_node_id",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "source_run_type",
+          "dict": null,
+          "label": "sourceRunType",
+          "nullable": true,
+          "prop": "sourceRunType",
+          "propertyName": "sourceRunType",
+          "required": false,
+          "search": {
+            "value": true
+          },
+          "source": "source_run_type",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_by_user_id",
+          "dict": null,
+          "label": "createdByUserId",
+          "nullable": true,
+          "prop": "createdByUserId",
+          "propertyName": "createdByUserId",
+          "required": false,
+          "source": "created_by_user_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "updated_by_user_id",
+          "dict": null,
+          "label": "updatedByUserId",
+          "nullable": true,
+          "prop": "updatedByUserId",
+          "propertyName": "updatedByUserId",
+          "required": false,
+          "source": "updated_by_user_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "last_accessed_at",
+          "dict": null,
+          "label": "lastAccessedAt",
+          "nullable": true,
+          "prop": "lastAccessedAt",
+          "propertyName": "lastAccessedAt",
+          "required": false,
+          "source": "last_accessed_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": false,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": true,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "updated_at",
+          "dict": null,
+          "label": "updateTime",
+          "nullable": false,
+          "prop": "updateTime",
+          "propertyName": "updateTime",
+          "required": true,
+          "source": "updated_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "credential_hits",
+          "dict": null,
+          "label": "credentialHits",
+          "nullable": true,
+          "prop": "credentialHits",
+          "propertyName": "credentialHits",
+          "required": false,
+          "source": "credential_hits",
+          "type": "string",
+          "validate": null
+        }
+      ],
+      "module": "workflow",
+      "name": "memory",
+      "namespace": "admin/workflow/memory",
+      "pageColumns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "definition_id",
+          "dict": null,
+          "label": "definitionId",
+          "nullable": false,
+          "prop": "definitionId",
+          "propertyName": "definitionId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "definition_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "definition_name",
+          "dict": null,
+          "label": "definitionName",
+          "nullable": true,
+          "prop": "definitionName",
+          "propertyName": "definitionName",
+          "required": false,
+          "source": "definition_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "memory_env",
+          "dict": null,
+          "label": "memoryEnv",
+          "nullable": false,
+          "prop": "memoryEnv",
+          "propertyName": "memoryEnv",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "memory_env",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "memory_type",
+          "dict": null,
+          "label": "memoryType",
+          "nullable": false,
+          "prop": "memoryType",
+          "propertyName": "memoryType",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "memory_type",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "memory_key",
+          "dict": null,
+          "label": "memoryKey",
+          "nullable": true,
+          "prop": "memoryKey",
+          "propertyName": "memoryKey",
+          "required": false,
+          "search": {
+            "value": true
+          },
+          "source": "memory_key",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "content",
+          "dict": null,
+          "label": "content",
+          "nullable": false,
+          "prop": "content",
+          "propertyName": "content",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "content",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "tags",
+          "dict": null,
+          "label": "tags",
+          "nullable": false,
+          "prop": "tags",
+          "propertyName": "tags",
+          "required": true,
+          "source": "tags",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "embedding_space",
+          "dict": null,
+          "label": "embeddingSpace",
+          "nullable": true,
+          "prop": "embeddingSpace",
+          "propertyName": "embeddingSpace",
+          "required": false,
+          "source": "embedding_space",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "source_instance_id",
+          "dict": null,
+          "label": "sourceInstanceId",
+          "nullable": true,
+          "prop": "sourceInstanceId",
+          "propertyName": "sourceInstanceId",
+          "required": false,
+          "source": "source_instance_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "source_node_id",
+          "dict": null,
+          "label": "sourceNodeId",
+          "nullable": true,
+          "prop": "sourceNodeId",
+          "propertyName": "sourceNodeId",
+          "required": false,
+          "source": "source_node_id",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "source_run_type",
+          "dict": null,
+          "label": "sourceRunType",
+          "nullable": true,
+          "prop": "sourceRunType",
+          "propertyName": "sourceRunType",
+          "required": false,
+          "search": {
+            "value": true
+          },
+          "source": "source_run_type",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_by_user_id",
+          "dict": null,
+          "label": "createdByUserId",
+          "nullable": true,
+          "prop": "createdByUserId",
+          "propertyName": "createdByUserId",
+          "required": false,
+          "source": "created_by_user_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "updated_by_user_id",
+          "dict": null,
+          "label": "updatedByUserId",
+          "nullable": true,
+          "prop": "updatedByUserId",
+          "propertyName": "updatedByUserId",
+          "required": false,
+          "source": "updated_by_user_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "last_accessed_at",
+          "dict": null,
+          "label": "lastAccessedAt",
+          "nullable": true,
+          "prop": "lastAccessedAt",
+          "propertyName": "lastAccessedAt",
+          "required": false,
+          "source": "last_accessed_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": false,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": true,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "updated_at",
+          "dict": null,
+          "label": "updateTime",
+          "nullable": false,
+          "prop": "updateTime",
+          "propertyName": "updateTime",
+          "required": true,
+          "source": "updated_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "credential_hits",
+          "dict": null,
+          "label": "credentialHits",
+          "nullable": true,
+          "prop": "credentialHits",
+          "propertyName": "credentialHits",
+          "required": false,
+          "source": "credential_hits",
+          "type": "string",
+          "validate": null
+        }
+      ],
+      "pageQueryOp": {
+        "fieldEq": [
+          "definitionId",
+          "memoryEnv",
+          "memoryType",
+          "sourceRunType"
+        ],
+        "fieldLike": [
+          "memory_key"
+        ],
+        "keyWordLikeFields": [
+          "content",
+          "memory_key"
+        ]
+      },
+      "prefix": "/admin/workflow/memory"
+    },
+    {
+      "api": [
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
                 "name": "versionA",
                 "required": true,
                 "schema": {

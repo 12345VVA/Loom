@@ -144,6 +144,9 @@ class WorkflowMemoryRead(BaseModel):
     last_accessed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # 响应期计算字段（不落库）：凭据模式命中列表（service enrich 时对 content 跑
+    # detect_credential_patterns）——管理页凭据警告列数据源（设计 §9.3/§11）
+    credential_hits: list[str] | None = None
 
 
 class WorkflowMemoryAddRequest(BaseModel):
