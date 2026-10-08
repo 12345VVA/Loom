@@ -76,6 +76,33 @@ export const NODE_DEFAULT_CONFIGS: Record<string, DefaultConfigSpec> = {
 		},
 		outputVarKey: 'outputVariable'
 	},
+	// 长期记忆读写对（设计 docs/工作流长期记忆节点设计方案-2026-10-07.md §6）：
+	// 默认值对齐后端 settings（topK 5 / threshold 0.35 / 预算 4000）；onError 两侧
+	// 默认不同——store fail（记忆静默丢失最难排查）、recall degrade（降级仍可执行）
+	memory_store: {
+		base: {
+			contentTemplate: '',
+			memoryKeyTemplate: '',
+			memoryType: 'fact',
+			tags: [],
+			embeddingProfileCode: '',
+			onError: 'fail'
+		}
+	},
+	memory_recall: {
+		base: {
+			memoryKeyTemplate: '',
+			queryVariable: '',
+			memoryTypeFilter: '',
+			tagFilter: [],
+			similarityThreshold: 0.35,
+			topK: 5,
+			maxContextChars: 4000,
+			outputFormat: 'list',
+			embeddingProfileCode: '',
+			onError: 'degrade'
+		}
+	},
 	end: { base: { outputFormat: 'json', outputFields: [] } }
 };
 

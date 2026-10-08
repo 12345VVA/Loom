@@ -2179,6 +2179,103 @@ declare namespace Eps {
 		[key: string]: any;
 	}
 
+	interface memory {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * definition_id
+		 */
+		definitionId?: number;
+
+		/**
+		 * definition_name
+		 */
+		definitionName?: string;
+
+		/**
+		 * memory_env
+		 */
+		memoryEnv?: string;
+
+		/**
+		 * memory_type
+		 */
+		memoryType?: string;
+
+		/**
+		 * memory_key
+		 */
+		memoryKey?: string;
+
+		/**
+		 * content
+		 */
+		content?: string;
+
+		/**
+		 * tags
+		 */
+		tags?: string;
+
+		/**
+		 * embedding_space
+		 */
+		embeddingSpace?: string;
+
+		/**
+		 * source_instance_id
+		 */
+		sourceInstanceId?: number;
+
+		/**
+		 * source_node_id
+		 */
+		sourceNodeId?: string;
+
+		/**
+		 * source_run_type
+		 */
+		sourceRunType?: string;
+
+		/**
+		 * created_by_user_id
+		 */
+		createdByUserId?: number;
+
+		/**
+		 * updated_by_user_id
+		 */
+		updatedByUserId?: number;
+
+		/**
+		 * last_accessed_at
+		 */
+		lastAccessedAt?: Date;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * updated_at
+		 */
+		updateTime?: Date;
+
+		/**
+		 * credential_hits
+		 */
+		credentialHits?: string;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
 	interface version {
 		/**
 		 * id
@@ -3429,6 +3526,32 @@ declare namespace Eps {
 	interface WorkflowVersionPageResponse {
 		pagination: PagePagination;
 		list: version[];
+	}
+
+	interface WorkflowMemoryAddResponse {
+		/** id */ id: number;
+		/** definitionId */ definitionId: number;
+		/** definitionName */ definitionName?: string | null;
+		/** memoryEnv */ memoryEnv: string;
+		/** memoryType */ memoryType: string;
+		/** memoryKey */ memoryKey?: string | null;
+		/** content */ content: string;
+		/** tags */ tags: string;
+		/** embeddingSpace */ embeddingSpace?: string | null;
+		/** sourceInstanceId */ sourceInstanceId?: number | null;
+		/** sourceNodeId */ sourceNodeId?: string | null;
+		/** sourceRunType */ sourceRunType?: string | null;
+		/** createdByUserId */ createdByUserId?: number | null;
+		/** updatedByUserId */ updatedByUserId?: number | null;
+		/** lastAccessedAt */ lastAccessedAt?: string | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** credentialHits */ credentialHits?: string[] | null;
+	}
+
+	interface WorkflowMemoryPageResponse {
+		pagination: PagePagination;
+		list: memory[];
 	}
 
 	interface Workflow_annotationAnnotationAddResponse {
@@ -5600,6 +5723,40 @@ declare namespace Eps {
 		request: Request;
 	}
 
+	interface WorkflowMemory {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<WorkflowMemoryAddResponse>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<memory>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<WorkflowMemoryPageResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: { add: string; delete: string; info: string; page: string };
+
+		/**
+		 * 权限状态
+		 */
+		_permission: { add: boolean; delete: boolean; info: boolean; page: boolean };
+
+		request: Request;
+	}
+
 	interface Workflow_annotationAnnotation {
 		/**
 		 * 新增
@@ -5934,6 +6091,7 @@ declare namespace Eps {
 			definition: WorkflowDefinition;
 			instance: WorkflowInstance;
 			version: WorkflowVersion;
+			memory: WorkflowMemory;
 		};
 		workflow_annotation: { annotation: Workflow_annotationAnnotation };
 		workflow_eval: {

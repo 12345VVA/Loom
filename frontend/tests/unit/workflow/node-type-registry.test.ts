@@ -5,8 +5,9 @@ describe('workflow node-type-registry', () => {
 	// 冒烟测试：确认测试基建能加载 workflow 模块的纯数据导出，
 	// 并锁住节点注册表的关键不变量（后续批次补 CSS / 重构时会复用）。
 	it('registers all expected node types', () => {
-		// 三期B7（WF-P2-10）：legacy tool 条目下架（后端自动迁移为 tool_executor）
-		expect(NODE_REGISTRY.length).toBe(14);
+		// 三期B7（WF-P2-10）：legacy tool 条目下架（后端自动迁移为 tool_executor）；
+		// 长期记忆批次 3：memory_store / memory_recall 入表
+		expect(NODE_REGISTRY.length).toBe(16);
 		const types = NODE_REGISTRY.map(n => n.type);
 		[
 			'start',
@@ -22,7 +23,9 @@ describe('workflow node-type-registry', () => {
 			'human_input',
 			'variable_assignment',
 			'variable_transform',
-			'loop_body_group'
+			'loop_body_group',
+			'memory_store',
+			'memory_recall'
 		].forEach(t => expect(types).toContain(t));
 		expect(types).not.toContain('tool');
 	});

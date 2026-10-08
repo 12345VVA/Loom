@@ -28,6 +28,12 @@
 						{{ $t('版本') }}
 					</el-button>
 				</template>
+				<template #column-memoryWriteEnabled="{ scope }">
+					<el-switch
+						:model-value="scope.row.memoryWriteEnabled"
+						@change="val => onMemoryWriteToggle(scope.row, Boolean(val))"
+					/>
+				</template>
 			</cl-table>
 		</cl-row>
 
@@ -50,7 +56,7 @@ import { useCool } from '/@/cool';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { Upload } from '@element-plus/icons-vue';
 import WorkflowCodeField from '../components/workflow-code-field.vue';
 import { formatVersionNo } from '../utils';
@@ -83,6 +89,12 @@ const Upsert = useUpsert({
 			prop: 'status',
 			value: 1,
 			component: { name: 'el-switch', props: { activeValue: 1, inactiveValue: 0 } }
+		},
+		{
+			label: t('记忆写入'),
+			prop: 'memoryWriteEnabled',
+			value: true,
+			component: { name: 'el-switch' }
 		}
 	],
 	async onSubmit(data, { next }) {
@@ -112,6 +124,11 @@ const Table = useTable({
 		{ label: t('工作流名称'), prop: 'name', minWidth: 180 },
 		{ label: t('描述'), prop: 'description', minWidth: 260, showOverflowTooltip: true },
 		{ label: t('启用'), prop: 'status', width: 100, component: { name: 'cl-switch' } },
+		{
+			label: t('记忆写入'),
+			prop: 'memoryWriteEnabled',
+			width: 100
+		},
 		{
 			label: t('当前版本'),
 			prop: 'currentVersionNo',
@@ -158,6 +175,29 @@ function designWorkflow(scope: WorkflowDefinition) {
 // 跳转版本历史页（版本列表 / 对比 / 回滚）
 function versionHistory(scope: WorkflowDefinition) {
 	router.push({ path: '/workflow/version', query: { definitionId: scope.id } });
+}
+
+// 记忆写入开关（memory_write_enabled 定义级总开关，设计 §9.5）：关闭需二次确认——
+// 已有记忆仍可召回，仅阻止新写入。受控 model-value：确认/保存成功后才更新行值
+async function onMemoryWriteToggle(row: { id: number; memoryWriteEnabled?: boolean }, val: boolean) {
+	if (!val) {
+		try {
+			await ElMessageBox.confirm(
+				t('关闭后本工作流将不能写入新的长期记忆；已有记忆仍可被召回。确认关闭？'),
+				t('关闭记忆写入'),
+				{ type: 'warning' }
+			);
+		} catch {
+			return;
+		}
+	}
+	try {
+		await service.workflow.definition.update({ id: row.id, memoryWriteEnabled: val });
+		row.memoryWriteEnabled = val;
+		ElMessage.success(val ? t('已开启记忆写入') : t('已关闭记忆写入'));
+	} catch (e) {
+		ElMessage.error(t('更新失败：') + (e instanceof Error ? e.message : String(e)));
+	}
 }
 
 function triggerImport() {

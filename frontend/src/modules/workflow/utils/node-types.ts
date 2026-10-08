@@ -11,6 +11,8 @@ import IntentClassifierNode from '../components/custom-nodes/intent-classifier-n
 import LlmNode from '../components/custom-nodes/llm-node.vue';
 import LoopBodyGroupNode from '../components/custom-nodes/loop-body-group-node.vue';
 import LoopControllerNode from '../components/custom-nodes/loop-controller-node.vue';
+import MemoryRecallNode from '../components/custom-nodes/memory-recall-node.vue';
+import MemoryStoreNode from '../components/custom-nodes/memory-store-node.vue';
 import StartNode from '../components/custom-nodes/start-node.vue';
 import SwitchNode from '../components/custom-nodes/switch-node.vue';
 import ToolExecutorNode from '../components/custom-nodes/tool-executor-node.vue';
@@ -61,7 +63,9 @@ export const nodeTypes: Record<string, Component> = markRaw({
 	tool_executor: withIncompleteBadge('tool_executor', ToolExecutorNode),
 	loop_body_group: withIncompleteBadge('loop_body_group', LoopBodyGroupNode),
 	variable_assignment: withIncompleteBadge('variable_assignment', VariableAssignmentNode),
-	variable_transform: withIncompleteBadge('variable_transform', VariableTransformNode)
+	variable_transform: withIncompleteBadge('variable_transform', VariableTransformNode),
+	memory_store: withIncompleteBadge('memory_store', MemoryStoreNode),
+	memory_recall: withIncompleteBadge('memory_recall', MemoryRecallNode)
 });
 
 /**

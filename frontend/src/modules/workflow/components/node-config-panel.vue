@@ -172,6 +172,8 @@ import ToolExecutorConfig from './node-configs/tool-executor-config.vue';
 import LoopBodyGroupConfig from './node-configs/loop-body-group-config.vue';
 import VariableAssignmentConfig from './node-configs/variable-assignment-config.vue';
 import VariableTransformConfig from './node-configs/variable-transform-config.vue';
+import MemoryStoreConfig from './node-configs/memory-store-config.vue';
+import MemoryRecallConfig from './node-configs/memory-recall-config.vue';
 import NodeInputsEditor from './node-inputs-editor.vue';
 import NodeConfigSection from './node-configs/node-config-section.vue';
 
@@ -203,14 +205,18 @@ const CONFIG_COMPONENTS: Record<string, any> = {
 	tool_executor: ToolExecutorConfig,
 	loop_body_group: LoopBodyGroupConfig,
 	variable_assignment: VariableAssignmentConfig,
-	variable_transform: VariableTransformConfig
+	variable_transform: VariableTransformConfig,
+	memory_store: MemoryStoreConfig,
+	memory_recall: MemoryRecallConfig
 };
 
-// 节点类型 → 所需的 AI 模型类型映射
+// 节点类型 → 所需的 AI 模型类型映射（memory 两侧均为 embedding profile）
 const NODE_MODEL_TYPE_MAP: Record<string, string> = {
 	llm: 'chat',
 	intent_classifier: 'chat',
-	image_generator: 'image'
+	image_generator: 'image',
+	memory_store: 'embedding',
+	memory_recall: 'embedding'
 };
 
 const nodeIcon = computed(() => getNodeMeta(props.selectedNode?.type).icon);

@@ -12,7 +12,9 @@ import {
 	MagicStick,
 	Collection,
 	Filter,
-	InfoFilled
+	InfoFilled,
+	Memo,
+	Search
 } from '@element-plus/icons-vue';
 
 // 统一管理所有节点类型的元数据
@@ -129,6 +131,24 @@ export const NODE_REGISTRY = [
 		colorHex: '#67c23a',
 		category: 'system',
 		descKey: '格式转换与数据提取'
+	},
+	{
+		type: 'memory_store',
+		labelKey: '记忆写入',
+		icon: Memo,
+		colorClass: 'node-memory_store',
+		colorHex: '#3fb27f',
+		category: 'ai',
+		descKey: '将运行产物沉淀为工作流长期记忆（跨实例共享，同 key 覆盖更新）'
+	},
+	{
+		type: 'memory_recall',
+		labelKey: '记忆召回',
+		icon: Search,
+		colorClass: 'node-memory_recall',
+		colorHex: '#5b8def',
+		category: 'ai',
+		descKey: '召回本工作流沉淀的长期记忆（语义检索 / 按业务身份精确取 / 时间线）'
 	},
 	// deprecated `tool` 条目已删除（三期B7 / WF-P2-10 下架）：存量图加载时后端
 	// 自动迁移为 tool_executor，前端物料/画布/配置面板不再注册该类型。

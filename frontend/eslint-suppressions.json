@@ -514,6 +514,16 @@
       "count": 2
     }
   },
+  "src/modules/workflow/components/node-configs/memory-recall-config.vue": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "src/modules/workflow/components/node-configs/memory-store-config.vue": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
   "src/modules/workflow/components/node-configs/start-config.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1

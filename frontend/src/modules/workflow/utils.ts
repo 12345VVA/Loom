@@ -159,6 +159,9 @@ export function getMissingConfigFields(node: {
 			if (!resolveOutputVar(cfg)) miss.push('输出变量');
 			return miss;
 		}
+		case 'memory_store':
+			// 与后端 NODE_CONFIG_SCHEMA["memory_store"] 必填口径一致（node_schema.py）
+			return !cfg.contentTemplate ? ['记忆内容模板'] : [];
 		default:
 			return [];
 	}
