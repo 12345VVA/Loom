@@ -718,6 +718,18 @@ class WorkflowMemoryService(BaseAdminCrudService):
         self._current_add_user_id = current_user.id if current_user else None
         try:
             return super().add(payload)
+        except IntegrityError as exc:
+            # 管理页 add 直 INSERT（执行器侧才有 upsert 语义）：撞唯一约束转 409
+            # 可定位错误，不落 500（§11 修正路径：删旧+新增）
+            self.session.rollback()
+            target = _integrity_target(exc)
+            if target == "uq_mem_key":
+                raise HTTPException(
+                    status_code=409, detail="同业务身份（memory_key）的记忆已存在；如需覆盖请删除旧条后新增"
+                )
+            if target == "uq_mem_hash":
+                raise HTTPException(status_code=409, detail="相同内容的记忆已存在（无 key 行按内容精确去重）")
+            raise
         finally:
             self._current_add_user_id = None
 

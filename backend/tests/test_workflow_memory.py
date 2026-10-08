@@ -479,6 +479,20 @@ class AdminAddTestCase(unittest.TestCase):
         row = self.session.get(WorkflowMemory, entity.id)
         self.assertIsNone(row.embedding)
 
+    def test_add_duplicate_key_conflict_409(self):
+        """管理页 add 直 INSERT 无 upsert 语义：撞同 key/同内容转 409 可定位错误（不落 500）。"""
+        from fastapi import HTTPException
+
+        self._service().add({"definition_id": 1, "content": "first", "memory_key": "dup"})
+        with self.assertRaises(HTTPException) as ctx:
+            self._service().add({"definition_id": 1, "content": "second", "memory_key": "dup"})
+        self.assertEqual(ctx.exception.status_code, 409)
+        # 无 key 同内容撞 uq_mem_hash 同样 409
+        self._service().add({"definition_id": 2, "content": "same-content"})
+        with self.assertRaises(HTTPException) as ctx2:
+            self._service().add({"definition_id": 2, "content": "same-content"})
+        self.assertEqual(ctx2.exception.status_code, 409)
+
 
 class AdminPageEnrichTestCase(unittest.TestCase):
     """管理页 page/info enrich：definitionName 回填 + credentialHits 凭据标记（§9.3/§11）。
