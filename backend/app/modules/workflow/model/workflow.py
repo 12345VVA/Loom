@@ -28,8 +28,10 @@ class WorkflowDefinition(BaseEntity, table=True):
     draft_version_id: int | None = Field(default=None, index=True)  # 草稿指针（editor/test_node 走此版）
     is_active: bool = Field(default=True, index=True)  # 启停开关（is_active=False 不可启动实例/发起评估）
     # 记忆写入总开关（长期记忆节点）：纯共享下每次写入都影响所有后续运行，关闭时
-    # memory_store 节点 fail-fast（「能运行 ≠ 能写知识」）；已写入记忆仍可召回
-    memory_write_enabled: bool = Field(default=True, index=True)
+    # memory_store 节点 fail-fast（「能运行 ≠ 能写知识」）；已写入记忆仍可召回。
+    # 随主键行读取的布尔开关，不做独立索引（3cc5132 曾带 index=True 但迁移 0022 未建，
+    # CI alembic check 检出 drift）
+    memory_write_enabled: bool = Field(default=True)
     user_id: int | None = Field(default=None, index=True)  # 创建者，用于数据权限隔离
 
 
