@@ -75,6 +75,21 @@
 			</div>
 		</div>
 
+		<div v-else-if="providerKind === 'poryf'" class="provider-panel">
+			<div class="field-grid">
+				<el-form-item label="quality">
+					<cl-select v-model="form.quality" :options="PORYF_QUALITY_OPTIONS" clearable />
+				</el-form-item>
+				<el-form-item label="output_format">
+					<cl-select v-model="form.outputFormat" :options="PORYF_OUTPUT_FORMAT_OPTIONS" clearable />
+				</el-form-item>
+			</div>
+			<div class="field-tip warning">
+				<el-icon><info-filled /></el-icon>
+				<span>{{ $t('Poryf 参考图须 ≤1MB，超限会被本地直接拒绝；建议用 jpeg 小图降传输与计费。') }}</span>
+			</div>
+		</div>
+
 		<div v-else-if="providerKind === 'qianfan'" class="provider-panel">
 			<div class="field-tip">
 				<el-icon><info-filled /></el-icon>
@@ -116,6 +131,8 @@ defineOptions({
 import { InfoFilled } from '@element-plus/icons-vue';
 import {
 	QUALITY_OPTIONS,
+	PORYF_OUTPUT_FORMAT_OPTIONS,
+	PORYF_QUALITY_OPTIONS,
 	SEQUENTIAL_OPTIONS,
 	STYLE_OPTIONS,
 	type ImageProviderKind

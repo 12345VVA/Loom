@@ -248,7 +248,7 @@
 						/>
 					</el-form-item>
 
-					<el-form-item :label="$t('返回格式')">
+					<el-form-item v-if="providerKind !== 'poryf'" :label="$t('返回格式')">
 						<cl-select
 							v-model="form.responseFormat"
 							:options="RESPONSE_FORMAT_OPTIONS"

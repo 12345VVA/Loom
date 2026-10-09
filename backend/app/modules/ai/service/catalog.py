@@ -55,6 +55,28 @@ DEFAULT_TOAPIS_PIXEL_IMAGE_CONFIG = json.dumps(
     ensure_ascii=False,
 )
 
+# Poryf gpt-image-2.5 的像素尺寸档位（官方最大边长 3840px，实测请求尺寸精确兑现、无自动缩放）
+DEFAULT_PORYF_IMAGE_CONFIG = json.dumps(
+    {
+        "size": "1024x1024",
+        "quality": "low",
+        "_size_format": "pixel",
+        "_allow_custom_size": True,
+        "_sizes": [
+            {"label": "1024x1024 (1:1)", "value": "1024x1024"},
+            {"label": "1536x1024 (3:2)", "value": "1536x1024"},
+            {"label": "1024x1536 (2:3)", "value": "1024x1536"},
+            {"label": "2048x2048 (1:1 2K)", "value": "2048x2048"},
+            {"label": "2560x1440 (16:9 2K)", "value": "2560x1440"},
+            {"label": "1440x2560 (9:16 2K)", "value": "1440x2560"},
+            {"label": "3840x2160 (16:9 4K)", "value": "3840x2160"},
+            {"label": "2160x3840 (9:16 4K)", "value": "2160x3840"},
+        ],
+        "_limits": {"max_n": 1},
+    },
+    ensure_ascii=False,
+)
+
 DEFAULT_SEEDREAM_IMAGE_CONFIG = json.dumps(
     {
         "size": "2048x2048",
@@ -344,6 +366,28 @@ AI_MODEL_CATALOG = [
                 "model_type": "image",
                 "capabilities": "image,text-to-image,image-to-image",
                 "default_config": DEFAULT_TOAPIS_PIXEL_IMAGE_CONFIG,
+            },
+        ],
+    },
+    {
+        "code": "poryf",
+        "name": "Poryf（再来点Token）",
+        "adapter": "poryf",
+        "base_url": "https://token.poryf.com/v1",
+        "models": [
+            {
+                "code": "gpt-image-2.5-flare",
+                "name": "GPT-Image-2.5 Flare",
+                "model_type": "image",
+                "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_PORYF_IMAGE_CONFIG,
+            },
+            {
+                "code": "gpt-image-2.5-sunburst",
+                "name": "GPT-Image-2.5 Sunburst",
+                "model_type": "image",
+                "capabilities": "image,text-to-image,image-to-image",
+                "default_config": DEFAULT_PORYF_IMAGE_CONFIG,
             },
         ],
     },

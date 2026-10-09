@@ -11,6 +11,7 @@ import {
 	BAILIAN_SIZE_OPTIONS,
 	BASE_SIZE_OPTIONS,
 	OPENAI_AUTO_SIZE_OPTION,
+	PORYF_SIZE_OPTIONS,
 	TOAPIS_RATIO_SIZE_OPTIONS,
 	VOLCENGINE_SEEDREAM4_SIZE_OPTIONS,
 	VOLCENGINE_SIZE_OPTIONS,
@@ -42,6 +43,7 @@ export interface ImageWorkbenchForm {
 	quality: string;
 	style: string;
 	thinking: boolean;
+	outputFormat: string;
 	optionsText: string;
 }
 
@@ -73,6 +75,7 @@ export function useImageWorkbench() {
 		quality: '',
 		style: '',
 		thinking: false,
+		outputFormat: '',
 		optionsText: '{}'
 	});
 
@@ -113,7 +116,10 @@ export function useImageWorkbench() {
 	const showBailianNegativePrompt = computed(
 		() => providerKind.value === 'bailian' && (!isBailianWan26.value || form.forceAsync)
 	);
-	const showWatermarkOption = computed(() => providerKind.value !== 'openai');
+	// Poryf 不支持 watermark，且 response_format 由网关固定回 b64，多传会被后端拦截
+	const showWatermarkOption = computed(
+		() => providerKind.value !== 'openai' && providerKind.value !== 'poryf'
+	);
 	const availableSizeOptions = computed<ImageSizeOption[]>(() => {
 		const declared = parseProfileSizeOptions(selectedProfile.value?.modelDefaultConfig);
 		if (declared) {
@@ -121,6 +127,9 @@ export function useImageWorkbench() {
 		}
 		if (providerKind.value === 'toapis') {
 			return TOAPIS_RATIO_SIZE_OPTIONS;
+		}
+		if (providerKind.value === 'poryf') {
+			return PORYF_SIZE_OPTIONS;
 		}
 		if (providerKind.value === 'openai') {
 			return [OPENAI_AUTO_SIZE_OPTION, ...BASE_SIZE_OPTIONS];
@@ -157,6 +166,9 @@ export function useImageWorkbench() {
 		if (providerKind.value === 'toapis') {
 			return t('ToAPIs 模型支持比例（普通版）或像素尺寸（VIP/Official 版）。');
 		}
+		if (providerKind.value === 'poryf') {
+			return t('Poryf 支持像素尺寸（最大边长 3840px），请求尺寸精确兑现；尺寸越大消耗 token 越多。');
+		}
 		if (providerKind.value === 'openai') {
 			return t(
 				'OpenAI 官方图片接口支持 size=auto；OpenAI 兼容渠道不保证所有底层模型都支持自动比例。'
@@ -181,6 +193,7 @@ export function useImageWorkbench() {
 			'volcengine-ark': { label: '火山方舟', type: 'warning' },
 			openai: { label: 'OpenAI Compatible', type: 'primary' },
 			toapis: { label: 'ToAPIs', type: 'primary' },
+			poryf: { label: 'Poryf', type: 'primary' },
 			qianfan: { label: '百度千帆', type: 'success' },
 			gemini: { label: '谷歌 Gemini', type: 'danger' },
 			unknown: { label: t('通用'), type: 'info' }
@@ -199,6 +212,11 @@ export function useImageWorkbench() {
 		}
 		if (providerKind.value === 'openai') {
 			return t('支持配置 OpenAI 专属的生图品质 quality、风格 style 以及 thinking 思维参数。');
+		}
+		if (providerKind.value === 'poryf') {
+			return t(
+				'Poryf gpt-image-2.5 同步生图（约 20s~3min），支持五档画质与 png/jpeg 输出；图生图参考图须 ≤1MB。'
+			);
 		}
 		if (providerKind.value === 'qianfan') {
 			return t('支持百度智能云千帆大模型 V2 生图参数适配，包含 ERNIE iRAG 检索增强防超长机制。');
@@ -272,6 +290,9 @@ export function useImageWorkbench() {
 					if (config.quality) {
 						form.quality = config.quality;
 					}
+					if (config.output_format) {
+						form.outputFormat = config.output_format;
+					}
 					if (config.style) {
 						form.style = config.style;
 					}
@@ -329,9 +350,11 @@ export function useImageWorkbench() {
 	function baseOptions() {
 		const options: Record<string, any> = {
 			size: form.size,
-			n: form.n,
-			response_format: form.responseFormat
+			n: form.n
 		};
+		if (providerKind.value !== 'poryf') {
+			options.response_format = form.responseFormat;
+		}
 		if (showWatermarkOption.value) {
 			options.watermark = form.watermark;
 		}
@@ -355,6 +378,10 @@ export function useImageWorkbench() {
 			options.quality = form.quality || undefined;
 			options.style = form.style || undefined;
 			options.thinking = form.thinking || undefined;
+		}
+		if (providerKind.value === 'poryf') {
+			options.quality = form.quality || undefined;
+			options.output_format = form.outputFormat || undefined;
 		}
 		return cleanOptions(options);
 	}

@@ -1235,6 +1235,23 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["usage"], {})
         self.assertEqual(result["data"][0]["b64_json"], "abc")
 
+    def test_openai_compatible_adapter_disables_sdk_retries_by_default(self):
+        # OpenAI SDK 默认 max_retries=2 会在超时/5xx 静默重试；同步计费接口无幂等键，
+        # 重试即重复扣费，默认必须关闭，仅 extra_config.max_retries 显式开启
+        provider = AiProvider(
+            code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk")
+        )
+        self.assertEqual(OpenAICompatibleAdapter(provider).client.max_retries, 0)
+
+        retry_provider = AiProvider(
+            code="openai-retry",
+            name="OpenAI Retry",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk"),
+            extra_config=json.dumps({"max_retries": 3}),
+        )
+        self.assertEqual(OpenAICompatibleAdapter(retry_provider).client.max_retries, 3)
+
     def test_openai_compatible_adapter_image_filters_nonstandard_options_and_logs_warning(self):
         provider = AiProvider(
             code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk")

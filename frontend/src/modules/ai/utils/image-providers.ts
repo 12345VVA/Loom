@@ -11,6 +11,7 @@ export type ImageProviderKind =
 	| 'qianfan'
 	| 'gemini'
 	| 'toapis'
+	| 'poryf'
 	| 'unknown';
 
 export interface ImageSizeOption {
@@ -75,6 +76,15 @@ export function detectProviderKind(profile: any): ImageProviderKind {
 	if (adapter === 'gemini' || providerCode.includes('gemini') || modelCode.includes('gemini')) {
 		return 'gemini';
 	}
+	// poryf 分支须在 toapis 之前：poryf 的模型同为 gpt-image-* ，
+	// 否则会被 toapis 分支的 modelCode.includes('gpt-image') 截胡
+	if (
+		adapter === 'poryf' ||
+		providerCode.includes('poryf') ||
+		modelCode.includes('poryf')
+	) {
+		return 'poryf';
+	}
 	if (
 		adapter === 'toapis' ||
 		providerCode.includes('toapis') ||
@@ -103,6 +113,9 @@ export function detectProviderKind(profile: any): ImageProviderKind {
 	}
 	if (fallback.includes('gemini') || fallback.includes('谷歌')) {
 		return 'gemini';
+	}
+	if (fallback.includes('poryf') || fallback.includes('再来点')) {
+		return 'poryf';
 	}
 	if (fallback.includes('toapis')) {
 		return 'toapis';
@@ -181,6 +194,32 @@ export const TOAPIS_RATIO_SIZE_OPTIONS: ImageSizeOption[] = [
 	{ label: '16:9 (电脑宽屏)', value: '16:9' },
 	{ label: '1:2 (超长竖图)', value: '1:2' },
 	{ label: '2:1 (全景横图)', value: '2:1' }
+];
+
+/** Poryf gpt-image-2.5 像素尺寸（官方最大边长 3840px，请求尺寸精确兑现） */
+export const PORYF_SIZE_OPTIONS: ImageSizeOption[] = [
+	{ label: '1024x1024 (1:1)', value: '1024x1024' },
+	{ label: '1536x1024 (3:2)', value: '1536x1024' },
+	{ label: '1024x1536 (2:3)', value: '1024x1536' },
+	{ label: '2048x2048 (1:1 2K)', value: '2048x2048' },
+	{ label: '2560x1440 (16:9 2K)', value: '2560x1440' },
+	{ label: '1440x2560 (9:16 2K)', value: '1440x2560' },
+	{ label: '3840x2160 (16:9 4K)', value: '3840x2160' },
+	{ label: '2160x3840 (9:16 4K)', value: '2160x3840' }
+];
+
+/** Poryf 画质五档（flare / sunburst 同代同价，越高越贵越慢） */
+export const PORYF_QUALITY_OPTIONS = [
+	{ label: 'low', value: 'low' },
+	{ label: 'medium', value: 'medium' },
+	{ label: 'high', value: 'high' },
+	{ label: 'xhigh', value: 'xhigh' },
+	{ label: 'max', value: 'max' }
+];
+
+export const PORYF_OUTPUT_FORMAT_OPTIONS = [
+	{ label: 'png', value: 'png' },
+	{ label: 'jpeg', value: 'jpeg' }
 ];
 
 /**

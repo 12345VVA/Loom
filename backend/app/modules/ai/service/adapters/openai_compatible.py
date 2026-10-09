@@ -23,7 +23,10 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
 
     def __init__(self, provider: AiProvider):
         super().__init__(provider)
-        self.client = OpenAI(api_key=self.api_key or "EMPTY", base_url=self.base_url or None)
+        # SDK 默认 max_retries=2 会在超时/429/5xx 时静默重试；同步计费类接口（生图等）
+        # 无幂等键，重试即重复扣费，故默认关闭，经 extra_config.max_retries 显式开启
+        max_retries = int(self.extra_config.get("max_retries", 0))
+        self.client = OpenAI(api_key=self.api_key or "EMPTY", base_url=self.base_url or None, max_retries=max_retries)
 
     def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]) -> dict:
         response = self.client.chat.completions.create(model=model, messages=messages, **options)

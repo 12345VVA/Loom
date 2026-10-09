@@ -17,6 +17,7 @@ from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
 from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
 from app.modules.ai.service.adapters.openai_http import OpenAIHttpAdapter
+from app.modules.ai.service.adapters.poryf import PoryfAdapter
 from app.modules.ai.service.adapters.size_utils import parse_pixel_size
 from app.modules.ai.service.adapters.toapis import ToApisAdapter
 from app.modules.ai.service.adapters.volcengine_openapi import iter_ark_available_models
@@ -248,6 +249,7 @@ ADAPTERS = {
     "minimax": MiniMaxAdapter,
     "mimo": MimoAdapter,
     "toapis": ToApisAdapter,
+    "poryf": PoryfAdapter,
 }
 
 

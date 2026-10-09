@@ -101,6 +101,7 @@ import {
 	parseProfileSizeFormat,
 	BASE_SIZE_OPTIONS,
 	BAILIAN_SIZE_OPTIONS,
+	PORYF_SIZE_OPTIONS,
 	VOLCENGINE_SIZE_OPTIONS,
 	VOLCENGINE_SEEDREAM4_SIZE_OPTIONS,
 	TOAPIS_RATIO_SIZE_OPTIONS
@@ -168,6 +169,9 @@ const availableSizeOptions = computed(() => {
 	}
 	if (providerKind.value === 'toapis') {
 		return TOAPIS_RATIO_SIZE_OPTIONS;
+	}
+	if (providerKind.value === 'poryf') {
+		return PORYF_SIZE_OPTIONS;
 	}
 	if (providerKind.value === 'openai') {
 		return [{ label: '自动比例', value: 'auto' }, ...BASE_SIZE_OPTIONS];

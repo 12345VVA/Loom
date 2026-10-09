@@ -29,6 +29,7 @@ AI_ADAPTERS = {
     "minimax",
     "mimo",
     "toapis",
+    "poryf",
 }
 AI_MODEL_TYPES = {"chat", "embedding", "image", "audio", "video", "rerank"}
 AI_GOVERNANCE_SCOPE_TYPES = {"global", "user", "profile"}

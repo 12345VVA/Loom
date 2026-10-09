@@ -100,7 +100,8 @@ const adapterOptions = [
 	{ label: '智谱 GLM', value: 'zhipu' },
 	{ label: 'MiniMax', value: 'minimax' },
 	{ label: '小米 MiMo', value: 'mimo' },
-	{ label: 'ToAPIs', value: 'toapis' }
+	{ label: 'ToAPIs', value: 'toapis' },
+	{ label: 'Poryf（再来点Token）', value: 'poryf' }
 ];
 const extraConfigTemplates: Record<string, string> = {
 	bailian: JSON.stringify(
@@ -122,6 +123,15 @@ const extraConfigTemplates: Record<string, string> = {
 			image_poll_interval_seconds: 3,
 			image_poll_timeout_seconds: 600,
 			skip_model_list_check: true
+		},
+		null,
+		2
+	),
+	poryf: JSON.stringify(
+		{
+			timeout: 300,
+			edit_reference_max_bytes: 1048576,
+			skip_model_list_check: false
 		},
 		null,
 		2

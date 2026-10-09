@@ -20,11 +20,13 @@ import unittest
 
 from fastapi import HTTPException
 
+from app.modules.ai.model.ai import AiProvider
 from app.modules.ai.service.adapters.base import UpstreamApiError
 from app.modules.ai.service.adapters.factory import (
     _normalize_bailian_image_size,
     _validate_seedream_4_size,
 )
+from app.modules.ai.service.adapters.poryf import PoryfAdapter
 from app.modules.ai.service.adapters.size_utils import (
     ensure_pixel_size,
     normalize_size_token,
@@ -127,6 +129,30 @@ class ToApisSizeHandlingTest(unittest.TestCase):
     def test_invalid_raises_instead_of_falling_back(self) -> None:
         with self.assertRaises(UpstreamApiError):
             _convert_pixel_size_to_ratio_and_resolution("big")
+
+
+class PoryfSizeHandlingTest(unittest.TestCase):
+    """poryf 适配器的尺寸校验：像素格式 + 最大边长 3840。"""
+
+    def setUp(self) -> None:
+        self.adapter = PoryfAdapter(
+            AiProvider(code="poryf", name="Poryf", adapter="poryf", base_url="https://token.poryf.com/v1")
+        )
+
+    def test_valid_passthrough(self) -> None:
+        self.assertEqual(self.adapter._validate_size("1024x1024"), "1024x1024")
+        self.assertEqual(self.adapter._validate_size("3840x2160"), "3840x2160")
+
+    def test_fullwidth_is_normalized(self) -> None:
+        self.assertEqual(self.adapter._validate_size("1024" + FULLWIDTH_MULTIPLY + "1024"), "1024x1024")
+
+    def test_ratio_rejected(self) -> None:
+        with self.assertRaises(UpstreamApiError):
+            self.adapter._validate_size("3:4")
+
+    def test_max_edge_exceeded(self) -> None:
+        with self.assertRaises(UpstreamApiError):
+            self.adapter._validate_size("4096x4096")
 
 
 class BaolianAndVolcengineSizeTest(unittest.TestCase):

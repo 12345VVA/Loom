@@ -15,6 +15,7 @@ describe('detectProviderKind', () => {
 		expect(detectProviderKind({ providerAdapter: 'qianfan' })).toBe('qianfan');
 		expect(detectProviderKind({ providerAdapter: 'gemini' })).toBe('gemini');
 		expect(detectProviderKind({ providerAdapter: 'toapis' })).toBe('toapis');
+		expect(detectProviderKind({ providerAdapter: 'poryf' })).toBe('poryf');
 	});
 
 	it('detects by provider code / model code', () => {
@@ -26,6 +27,14 @@ describe('detectProviderKind', () => {
 		expect(detectProviderKind({ modelCode: 'ernie-irag-1.0' })).toBe('qianfan');
 		expect(detectProviderKind({ providerCode: 'google-gemini' })).toBe('gemini');
 		expect(detectProviderKind({ modelCode: 'gpt-image-2.5-flare' })).toBe('toapis');
+		expect(detectProviderKind({ providerCode: 'poryf' })).toBe('poryf');
+	});
+
+	it('detects poryf before toapis gpt-image fallback', () => {
+		// poryf 的模型同为 gpt-image-*，专属 adapter 必须优先于 toapis 的 modelCode 截胡
+		expect(detectProviderKind({ providerAdapter: 'poryf', modelCode: 'gpt-image-2.5-flare' })).toBe(
+			'poryf'
+		);
 	});
 
 	it('falls back to provider name / model name heuristics', () => {
@@ -34,6 +43,7 @@ describe('detectProviderKind', () => {
 		expect(detectProviderKind({ providerName: '百度千帆' })).toBe('qianfan');
 		expect(detectProviderKind({ providerName: '谷歌 Gemini' })).toBe('gemini');
 		expect(detectProviderKind({ providerName: 'ToAPIs 官方' })).toBe('toapis');
+		expect(detectProviderKind({ providerName: 'Poryf（再来点Token）' })).toBe('poryf');
 	});
 
 	it('returns unknown for empty profile', () => {
