@@ -177,7 +177,12 @@
 												<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
 											</svg>
 										</button>
-										<button class="action-btn primary" :title="$t('下载此图')" @click="downloadSingle(item, index)">
+										<button
+											class="action-btn primary"
+											:title="$t('下载此图')"
+											:disabled="downloadingSingle"
+											@click="downloadSingle(item, index)"
+										>
 											<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
 												<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 												<polyline points="7 10 12 15 17 10" />
@@ -233,6 +238,15 @@
 					</section>
 				</template>
 
+				<!-- 错误态（WFU-M22）：与真空态区分，提供重试 -->
+				<div v-else-if="loadError" class="artifact-empty">
+					<h3 class="empty-title">{{ $t('产物加载失败') }}</h3>
+					<p class="empty-desc">{{ $t('网络或服务异常导致产物列表未能获取，可点击重试。') }}</p>
+					<el-button type="primary" size="small" plain @click="retryLoad">
+						{{ $t('重试') }}
+					</el-button>
+				</div>
+
 				<!-- 空状态 -->
 				<div v-else-if="!loading" class="artifact-empty">
 					<div class="empty-icon-wrap">
@@ -284,6 +298,13 @@ const drawerSize = computed(() => {
 });
 
 const loading = ref(false);
+const loadError = ref(false);
+
+function retryLoad() {
+	if (props.instanceId) {
+		fetchArtifacts(Number(props.instanceId));
+	}
+}
 const items = ref<ArtifactItem[]>([]);
 const downloadingZip = ref(false);
 const downloadProgressText = ref('');
@@ -300,6 +321,7 @@ watch(
 
 async function fetchArtifacts(instanceId: number) {
 	loading.value = true;
+	loadError.value = false;
 	items.value = [];
 	try {
 		await ensureDownloadToken();
@@ -311,6 +333,9 @@ async function fetchArtifacts(instanceId: number) {
 		// 核心关键修复：CoolAdmin 标准分页接口返回的是 res.list，并兼容部分环境下的 res.items
 		items.value = res?.list || res?.items || [];
 	} catch (err: any) {
+		// 记录错误态（WFU-M22）：此前一闪而过的 toast 后停留在「暂无产物」引导文案，
+		// 用户会误以为工作流没配置 end 输出而去查配置
+		loadError.value = true;
 		ElMessage.error(t('获取产物失败: ') + (err.message || err));
 	} finally {
 		loading.value = false;
@@ -363,12 +388,21 @@ async function handleDownloadAllImages() {
 	}
 }
 
-function downloadSingle(item: DisplayItem, index: number) {
+// 单图下载进行中标记（WFU-M23）：此前按钮无任何反馈，多级容错 fetch 可能数秒
+const downloadingSingle = ref(false);
+
+async function downloadSingle(item: DisplayItem, index: number) {
+	if (downloadingSingle.value) return;
 	const name = item.fieldPath || item.fieldKey || `image_${index + 1}`;
 	const cleanUrl = item.copyText.split('?')[0];
 	const extMatch = cleanUrl.match(/\.(png|jpe?g|webp|gif|svg)$/i);
 	const ext = extMatch ? extMatch[0].toLowerCase() : '.png';
-	downloadSingleImage(item.src || item.copyText, `${name}${ext}`);
+	downloadingSingle.value = true;
+	try {
+		await downloadSingleImage(item.src || item.copyText, `${name}${ext}`);
+	} finally {
+		downloadingSingle.value = false;
+	}
 }
 </script>
 

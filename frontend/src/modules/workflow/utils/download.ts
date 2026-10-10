@@ -337,7 +337,7 @@ export async function downloadSingleImage(url: string, filename?: string) {
 		ElMessage.success('开始下载图片');
 	} catch (err: any) {
 		console.error('Download image error, fallback to direct anchor:', err);
-		// 降级：直接用 a 标签打开/下载
+		// 降级：直接用 a 标签打开/下载（跨域时 download 属性无效，会以新标签打开）
 		const link = document.createElement('a');
 		link.href = url;
 		link.download = filename || `image_${Date.now()}.png`;
@@ -345,6 +345,8 @@ export async function downloadSingleImage(url: string, filename?: string) {
 		document.body.appendChild(link);
 		link.click();
 		document.body.removeChild(link);
+		// 明示降级结果（WFU-M23）：此前静默降级，用户以为点了下载却弹出网页或无反应
+		ElMessage.info('下载未能在后台完成，已尝试在新标签打开原图，可右键另存');
 	}
 }
 

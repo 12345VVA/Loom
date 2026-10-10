@@ -2,17 +2,29 @@
  * 工作流日志抽屉的筛选状态。
  * 自 log-drawer.vue 抽出：状态筛选 + 关键词模糊匹配。
  */
-import { computed, ref, type Ref } from 'vue';
+import { computed, ref, watch, type Ref } from 'vue';
 import type { WorkflowLogItem } from '../utils';
 
 export function useLogFilter(options: {
 	items: Ref<WorkflowLogItem[]>;
 	hasDetectedImages: (item: WorkflowLogItem) => boolean;
+	/** 抽屉可见性：关闭时重置筛选（跨抽屉打开/跨实例不残留，WFU-M19） */
+	visible?: Ref<boolean>;
 }) {
-	const { items, hasDetectedImages } = options;
+	const { items, hasDetectedImages, visible } = options;
 
 	const searchKeyword = ref('');
 	const filterStatus = ref<'all' | 'success' | 'error' | 'media'>('all');
+
+	// 抽屉关闭即重置：上次选了「仅看失败」，打开另一个全成功实例时不再看到假空列表
+	if (visible) {
+		watch(visible, v => {
+			if (!v) {
+				searchKeyword.value = '';
+				filterStatus.value = 'all';
+			}
+		});
+	}
 
 	// 筛选后的列表
 	const filteredItems = computed(() => {

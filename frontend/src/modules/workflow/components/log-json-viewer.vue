@@ -7,6 +7,15 @@
 				</el-tag>
 				<span class="meta-stat" v-if="hasContent">
 					{{ formatSize(rawString.length) }} · {{ lineCount }} {{ $t('行') }}
+					<el-tooltip
+						v-if="isTruncated"
+						:content="$t('内容过大，仅渲染前 2000 行；复制/全屏可获取完整内容')"
+						placement="top"
+					>
+						<el-tag size="small" type="warning" effect="plain" class="truncate-tag">
+							{{ $t('已截断') }}
+						</el-tag>
+					</el-tooltip>
 				</span>
 			</div>
 			<div class="header-actions">
@@ -14,12 +23,17 @@
 					v-if="hasContent && searchable"
 					v-model="searchKey"
 					size="small"
-					placeholder="Ctrl+F 搜索..."
+					:placeholder="$t('搜索关键词')"
 					clearable
 					class="search-input"
 				>
 					<template #prefix>
 						<workflow-icon name="search" :size="13" />
+					</template>
+					<template v-if="matchCount >= 0" #suffix>
+						<span class="match-count" :class="{ 'is-zero': matchCount === 0 }">
+							{{ matchCount > 0 ? `${matchCount} ${$t('处匹配')}` : $t('无匹配') }}
+						</span>
 					</template>
 				</el-input>
 				<el-tooltip :content="isFormatted ? $t('压缩单行') : $t('格式化')" placement="top">
@@ -77,12 +91,15 @@
 			<div class="dialog-toolbar">
 				<span class="meta-stat">
 					{{ formatSize(rawString.length) }} · {{ lineCount }} {{ $t('行') }}
+					<el-tag v-if="isTruncated" size="small" type="warning" effect="plain" class="truncate-tag">
+						{{ $t('已截断（复制全部可获取完整内容）') }}
+					</el-tag>
 				</span>
 				<div style="display: flex; gap: 8px">
 					<el-input
 						v-model="searchKey"
 						size="small"
-						placeholder="搜索关键词..."
+						:placeholder="$t('搜索关键词')"
 						clearable
 						style="width: 220px"
 					>
@@ -111,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import WorkflowIcon from './workflow-icon.vue';
 import { copyToClipboard } from '../utils';
 import { useI18n } from 'vue-i18n';
@@ -140,6 +157,18 @@ const { t } = useI18n();
 const dialogVisible = ref(false);
 const isFormatted = ref(true);
 const searchKey = ref('');
+// 搜索防抖值（F5-1）：每键入一字就全串重跑转义+高亮正则，大内容下输入卡顿
+const debouncedSearchKey = ref('');
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+watch(searchKey, val => {
+	if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+	searchDebounceTimer = setTimeout(() => {
+		debouncedSearchKey.value = val;
+	}, 300);
+});
+onBeforeUnmount(() => {
+	if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+});
 
 // 将输入内容转换为字符串
 const rawString = computed<string>(() => {
@@ -158,7 +187,8 @@ const rawString = computed<string>(() => {
 	}
 });
 
-const hasContent = computed(() => !!rawString.value && rawString.value !== '{}');
+// 空数组 '[]' 同样视为无输出（F6 顺手：此前空数组显示字面 [] 而非空态）
+const hasContent = computed(() => !!rawString.value && rawString.value !== '{}' && rawString.value !== '[]');
 
 // 解析后的 JSON 字符串（格式化或压缩）
 const displayString = computed(() => {
@@ -171,9 +201,39 @@ const displayString = computed(() => {
 	}
 });
 
+// 截断阈值（WFU-H14）：超大输出此前整串渲染数万行号 span + 巨量 v-html，抽屉掉帧假死
+const MAX_RENDER_LINES = 2000;
+const MAX_RENDER_CHARS = 512 * 1024;
+
+// 实际参与渲染的字符串：超阈值截断（复制/下载仍走完整 displayString）
+const renderedString = computed(() => {
+	const str = displayString.value;
+	if (!str) return '';
+	const lines = str.split('\n');
+	if (lines.length > MAX_RENDER_LINES) {
+		return lines.slice(0, MAX_RENDER_LINES).join('\n');
+	}
+	if (str.length > MAX_RENDER_CHARS) {
+		return str.slice(0, MAX_RENDER_CHARS);
+	}
+	return str;
+});
+
+const isTruncated = computed(() => renderedString.value !== displayString.value);
+
 const lineCount = computed(() => {
-	if (!displayString.value) return 0;
-	return displayString.value.split('\n').length;
+	if (!renderedString.value) return 0;
+	return renderedString.value.split('\n').length;
+});
+
+// 搜索命中计数（-1 = 无搜索词）：无匹配时给出反馈，避免用户误以为内容里真没有
+const matchCount = computed(() => {
+	const query = debouncedSearchKey.value.trim();
+	if (!query || !renderedString.value) return -1;
+	const matches = renderedString.value.match(
+		new RegExp(query.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi')
+	);
+	return matches ? matches.length : 0;
 });
 
 function formatSize(bytes: number): string {
@@ -184,14 +244,14 @@ function formatSize(bytes: number): string {
 
 // 语法着色逻辑
 const highlightedHtml = computed(() => {
-	const str = displayString.value;
+	const str = renderedString.value;
 	if (!str) return '';
 
 	// 1. 转义 HTML 字符防注入
 	const escaped = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 	// 2. 预构建搜索高亮正则（仅作用于纯文本片段）
-	const query = searchKey.value.trim();
+	const query = debouncedSearchKey.value.trim();
 	const searchReg = query ? new RegExp(`(${query.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi') : null;
 
 	// 3. 匹配 JSON Token 语义标记：回调内先对纯文本片段做搜索高亮再包语法 span，
@@ -257,6 +317,13 @@ function handleCopy() {
 			.meta-stat {
 				color: var(--el-text-color-secondary);
 				font-size: 11px;
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+
+				.truncate-tag {
+					margin-left: 2px;
+				}
 			}
 		}
 
@@ -266,12 +333,22 @@ function handleCopy() {
 			gap: 4px;
 
 			.search-input {
-				width: 140px;
+				width: 160px;
 				margin-right: 4px;
 
 				:deep(.el-input__wrapper) {
 					border-radius: 12px;
 					font-size: 12px;
+				}
+
+				.match-count {
+					font-size: 11px;
+					color: var(--el-text-color-secondary);
+					white-space: nowrap;
+
+					&.is-zero {
+						color: var(--el-color-warning);
+					}
 				}
 			}
 		}

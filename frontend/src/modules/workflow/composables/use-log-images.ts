@@ -296,10 +296,13 @@ export function useLogImages(options: { items: Ref<WorkflowLogItem[]>; t: Transl
 			});
 		});
 
-		// 兜底：若节点提取为空，从全文原始字符串扫描
+		// 兜底：若节点提取为空，从全文原始字符串扫描。
+		// 排除 start 节点、仅扫 outputData（WFU-M24）：start 的 inputData 是用户上传
+		// 的原图——扫进会把「图片产物 N 张」计入用户自己的输入并可被打包下载
 		if (list.length === 0) {
 			items.value.forEach(item => {
-				const str = (item.outputData || '') + (item.inputData || '');
+				if (item.nodeType === 'start') return;
+				const str = item.outputData || '';
 				const imgs = extractRawImagesFromData(str, item.nodeName);
 				imgs.forEach(img => {
 					if (!seenUrls.has(img.url)) {

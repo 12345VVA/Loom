@@ -40,16 +40,23 @@ function codeHtml(w: ReturnType<typeof mountViewer>): string {
 	return (w.element.querySelector('.highlight-code') as HTMLElement).innerHTML;
 }
 
+// 搜索有 300ms 防抖（F5-1），setValue 后须等防抖落地再断言高亮
+async function flushSearchDebounce() {
+	await new Promise(resolve => setTimeout(resolve, 350));
+}
+
 describe('workflow LogJsonViewer search highlight', () => {
 	it('wraps matches in <mark> inside text tokens', async () => {
 		const w = mountViewer({ value: { name: 'x' }, searchable: true, showHeader: true });
 		await w.find('input.search-input').setValue('name');
+		await flushSearchDebounce();
 		expect(codeHtml(w)).toContain('<mark class="json-hl-match">name</mark>');
 	});
 
 	it('keeps tag structure intact when searching for markup words (span)', async () => {
 		const w = mountViewer({ value: { span: 'value' }, searchable: true, showHeader: true });
 		await w.find('input.search-input').setValue('span');
+		await flushSearchDebounce();
 		const html = codeHtml(w);
 		// mark 只应出现在文本节点内：修复前对已注入语法 span 的 HTML 整串替换，
 		// 会把 <span/class 等标记名包进 mark 导致标签碎裂
@@ -60,6 +67,7 @@ describe('workflow LogJsonViewer search highlight', () => {
 	it('keeps tag structure intact when searching for "class"', async () => {
 		const w = mountViewer({ value: { class: 'a' }, searchable: true, showHeader: true });
 		await w.find('input.search-input').setValue('class');
+		await flushSearchDebounce();
 		const html = codeHtml(w);
 		expect(html).toMatch(/<mark class="json-hl-match">class<\/mark>/);
 		expect(html).not.toMatch(/<[^>]*<mark/);

@@ -17,7 +17,7 @@
 		@update:model-value="(v: boolean) => emit('update:visible', v)"
 		@close="emit('close')"
 	>
-		<div class="log-drawer-container" v-loading="loading">
+		<div class="log-drawer-container">
 			<!-- 自定义抽屉头部 -->
 			<div class="log-drawer-header">
 				<div class="drawer-title-group">
@@ -37,6 +37,12 @@
 					</el-tag>
 				</div>
 				<div class="drawer-header-actions">
+					<!-- 失败终态重试入口（WFU-M25）：重跑不必关抽屉回列表，断点排查链路不断 -->
+					<el-tooltip v-if="retryable" :content="$t('重新发起运行')" placement="bottom">
+						<el-button circle size="small" type="warning" plain @click="emit('retry')">
+							<el-icon><refresh-right /></el-icon>
+						</el-button>
+					</el-tooltip>
 					<el-tooltip v-if="cancellable" :content="$t('停止运行')" placement="bottom">
 						<el-button circle size="small" type="danger" plain @click="emit('stop')">
 							<workflow-icon name="close" :size="14" />
@@ -104,8 +110,13 @@
 				<div class="metric-divider" />
 				<div class="metric-item">
 					<span class="metric-label">{{ $t('执行状态') }}</span>
-					<strong class="metric-value" :class="failCount > 0 ? 'danger' : 'success'">
-						{{ failCount > 0 ? `${failCount} ${$t('失败')}` : $t('成功') }}
+					<!-- 有实例状态（running/paused 等）时按 statusLabel 呈现（WFU-M20：
+					     此前运行中实例也显示绿色「成功」）；无状态时维持成功/失败两态 -->
+					<strong
+						class="metric-value"
+						:class="status ? statusTagType : failCount > 0 ? 'danger' : 'success'"
+					>
+						{{ status ? statusLabel : failCount > 0 ? `${failCount} ${$t('失败')}` : $t('成功') }}
 					</strong>
 				</div>
 
@@ -153,10 +164,12 @@
 						</template>
 					</el-input>
 					<el-radio-group v-model="filterStatus" size="small" class="status-filter">
-						<el-radio-button label="all">{{ $t('全部状态') }}</el-radio-button>
-						<el-radio-button label="success">{{ $t('仅看成功') }}</el-radio-button>
-						<el-radio-button label="error">{{ $t('仅看失败') }}</el-radio-button>
-						<el-radio-button v-if="allWorkflowImages.length > 0" label="media">
+						<el-radio-button value="all">{{ $t('全部状态') }}</el-radio-button>
+						<el-radio-button value="success">{{ $t('仅看成功') }}</el-radio-button>
+						<el-radio-button value="error">{{ $t('仅看失败') }}</el-radio-button>
+						<!-- 常渲染禁用而非隐藏（WFU-M19）：隐藏时 filterStatus 停在 media
+						     会被一个界面上不存在的筛选清空列表，且无法点掉 -->
+						<el-radio-button value="media" :disabled="allWorkflowImages.length === 0">
 							{{ $t('仅看产物') }} ({{ allWorkflowImages.length }})
 						</el-radio-button>
 					</el-radio-group>
@@ -177,12 +190,12 @@
 				</div>
 			</div>
 
-			<!-- 步骤时间轴主列表 -->
-			<div class="log-timeline-wrap">
+			<!-- 步骤时间轴主列表（loading 只罩内容区，头部保持可关闭——WFU-M17） -->
+			<div class="log-timeline-wrap" v-loading="loading">
 				<el-timeline v-if="filteredItems.length > 0">
 					<el-timeline-item
-						v-for="(item, index) in filteredItems"
-						:key="item.id || index"
+						v-for="item in filteredItems"
+						:key="item.id ?? item.nodeId"
 						:type="getTimelineType(item.status)"
 						:hollow="item.status === 'running'"
 						class="step-timeline-item"
@@ -206,7 +219,7 @@
 										<workflow-icon name="arrow_right" :size="12" />
 									</span>
 
-									<span class="step-badge">#{{ getStepIndex(item, index) }}</span>
+									<span class="step-badge">#{{ getStepIndex(item) }}</span>
 
 									<!-- 节点类型 SVG 图标徽标 -->
 									<div
@@ -302,7 +315,7 @@
 							<!-- 卡片展开详情内容（业务结果优先呈现） -->
 							<div v-show="item.isExpanded" class="step-card__body">
 								<el-tabs
-									v-model="activeTabs[item.id || index]"
+									v-model="activeTabs[item.id ?? item.nodeId ?? '']"
 									class="payload-tabs"
 								>
 									<!-- 1. 图片画廊 (Gallery) - 优先展现业务交付物 -->
@@ -458,16 +471,21 @@
 					</el-timeline-item>
 				</el-timeline>
 
-				<!-- 空状态提示 -->
+				<!-- 空状态提示：区分 加载中不闪空 / 搜索无匹配 / 筛选无结果 / 无记录（WFU-M16/M18） -->
 				<el-empty
-					v-else
-					:description="
-						searchKeyword
-							? $t('暂无匹配的步骤记录')
-							: emptyText || $t('暂无节点执行步骤记录')
-					"
+					v-else-if="!loading"
+					:description="emptyDescription"
 					:image-size="100"
-				/>
+				>
+					<el-button
+						v-if="filterStatus !== 'all' || searchKeyword"
+						size="small"
+						plain
+						@click="clearFilters"
+					>
+						{{ $t('清除筛选') }}
+					</el-button>
+				</el-empty>
 			</div>
 		</div>
 	</el-drawer>
@@ -475,6 +493,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { RefreshRight } from '@element-plus/icons-vue';
 import WorkflowIcon from './workflow-icon.vue';
 import RunTypeTag from './run-type-tag.vue';
 import { copyToClipboard, type WorkflowLogItem } from '../utils';
@@ -514,6 +533,8 @@ const props = withDefaults(
 		runType?: string;
 		/** 提供则头部显示「停止运行」按钮（运行中的实例日志抽屉用），点击 emit('stop') */
 		cancellable?: boolean;
+		/** 提供则头部显示「重新发起运行」按钮（失败终态实例用），点击 emit('retry') */
+		retryable?: boolean;
 		/** 时间格式：editor 测试日志用 HH:mm:ss，instance 步骤日志用完整日期 */
 		timeFormat?: string;
 	}>(),
@@ -524,6 +545,7 @@ const props = withDefaults(
 		emptyText: '',
 		runType: 'production',
 		cancellable: false,
+		retryable: false,
 		timeFormat: 'HH:mm:ss'
 	}
 );
@@ -534,6 +556,7 @@ const emit = defineEmits<{
 	(e: 'expand-all'): void;
 	(e: 'collapse-all'): void;
 	(e: 'stop'): void;
+	(e: 'retry'): void;
 }>();
 
 const { t } = useI18n();
@@ -557,11 +580,24 @@ const {
 	handleDownloadAllImages
 } = useLogImages({ items: computed(() => props.items), t });
 
-// --- 筛选（composable） ---
+// --- 筛选（composable）：visible 关闭时重置，避免跨抽屉/跨实例残留（WFU-M19） ---
 const { searchKeyword, filterStatus, filteredItems } = useLogFilter({
 	items: computed(() => props.items),
-	hasDetectedImages
+	hasDetectedImages,
+	visible: computed(() => props.visible)
 });
+
+// 空态文案三态区分：搜索无匹配 / 筛选无结果 / 无记录（WFU-M18）
+const emptyDescription = computed(() => {
+	if (searchKeyword.value) return t('暂无匹配的步骤记录');
+	if (filterStatus.value !== 'all') return t('当前筛选条件下无结果');
+	return props.emptyText || t('暂无节点执行步骤记录');
+});
+
+function clearFilters() {
+	searchKeyword.value = '';
+	filterStatus.value = 'all';
+}
 
 // --- 展开/Tab 态（composable） ---
 function getInitialActiveTab(item: WorkflowLogItem): string {
@@ -622,9 +658,10 @@ function handleCopyRunSummary() {
 	copyToClipboard(buildSummaryText(), t('执行摘要已复制'), t('复制失败'));
 }
 
-function getStepIndex(item: WorkflowLogItem, fallbackIndex: number): number {
+function getStepIndex(item: WorkflowLogItem): number {
+	// 步骤序号取全量列表中的真实位置（筛选视图下不跳号）
 	const realIndex = props.items.indexOf(item);
-	return realIndex !== -1 ? realIndex + 1 : fallbackIndex + 1;
+	return realIndex !== -1 ? realIndex + 1 : 0;
 }
 
 function copyNodeId(nodeId: string) {

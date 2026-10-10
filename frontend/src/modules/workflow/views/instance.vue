@@ -124,10 +124,12 @@
 		:title="$t('工作流步骤执行日志')"
 		:run-type="viewingRunType"
 		:cancellable="['pending', 'running', 'paused'].includes(viewingStatus)"
+		:retryable="viewingStatus === 'failed'"
 		size="850px"
 		time-format="YYYY-MM-DD HH:mm:ss"
 		:empty-text="$t('暂无节点执行步骤记录')"
 		@stop="cancelViewingInstance"
+		@retry="retryViewingInstance"
 		@expand-all="expandAllLogs"
 		@collapse-all="collapseAllLogs"
 	/>
@@ -247,6 +249,8 @@ const logDrawer = reactive({
 const viewingRunType = ref('production');
 const viewingStatus = ref('');
 const viewingInstanceId = ref<number | undefined>(undefined);
+// 查看中实例的定义 ID（log-drawer 头部「重新发起运行」用，WFU-M25）
+const viewingDefinitionId = ref<number | undefined>(undefined);
 
 // 产物抽屉状态
 const artifactDrawer = reactive({
@@ -404,6 +408,11 @@ async function onDefinitionChange(val: number) {
 	}
 }
 
+// 发起生产实例（submitStartInstance 与断点重试共用，收敛 (service as any) 单点）
+async function startInstance(definitionId: number, inputs: object) {
+	await (service as any).workflow.instance.start({ definitionId, inputs });
+}
+
 async function submitStartInstance() {
 	if (!startDialog.form.definitionId) {
 		ElMessage.warning(t('请选择要运行的工作流！'));
@@ -419,10 +428,7 @@ async function submitStartInstance() {
 
 	startDialog.loading = true;
 	try {
-		await (service as any).workflow.instance.start({
-			definitionId: startDialog.form.definitionId,
-			inputs
-		});
+		await startInstance(startDialog.form.definitionId, inputs);
 		ElMessage.success(t('工作流实例启动成功，已加入后台异步执行队列'));
 		startDialog.visible = false;
 		Crud.value?.refresh();
@@ -479,6 +485,7 @@ async function viewExecutionLogs(row: WorkflowInstance) {
 	viewingRunType.value = row.runType || 'production';
 	viewingStatus.value = row.status;
 	viewingInstanceId.value = row.id;
+	viewingDefinitionId.value = row.definitionId;
 	logDrawer.visible = true;
 	logDrawer.loading = true;
 	logDrawer.items = [];
@@ -492,6 +499,20 @@ async function viewExecutionLogs(row: WorkflowInstance) {
 		ElMessage.error(t('获取执行日志失败: ') + (err.message || err));
 	} finally {
 		logDrawer.loading = false;
+	}
+}
+
+// 重新发起当前查看实例的运行（log-drawer 头部重试按钮，失败终态显示——WFU-M25）
+async function retryViewingInstance() {
+	if (!viewingDefinitionId.value) return;
+	try {
+		await startInstance(viewingDefinitionId.value, {});
+		ElMessage.success(t('工作流实例启动成功，已加入后台异步执行队列'));
+		logDrawer.visible = false;
+		Crud.value?.refresh();
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		ElMessage.error(t('启动失败: ') + message);
 	}
 }
 
