@@ -24,7 +24,7 @@
 	</node-config-section>
 
 	<node-config-section :title="$t('用户提示词')">
-		<el-form-item required style="margin-bottom: 0">
+		<el-form-item :label="$t('提示词内容')" required style="margin-bottom: 0">
 			<cl-editor-markdown
 				v-model="config.promptTemplate"
 				:height="220"
@@ -122,7 +122,6 @@
 
 		<el-form-item
 			:label="$t('输出变量写入')"
-			required
 			:style="{ marginTop: config.outputFormat === 'json' ? '16px' : '0' }"
 		>
 			<el-input v-model="config.outputVariable" placeholder="默认: output" />

@@ -19,7 +19,7 @@
 	</node-config-section>
 
 	<node-config-section :title="$t('提示词')">
-		<el-form-item required style="margin-bottom: 0">
+		<el-form-item :label="$t('提示词内容')" required style="margin-bottom: 0">
 			<cl-editor-markdown
 				v-model="config.promptTemplate"
 				:height="220"
@@ -85,7 +85,7 @@
 	</node-config-section>
 
 	<node-config-section :title="$t('输出')">
-		<el-form-item :label="$t('图片 URL 写入变量')" required style="margin-bottom: 0">
+		<el-form-item :label="$t('图片 URL 写入变量')" style="margin-bottom: 0">
 			<el-input v-model="config.outputVariable" placeholder="默认: image_url" />
 		</el-form-item>
 	</node-config-section>

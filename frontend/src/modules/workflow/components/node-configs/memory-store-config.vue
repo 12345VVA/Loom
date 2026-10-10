@@ -1,7 +1,7 @@
 <template>
 	<div class="memory-store-config">
 		<node-config-section :title="$t('记忆内容')">
-			<el-form-item required style="margin-bottom: 0">
+			<el-form-item :label="$t('内容模板')" required style="margin-bottom: 0">
 				<cl-editor-markdown
 					v-model="config.contentTemplate"
 					:height="160"

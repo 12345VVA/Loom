@@ -6,25 +6,44 @@ function node(type: string, config: Record<string, any> = {}) {
 	return { type, data: { config } };
 }
 
+/**
+ * F3（UI/UX 审查 2026-10-10）起必填口径单一来源：getMissingConfigFields 从
+ * node-manifest 的 configFields（后端 NODE_CONFIG_SCHEMA 导出）派生。
+ * 本组测试锚定前端派生行为与后端权威的一致性——标签/顺序即 manifest 下发值。
+ */
 describe('workflow getMissingConfigFields', () => {
 	it('returns [] for node types without required business fields', () => {
 		expect(getMissingConfigFields(node('start'))).toEqual([]);
 		expect(getMissingConfigFields(node('end'))).toEqual([]);
-		expect(getMissingConfigFields(node('loop_controller'))).toEqual([]);
+		expect(getMissingConfigFields(node('memory_recall'))).toEqual([]);
+		// intent_classifier 无静态必填（modelProfileCode 是「intents 非空才必填」
+		// 的条件语义，后端 step6 权威；空 intents 直落 default 合法）
+		expect(getMissingConfigFields(node('intent_classifier'))).toEqual([]);
 		// 防御：异常/空入参不抛错
 		expect(getMissingConfigFields({ type: 'unknown' })).toEqual([]);
 		expect(getMissingConfigFields({} as any)).toEqual([]);
 	});
 
-	it('lists every missing field for llm / image_generator', () => {
-		expect(getMissingConfigFields(node('llm'))).toEqual(['AI 模型', '提示词模板']);
+	it('lists every missing field for llm / image_generator（manifest label 与顺序）', () => {
+		expect(getMissingConfigFields(node('llm'))).toEqual(['提示词模板', 'AI 模型']);
 		expect(getMissingConfigFields(node('llm', { modelProfileCode: 'gpt' }))).toEqual([
 			'提示词模板'
 		]);
 		expect(
 			getMissingConfigFields(node('llm', { modelProfileCode: 'gpt', promptTemplate: 'hi' }))
 		).toEqual([]);
-		expect(getMissingConfigFields(node('image_generator'))).toEqual(['AI 模型', '提示词模板']);
+		expect(getMissingConfigFields(node('image_generator'))).toEqual(['提示词模板', 'AI 模型']);
+	});
+
+	it('loop/batch 列表变量必填（F3 补齐前后端漂移的缺口）', () => {
+		expect(getMissingConfigFields(node('loop_controller'))).toEqual(['循环列表变量']);
+		expect(getMissingConfigFields(node('loop_controller', { listVariable: 'items' }))).toEqual(
+			[]
+		);
+		expect(getMissingConfigFields(node('batch_processor'))).toEqual(['批处理列表变量']);
+		expect(
+			getMissingConfigFields(node('batch_processor', { batchListVariable: 'rows' }))
+		).toEqual([]);
 	});
 
 	it('detects single-field requirements', () => {
@@ -38,22 +57,20 @@ describe('workflow getMissingConfigFields', () => {
 		expect(
 			getMissingConfigFields(node('variable_assignment', { assignments: [{ a: 1 }] }))
 		).toEqual([]);
+		expect(getMissingConfigFields(node('memory_store'))).toEqual(['记忆内容模板']);
+		expect(getMissingConfigFields(node('memory_store', { contentTemplate: 'x' }))).toEqual([]);
 	});
 
-	it('lists both missing fields for switch', () => {
-		expect(getMissingConfigFields(node('switch'))).toEqual(['判断变量', '分支配置']);
-		expect(getMissingConfigFields(node('switch', { variable: 'x' }))).toEqual(['分支配置']);
+	it('lists both missing fields for switch（后端 label：分支变量/分支列表）', () => {
+		expect(getMissingConfigFields(node('switch'))).toEqual(['分支变量', '分支列表']);
+		expect(getMissingConfigFields(node('switch', { variable: 'x' }))).toEqual(['分支列表']);
 		expect(getMissingConfigFields(node('switch', { variable: 'x', cases: [{ id: 'c1' }] }))).toEqual(
 			[]
 		);
 	});
 
-	it('lists three missing fields for variable_transform', () => {
-		expect(getMissingConfigFields(node('variable_transform'))).toEqual([
-			'输入变量',
-			'转换类型',
-			'输出变量'
-		]);
+	it('variable_transform 仅输入变量/转换类型必填（outputVariable 有默认名不报）', () => {
+		expect(getMissingConfigFields(node('variable_transform'))).toEqual(['输入变量', '转换类型']);
 		expect(
 			getMissingConfigFields(
 				node('variable_transform', {
@@ -79,7 +96,7 @@ describe('workflow getMissingConfigFields', () => {
 		).toEqual([]);
 		expect(
 			isRequiredConfigMissing(
-				node('variable_transform', { inputVariable: 'a', transformType: 'upper', outputVariable: 'b' })
+				node('variable_transform', { inputVariable: 'a', transformType: 'upper' })
 			)
 		).toBe(false);
 		// 双键混布：任一侧有值即视为已配置
@@ -94,11 +111,13 @@ describe('workflow getMissingConfigFields', () => {
 		).toEqual([]);
 	});
 
-	it('lists missing fields for intent_classifier', () => {
-		expect(getMissingConfigFields(node('intent_classifier'))).toEqual(['AI 模型', '意图分支']);
-		expect(
-			getMissingConfigFields(node('intent_classifier', { intents: [{ id: 'i1' }] }))
-		).toEqual(['AI 模型']);
+	it('blank 判定对齐后端 _is_blank（空白串/空数组视为缺失）', () => {
+		expect(getMissingConfigFields(node('condition', { expression: '   ' }))).toEqual([
+			'条件表达式'
+		]);
+		expect(getMissingConfigFields(node('switch', { variable: 'x', cases: [] }))).toEqual([
+			'分支列表'
+		]);
 	});
 });
 

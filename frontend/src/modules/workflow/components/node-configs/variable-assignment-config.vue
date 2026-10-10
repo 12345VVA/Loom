@@ -39,7 +39,7 @@
 		</div>
 		<div v-if="!config.assignments?.length" class="empty-hint" @click="addAssignment">
 			<el-icon class="empty-icon"><plus /></el-icon>
-			<span>{{ $t('暂无赋值变量，点击添加') }}</span>
+			<span>{{ $t('至少配置一条赋值规则，点击添加') }}</span>
 		</div>
 	</node-config-section>
 </template>

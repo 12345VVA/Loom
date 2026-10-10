@@ -1,4 +1,5 @@
 import { ElMessage } from 'element-plus';
+import { NODE_MANIFEST } from './generated/node-manifest';
 
 /**
  * 格式化 JSON 字符串为美观的缩进形式
@@ -108,63 +109,47 @@ export function findInvalidNodeInput(nodes: any[]): { label: string; error: stri
 }
 
 /**
+ * camelCase → snake_case（存量图兜底取值用，与后端 get_config_value 双风格对应）
+ */
+function _camelToSnake(key: string): string {
+	return key.replace(/([A-Z])/g, '_$1').toLowerCase();
+}
+
+/**
+ * 必填判定（对齐后端 node_schema._is_blank）：null/undefined/空白字符串/
+ * 空数组/空对象 视为缺失。
+ */
+function _isBlank(val: unknown): boolean {
+	if (val === null || val === undefined) return true;
+	if (typeof val === 'string') return !val.trim();
+	if (Array.isArray(val) || typeof val === 'object') return Object.keys(val as object).length === 0;
+	return false;
+}
+
+/**
  * 节点配置必填字段缺失检测：返回缺失字段的中文标签列表（空数组 = 配置完整）。
  * 与 editor.vue 的 hasIncompleteNodes 判定同源；供配置面板做字段级内联提示。
- * 注：默认分支（start/end/loop_controller/batch_processor 等）无必填业务字段，返回 []。
+ *
+ * F3（UI/UX 审查 2026-10-10）起必填口径单一来源化：从 node-manifest 的
+ * configFields（后端 NODE_CONFIG_SCHEMA 经 dump_node_manifest.py 导出）派生，
+ * 消除前端手工 switch / 面板星号 / 后端 schema 三处漂移。snake_case 仅存量图
+ * 兜底读取（同 resolveOutputVar 口径）。intent_classifier 无静态必填
+ * （modelProfileCode 是「intents 非空才必填」的条件语义，由后端 step6 权威校验）。
  */
 export function getMissingConfigFields(node: {
 	type?: string;
 	data?: { config?: Record<string, any> } | null;
 }): string[] {
+	const fields = NODE_MANIFEST.find(n => n.type === node?.type)?.configFields ?? [];
+	if (!fields.length) return [];
 	const cfg = node?.data?.config || {};
-	switch (node?.type) {
-		case 'llm': {
-			const miss: string[] = [];
-			if (!cfg.modelProfileCode) miss.push('AI 模型');
-			if (!cfg.promptTemplate) miss.push('提示词模板');
-			return miss;
-		}
-		case 'condition':
-			return !cfg.expression ? ['条件表达式'] : [];
-		case 'switch': {
-			const miss: string[] = [];
-			if (!cfg.variable) miss.push('判断变量');
-			if (!cfg.cases?.length) miss.push('分支配置');
-			return miss;
-		}
-		case 'image_generator': {
-			const miss: string[] = [];
-			if (!cfg.modelProfileCode) miss.push('AI 模型');
-			if (!cfg.promptTemplate) miss.push('提示词模板');
-			return miss;
-		}
-		case 'tool_executor':
-			return !cfg.toolCode ? ['工具'] : [];
-		case 'human_input':
-			return !cfg.message ? ['提示消息'] : [];
-		case 'intent_classifier': {
-			const miss: string[] = [];
-			if (!cfg.modelProfileCode) miss.push('AI 模型');
-			if (!cfg.intents?.length) miss.push('意图分支');
-			return miss;
-		}
-		case 'variable_assignment':
-			return !cfg.assignments?.length ? ['赋值规则'] : [];
-		case 'variable_transform': {
-			const miss: string[] = [];
-			// 三期B7（WF-P2-9）起写入侧统一驼峰；snake 仅存量图兜底读取，
-			// 口径与 resolveOutputVar / 配置面板迁移一致
-			if (!cfg.inputVariable && !cfg.input_variable) miss.push('输入变量');
-			if (!cfg.transformType && !cfg.transform_type) miss.push('转换类型');
-			if (!resolveOutputVar(cfg)) miss.push('输出变量');
-			return miss;
-		}
-		case 'memory_store':
-			// 与后端 NODE_CONFIG_SCHEMA["memory_store"] 必填口径一致（node_schema.py）
-			return !cfg.contentTemplate ? ['记忆内容模板'] : [];
-		default:
-			return [];
+	const miss: string[] = [];
+	for (const field of fields) {
+		if (!field.required) continue;
+		const val = cfg[field.key] ?? cfg[_camelToSnake(field.key)];
+		if (_isBlank(val)) miss.push(field.label);
 	}
+	return miss;
 }
 
 /**

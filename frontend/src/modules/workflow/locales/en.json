@@ -457,5 +457,8 @@
 	"已开启记忆写入": "Memory writing enabled",
 	"已关闭记忆写入": "Memory writing disabled",
 	"更新失败：": "Update failed: ",
-	"将基于 {version} 生成新草稿（线上版本不变），需在编辑器确认后发布。": "A new draft will be created based on {version} (the live version stays unchanged) and must be confirmed in the editor before publishing."
+	"将基于 {version} 生成新草稿（线上版本不变），需在编辑器确认后发布。": "A new draft will be created based on {version} (the live version stays unchanged) and must be confirmed in the editor before publishing.",
+	"提示词内容": "Prompt Content",
+	"内容模板": "Content Template",
+	"至少配置一条赋值规则，点击添加": "At least one assignment rule is required — click to add"
 }

@@ -6,7 +6,7 @@
 				支持输入变量路径（如 variables.status 或 status）来进行值匹配。
 			</div>
 		</el-form-item>
-		<el-form-item :label="$t('Case 分支列表')">
+		<el-form-item :label="$t('Case 分支列表')" required>
 			<div v-for="(item, index) in config.cases || []" :key="index" class="case-item">
 				<div class="case-row">
 					<el-input
