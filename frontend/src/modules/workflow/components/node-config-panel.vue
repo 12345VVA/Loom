@@ -151,7 +151,8 @@ import {
 	UPSTREAM_OUTPUT_VARS_KEY,
 	VARIABLE_SYNTAX_HINTS_KEY,
 	SECTION_COLLAPSE_STATE_KEY,
-	CONFIG_PANEL_NODE_ID_KEY
+	CONFIG_PANEL_NODE_ID_KEY,
+	PUSH_SNAPSHOT_KEY
 } from './constants';
 import type { ElScrollbar } from 'element-plus';
 import { getNodeMeta } from '../utils/node-type-registry';
@@ -225,6 +226,41 @@ const nodeIcon = computed(() => getNodeMeta(props.selectedNode?.type).icon);
 const missingFields = computed(() => getMissingConfigFields(props.selectedNode));
 
 const openNodeTestDialog = inject(OPEN_NODE_TEST_DIALOG_KEY);
+
+// 面板会话粒度的撤销快照（WFU-M1）：打开时记录 config 基线，节点切换/面板卸载前
+// 对比有编辑才补拍——Ctrl+Z 可回滚本次面板内的配置修改（此前仅拓扑操作入栈）。
+// 键入粒度不入栈（栈深 50 会被表单打字冲爆）；editedConfigJson 持续追踪，规避
+// 卸载回调里 props.selectedNode 已不可靠的时序竞态
+const pushSnapshot = inject(PUSH_SNAPSHOT_KEY, null);
+let configBaseline = '';
+let editedConfigJson = '';
+
+function flushPanelSnapshot() {
+	if (!pushSnapshot) return;
+	if (configBaseline && editedConfigJson && editedConfigJson !== configBaseline) {
+		pushSnapshot();
+	}
+	configBaseline = '';
+}
+
+watch(
+	() => props.selectedNode?.id,
+	newId => {
+		flushPanelSnapshot();
+		if (newId) {
+			configBaseline = JSON.stringify(props.selectedNode?.data?.config ?? {});
+		}
+	},
+	{ immediate: true }
+);
+watch(
+	() => JSON.stringify(props.selectedNode?.data?.config ?? {}),
+	json => {
+		editedConfigJson = json;
+	},
+	{ immediate: true }
+);
+onBeforeUnmount(flushPanelSnapshot);
 
 const canTestNode = computed(() => {
 	return props.selectedNode?.type && !UNTESTABLE_NODE_TYPES.includes(props.selectedNode.type);

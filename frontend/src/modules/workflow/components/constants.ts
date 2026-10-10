@@ -19,3 +19,6 @@ export const SECTION_COLLAPSE_STATE_KEY = 'sectionCollapseState' as unknown as I
 	Ref<Map<string, boolean>>
 >;
 export const CONFIG_PANEL_NODE_ID_KEY = 'configPanelNodeId' as unknown as InjectionKey<Ref<string>>;
+// 撤销快照记录（editor.vue 的 pushSnapshot 直通）：配置面板在「节点切换/面板关闭」
+// 时对比打开时的 config 快照，有编辑才补拍——面板粒度入栈，键入粒度会冲爆栈深 50
+export const PUSH_SNAPSHOT_KEY = 'pushConfigSnapshot' as unknown as InjectionKey<() => void>;

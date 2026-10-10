@@ -65,8 +65,10 @@ export function useCanvasDrop(options: {
 		document
 			.querySelectorAll('.loop-body-group-node.is-drag-over')
 			.forEach(el => el.classList.remove('is-drag-over'));
-		const type = event.dataTransfer?.getData('application/vueflow');
-		if (!type || type === 'loop_body_group') return;
+		// HTML 拖放规范：dragover 阶段数据存储处于 protected 模式，getData() 恒返回
+		// 空串——只能按 types 探测是否为节点拖入（真实类型在 drop 阶段才可读）
+		const types = event.dataTransfer?.types;
+		if (!types || !types.includes('application/vueflow')) return;
 
 		const canvasEl = document.querySelector('.canvas-wrapper');
 		if (!canvasEl) return;

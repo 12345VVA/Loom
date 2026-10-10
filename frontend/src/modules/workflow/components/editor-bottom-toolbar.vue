@@ -6,6 +6,16 @@
 		</div>
 
 		<div class="toolbar-right">
+			<!-- 撤销/重做（F4-9：此前无 UI 入口，仅 Ctrl+Z/Shift+Z 键盘可达） -->
+			<el-button-group class="undo-redo-group">
+				<el-tooltip :content="$t('撤销 (Ctrl+Z)')" placement="top">
+					<el-button plain :icon="RefreshLeft" :disabled="!canUndo" @click="$emit('undo')" />
+				</el-tooltip>
+				<el-tooltip :content="$t('重做 (Ctrl+Shift+Z / Ctrl+Y)')" placement="top">
+					<el-button plain :icon="RefreshRight" :disabled="!canRedo" @click="$emit('redo')" />
+				</el-tooltip>
+			</el-button-group>
+
 			<template v-if="testLogDrawerInstanceId">
 				<el-button plain type="info" @click="$emit('clear-test-status')">
 					<el-icon><brush /></el-icon>{{ $t('清除') }}
@@ -54,7 +64,9 @@ import {
 	Brush,
 	Document,
 	FolderChecked,
-	Upload
+	Upload,
+	RefreshLeft,
+	RefreshRight
 } from '@element-plus/icons-vue';
 
 const props = defineProps<{
@@ -65,6 +77,8 @@ const props = defineProps<{
 	saving: boolean;
 	panelOpen?: boolean;
 	panelWidth?: number;
+	canUndo?: boolean;
+	canRedo?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -88,7 +102,9 @@ defineEmits([
 	'clear-test-status',
 	'reopen-test-log-drawer',
 	'save-workflow',
-	'publish-workflow'
+	'publish-workflow',
+	'undo',
+	'redo'
 ]);
 </script>
 

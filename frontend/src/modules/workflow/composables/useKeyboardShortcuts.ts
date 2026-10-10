@@ -11,7 +11,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router';
 export const SHORTCUT_DEFS: readonly { descKey: string; keys: readonly string[] }[] = [
 	{ descKey: '保存工作流', keys: ['mod', 'S'] },
 	{ descKey: '撤销操作', keys: ['mod', 'Z'] },
-	{ descKey: '重做操作', keys: ['mod', 'Shift', 'Z'] },
+	{ descKey: '重做操作', keys: ['mod', 'Shift+Z / Y'] },
 	{ descKey: '试运行工作流（草稿）', keys: ['mod', 'Enter'] },
 	{ descKey: '测试选中节点', keys: ['mod', 'Shift', 'T'] },
 	{ descKey: '复制选中节点', keys: ['mod', 'D'] },
@@ -104,6 +104,12 @@ export function useKeyboardShortcuts(deps: {
 			} else {
 				if (undo()) ElMessage.info(t('已撤销'));
 			}
+		}
+
+		// Ctrl/Cmd+Y：重做的通用别名（与 Ctrl+Shift+Z 等价）
+		if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'y') {
+			event.preventDefault();
+			if (redo()) ElMessage.info(t('已重做'));
 		}
 
 		// Ctrl/Cmd+Enter：整图试运行（草稿）

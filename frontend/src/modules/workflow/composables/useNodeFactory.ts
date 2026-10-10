@@ -29,6 +29,13 @@ export function useNodeFactory(
 		return t(meta.labelKey || '未知节点');
 	}
 
+	// 判断绝对坐标是否已被画布节点占用（重叠避让：handleAddNode 与 duplicateNode 共用）
+	function isPositionOccupied(x: number, y: number): boolean {
+		return elements.value.some(
+			(el: any) => !('source' in el) && el.position && el.position.x === x && el.position.y === y
+		);
+	}
+
 	// 为新增节点生成不冲突的标签：同类型已有节点时自动追加递增序号
 	function getNextLabel(type: string): string {
 		const baseName = getTypeName(type);
@@ -96,11 +103,20 @@ export function useNodeFactory(
 		const label = getNextLabel(type);
 		const config = buildDefaultConfig(type, label, getUniqueOutputVar);
 
+		// 占位避让（WFU-M9）：点击添加连续投影画布中心，第二个节点会与第一个像素级
+		// 重合（看起来像"没添加上"）——与已有节点重叠时 +40 步进（同 duplicateNode 模式）
+		let dropX = x;
+		let dropY = y;
+		while (isPositionOccupied(dropX, dropY)) {
+			dropX += 40;
+			dropY += 40;
+		}
+
 		const newNode: any = {
 			id,
 			type,
 			label,
-			position: { x, y },
+			position: { x: dropX, y: dropY },
 			data: { config }
 		};
 
@@ -193,11 +209,7 @@ export function useNodeFactory(
 		}
 		let newX = baseX + 40;
 		let newY = baseY + 40;
-		while (
-			elements.value.some(
-				(el: any) => el.position && el.position.x === newX && el.position.y === newY
-			)
-		) {
+		while (isPositionOccupied(newX, newY)) {
 			newX += 40;
 			newY += 40;
 		}

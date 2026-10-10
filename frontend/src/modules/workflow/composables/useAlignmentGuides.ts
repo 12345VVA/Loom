@@ -11,7 +11,9 @@ interface GuideLine {
  */
 export function useAlignmentGuides() {
 	const guides = ref<GuideLine[]>([]);
-	const ALIGN_THRESHOLD = 5;
+	// 阈值须大于 snap-grid 步长的一半：画布 20px 网格吸附下坐标差只能为
+	// 0/20/40…，阈值 ≤10 时仅完全重合才触发，辅助线失去「接近对齐」的引导价值
+	const ALIGN_THRESHOLD = 10;
 
 	/**
 	 * 在节点拖动过程中计算对齐辅助线

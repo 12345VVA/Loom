@@ -12,6 +12,19 @@
 		:style="{ left: x + 'px', top: y + 'px' }"
 		@keydown="onKeydown"
 	>
+		<!-- 连线模式（F4-8）：删边此前唯一途径是点选+Delete，且无选中反馈 -->
+		<template v-if="mode === 'edge'">
+			<div
+				class="context-menu-item context-menu-item--danger"
+				role="menuitem"
+				tabindex="-1"
+				@click="emit('delete')"
+			>
+				<el-icon><delete /></el-icon>
+				<span>{{ t('删除连线') }}</span>
+			</div>
+		</template>
+		<template v-else>
 		<div class="context-menu-item" role="menuitem" tabindex="-1" @click="emit('edit')">
 			<el-icon><edit /></el-icon>
 			<span>{{ t('配置节点') }}</span>
@@ -63,6 +76,7 @@
 			<el-icon><delete /></el-icon>
 			<span>{{ t('删除节点') }}</span>
 		</div>
+		</template>
 	</div>
 </template>
 
@@ -78,13 +92,18 @@ import {
 	Grid
 } from '@element-plus/icons-vue';
 
-const props = defineProps<{
-	visible: boolean;
-	x: number;
-	y: number;
-	canTest: boolean;
-	canDistribute: boolean;
-}>();
+const props = withDefaults(
+	defineProps<{
+		visible: boolean;
+		x: number;
+		y: number;
+		canTest: boolean;
+		canDistribute: boolean;
+		/** edge 模式只显示删除连线（菜单复用同一组件与 a11y 逻辑） */
+		mode?: 'node' | 'edge';
+	}>(),
+	{ mode: 'node' }
+);
 
 const emit = defineEmits<{
 	(e: 'edit'): void;

@@ -7,6 +7,8 @@ export interface ContextMenuState {
 	x: number;
 	y: number;
 	nodeId: string;
+	/** 连线右键目标（F4-8：删边此前唯一途径是点选+Delete，且无选中反馈） */
+	edgeId: string;
 }
 
 /**
@@ -26,7 +28,8 @@ export function useContextMenu(elements: Ref<any[]>, getSelectedNodes: ComputedR
 		visible: false,
 		x: 0,
 		y: 0,
-		nodeId: ''
+		nodeId: '',
+		edgeId: ''
 	});
 
 	// 当前右键节点是否可单独测试（排除不支持测试的节点类型）
@@ -59,13 +62,32 @@ export function useContextMenu(elements: Ref<any[]>, getSelectedNodes: ComputedR
 		contextMenu.x = pos.x;
 		contextMenu.y = pos.y;
 		contextMenu.nodeId = nodeId;
+		contextMenu.edgeId = '';
 	}
 
-	/** 关闭菜单并清空目标 nodeId */
+	/** 在 (x, y) 处对连线打开菜单（F4-8：连线右键删除入口） */
+	function openEdgeContextMenu(edgeId: string, x: number, y: number) {
+		const pos = clampMenuPosition(x, y);
+		contextMenu.visible = true;
+		contextMenu.x = pos.x;
+		contextMenu.y = pos.y;
+		contextMenu.nodeId = '';
+		contextMenu.edgeId = edgeId;
+	}
+
+	/** 关闭菜单并清空目标 */
 	function closeContextMenu() {
 		contextMenu.visible = false;
 		contextMenu.nodeId = '';
+		contextMenu.edgeId = '';
 	}
 
-	return { contextMenu, canTestContextNode, canDistribute, openContextMenu, closeContextMenu };
+	return {
+		contextMenu,
+		canTestContextNode,
+		canDistribute,
+		openContextMenu,
+		openEdgeContextMenu,
+		closeContextMenu
+	};
 }

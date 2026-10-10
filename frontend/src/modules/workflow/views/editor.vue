@@ -33,33 +33,6 @@
 					<background pattern-color="#e0e0e0" :gap="16" />
 					<controls position="bottom-right" />
 					<mini-map v-if="miniMapVisible" />
-					<!-- 对齐辅助线 -->
-					<svg
-						v-if="guides.length"
-						class="alignment-guides"
-						style="
-							position: absolute;
-							top: 0;
-							left: 0;
-							width: 100%;
-							height: 100%;
-							pointer-events: none;
-							z-index: 4;
-						"
-					>
-						<line
-							v-for="(g, i) in guides"
-							:key="i"
-							:x1="g.type === 'vertical' ? g.position : 0"
-							:y1="g.type === 'horizontal' ? g.position : 0"
-							:x2="g.type === 'vertical' ? g.position : 99999"
-							:y2="g.type === 'horizontal' ? g.position : 99999"
-							stroke="var(--el-color-primary)"
-							stroke-width="1"
-							stroke-dasharray="4 3"
-							opacity="0.5"
-						/>
-					</svg>
 					<editor-bottom-toolbar
 						:has-incomplete-nodes="hasIncompleteNodes"
 						:workflow-name="workflowName"
@@ -68,13 +41,47 @@
 						:saving="saving"
 						:panel-open="!!selectedNode"
 						:panel-width="configPanelWidth"
+						:can-undo="canUndo"
+						:can-redo="canRedo"
 						@open-test-dialog="openTestDialog"
 						@clear-test-status="clearTestStatus"
 						@reopen-test-log-drawer="reopenTestLogDrawer"
 						@save-workflow="saveWorkflow"
 						@publish-workflow="publishWorkflow"
+						@undo="undo()"
+						@redo="redo()"
 					/>
 				</vue-flow>
+
+				<!-- 对齐辅助线：必须在 vue-flow 的变换容器（transformationpane）之外平铺，
+				     坐标由 guideLines 经 viewport（zoom + 平移）换算成屏幕坐标——
+				     放在默认 slot 内会随 zoom≠1 整体偏移，辅助线错位误导摆位（WFU-H6） -->
+				<svg
+					v-if="guides.length"
+					class="alignment-guides"
+					style="
+						position: absolute;
+						top: 0;
+						left: 0;
+						width: 100%;
+						height: 100%;
+						pointer-events: none;
+						z-index: 4;
+					"
+				>
+					<line
+						v-for="(g, i) in guideLines"
+						:key="i"
+						:x1="g.type === 'vertical' ? g.pos : 0"
+						:y1="g.type === 'horizontal' ? g.pos : 0"
+						:x2="g.type === 'vertical' ? g.pos : '100%'"
+						:y2="g.type === 'horizontal' ? g.pos : '100%'"
+						stroke="var(--el-color-primary)"
+						stroke-width="1"
+						stroke-dasharray="4 3"
+						opacity="0.5"
+					/>
+				</svg>
 
 				<!-- 左上角操作与构建中心（整合节点添加、工程菜单、MiniMap 视图切换） -->
 				<editor-top-left-hub
@@ -92,6 +99,7 @@
 					:visible="contextMenu.visible"
 					:x="contextMenu.x"
 					:y="contextMenu.y"
+					:mode="contextMenu.edgeId ? 'edge' : 'node'"
 					:can-test="canTestContextNode"
 					:can-distribute="canDistribute"
 					@close="closeContextMenu"
@@ -130,14 +138,14 @@
 					/>
 				</transition>
 
-				<!-- 首次使用引导 -->
+				<!-- 首次使用引导：箭头指向左上角的节点添加入口（hub），不是底部工具栏 -->
 				<transition name="empty-hint-fade">
 					<div v-if="!selectedNode && elements.length <= 2" class="canvas-empty-hint">
 						<el-icon class="empty-hint-icon"><info-filled /></el-icon>
 						<span class="empty-hint-text">{{ emptyHintTitle }}</span>
 						<span class="empty-hint-sub">{{ emptyHintSub }}</span>
 						<div class="empty-hint-arrow">
-							<el-icon class="bounce-arrow"><arrow-down /></el-icon>
+							<el-icon class="bounce-arrow"><top-left /></el-icon>
 						</div>
 					</div>
 				</transition>
@@ -265,7 +273,7 @@ import {
 } from 'vue';
 import { useRoute } from 'vue-router';
 import { useCool } from '/@/cool';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 
 // 导入 Vue Flow
@@ -276,7 +284,7 @@ import { MiniMap } from '@vue-flow/minimap';
 import '@vue-flow/minimap/dist/style.css';
 
 // 导入 Element Plus 图标
-import { ArrowDown, InfoFilled } from '@element-plus/icons-vue';
+import { TopLeft, InfoFilled } from '@element-plus/icons-vue';
 
 // Vue Flow 样式文件
 import '@vue-flow/core/dist/style.css';
@@ -287,7 +295,7 @@ import { formatJson, isRequiredConfigMissing } from '../utils';
 import type { FlowNode, FlowEdge } from '../types/editor';
 import { nodeTypes, edgeTypes } from '../utils/node-types';
 import LogDrawer from '../components/log-drawer.vue';
-import { OPEN_NODE_TEST_DIALOG_KEY } from '../components/constants';
+import { OPEN_NODE_TEST_DIALOG_KEY, PUSH_SNAPSHOT_KEY } from '../components/constants';
 
 import { useWorkflowTest } from '../composables/useWorkflowTest';
 import { useAlignmentGuides } from '../composables/useAlignmentGuides';
@@ -314,9 +322,18 @@ const { service } = useCool();
 const { t } = useI18n();
 const route = useRoute();
 
-const { project, getSelectedNodes } = useVueFlow();
+const { project, getSelectedNodes, viewport } = useVueFlow();
 
 const { guides, computeGuides, clearGuides } = useAlignmentGuides();
+
+// 对齐辅助线屏幕坐标：flow 坐标 × zoom + 视口平移（辅助线 SVG 平铺在变换容器外）
+const guideLines = computed(() => {
+	const vp = viewport.value;
+	return guides.value.map(g => ({
+		type: g.type,
+		pos: g.type === 'vertical' ? g.position * vp.zoom + vp.x : g.position * vp.zoom + vp.y
+	}));
+});
 
 // 自定义节点/边组件注册表见 utils/node-types.ts
 
@@ -358,7 +375,7 @@ const elements = ref<(FlowNode | FlowEdge)[]>([]);
 let _persistSig = '';
 
 // 右键菜单状态与开/关（键盘 a11y 在 context-menu.vue 组件内）
-const { contextMenu, canTestContextNode, canDistribute, openContextMenu, closeContextMenu } =
+const { contextMenu, canTestContextNode, canDistribute, openContextMenu, openEdgeContextMenu, closeContextMenu } =
 	useContextMenu(elements, getSelectedNodes);
 
 const { canUndo, canRedo, pushSnapshot, undo, redo, init: initUndoRedo } = useUndoRedo(elements);
@@ -552,17 +569,17 @@ const variableSyntaxHints = computed(() => {
 	return hints;
 });
 
-// 空状态引导文案（根据当前节点数量动态调整）
+// 空状态引导文案（根据当前节点数量动态调整）——节点添加入口在左上角 hub（+ 按钮）
 const emptyHintTitle = computed(() => {
 	if (elements.value.length === 0) {
-		return t('从下方工具栏拖入节点开始构建工作流');
+		return t('点击左上角 + 按钮添加节点，开始构建工作流');
 	}
 	return t('点击节点以编辑配置');
 });
 // 空状态引导副标题（根据当前节点数量动态调整）
 const emptyHintSub = computed(() => {
 	if (elements.value.length === 0) {
-		return t('将节点拖拽到画布，拖拽连线构建工作流');
+		return t('从节点面板拖拽或点击添加，拖拽连线构建工作流');
 	}
 	return t('拖拽连线或添加 LLM 节点来处理用户请求');
 });
@@ -632,18 +649,53 @@ function removeNodes(nodeIds: string[], edgeIds: string[] = []): boolean {
 	return true;
 }
 
+// 级联删除预判（WFU-M8）：删除 loop_controller/batch_processor/loop_body_group 会
+// 连带删除其配对对象（controller ↔ group，子节点保留并移出到画布）——先确认再删
+async function confirmCascadeIfNeeded(nodeIds: string[]): Promise<boolean> {
+	const targets = elements.value.filter(
+		el => !('source' in el) && nodeIds.includes(el.id)
+	) as FlowNode[];
+	const cascades = targets.some(t => {
+		if (t.type === 'loop_controller' || t.type === 'batch_processor') {
+			return elements.value.some(
+				el =>
+					!('source' in el) &&
+					el.type === 'loop_body_group' &&
+					el.data?.config?.controllerNodeId === t.id
+			);
+		}
+		if (t.type === 'loop_body_group') {
+			return !!t.data?.config?.controllerNodeId;
+		}
+		return false;
+	});
+	if (!cascades) return true;
+	try {
+		await ElMessageBox.confirm(
+			t('将同时删除关联的循环体容器（容器内节点保留并移出到画布）。确认删除？'),
+			t('删除确认'),
+			{ type: 'warning', confirmButtonText: t('删除'), cancelButtonText: t('取消') }
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 // 画布当前选中的节点集合（Vue Flow 多选态挂在元素 selected 字段上，删除/复制共用）
 function getSelectedFlowNodes(): FlowNode[] {
 	return elements.value.filter(el => !('source' in el) && (el as any).selected) as FlowNode[];
 }
 
-// 删除画布上当前选中的节点与边（含关联 group 的级联清理）
-function deleteSelectedElements() {
+// 删除画布上当前选中的节点与边（含关联 group 的级联清理；级联时先确认）
+async function deleteSelectedElements() {
 	const nodesToRemove = getSelectedFlowNodes();
 	const edgesToRemove = elements.value.filter(el => 'source' in el && (el as any).selected);
+	if (!nodesToRemove.length && !edgesToRemove.length) return;
 
+	if (!(await confirmCascadeIfNeeded(nodesToRemove.map(n => n.id)))) return;
 	if (removeNodes(nodesToRemove.map(n => n.id), edgesToRemove.map(e => e.id))) {
-		ElMessage.success(t('已删除所选元素'));
+		ElMessage.success(t('已删除所选元素（可 Ctrl+Z 撤销）'));
 	}
 }
 
@@ -727,10 +779,15 @@ function onPaneContextMenu(event: any) {
 	closeContextMenu();
 }
 
-// 连线右键：阻止浏览器默认菜单并关闭已有右键菜单
+// 连线右键：打开删除连线菜单（F4-8——此前删边唯一途径是点选+Delete 且无选中反馈）
 function onEdgeContextMenu(event: any) {
 	(event?.event ?? event)?.preventDefault?.();
-	closeContextMenu();
+	const edge = event.edge;
+	if (!edge?.id) {
+		closeContextMenu();
+		return;
+	}
+	openEdgeContextMenu(edge.id, event.event?.clientX || 0, event.event?.clientY || 0);
 }
 
 // 右键菜单“配置节点”：选中目标节点并打开配置面板
@@ -743,6 +800,10 @@ function editContextNode() {
 
 // 向子组件（base-node、node-config-panel 等）提供单节点测试弹窗的打开方法
 provide(OPEN_NODE_TEST_DIALOG_KEY, openNodeTestDialog);
+
+// 撤销快照直通：配置面板按「面板会话粒度」补拍快照（面板内有编辑才拍），
+// 使 Ctrl+Z 可回滚配置编辑——此前仅拓扑操作入栈，面板修改无法撤销（WFU-M1）
+provide(PUSH_SNAPSHOT_KEY, pushSnapshot);
 
 // 单节点测试：右键菜单适配层（状态管理已迁移至 useNodeTest composable）
 async function testContextNode() {
@@ -760,18 +821,30 @@ function duplicateNode() {
 	closeContextMenu();
 }
 
-// 右键菜单“删除节点”：走统一删除入口
-function deleteContextNode() {
-	if (removeNodes([contextMenu.nodeId])) {
-		ElMessage.success(t('已删除节点'));
+// 右键菜单“删除”：节点模式走统一删除入口（级联时先确认），边模式直接删边
+async function deleteContextNode() {
+	if (contextMenu.edgeId) {
+		const edgeId = contextMenu.edgeId;
+		closeContextMenu();
+		if (removeNodes([], [edgeId])) {
+			ElMessage.success(t('已删除连线（可 Ctrl+Z 撤销）'));
+		}
+		return;
 	}
+	const nodeId = contextMenu.nodeId;
 	closeContextMenu();
+	if (!(await confirmCascadeIfNeeded([nodeId]))) return;
+	if (removeNodes([nodeId])) {
+		ElMessage.success(t('已删除节点（可 Ctrl+Z 撤销）'));
+	}
 }
 
 // 配置面板“删除”按钮：走统一删除入口（含撤销快照，修复此前配置面板删除无法 Ctrl+Z 撤销）
-function deleteSelectedNode() {
+async function deleteSelectedNode() {
 	if (!selectedNodeId.value) return;
-	removeNodes([selectedNodeId.value]);
+	const nodeId = selectedNodeId.value;
+	if (!(await confirmCascadeIfNeeded([nodeId]))) return;
+	removeNodes([nodeId]);
 }
 
 // saveWorkflow + 拓扑校验（validateGraph）已抽离至 composables/useSaveFlow.ts
@@ -863,8 +936,21 @@ function deleteSelectedNode() {
 		.bounce-arrow {
 			font-size: 20px;
 			color: var(--el-color-primary);
-			animation: wf-bounce-arrow 1.5s ease-in-out infinite;
+			// 指向左上角添加入口（hub）：覆盖共享 keyframes 的上下弹跳为左上方向
+			animation: wf-bounce-arrow-upleft 1.5s ease-in-out infinite;
 		}
+	}
+}
+
+// 引导箭头朝左上弹跳（指向 hub 添加按钮）
+@keyframes wf-bounce-arrow-upleft {
+	0%,
+	100% {
+		transform: translate(0, 0);
+	}
+	50% {
+		transform: translate(-6px, -6px);
+	}
 	}
 }
 .empty-hint-fade-enter-active,

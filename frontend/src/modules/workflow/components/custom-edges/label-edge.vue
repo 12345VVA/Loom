@@ -3,9 +3,9 @@
 		:d="path"
 		fill="none"
 		:stroke="edgeColor"
-		:stroke-width="style?.strokeWidth || 2"
+		:stroke-width="selected ? 3 : style?.strokeWidth || 2"
 		:stroke-dasharray="isConditional ? '6 3' : undefined"
-		class="edge-visible-path"
+		:class="['edge-visible-path', { 'is-edge-selected': selected }]"
 	/>
 	<g v-if="label" :transform="`translate(${labelX}, ${labelY})`" class="label-group">
 		<rect
@@ -146,6 +146,14 @@ const labelHalfWidth = computed(() => labelWidth.value / 2);
 		stroke-width 0.2s;
 }
 
+/* 选中反馈（WFU-M6）：此前 editor 的 :deep 选择器只匹配默认边的
+   .vue-flow__edge-path，自绘的 label 边选中无任何视觉标识，删除只能盲按 Delete */
+.is-edge-selected {
+	stroke: var(--el-color-warning);
+	filter: drop-shadow(0 0 4px currentColor);
+	animation: wf-label-edge-dash 0.6s linear infinite;
+}
+
 .label-group {
 	pointer-events: none;
 }
@@ -156,5 +164,11 @@ const labelHalfWidth = computed(() => labelWidth.value / 2);
 
 .edge-interaction {
 	cursor: pointer;
+}
+
+@keyframes wf-label-edge-dash {
+	to {
+		stroke-dashoffset: -9;
+	}
 }
 </style>
