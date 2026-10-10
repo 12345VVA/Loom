@@ -65,13 +65,17 @@ def validate_node_config(node_type: str, config: dict[str, Any], node_name: str)
 
 # 各节点类型的 config schema（仅声明需要校验的字段；未列出的节点/字段不校验）。
 # 必填判定依据执行器语义：缺失会导致静默空转或恒真/恒假等不可直觉行为。
+#
+# F3（UI/UX 审查 2026-10-10）：本表升级为前后端共同的必填口径单一来源——
+# 经 dump_node_manifest.py 导出 configFields 供前端 getMissingConfigFields 派生，
+# 消除「前端手工 switch / 面板星号 / 后端 schema」三处漂移（WFU-H10~H13）。
 NODE_CONFIG_SCHEMA: dict[str, tuple[FieldSpec, ...]] = {
     # 条件表达式缺失时编译期兜底 "True"（恒真），用户难以察觉分支永不生效——必填
     "condition": (FieldSpec("expression", label="条件表达式", required=True, types=(str,)),),
     # switch 无 variable/cases 时路由器恒走 default（或 END），静默吞掉分流语义——必填
     "switch": (
         FieldSpec("variable", label="分支变量", required=True, types=(str,)),
-        FieldSpec("cases", label="分支cases列表", required=True, types=(list,)),
+        FieldSpec("cases", label="分支列表", required=True, types=(list,)),
     ),
     # loop/batch 列表变量缺失/为空时执行器静默返回空 results（空转）——必填
     "loop_controller": (FieldSpec("listVariable", label="循环列表变量", required=True, types=(str,)),),
@@ -79,11 +83,34 @@ NODE_CONFIG_SCHEMA: dict[str, tuple[FieldSpec, ...]] = {
     # 复审 P1-9：与前端 getMissingConfigFields 口径对齐——此前 UI 必填但 API 直存
     # 的图后端放行，运行时空 prompt 直接调模型 / 空 toolCode 落 "unknown" 查找失败。
     # intent 的 intents 不列（空 intents 语义合法：不经过 LLM 直落 default_route，
-    # 三期B6 决策）；modelProfileCode 由 graph_validate step6 既有检查覆盖。
-    "llm": (FieldSpec("promptTemplate", label="提示词模板", required=True, types=(str,)),),
-    "tool_executor": (FieldSpec("toolCode", label="工具 Code", required=True, types=(str,)),),
+    # 三期B6 决策）。modelProfileCode 并入本表（F3）：与 graph_validate step6
+    # 同性质双保险，前端警示条得以从 manifest 统一派生。
+    "llm": (
+        FieldSpec("promptTemplate", label="提示词模板", required=True, types=(str,)),
+        FieldSpec("modelProfileCode", label="AI 模型", required=True, types=(str,)),
+    ),
+    "tool_executor": (FieldSpec("toolCode", label="工具", required=True, types=(str,)),),
     # 长期记忆写入：contentTemplate 缺失/为空时无内容可记（静默空转类），编译期 fail-fast
     "memory_store": (FieldSpec("contentTemplate", label="记忆内容模板", required=True, types=(str,)),),
+    # F3 补齐（前端已在查、后端原本未列，运行期静默空转/空 prompt 调模型）：
+    "image_generator": (
+        FieldSpec("promptTemplate", label="提示词模板", required=True, types=(str,)),
+        FieldSpec("modelProfileCode", label="AI 模型", required=True, types=(str,)),
+    ),
+    # intent_classifier 整条不进 schema：其 modelProfileCode 是「intents 非空时才必填」
+    # 的条件语义（空 intents 直落 default_route 不调模型），静态 FieldSpec 装不下——
+    # 由 graph_validate step6 保持条件校验为权威，前端警示条随 manifest 派生后不报
+    # intent（保存/运行期仍被 step6 拦截，错误消息可定位）。
+    # 提示消息为空时审批人看到空卡片（interrupt 无内容）——必填
+    "human_input": (FieldSpec("message", label="提示消息", required=True, types=(str,)),),
+    # 赋值规则为空时节点为纯占位（无任何副作用）——必填
+    "variable_assignment": (FieldSpec("assignments", label="赋值规则", required=True, types=(list,)),),
+    # 输入变量/转换类型缺失时执行器空转；outputVariable 不列（有 transformed_value
+    # 默认名 + 前端新建自动生成，非必填）
+    "variable_transform": (
+        FieldSpec("inputVariable", label="输入变量", required=True, types=(str,)),
+        FieldSpec("transformType", label="转换类型", required=True, types=(str,)),
+    ),
 }
 
 

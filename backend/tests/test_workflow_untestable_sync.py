@@ -21,7 +21,10 @@ from app.modules.workflow.service.graph_validate import (
     SUBGRAPH_NODE_TYPES,
     UNTESTABLE_NODE_TYPES,
 )
-from app.modules.workflow.service.node_schema import NODE_OUTPUT_VAR_DEFAULTS
+from app.modules.workflow.service.node_schema import (
+    NODE_CONFIG_SCHEMA,
+    NODE_OUTPUT_VAR_DEFAULTS,
+)
 from app.modules.workflow.service.state import node_registry
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -64,6 +67,29 @@ def _parse_str_array(source: str, name: str) -> set[str]:
     match = re.search(rf"{name}[^=]*=\s*\[([^\]]*)\]", source)
     assert match, f"产物中未找到 {name} 数组"
     return set(re.findall(r"'([a-z_]+)'", match.group(1)))
+
+
+def _parse_config_fields(source: str) -> dict[str, list[dict[str, object]]]:
+    """从产物各 entry 行解析 configFields 数组（F3 必填口径单一来源守卫用）。"""
+    result: dict[str, list[dict[str, object]]] = {}
+    for m in re.finditer(
+        r"type:\s*'([a-z_]+)',.*?configFields:\s*\[(.*?)\]",
+        source,
+    ):
+        fields = [
+            {
+                "key": fm.group(1),
+                "label": fm.group(2),
+                "required": fm.group(3) == "true",
+                "isList": fm.group(4) == "true",
+            }
+            for fm in re.finditer(
+                r"key: '([^']+)', label: '([^']+)', required: (true|false), isList: (true|false)",
+                m.group(2),
+            )
+        ]
+        result[m.group(1)] = fields
+    return result
 
 
 class NodeManifestSyncTestCase(unittest.TestCase):
@@ -135,6 +161,36 @@ class NodeManifestSyncTestCase(unittest.TestCase):
                     _parse_str_array(self.source, name),
                     set(backend_set),
                     f"{name} 产物与后端不一致：请重新运行 python scripts/dump_node_manifest.py",
+                )
+
+    def test_config_fields_match_schema(self):
+        """configFields 产物与 NODE_CONFIG_SCHEMA 逐节点比对（F3 单一来源防漂移）。
+
+        前端 getMissingConfigFields 从 configFields 派生必填口径；schema 变更而
+        未重新生成 manifest 时在此失败（label 措辞/required/isList 均在比对内）。
+        """
+        parsed = _parse_config_fields(self.source)
+        self.assertEqual(
+            set(parsed.keys()),
+            set(node_registry.types()),
+            "configFields 解析覆盖面与注册表不一致：请检查产物生成格式",
+        )
+        for node_type in node_registry.types():
+            with self.subTest(node_type=node_type):
+                expected = [
+                    {
+                        "key": f.key,
+                        "label": f.label,
+                        "required": f.required,
+                        "isList": list in f.types,
+                    }
+                    for f in NODE_CONFIG_SCHEMA.get(node_type, ())
+                ]
+                self.assertEqual(
+                    parsed[node_type],
+                    expected,
+                    f"{node_type} 的 configFields 与 NODE_CONFIG_SCHEMA 漂移："
+                    "请运行 python scripts/dump_node_manifest.py 重新生成",
                 )
 
     def test_backend_set_covers_interrupt_types(self):

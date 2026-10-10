@@ -56,8 +56,8 @@ class SchemaValidationTestCase(unittest.TestCase):
         self.assertIn("条件表达式", str(cm.exception))
 
     def test_no_schema_type_with_empty_config_passes(self):
-        """无 schema 声明的节点类型（如 variable_assignment）空 config 不受影响。"""
-        graph = _base_graph(va={"id": "v1", "type": "variable_assignment", "name": "V", "config": {}})
+        """无 schema 声明的节点类型（如 memory_recall）空 config 不受影响。"""
+        graph = _base_graph(va={"id": "v1", "type": "memory_recall", "name": "R", "config": {}})
         validate_graph(graph)
 
     def test_condition_valid_expression_passes(self):
@@ -89,7 +89,7 @@ class SchemaValidationTestCase(unittest.TestCase):
                 "config": {"list_variable": "items", "bodyGroupId": "g1"},
             },
             g1={"id": "g1", "type": "loop_body_group", "config": {"controllerNodeId": "l1"}},
-            body={"id": "b1", "type": "variable_assignment", "config": {}, "parentNode": "g1"},
+            body={"id": "b1", "type": "memory_recall", "config": {}, "parentNode": "g1"},
         )
         _chain(graph, "l1", "end_1")
         validate_graph(graph)

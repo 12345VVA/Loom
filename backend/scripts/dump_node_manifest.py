@@ -25,7 +25,10 @@ from app.modules.workflow.service.graph_validate import (  # noqa: E402
     SUBGRAPH_NODE_TYPES,
     UNTESTABLE_NODE_TYPES,
 )
-from app.modules.workflow.service.node_schema import NODE_OUTPUT_VAR_DEFAULTS  # noqa: E402
+from app.modules.workflow.service.node_schema import (  # noqa: E402
+    NODE_CONFIG_SCHEMA,
+    NODE_OUTPUT_VAR_DEFAULTS,
+)
 from app.modules.workflow.service.state import node_registry  # noqa: E402
 
 MANIFEST_PATH = BACKEND_ROOT.parent / "frontend" / "src" / "modules" / "workflow" / "generated" / "node-manifest.ts"
@@ -34,8 +37,17 @@ HEADER = """\
 // 由 backend/scripts/dump_node_manifest.py 生成，勿手改。
 // 再生成：cd backend && python scripts/dump_node_manifest.py
 // 权威来源：node_executors 注册表（idempotent/deprecated）+ graph_validate 常量集
-// + node_schema.NODE_OUTPUT_VAR_DEFAULTS（输出变量默认名，WF-P2-8）；
+// + node_schema.NODE_OUTPUT_VAR_DEFAULTS（输出变量默认名，WF-P2-8）
+// + node_schema.NODE_CONFIG_SCHEMA（config 必填口径，F3 单一来源——前端
+// getMissingConfigFields 由此派生，防「前端 switch/面板星号/后端 schema」三处漂移）；
 // 守卫：backend/tests/test_workflow_untestable_sync.py 比对产物与后端。
+
+export interface NodeManifestConfigField {
+\tkey: string;
+\tlabel: string;
+\trequired: boolean;
+\tisList: boolean;
+}
 
 export interface NodeManifestEntry {
 \ttype: string;
@@ -46,9 +58,23 @@ export interface NodeManifestEntry {
 \tidempotent: boolean;
 \tdeprecated: boolean;
 \toutputVarDefault: string | null;
+\tconfigFields: readonly NodeManifestConfigField[];
 }
 
 """
+
+
+def _ts_config_fields(node_type: str) -> str:
+    """按 NODE_CONFIG_SCHEMA 的 tuple 声明序渲染 configFields（isList 由 types 派生）。"""
+    specs = NODE_CONFIG_SCHEMA.get(node_type, ())
+    if not specs:
+        return "[]"
+    items = ", ".join(
+        f"{{ key: '{f.key}', label: '{f.label}', required: {str(f.required).lower()}, "
+        f"isList: {str(list in f.types).lower()} }}"
+        for f in specs
+    )
+    return "[" + items + "]"
 
 
 def _ts_str_set(values: set[str] | frozenset[str]) -> str:
@@ -63,7 +89,7 @@ def render() -> str:
         entry = (
             "\t{{ type: '{t}', untestable: {u}, interrupt: {i}, subgraph: {s}, "
             "conditional: {c}, idempotent: {idem}, deprecated: {dep}, "
-            "outputVarDefault: {ovd} }},\n"
+            "outputVarDefault: {ovd}, configFields: {cf} }},\n"
         ).format(
             t=node_type,
             u=str(node_type in UNTESTABLE_NODE_TYPES).lower(),
@@ -73,6 +99,7 @@ def render() -> str:
             idem=str(node_registry.is_idempotent(node_type)).lower(),
             dep=str(node_registry.is_deprecated(node_type)).lower(),
             ovd="null" if ovd_val is None else f"'{ovd_val}'",
+            cf=_ts_config_fields(node_type),
         )
         lines.append(entry)
     lines.append("] as const;\n\n")
