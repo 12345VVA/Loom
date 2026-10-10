@@ -24,6 +24,8 @@ from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.workflow.model.workflow import WorkflowDefinition
 from app.modules.workflow.model.workflow_memory import (
+    MEMORY_KEY_MAX_LENGTH,
+    TAGS_MAX_LENGTH,
     MemoryEnv,
     MemoryType,
     SourceRunType,
@@ -52,14 +54,14 @@ def content_hash_of(content: str) -> str:
 def derive_memory_env(run_type: str) -> str:
     """run_type → memory_env 推导的单一权威（设计 §8）。
 
-    production/trial → production（trial 有意写生产，试运行必须真实反映节点语义）；
-    test_node → test（物理隔离）；eval 不会到达此处（store 执行器先行跳过），
-    防御性归 production 并告警。
+    production/trial/eval → production（trial 有意写生产，试运行必须真实反映节点语义；
+    eval：store 执行器层跳过写入、recall 正常查生产——两口径均合法，不告警）；
+    test_node → test（物理隔离）；其余非常规值防御性归 production 并告警。
     """
     if run_type == "test_node":
         return MemoryEnv.TEST
-    if run_type != "production":
-        logger.warning("memory env 推导收到非常规 run_type=%r（eval 应在执行器层被跳过），归 production", run_type)
+    if run_type not in ("production", "trial", "eval"):
+        logger.warning("memory env 推导收到非常规 run_type=%r，归 production", run_type)
     return MemoryEnv.PRODUCTION
 
 
@@ -169,8 +171,14 @@ def upsert_memory(
     max_len = settings.WORKFLOW_MEMORY_MAX_CONTENT_LENGTH
     if len(content) > max_len:
         raise ValueError(f"记忆内容超长（{len(content)} > {max_len}），不截断直接拒绝")
+    if memory_key and len(memory_key) > MEMORY_KEY_MAX_LENGTH:
+        # 管理页 DTO 已校验；执行器路径 key 由模板渲染，长度不可控，同口径 fail-fast
+        # （SQLite 不 enforcement 列长度会静默超长，PG 直接 DataError 500）
+        raise ValueError(f"memory_key 超长（{len(memory_key)} > {MEMORY_KEY_MAX_LENGTH}），不截断直接拒绝")
     content_hash = content_hash_of(content)
     tags_json = json.dumps(tags, ensure_ascii=False)
+    if len(tags_json) > TAGS_MAX_LENGTH:
+        raise ValueError(f"tags 序列化后超长（{len(tags_json)} > {TAGS_MAX_LENGTH}），不截断直接拒绝")
 
     # 快路径 SELECT 判重（活跃行）
     existing = _find_existing(session, definition_id, memory_env, memory_key, content_hash)
@@ -406,7 +414,7 @@ def _tokenize_query(query: str) -> list[str]:
 
 
 def _keyword_score_rows(query: str, rows: list[WorkflowMemory]) -> list[tuple[WorkflowMemory, float]]:
-    """词面匹配打分：score = 命中 token 数 / 总 token 数（0~1，非余弦量纲，
+    """词面匹配打分（大小写不敏感）：score = 命中 token 数 / 总 token 数（0~1，非余弦量纲，
     similarityThreshold 不适用）；无命中 token 的行不返回。排序 score desc → created_at desc
     （先 created_at desc 再稳定排序 score desc，同分保持时间序）。"""
     tokens = _tokenize_query(query)
@@ -414,7 +422,8 @@ def _keyword_score_rows(query: str, rows: list[WorkflowMemory]) -> list[tuple[Wo
         return []
     scored: list[tuple[WorkflowMemory, float]] = []
     for row in rows:
-        hits = sum(1 for t in tokens if t in row.content)
+        content_lower = row.content.lower()  # token 侧已 lower 归一，content 侧同步，否则 "gpt" 永远命不中 "GPT-4o"
+        hits = sum(1 for t in tokens if t in content_lower)
         if hits > 0:
             scored.append((row, hits / len(tokens)))
     scored.sort(key=lambda p: p[0].created_at, reverse=True)
@@ -522,9 +531,13 @@ def search_memories(
 
     - **key 精确模式**（memory_key 非空）：精确取一条，score=None（不造假 1.0）；
     - **语义模式**（query + query_embedding）：候选集 → space 一致性过滤（跨空间不可比）
-      → 余弦 → threshold 闸 → topK 闸 → 预算整条截取；
-    - **关键词回退**（query 有值但 query_embedding 为 None——availability fallback）：
-      token 词面匹配继续检索，degraded=True（与检索整体失败区分：降级仍出结果）；
+      → 余弦 → threshold 闸 → topK 闸 → 预算整条截取。库侧 availability 回退：候选集
+      非空但无任何同空间 ready 行（管理页手工 NULL 行 / 裸 code 失败态 / 换模型异
+      space）→ 语义能力对本库不可用，回退关键词匹配（degraded=True）；comparable
+      非空但全低于 threshold 是明确的语义空，不回退；
+    - **关键词回退**（query 有值但 query_embedding 为 None——查询侧 availability
+      fallback）：token 词面匹配继续检索，degraded=True（与检索整体失败区分：降级
+      仍出结果）；
     - **时间线模式**（query 与 key 均无）：created_at DESC 最近 top_k，score=None，
       threshold 不适用，仅预算生效。
 
@@ -533,10 +546,17 @@ def search_memories(
     threshold = (
         similarity_threshold if similarity_threshold is not None else settings.WORKFLOW_MEMORY_SIMILARITY_THRESHOLD
     )
-    k = max(1, int(top_k or settings.WORKFLOW_MEMORY_DEFAULT_TOP_K))
+    k = min(int(settings.WORKFLOW_MEMORY_MAX_TOP_K), max(1, int(top_k or settings.WORKFLOW_MEMORY_DEFAULT_TOP_K)))
     budget = max(1, int(max_context_chars or settings.WORKFLOW_MEMORY_MAX_CONTEXT_CHARS))
     tag_filter = tag_filter or []
     degraded = False
+
+    def _keyword_fallback_items() -> list[dict[str, Any]]:
+        """关键词回退共用体（需 content 做子串匹配，取全行）。"""
+        rows = _candidate_rows(session, definition_id, memory_env, memory_type_filter, tag_filter)
+        scored = _keyword_score_rows(query, rows)[:k]
+        full = _load_full_rows(session, [r.id for r, _ in scored])
+        return [_row_to_item(full[r.id], score=s) for r, s in scored if r.id in full]
 
     # key 精确模式：两键都配时 key 优先（设计 §6.2）
     if memory_key:
@@ -560,28 +580,31 @@ def search_memories(
             for r in rows
             if r.embedding and r.embedding_space and ":" in r.embedding_space and r.embedding_space == query_space
         ]
-        scored: list[tuple[Any, float]] = []
-        for row in comparable:
-            try:
-                vector = json.loads(row.embedding)
-            except (TypeError, ValueError):
-                continue
-            scored.append((row, _cosine_similarity(query_embedding, vector)))
-        scored = [(r, s) for r, s in scored if s >= threshold]
-        scored.sort(key=lambda p: p[1], reverse=True)
-        top = scored[:k]
-        full = _load_full_rows(session, [r.id for r, _ in top])
-        items = [_row_to_item(full[r.id], score=s) for r, s in top if r.id in full]
-        items = _apply_context_budget(items, budget)
+        if not comparable and rows:
+            # 库侧 availability 回退：候选集非空但无任何同空间 ready 行——语义能力对
+            # 本库不可用，NULL/裸 code/异 space 行按设计 §4.5「参与关键词回退」的可见性
+            # 语义走词面匹配（否则管理页手工 NULL 记忆在语义召回下永久不可见）
+            degraded = True
+            items = _apply_context_budget(_keyword_fallback_items(), budget)
+        else:
+            scored: list[tuple[Any, float]] = []
+            for row in comparable:
+                try:
+                    vector = json.loads(row.embedding)
+                except (TypeError, ValueError):
+                    continue
+                scored.append((row, _cosine_similarity(query_embedding, vector)))
+            scored = [(r, s) for r, s in scored if s >= threshold]
+            scored.sort(key=lambda p: p[1], reverse=True)
+            top = scored[:k]
+            full = _load_full_rows(session, [r.id for r, _ in top])
+            items = [_row_to_item(full[r.id], score=s) for r, s in top if r.id in full]
+            items = _apply_context_budget(items, budget)
     elif query:
-        # 关键词回退（availability fallback，非 quality fallback）：不返回空结果，
+        # 查询侧关键词回退（availability fallback，非 quality fallback）：不返回空结果，
         # 词面匹配继续检索（需 content，取全行）；threshold 不适用（score 量纲不同）
         degraded = True
-        rows = _candidate_rows(session, definition_id, memory_env, memory_type_filter, tag_filter)
-        scored = _keyword_score_rows(query, rows)[:k]
-        full = _load_full_rows(session, [r.id for r, _ in scored])
-        items = [_row_to_item(full[r.id], score=s) for r, s in scored if r.id in full]
-        items = _apply_context_budget(items, budget)
+        items = _apply_context_budget(_keyword_fallback_items(), budget)
     else:
         # 时间线模式：最近 top_k（轻量列排序 + 第二阶段取全行），threshold 不适用，仅预算生效
         rows = _candidate_rows(session, definition_id, memory_env, memory_type_filter, tag_filter, light=True)
@@ -734,6 +757,20 @@ class WorkflowMemoryService(BaseAdminCrudService):
             self._current_add_user_id = None
 
     def _before_add(self, data: dict) -> dict:
+        # 悬空防线：记忆必须归属有效（未删除）工作流——伪造/已删 definitionId 落的
+        # 活跃行永不召回、非超管不可见（_visible_definition_ids 不含），仍占 cap 与
+        # 墓碑清理周期；且 definition 删除时已级联软删其记忆，事后不该再添新行
+        definition = self.session.exec(
+            select(WorkflowDefinition).where(
+                WorkflowDefinition.id == data.get("definition_id"),
+                WorkflowDefinition.delete_time.is_(None),  # type: ignore[attr-defined]
+            )
+        ).first()
+        if definition is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"工作流不存在或已删除（definitionId={data.get('definition_id')}），记忆必须归属有效工作流",
+            )
         content = data.get("content") or ""
         data["content_hash"] = content_hash_of(content)
         tags = data.get("tags")

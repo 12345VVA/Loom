@@ -61,6 +61,14 @@ class MemoryHelpersTestCase(unittest.TestCase):
         self.assertEqual(derive_memory_env("trial"), "production")  # trial 有意写生产
         self.assertEqual(derive_memory_env("test_node"), "test")
 
+    def test_derive_memory_env_eval_silent(self):
+        """eval 归 production 是 §8 合法口径（store 层跳过写入、recall 正常查生产），
+        不产生告警；仅真正非常规的 run_type 才告警（recall 跑评测不再每次刷误导日志）。"""
+        with self.assertNoLogs(wms.logger, level="WARNING"):
+            self.assertEqual(derive_memory_env("eval"), "production")
+        with self.assertLogs(wms.logger, level="WARNING"):
+            self.assertEqual(derive_memory_env("cron"), "production")
+
 
 class UpsertKeyTestCase(unittest.TestCase):
     """一级判定：key upsert。"""
@@ -188,6 +196,16 @@ class IsolationTestCase(unittest.TestCase):
     def test_oversize_content_rejected(self):
         with self.assertRaises(ValueError):
             _upsert(self.session, content="x" * (settings.WORKFLOW_MEMORY_MAX_CONTENT_LENGTH + 1))
+
+    def test_oversize_key_rejected(self):
+        """执行器路径 key 由模板渲染长度不可控，与管理页 DTO 同口径 fail-fast
+        （SQLite 不 enforcement 列长度会静默超长，PG 直接 DataError 500）。"""
+        with self.assertRaises(ValueError):
+            _upsert(self.session, memory_key="k" * 201)
+
+    def test_oversize_tags_rejected(self):
+        with self.assertRaises(ValueError):
+            _upsert(self.session, tags=["t" * 2001])
 
 
 class ConcurrentWindowTestCase(unittest.TestCase):
@@ -406,12 +424,16 @@ class LifecycleTestCase(unittest.TestCase):
 
 
 class AdminAddTestCase(unittest.TestCase):
-    """管理页 add：admin 溯源 + 审计 + embedding 三态。"""
+    """管理页 add：definition 有效性 + admin 溯源 + 审计 + embedding 三态。"""
 
     def setUp(self):
         self.engine = make_test_engine()
         SQLModel.metadata.create_all(self.engine)
         self.session = Session(self.engine)
+        # P5 悬空防线：add 前置校验 definition 存在且未删除，用例须建真实工作流
+        self.session.add(WorkflowDefinition(code="wf1", name="WF1", is_active=True, user_id=1))
+        self.session.commit()
+        self.definition_id = self.session.exec(select(WorkflowDefinition)).first().id
 
     def tearDown(self):
         self.session.close()
@@ -422,9 +444,25 @@ class AdminAddTestCase(unittest.TestCase):
 
         return WorkflowMemoryService(self.session)
 
+    def test_add_rejects_missing_or_deleted_definition(self):
+        """伪造 definitionId / 已软删工作流 → 400（悬空行永不召回、非超管不可见，仍占 cap）。"""
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            self._service().add({"definition_id": 987654, "content": "x"})
+        self.assertEqual(ctx.exception.status_code, 400)
+        # 已软删 definition 同样拒绝：删除时其记忆已级联软删，事后不该再添新行
+        from sqlalchemy import update as sa_update
+
+        self.session.execute(sa_update(WorkflowDefinition).values(delete_time=datetime.now(UTC)))
+        self.session.commit()
+        with self.assertRaises(HTTPException) as ctx2:
+            self._service().add({"definition_id": self.definition_id, "content": "x"})
+        self.assertEqual(ctx2.exception.status_code, 400)
+
     def test_add_records_admin_provenance_and_audit(self):
         payload = {
-            "definition_id": 1,
+            "definition_id": self.definition_id,
             "content": "手工新增的记忆",
             "memory_type": "fact",
             "memory_key": "manual",
@@ -451,7 +489,8 @@ class AdminAddTestCase(unittest.TestCase):
         # ready 态
         with patch.object(wms, "run_ai_embedding", return_value=([0.1, 0.2], "m:2")):
             e1 = self._service().add(
-                {"definition_id": 1, "content": "a", "embedding_profile_code": "p1"}, current_user=admin
+                {"definition_id": self.definition_id, "content": "a", "embedding_profile_code": "p1"},
+                current_user=admin,
             )
         row1 = self.session.get(WorkflowMemory, e1.id)
         self.assertEqual(json.loads(row1.embedding), [0.1, 0.2])
@@ -459,13 +498,14 @@ class AdminAddTestCase(unittest.TestCase):
         # 失败态：裸 code
         with patch.object(wms, "run_ai_embedding", return_value=(None, "m")):
             e2 = self._service().add(
-                {"definition_id": 1, "content": "b", "embedding_profile_code": "p1"}, current_user=admin
+                {"definition_id": self.definition_id, "content": "b", "embedding_profile_code": "p1"},
+                current_user=admin,
             )
         row2 = self.session.get(WorkflowMemory, e2.id)
         self.assertIsNone(row2.embedding)
         self.assertEqual(row2.embedding_space, "m")
         # 未配置态：不填 profile → NULL
-        e3 = self._service().add({"definition_id": 1, "content": "c"}, current_user=admin)
+        e3 = self._service().add({"definition_id": self.definition_id, "content": "c"}, current_user=admin)
         row3 = self.session.get(WorkflowMemory, e3.id)
         self.assertIsNone(row3.embedding)
         self.assertIsNone(row3.embedding_space)
@@ -473,7 +513,7 @@ class AdminAddTestCase(unittest.TestCase):
     def test_add_ignores_direct_embedding_injection(self):
         """不接受请求直塞 embedding 向量（管理页 add 只经 profile 计算；DTO 层已丢弃
         额外字段，service 层 _before_add pop 双保险）——落库恒 NULL 未配置态。"""
-        payload = {"definition_id": 1, "content": "x", "embedding": "[1,2,3]"}
+        payload = {"definition_id": self.definition_id, "content": "x", "embedding": "[1,2,3]"}
         svc = self._service()
         entity = svc.add(payload)
         row = self.session.get(WorkflowMemory, entity.id)
@@ -483,14 +523,14 @@ class AdminAddTestCase(unittest.TestCase):
         """管理页 add 直 INSERT 无 upsert 语义：撞同 key/同内容转 409 可定位错误（不落 500）。"""
         from fastapi import HTTPException
 
-        self._service().add({"definition_id": 1, "content": "first", "memory_key": "dup"})
+        self._service().add({"definition_id": self.definition_id, "content": "first", "memory_key": "dup"})
         with self.assertRaises(HTTPException) as ctx:
-            self._service().add({"definition_id": 1, "content": "second", "memory_key": "dup"})
+            self._service().add({"definition_id": self.definition_id, "content": "second", "memory_key": "dup"})
         self.assertEqual(ctx.exception.status_code, 409)
         # 无 key 同内容撞 uq_mem_hash 同样 409
-        self._service().add({"definition_id": 2, "content": "same-content"})
+        self._service().add({"definition_id": self.definition_id, "content": "same-content"})
         with self.assertRaises(HTTPException) as ctx2:
-            self._service().add({"definition_id": 2, "content": "same-content"})
+            self._service().add({"definition_id": self.definition_id, "content": "same-content"})
         self.assertEqual(ctx2.exception.status_code, 409)
 
 
@@ -676,6 +716,47 @@ class SearchTestCase(unittest.TestCase):
         touched = touch_last_accessed(self.session, [mid, 99999])
         self.assertEqual(touched, 1)
         self.assertIsNotNone(self.session.get(WorkflowMemory, mid).last_accessed_at)
+
+    def test_semantic_library_fallback(self):
+        """库侧 availability 回退：候选集非空但无任何同空间 ready 行（管理页手工 NULL
+        行等），语义查询回退关键词匹配（degraded=True）——否则手工记忆在语义召回下
+        永久不可见（设计 §4.5「NULL 行仅关键词回退」的可见性语义）。"""
+        _upsert(self.session, memory_key="manual", content="GPT-4o release notes")
+        _upsert(self.session, memory_key="manual2", content="unrelated content")
+        result = self._search(query="release", query_embedding=[1.0, 0.0], query_space="m:2")
+        self.assertTrue(result["degraded"])
+        self.assertEqual([it["memory_key"] for it in result["items"]], ["manual"])
+
+    def test_semantic_no_library_fallback_when_comparable_exists(self):
+        """comparable 非空但全低于 threshold = 明确的语义空，不回退（quality 语义干净，
+        与「语义能力不可用」区分）；词面可命中的 NULL 行此时也不混入。"""
+        _upsert(self.session, content="无关", embedding=[0.0, 1.0], embedding_space="m:2")
+        _upsert(self.session, memory_key="kw", content="GPT 词面可命中")
+        result = self._search(query="gpt", query_embedding=[1.0, 0.0], query_space="m:2", similarity_threshold=0.5)
+        self.assertFalse(result["degraded"])
+        self.assertEqual(result["items"], [])
+
+    def test_semantic_no_fallback_on_empty_library(self):
+        """库本身为空（无候选行）：空结果且不标 degraded（无可回退对象）。"""
+        result = self._search(query="anything", query_embedding=[1.0, 0.0], query_space="m:2")
+        self.assertFalse(result["degraded"])
+        self.assertEqual(result["items"], [])
+
+    def test_keyword_fallback_case_insensitive(self):
+        """词面匹配大小写不敏感：token 侧 lower 归一须与 content 侧 lower 对称，
+        否则 "gpt" 永远命不中 "GPT-4o"。"""
+        _upsert(self.session, memory_key="en", content="Uses GPT-4o model")
+        for query in ("gpt", "GPT", "Gpt"):
+            result = self._search(query=query, query_embedding=None)
+            self.assertEqual(len(result["items"]), 1, msg=f"query={query!r} 未命中")
+
+    def test_topk_clamped_to_upper_bound(self):
+        """topK 上界 clamp（与前端面板 :max=20 同口径）：直造图传大 top_k 不放大
+        二阶段取行。"""
+        for i in range(25):
+            _upsert(self.session, memory_key=f"t{i}", content=f"内容{i}")
+        result = self._search(top_k=999)
+        self.assertEqual(len(result["items"]), settings.WORKFLOW_MEMORY_MAX_TOP_K)
 
 
 if __name__ == "__main__":

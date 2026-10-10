@@ -27,6 +27,11 @@ from sqlmodel import Field
 from app.framework.api.naming import resolve_alias
 from app.framework.models.entity import BaseEntity
 
+# 长度上限单一权威：模型列 / 管理页 DTO / upsert_memory 执行器口径三处共用
+# （SQLite 不 enforcement VARCHAR 长度，PG 超长直接 DataError 500——校验必须前置）
+MEMORY_KEY_MAX_LENGTH = 200
+TAGS_MAX_LENGTH = 2000
+
 
 class MemoryEnv:
     """记忆环境（与 run_type 职责分离：env 管隔离域，run_type 管溯源）。"""
@@ -94,10 +99,12 @@ class WorkflowMemory(BaseEntity, table=True):
 
     # --- 身份与内容 ---
     memory_type: str = Field(default=MemoryType.FACT, max_length=20)
-    memory_key: str | None = Field(default=None, index=True, max_length=200)  # 业务身份（如 customer:42:quote_policy）
+    memory_key: str | None = Field(
+        default=None, index=True, max_length=MEMORY_KEY_MAX_LENGTH
+    )  # 业务身份（如 customer:42:quote_policy）
     content: str = Field(max_length=4000)
     content_hash: str = Field(max_length=64)  # SHA-256 hex，normalize_for_hash 后取值；仅无 key 行参与唯一约束
-    tags: str = Field(default="[]", max_length=2000)  # JSON list[str]，召回粗滤维度
+    tags: str = Field(default="[]", max_length=TAGS_MAX_LENGTH)  # JSON list[str]，召回粗滤维度
 
     # --- 向量（三态由 embedding_space + embedding 组合表达，见设计 §4.5）---
     # 显式 Text：无界 VARCHAR 语义不明（实施前澄清 #8）
@@ -157,7 +164,7 @@ class WorkflowMemoryAddRequest(BaseModel):
     definition_id: int
     content: str
     memory_type: str = MemoryType.FACT
-    memory_key: str | None = PydanticField(default=None, max_length=200)
+    memory_key: str | None = PydanticField(default=None, max_length=MEMORY_KEY_MAX_LENGTH)
     tags: list[str] = PydanticField(default_factory=list)
     # 可选：填则同步向量化（成功 ready / 失败落裸 code 失败态）；不填落 NULL 走关键词回退
     embedding_profile_code: str | None = None
@@ -183,6 +190,6 @@ class WorkflowMemoryAddRequest(BaseModel):
     def validate_tags_size(cls, v: list[str]) -> list[str]:
         import json
 
-        if len(json.dumps(v, ensure_ascii=False)) > 2000:
-            raise ValueError("tags 序列化后不能超过 2000 字符")
+        if len(json.dumps(v, ensure_ascii=False)) > TAGS_MAX_LENGTH:
+            raise ValueError(f"tags 序列化后不能超过 {TAGS_MAX_LENGTH} 字符")
         return v

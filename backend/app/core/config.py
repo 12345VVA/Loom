@@ -71,7 +71,8 @@ class Settings(BaseSettings):
     # 评测回归对比：整体 score diff 的 bootstrap 重采样次数（CI 跨 0 即不显著）
     WORKFLOW_EVAL_BOOTSTRAP_SAMPLES: int = 1000
     # 长期记忆节点（Workflow Memory，设计文档 docs/工作流长期记忆节点设计方案-2026-10-07.md §10）
-    WORKFLOW_MEMORY_DEFAULT_TOP_K: int = 5  # recall 默认返回上限（节点 topK 可覆盖，clamp 1..20）
+    WORKFLOW_MEMORY_DEFAULT_TOP_K: int = 5  # recall 默认返回上限（节点 topK 可覆盖）
+    WORKFLOW_MEMORY_MAX_TOP_K: int = 20  # recall topK 上界（与前端面板 :max 一致，防直造图放大二阶段取行）
     WORKFLOW_MEMORY_SIMILARITY_THRESHOLD: float = 0.35  # 余弦召回阈值（占位值，批次 2 benchmark 实测校准）
     WORKFLOW_MEMORY_MAX_CONTEXT_CHARS: int = 4000  # 召回总字符预算（整条原子截取 + 首条豁免）
     WORKFLOW_MEMORY_SCOPE_CAP: int = 1000  # 每 definition+memory_env 活跃行上限（超出淘汰最旧一批）
