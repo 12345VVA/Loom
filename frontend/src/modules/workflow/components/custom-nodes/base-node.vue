@@ -540,6 +540,18 @@ function highlightJson(data: any): string {
 		color: var(--wf-color-variable-transform);
 	}
 }
+.node-memory_store {
+	border-left: 4px solid var(--wf-color-memory-store);
+	.node-icon {
+		color: var(--wf-color-memory-store);
+	}
+}
+.node-memory_recall {
+	border-left: 4px solid var(--wf-color-memory-recall);
+	.node-icon {
+		color: var(--wf-color-memory-recall);
+	}
+}
 
 /*
  * ⚠️ 节点动画防坑说明 ⚠️

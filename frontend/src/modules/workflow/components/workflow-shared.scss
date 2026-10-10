@@ -14,6 +14,8 @@
 	--wf-color-end: var(--el-color-danger);
 	--wf-color-variable-assignment: #409eff;
 	--wf-color-variable-transform: #67c23a;
+	--wf-color-memory-store: #3fb27f;
+	--wf-color-memory-recall: #5b8def;
 }
 
 // 工作流间距 token（全局 CSS 变量，供 editor 及组件复用，统一 spacing 规范）

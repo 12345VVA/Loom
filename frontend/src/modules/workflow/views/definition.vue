@@ -30,6 +30,7 @@
 				</template>
 				<template #column-memoryWriteEnabled="{ scope }">
 					<el-switch
+						v-permission="service.workflow.definition.permission.update"
 						:model-value="scope.row.memoryWriteEnabled"
 						@change="val => onMemoryWriteToggle(scope.row, Boolean(val))"
 					/>

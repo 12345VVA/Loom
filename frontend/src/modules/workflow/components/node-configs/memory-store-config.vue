@@ -117,6 +117,7 @@
 
 <script setup lang="ts">
 import NodeConfigSection from './node-config-section.vue';
+import { NODE_DEFAULT_CONFIGS } from '../../utils/node-default-configs';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
@@ -124,6 +125,17 @@ const props = defineProps<{
 }>();
 
 const config = props.modelValue;
+
+// 存量缺键回填：导入图/手改草稿可能缺默认键（onError/memoryType 等），仅 undefined
+// 时写入不覆盖已有值——否则 radio 无选中/数值空，而后端按 config.get 默认执行，所见非所跑。
+// 数组字段浅拷贝，避免多节点共享 base 引用（同 buildDefaultConfig 的深拷贝语义）
+const defaults = NODE_DEFAULT_CONFIGS.memory_store.base as Record<string, unknown>;
+for (const key of Object.keys(defaults)) {
+	if (config[key] === undefined) {
+		const val = defaults[key];
+		config[key] = Array.isArray(val) ? [...val] : val;
+	}
+}
 </script>
 
 <style lang="scss" scoped>

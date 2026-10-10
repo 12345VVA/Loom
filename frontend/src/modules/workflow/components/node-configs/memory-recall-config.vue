@@ -12,6 +12,7 @@
 				<cl-variable-input
 					v-model="config.queryVariable"
 					scope="global"
+					var-name-mode
 					:placeholder="$t('选择包含检索文本的上游变量')"
 				/>
 			</el-form-item>
@@ -155,6 +156,7 @@
 
 <script setup lang="ts">
 import NodeConfigSection from './node-config-section.vue';
+import { NODE_DEFAULT_CONFIGS } from '../../utils/node-default-configs';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
@@ -162,6 +164,16 @@ const props = defineProps<{
 }>();
 
 const config = props.modelValue;
+
+// 存量缺键回填：仅 undefined 时写入不覆盖已有值，避免 radio 无选中/数值空而
+// 运行时按默认执行的所见非所跑；数组字段浅拷贝防多节点共享 base 引用
+const defaults = NODE_DEFAULT_CONFIGS.memory_recall.base as Record<string, unknown>;
+for (const key of Object.keys(defaults)) {
+	if (config[key] === undefined) {
+		const val = defaults[key];
+		config[key] = Array.isArray(val) ? [...val] : val;
+	}
+}
 </script>
 
 <style lang="scss" scoped>

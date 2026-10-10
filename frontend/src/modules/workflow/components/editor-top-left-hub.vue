@@ -460,6 +460,18 @@ function onPopoverShow() {
 	&--end {
 		border-left: 3px solid var(--el-color-danger);
 	}
+	&--variable_assignment {
+		border-left: 3px solid #409eff;
+	}
+	&--variable_transform {
+		border-left: 3px solid #67c23a;
+	}
+	&--memory_store {
+		border-left: 3px solid #3fb27f;
+	}
+	&--memory_recall {
+		border-left: 3px solid #5b8def;
+	}
 }
 
 // 快捷键列表弹窗样式

@@ -217,7 +217,9 @@ async function preview(row: any) {
 async function rollback(row: any) {
 	try {
 		await ElMessageBox.confirm(
-			t('将基于 ' + formatVersionNo(row.versionNo) + ' 生成新草稿（线上版本不变），需在编辑器确认后发布。立即上线请勾选。'),
+			t('将基于 {version} 生成新草稿（线上版本不变），需在编辑器确认后发布。', {
+				version: formatVersionNo(row.versionNo)
+			}),
 			t('回滚确认'),
 			{ type: 'warning', distinguishCancelAndClose: true }
 		);

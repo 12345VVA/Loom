@@ -21,7 +21,7 @@
 								v-for="v in loopContextVars"
 								:key="v.key"
 								class="var-item"
-								@click="insert(v.refText)"
+								@click="insert(refTextOf(v))"
 							>
 								<span>{{ v.display }}</span>
 								<small>{{ v.nodeLabel }}</small>
@@ -33,7 +33,7 @@
 								v-for="v in scopeVars"
 								:key="v.key"
 								class="var-item"
-								@click="insert(v.refText)"
+								@click="insert(refTextOf(v))"
 							>
 								<span>{{ v.display }}</span>
 								<small>{{ v.nodeLabel }}</small>
@@ -72,10 +72,18 @@ const props = withDefaults(
 		 * 静默取 None（单节点测试因 mock 预填同名恰好通过）。
 		 */
 		scope?: 'local' | 'global';
+		/**
+		 * 字段级引用形态（同节点内两类字段并存时用，如 memory_recall）：
+		 * - false（默认）：插入节点级 refText（模板字段 → {var} 插值形态）；
+		 * - true：按「变量名引用」插入 `variables.变量名`——字段值会被执行器经
+		 *   _deep_get + strip_var_prefix 读取而非模板渲染，模板形态会静默渲染为空。
+		 */
+		varNameMode?: boolean;
 	}>(),
 	{
 		showVariableBtn: true,
-		scope: 'local'
+		scope: 'local',
+		varNameMode: false
 	}
 );
 
@@ -90,6 +98,11 @@ const scopeTitle = computed(() => (props.scope === 'global' ? '上游输出' : '
 
 const inputRef = ref();
 const lastCursorPosition = ref<number | null>(null);
+
+// 变量名引用形态优先于节点级 refText（varNameMode 的语义见 props 注释）
+function refTextOf(v: { refText: string; variableName: string }): string {
+	return props.varNameMode ? `variables.${v.variableName}` : v.refText;
+}
 
 function saveCursor() {
 	const el = inputRef.value?.$el?.querySelector('input, textarea') as HTMLInputElement | HTMLTextAreaElement;
