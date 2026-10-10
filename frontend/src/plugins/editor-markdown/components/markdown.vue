@@ -60,7 +60,7 @@
 					</div>
 				</div>
 				<div v-if="upstreamOutputVars?.length" class="var-group">
-					<div class="var-group-title">{{ $t('上游输出') }}</div>
+					<div class="var-group-title">{{ $t('本节点输入') }}</div>
 					<div
 						v-for="v in upstreamOutputVars"
 						:key="v.key"

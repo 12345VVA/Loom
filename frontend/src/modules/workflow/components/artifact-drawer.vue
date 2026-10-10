@@ -327,9 +327,9 @@ const imageItems = computed(() => displayItems.value.filter(i => i.assetType ===
 const textItems = computed(() => displayItems.value.filter(i => i.assetType !== 'image'));
 const previewUrls = computed(() => imageItems.value.map(i => i.src));
 
-async function copyValue(value: string) {
-	await copyToClipboard(value);
-	ElMessage.success(t('已复制'));
+function copyValue(value: string) {
+	// 成功/失败提示由 copyToClipboard 统一弹出（此前外层再弹一次成功，失败时双提示互相矛盾）
+	copyToClipboard(value, t('已复制'), t('复制失败'));
 }
 
 function copyAllImageUrls() {

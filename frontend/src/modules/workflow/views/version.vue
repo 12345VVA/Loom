@@ -225,7 +225,8 @@ async function rollback(row: any) {
 		ElMessage.success(t('已生成回滚草稿，请进入编辑器确认后发布'));
 		await loadVersions();
 	} catch (e: any) {
-		if (e !== 'cancel') ElMessage.error(t('回滚失败：') + (e?.message || e));
+		// distinguishCancelAndClose 下取消与点 X/ESC 关闭都走 reject，均非失败不弹错
+		if (e !== 'cancel' && e !== 'close') ElMessage.error(t('回滚失败：') + (e?.message || e));
 	}
 }
 

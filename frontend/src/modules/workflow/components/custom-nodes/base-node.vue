@@ -106,7 +106,9 @@
 						<span>{{ $t('输入') }}</span>
 						<el-icon
 							class="copy-btn"
-							@click.stop="copyToClipboard(formatJson(runLog.inputData))"
+							@click.stop="
+								copyToClipboard(formatJson(runLog.inputData), $t('复制成功'), $t('复制失败'))
+							"
 							><copy-document
 						/></el-icon>
 					</div>
@@ -117,7 +119,9 @@
 						<span>{{ $t('输出') }}</span>
 						<el-icon
 							class="copy-btn"
-							@click.stop="copyToClipboard(formatJson(runLog.outputData))"
+							@click.stop="
+								copyToClipboard(formatJson(runLog.outputData), $t('复制成功'), $t('复制失败'))
+							"
 							><copy-document
 						/></el-icon>
 					</div>

@@ -23,13 +23,11 @@ export function formatVersionNo(n: number | null | undefined): string {
 }
 
 /**
- * 复制文本到剪贴板，支持 HTTP 环境降级
+ * 复制文本到剪贴板，支持 HTTP 环境降级。
+ * 成功/失败提示由本函数统一弹出（消息文案必须由调用方传入 t() 结果，
+ * 避免硬编码中文绕过 i18n）；返回是否成功，调用方如需附加逻辑据此分支。
  */
-export async function copyToClipboard(
-	text: string,
-	successMsg = '复制成功',
-	errorMsg = '复制失败'
-) {
+export async function copyToClipboard(text: string, successMsg: string, errorMsg: string) {
 	try {
 		if (navigator.clipboard && window.isSecureContext) {
 			await navigator.clipboard.writeText(text);
@@ -46,9 +44,11 @@ export async function copyToClipboard(
 			document.body.removeChild(textarea);
 		}
 		ElMessage.success(successMsg);
+		return true;
 	} catch (err) {
 		console.error('Clipboard copy failed:', err);
 		ElMessage.error(errorMsg);
+		return false;
 	}
 }
 

@@ -20,7 +20,7 @@ const model = defineModel<string>({ default: '' });
 
 function onCopy() {
 	if (!model.value) return;
-	copyToClipboard(model.value, t('编码已复制'));
+	copyToClipboard(model.value, t('编码已复制'), t('复制失败'));
 }
 </script>
 

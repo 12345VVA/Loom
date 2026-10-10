@@ -422,6 +422,7 @@ const { handleKeyDown } = useKeyboardShortcuts({
 	undo,
 	redo,
 	deleteSelectedElements,
+	duplicateSelectedElements,
 	// 箭头包装延迟求值：openTestDialog/openNodeTestDialog 定义在下方 composable 解构中
 	openTestDialog: () => openTestDialog(),
 	openNodeTestDialog: nodeId => openNodeTestDialog(nodeId)
@@ -631,14 +632,29 @@ function removeNodes(nodeIds: string[], edgeIds: string[] = []): boolean {
 	return true;
 }
 
+// 画布当前选中的节点集合（Vue Flow 多选态挂在元素 selected 字段上，删除/复制共用）
+function getSelectedFlowNodes(): FlowNode[] {
+	return elements.value.filter(el => !('source' in el) && (el as any).selected) as FlowNode[];
+}
+
 // 删除画布上当前选中的节点与边（含关联 group 的级联清理）
 function deleteSelectedElements() {
-	const nodesToRemove = elements.value.filter(el => !('source' in el) && (el as any).selected);
+	const nodesToRemove = getSelectedFlowNodes();
 	const edgesToRemove = elements.value.filter(el => 'source' in el && (el as any).selected);
 
 	if (removeNodes(nodesToRemove.map(n => n.id), edgesToRemove.map(e => e.id))) {
 		ElMessage.success(t('已删除所选元素'));
 	}
+}
+
+// Ctrl+D：复制当前选中的节点集合（与删除选中同款选中判定；提示由 duplicateNode 自带）
+function duplicateSelectedElements() {
+	const targets = getSelectedFlowNodes();
+	if (targets.length === 0) {
+		ElMessage.warning(t('请先选中要复制的节点'));
+		return;
+	}
+	targets.forEach(n => duplicateNodeImpl(n.id));
 }
 
 watch(

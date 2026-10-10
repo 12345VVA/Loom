@@ -179,6 +179,7 @@ import {
 	InfoFilled
 } from '@element-plus/icons-vue';
 import { NODE_REGISTRY } from '../utils/node-type-registry';
+import { SHORTCUT_DEFS } from '../composables/useKeyboardShortcuts';
 
 const props = defineProps<{
 	miniMapVisible: boolean;
@@ -210,16 +211,13 @@ const infoDialogVisible = ref(false);
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modKey = isMac ? '⌘' : 'Ctrl';
 
-const shortcutsList = computed(() => [
-	{ desc: t('保存工作流'), keys: [modKey, 'S'] },
-	{ desc: t('撤销操作'), keys: [modKey, 'Z'] },
-	{ desc: t('重做操作'), keys: [modKey, 'Shift', 'Z'] },
-	{ desc: t('删除选中节点/边'), keys: ['Delete / Backspace'] },
-	{ desc: t('多选/全选节点'), keys: [modKey, 'A'] },
-	{ desc: t('复制节点'), keys: [modKey, 'D'] },
-	{ desc: t('画布缩放'), keys: [t('滚轮')] },
-	{ desc: t('画布平移'), keys: [t('鼠标按住背景拖动')] }
-]);
+// 指南清单派生自 useKeyboardShortcuts 的 SHORTCUT_DEFS（单一来源，与实现同步维护）
+const shortcutsList = computed(() =>
+	SHORTCUT_DEFS.map(d => ({
+		desc: t(d.descKey),
+		keys: d.keys.map(k => (k === 'mod' ? modKey : k))
+	}))
+);
 
 const categories = computed(() => {
 	const cats = [

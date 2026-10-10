@@ -106,7 +106,9 @@ export function useEdgeConnect(
 			srcNode.type === 'intent_classifier';
 
 		const newEdge: any = {
-			id: 'edge_' + source + '_' + target,
+			// id 拼入 sourceHandle：condition/switch 多分支连同一目标时避免重复 key
+			//（Vue Flow 以 id 为 key，重复会引发渲染异常与选中/删除互相波及）
+			id: 'edge_' + source + '_' + (sourceHandle ?? 'default') + '_' + target,
 			source,
 			target,
 			sourceHandle,
