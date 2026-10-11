@@ -140,6 +140,39 @@ def _make_absolute_url(path: str) -> str:
     return path
 
 
+def _check_vision_capability(resolved: dict, messages: list[Any]) -> dict | None:
+    """WFI-2c：多模态输入的 vision 前置校验（多模态一期报告 §6.3）。
+
+    消息含 list content（多模态 IR parts）且模型 capabilities 已配置但不含
+    vision → 返回 ``{"success": False, "errorMessage": ...}``（沿既有错误流由
+    run_ai_chat 转 ValueError）；capabilities 未配置时放行（存量自定义模型不阻断，
+    仅 Warning），纯文本调用零影响。
+    """
+    has_image = False
+    for msg in messages:
+        content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
+        if isinstance(content, list):
+            has_image = True
+            break
+    if not has_image:
+        return None
+
+    model = resolved.get("model")
+    capabilities = (getattr(model, "capabilities", None) or "").lower()
+    if not capabilities:
+        logger.warning("模型 capabilities 未配置，跳过 vision 前置校验（model=%s）", getattr(model, "code", "?"))
+        return None
+    if "vision" not in [c.strip() for c in capabilities.split(",")]:
+        model_code = getattr(model, "code", "未知模型")
+        return {
+            "success": False,
+            "errorMessage": (
+                f"当前模型 {model_code} 不支持视觉输入，请切换多模态模型（如 GPT-4o / Qwen-VL）或移除图片绑定"
+            ),
+        }
+    return None
+
+
 @dataclass
 class _InvocationState:
     """单次模型调用的治理/审计上下文（_invoke 与 _stream_invoke 共用前置流程）。
@@ -292,6 +325,11 @@ class AiModelRuntimeService:
     def chat(self, payload: AiChatRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
         AiSecurityService.check_input_safety(payload.messages)
         resolved, options, response_format_overridden = self._resolve_chat(payload)
+        # WFI-2c：多模态输入的 vision 能力前置校验（非视觉模型绑图显式失败，
+        # 不静默丢图也不把上游 400 生硬透传）
+        vision_error = _check_vision_capability(resolved, payload.messages)
+        if vision_error:
+            return vision_error
         return self._invoke(
             resolved,
             "chat",

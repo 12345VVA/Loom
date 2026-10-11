@@ -25,7 +25,7 @@ from typing import Any
 from sqlmodel import select
 
 from app.modules.ai.model.ai import AiChatRequest, AiRuntimeMessage
-from app.modules.ai.service.runtime_service import AiModelRuntimeService
+from app.modules.ai.service.runtime_service import AiModelRuntimeService, _make_absolute_url
 from app.modules.workflow.model.workflow import WorkflowInstance
 from app.modules.workflow.service.compiler import (
     _deep_get,
@@ -198,11 +198,13 @@ async def execute_llm_node(variables: dict[str, Any], config: dict[str, Any]) ->
     system_prompt = render_template(system_prompt_template, variables) if system_prompt_template else None
     user_prompt = render_template(user_prompt_template, variables)
 
-    # WFI-2a：解析图片输入并组装多模态 IR parts（无图时维持纯文本零变化）
+    # WFI-2a：解析图片输入并组装多模态 IR parts（无图时维持纯文本零变化）；
+    # WFI-2c：图片 URL 统一经相对路径→绝对 URL 解析（BACKEND_URL > EXTERNAL_URL >
+    # host:port 兜底，与生图链路同语义），data URI / 公网 URL 原样放行
     image_urls = _resolve_image_inputs(config, variables)
     if image_urls:
         user_content: str | list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
-        user_content += [{"type": "image_url", "image_url": {"url": u}} for u in image_urls]
+        user_content += [{"type": "image_url", "image_url": {"url": _make_absolute_url(u)}} for u in image_urls]
     else:
         user_content = user_prompt
 

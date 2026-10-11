@@ -61,20 +61,24 @@ class ExecuteLlmNodeMultimodalTest(unittest.TestCase):
         return result, mocked
 
     def test_builds_multimodal_ir_parts(self):
+        from app.core.config import settings
+
         config = {
             "model_profile_code": "p1",
             "prompt_template": "分析 {input_image}",
             "output_variable": "out",
             "image_variables": ["input_image"],
         }
-        result, mocked = self._run(config, {"input_image": "/uploads/a.png"})
+        # WFI-2c：相对路径统一解析为绝对 URL（测试固定 BACKEND_URL 保证断言稳定）
+        with patch.object(settings, "BACKEND_URL", "http://backend:8000"):
+            result, mocked = self._run(config, {"input_image": "/uploads/a.png"})
         self.assertEqual(result, {"out": "ok"})
         user_content = mocked.call_args[0][1]
         self.assertEqual(
             user_content,
             [
                 {"type": "text", "text": "分析 /uploads/a.png"},
-                {"type": "image_url", "image_url": {"url": "/uploads/a.png"}},
+                {"type": "image_url", "image_url": {"url": "http://backend:8000/uploads/a.png"}},
             ],
         )
 
@@ -117,3 +121,74 @@ class MultimodalDtoChainTest(unittest.TestCase):
     def test_plain_text_unchanged(self):
         msg = AiRuntimeMessage(role="system", content="纯文本")
         self.assertEqual(msg.content, "纯文本")
+
+
+class NormalizeImageUrlTest(unittest.TestCase):
+    """WFI-2c：IR parts 中的相对路径 → 绝对 URL（与生图链路同语义）。"""
+
+    def test_llm_node_normalizes_relative_image_url(self):
+        from app.core.config import settings
+
+        config = {
+            "model_profile_code": "p1",
+            "prompt_template": "看图",
+            "output_variable": "out",
+            "image_variables": ["img"],
+        }
+        with (
+            patch("app.modules.workflow.service.node_executors.run_ai_chat", return_value="ok") as mocked,
+            patch.object(settings, "BACKEND_URL", "http://backend:8000"),
+        ):
+            asyncio.run(execute_llm_node({"img": "/uploads/a.png"}, config))
+        user_content = mocked.call_args[0][1]
+        self.assertEqual(user_content[1]["image_url"]["url"], "http://backend:8000/uploads/a.png")
+
+    def test_public_url_passthrough(self):
+        config = {
+            "model_profile_code": "p1",
+            "prompt_template": "看图",
+            "output_variable": "out",
+            "image_variables": ["img"],
+        }
+        with patch("app.modules.workflow.service.node_executors.run_ai_chat", return_value="ok") as mocked:
+            asyncio.run(execute_llm_node({"img": "https://cdn.example.com/a.jpg"}, config))
+        user_content = mocked.call_args[0][1]
+        self.assertEqual(user_content[1]["image_url"]["url"], "https://cdn.example.com/a.jpg")
+
+
+class _FakeModel:
+    def __init__(self, capabilities: str | None):
+        self.code = "test-model"
+        self.capabilities = capabilities
+
+
+class VisionCapabilityCheckTest(unittest.TestCase):
+    """WFI-2c：非视觉模型绑图的前置校验语义。"""
+
+    IR = [{"type": "text", "text": "q"}, {"type": "image_url", "image_url": {"url": "https://x/a.png"}}]
+
+    def _check(self, capabilities, messages):
+        from app.modules.ai.service.runtime_service import _check_vision_capability
+
+        return _check_vision_capability({"model": _FakeModel(capabilities)}, messages)
+
+    def test_non_vision_model_with_image_rejected(self):
+        result = self._check("chat,tools,stream", [{"role": "user", "content": self.IR}])
+        self.assertIsNotNone(result)
+        self.assertFalse(result["success"])
+        self.assertIn("不支持视觉输入", result["errorMessage"])
+        self.assertIn("test-model", result["errorMessage"])
+
+    def test_vision_model_passes(self):
+        self.assertIsNone(self._check("chat,vision,tools", [{"role": "user", "content": self.IR}]))
+
+    def test_plain_text_never_checked(self):
+        self.assertIsNone(self._check("chat", [{"role": "user", "content": "纯文本"}]))
+
+    def test_missing_capabilities_passthrough(self):
+        self.assertIsNone(self._check(None, [{"role": "user", "content": self.IR}]))
+
+    def test_model_object_messages_supported(self):
+        """AiRuntimeMessage 对象形态（chat 入口的真实形态）同样识别。"""
+        result = self._check("chat", [AiRuntimeMessage(role="user", content=self.IR)])
+        self.assertIsNotNone(result)
