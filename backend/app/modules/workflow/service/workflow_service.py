@@ -322,6 +322,23 @@ def _has_resumable_checkpoint(thread_id: str | None) -> bool:
         return False
 
 
+def _reject_inline_data_uris(inputs: dict[str, Any] | None) -> None:
+    """多模态一期（WFI-1a）：工作流入口拒绝 data URI 输入。
+
+    URL 介质原则的入口防线——图片必须先上传换取 URL（试运行弹窗/媒体库），
+    严禁 Base64 进入 LangGraph state / 节点日志 / 检查点（写放大 + 响应信封超限）。
+    同时天然兜住无全局请求体大小限制下唯一 realistic 的超大载荷来源。
+    """
+    for key, val in (inputs or {}).items():
+        values = val if isinstance(val, list) else [val]
+        for v in values:
+            if isinstance(v, str) and v.startswith("data:"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"输入变量 {key} 不支持直接提交 Base64，请先上传图片（试运行弹窗或媒体库）后使用 URL",
+                )
+
+
 class WorkflowInstanceService(BaseAdminCrudService):
     """
     工作流实例管理服务
@@ -599,6 +616,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
         版本来源由调用方决定：正式走 current_version_id，试运行走草稿。
         run_type 区分正式/试运行（eval 由 workflow_eval 侧自建实例），驱动副作用门控与列表过滤。
         """
+        _reject_inline_data_uris(inputs)
         definition_id = definition.id
 
         # 防重放：优先用 Redis SETNX 抢占式去重锁（覆盖 Celery 多 worker / 高并发盲区，
@@ -838,6 +856,7 @@ class WorkflowInstanceService(BaseAdminCrudService):
         P1-4 落库：建 run_type='test_node' 实例 + 单行执行日志（脱敏 + 超长 offload），
         结果可追溯/审计并接入运行记录页；响应契约（NodeTestResponse）不变，仅新增 instanceId。
         """
+        _reject_inline_data_uris(mock_variables)
         from app.core.config import settings
         from app.core.redis import redis_client
         from app.modules.workflow.model.workflow import NodeTestResponse
