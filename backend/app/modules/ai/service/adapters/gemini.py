@@ -14,6 +14,7 @@ from app.modules.ai.service.adapters.base import (
     loads_json,
     normalize_usage,
 )
+from app.modules.ai.service.adapters.media_fetch import extract_system_text, fetch_image_as_data_uri, parse_data_uri
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class GeminiAdapter(BaseHttpAdapter):
         if generation_config:
             payload["generationConfig"] = generation_config
 
-        system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
+        system_text = extract_system_text(messages)
         if system_text:
             payload["systemInstruction"] = {"parts": [{"text": system_text}]}
         data, response = self._post(f"/models/{model}:generateContent", payload, self._headers())
@@ -73,7 +74,7 @@ class GeminiAdapter(BaseHttpAdapter):
         if generation_config:
             payload["generationConfig"] = generation_config
 
-        system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
+        system_text = extract_system_text(messages)
         if system_text:
             payload["systemInstruction"] = {"parts": [{"text": system_text}]}
         path = f"/models/{model}:streamGenerateContent?alt=sse"
@@ -178,8 +179,32 @@ class GeminiAdapter(BaseHttpAdapter):
 
 
 def _gemini_content(message: dict[str, Any]) -> dict:
+    """OpenAI 风格 IR parts → Gemini contents（WFI-2b）。
+
+    原实现把 list content ``str()`` 化为 Python repr——静默破坏多模态语义；
+    现显式分派：text part → ``{"text"}``，image_url part → 严格取回（SSRF/
+    白名单/大小，失败抛 UpstreamApiError 显式失败）转 ``inlineData``。
+    生图链路继续用宽松版 ``_prepare_gemini_image_part``（None 跳过）。
+    """
     role = "model" if message.get("role") == "assistant" else "user"
-    return {"role": role, "parts": [{"text": str(message.get("content") or "")}]}
+    content = message.get("content")
+    parts: list[dict] = []
+    if isinstance(content, list):
+        for p in content:
+            if not isinstance(p, dict):
+                continue
+            if p.get("type") == "text":
+                parts.append({"text": str(p.get("text", ""))})
+            elif p.get("type") == "image_url":
+                url = (p.get("image_url") or {}).get("url", "")
+                data_uri = fetch_image_as_data_uri(url)
+                mime_type, b64_data = parse_data_uri(data_uri)
+                parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
+    else:
+        parts.append({"text": str(content or "")})
+    if not parts:
+        parts.append({"text": ""})  # Gemini 要求 parts 非空
+    return {"role": role, "parts": parts}
 
 
 MAX_IMAGE_DOWNLOAD_SIZE = 10 * 1024 * 1024  # 10MB

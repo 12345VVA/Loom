@@ -10,11 +10,10 @@
    多模态 IR parts 可全链路构造/序列化（正向断言见 MultimodalDtoChainTest 与
    tests/test_workflow_llm_multimodal.py）；其余链路大多为 dict 透传
 2. ``OpenAIHttpAdapter.chat`` 对 messages 原样透传，多模态 content parts 无损到达 HTTP payload
-3. Claude 适配器：user 的 list content 原样透传但仍是 OpenAI 风格 parts
-   （Claude 原生协议要求 ``{type:'image', source:{...}}``，需要协议转换层）；
-   system 的 list content 会因 ``"\\n".join`` 直接 TypeError
-4. Gemini 适配器：``_gemini_content`` 会把 list content ``str()`` 化（静默破坏语义），
-   但多模态零件 ``_prepare_gemini_image_part``（data URI → inlineData）已就绪，只差 chat 链路接线
+3. Claude 适配器的协议转换**已于 WFI-2b 落地**（``_to_claude_content``：image_url →
+   base64 source；system 经 ``extract_system_text`` 防崩提取，不再 TypeError）
+4. Gemini 适配器的 parts 处理**已于 WFI-2b 落地**（``_gemini_content`` 显式分派，
+   不再 ``str()`` 化；chat 链路用严格版 media_fetch，生图链路维持宽松版零件）
 5. ``AiSecurityService.check_input_safety`` 已扫描多模态 list 中的 text part，注入检测不被 list 绕过
 6. 媒体转存 ``_decode_base64_payload`` 已支持 data URI 头解析
 7. 生图链路 ``_make_absolute_url`` 已实现相对路径 → 绝对 URL（BACKEND_URL > EXTERNAL_URL > host:port 兜底）；
@@ -97,19 +96,37 @@ class OpenAiAdapterPassthroughTest(unittest.TestCase):
 
 
 class ClaudeAdapterMultimodalTest(unittest.TestCase):
-    """结论 3：Claude 适配器需要协议转换层，且存在 system list 的 TypeError 风险。"""
+    """结论 3（WFI-2b 已闭环）：OpenAI → Claude parts 转换层已落地。"""
 
     def setUp(self) -> None:
         self.provider = AiProvider(code="anthropic", name="Anthropic", adapter="claude", is_active=True)
         self.adapter = ClaudeAdapter(self.provider)
 
-    def test_user_list_content_passed_verbatim(self) -> None:
-        """user 的 list content 原样透传——但仍是 OpenAI 风格 parts。
+    def test_user_image_parts_converted_to_claude_source(self) -> None:
+        """WFI-2b 后：user 的 image_url parts 转换为 Claude 原生 base64 source（不再裸透传）。"""
+        b64 = base64.b64encode(b"img").decode()
+        with patch(
+            "app.modules.ai.service.adapters.claude.fetch_image_as_data_uri",
+            return_value=f"data:image/png;base64,{b64}",
+        ):
+            with patch.object(
+                self.adapter,
+                "_post",
+                return_value=({"content": [{"type": "text", "text": "ok"}]}, FakeResponse()),
+            ) as mocked_post:
+                self.adapter.chat(
+                    model="claude-sonnet-4-5",
+                    messages=[{"role": "user", "content": MULTIMODAL_CONTENT}],
+                    options={},
+                )
 
-        Claude 原生协议要求图片为 ``{type:'image', source:{type:'base64',...}}``，
-        直接透传 OpenAI 风格 ``image_url`` 会被上游 400。此处固化现状：
-        适配器不做转换，阶段二必须补 OpenAI → Claude 的 parts 转换层。
-        """
+        payload = mocked_post.call_args[0][1]
+        converted = payload["messages"][0]["content"]
+        self.assertEqual(converted[0], {"type": "text", "text": "这张图里有什么？"})
+        self.assertEqual(converted[1]["source"], {"type": "base64", "media_type": "image/png", "data": b64})
+
+    def test_system_list_content_no_longer_raises(self) -> None:
+        """WFI-2b 后：system 的 list content 经 extract_system_text 防崩提取（原为 TypeError）。"""
         with patch.object(
             self.adapter,
             "_post",
@@ -117,41 +134,25 @@ class ClaudeAdapterMultimodalTest(unittest.TestCase):
         ) as mocked_post:
             self.adapter.chat(
                 model="claude-sonnet-4-5",
-                messages=[{"role": "user", "content": MULTIMODAL_CONTENT}],
-                options={},
-            )
-
-        payload = mocked_post.call_args[0][1]
-        self.assertEqual(payload["messages"][0]["content"], MULTIMODAL_CONTENT)
-
-    def test_system_list_content_raises_type_error(self) -> None:
-        """system 消息若为 list content，``"\\n".join`` 直接 TypeError。
-
-        多模态改造时必须保证 system 恒为纯文本（或在此处显式提取 text part）。
-        """
-        with self.assertRaises(TypeError):
-            self.adapter.chat(
-                model="claude-sonnet-4-5",
                 messages=[{"role": "system", "content": [{"type": "text", "text": "sys"}]}],
                 options={},
             )
+        self.assertEqual(mocked_post.call_args[0][1]["system"], "sys")
 
 
 class GeminiAdapterMultimodalTest(unittest.TestCase):
-    """结论 4：Gemini chat 链路会 str() 化 list content，但多模态零件已就绪。"""
+    """结论 4（WFI-2b 已闭环）：chat 链路显式处理 parts，零件已完成接线。"""
 
-    def test_gemini_content_stringifies_list(self) -> None:
-        """``_gemini_content`` 把 list content 变成 ``str(list)`` 字符串——静默破坏语义。
-
-        不抛错、不报警，上游收到的是一段 Python repr 文本。阶段二改造此处
-        必须显式处理 content parts，不能依赖现状透传。
-        """
-        result = _gemini_content({"role": "user", "content": MULTIMODAL_CONTENT})
+    def test_gemini_content_preserves_text_and_converts_image(self) -> None:
+        """WFI-2b 后：list 不再被 str() 化——text part 保留原文，image_url 转 inlineData。"""
+        with patch(
+            "app.modules.ai.service.adapters.gemini.fetch_image_as_data_uri",
+            return_value="data:image/png;base64,QUJD",
+        ):
+            result = _gemini_content({"role": "user", "content": MULTIMODAL_CONTENT})
         self.assertEqual(result["role"], "user")
-        # 固化现状：parts[0]["text"] 是 str(list) 的 repr，而非原文
-        self.assertIsInstance(result["parts"][0]["text"], str)
-        self.assertNotEqual(result["parts"][0]["text"], "这张图里有什么？")
-        self.assertIn("'image_url'", result["parts"][0]["text"])
+        self.assertEqual(result["parts"][0], {"text": "这张图里有什么？"})
+        self.assertEqual(result["parts"][1], {"inlineData": {"mimeType": "image/png", "data": "QUJD"}})
 
     def test_prepare_gemini_image_part_data_uri(self) -> None:
         """data URI → inlineData 转换零件已就绪（生图链路在用，chat 链路待接线）。"""

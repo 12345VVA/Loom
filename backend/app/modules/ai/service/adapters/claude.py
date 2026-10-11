@@ -11,6 +11,32 @@ from app.modules.ai.service.adapters.base import (
     loads_json,
     normalize_usage,
 )
+from app.modules.ai.service.adapters.media_fetch import extract_system_text, fetch_image_as_data_uri, parse_data_uri
+
+
+def _to_claude_content(content: Any) -> Any:
+    """OpenAI 风格 IR parts → Claude 原生 content（WFI-2b）。
+
+    - str：原样透传；
+    - list：text part → ``{"type": "text"}``；image_url part → 取回图片转
+      ``{"type": "image", "source": {"type": "base64", ...}}``（Claude Messages API
+      无 image_url 形态，必须 base64 内联）。取回失败抛 UpstreamApiError（显式失败，
+      不静默丢图）。
+    """
+    if not isinstance(content, list):
+        return content
+    parts: list[dict[str, Any]] = []
+    for p in content:
+        if not isinstance(p, dict):
+            continue
+        if p.get("type") == "text":
+            parts.append({"type": "text", "text": str(p.get("text", ""))})
+        elif p.get("type") == "image_url":
+            url = (p.get("image_url") or {}).get("url", "")
+            data_uri = fetch_image_as_data_uri(url)
+            mime_type, b64_data = parse_data_uri(data_uri)
+            parts.append({"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": b64_data}})
+    return parts or ""
 
 
 class ClaudeAdapter(BaseHttpAdapter):
@@ -25,7 +51,7 @@ class ClaudeAdapter(BaseHttpAdapter):
         }
 
     def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]) -> dict:
-        system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
+        system_text = extract_system_text(messages)
         call_options = dict(options)
         max_tokens = call_options.pop("max_tokens", call_options.pop("maxTokens", 1024))
         # Claude API 不支持 OpenAI 风格的 response_format，需要移除以避免参数错误
@@ -33,7 +59,7 @@ class ClaudeAdapter(BaseHttpAdapter):
         payload = {
             "model": model,
             "messages": [
-                {"role": _claude_role(item), "content": item.get("content", "")}
+                {"role": _claude_role(item), "content": _to_claude_content(item.get("content", ""))}
                 for item in messages
                 if item.get("role") != "system"
             ],
@@ -53,7 +79,7 @@ class ClaudeAdapter(BaseHttpAdapter):
         }
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
-        system_text = "\n".join(item.get("content", "") for item in messages if item.get("role") == "system")
+        system_text = extract_system_text(messages)
         call_options = dict(options)
         max_tokens = call_options.pop("max_tokens", call_options.pop("maxTokens", 1024))
         # Claude API 不支持 OpenAI 风格的 response_format，需要移除以避免参数错误
@@ -61,7 +87,7 @@ class ClaudeAdapter(BaseHttpAdapter):
         payload = {
             "model": model,
             "messages": [
-                {"role": _claude_role(item), "content": item.get("content", "")}
+                {"role": _claude_role(item), "content": _to_claude_content(item.get("content", ""))}
                 for item in messages
                 if item.get("role") != "system"
             ],
