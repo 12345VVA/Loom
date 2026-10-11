@@ -22,10 +22,22 @@
 						{{ getVarError(index) }}
 					</div>
 				</div>
+				<el-select
+					v-model="row.type"
+					size="small"
+					style="width: 104px; flex: none"
+					@change="commit"
+				>
+					<el-option :label="$t('文本')" value="string" />
+					<el-option :label="$t('图片')" value="image" />
+					<el-option :label="$t('数值')" value="number" />
+					<el-option :label="$t('布尔')" value="boolean" />
+				</el-select>
 				<div style="flex: 1">
 					<el-input
 						v-model="row.defaultText"
-						:placeholder="$t('默认值 (可留空)')"
+						:disabled="row.type === 'image'"
+						:placeholder="row.type === 'image' ? $t('图片变量运行时上传') : $t('默认值 (可留空)')"
 						size="small"
 						@input="commit"
 					/>
@@ -49,6 +61,7 @@
 import { reactive, ref } from 'vue';
 import { Delete, Plus } from '@element-plus/icons-vue';
 import NodeConfigSection from './node-config-section.vue';
+import type { StartInputVariableType } from '../../utils/start-inputs';
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
@@ -60,6 +73,7 @@ const config = props.modelValue;
 
 interface InputRow {
 	name: string;
+	type: StartInputVariableType;
 	defaultText: string;
 }
 
@@ -83,32 +97,44 @@ function toText(v: unknown): string {
 	return String(v);
 }
 
-/** 兼容旧写法（string[]）与新写法（[{name, default}]），统一为可编辑行。 */
+/** 兼容旧写法（string[]）与新写法（[{name, default, type?}]），统一为可编辑行。 */
 function buildRows(): InputRow[] {
 	const list = config.inputVariables;
 	if (!Array.isArray(list)) return [];
 	return list.map(item => {
-		if (typeof item === 'string') return { name: item, defaultText: '' };
+		if (typeof item === 'string') return { name: item, type: 'string' as const, defaultText: '' };
 		if (item && typeof item === 'object') {
+			const type = ['string', 'number', 'boolean', 'image'].includes(String(item.type))
+				? (item.type as StartInputVariableType)
+				: 'string';
+			// 图片变量不支持默认值：旧图脏数据（default 为 data URI/任意文本）直接丢弃
+			const hasDefault =
+				Object.prototype.hasOwnProperty.call(item, 'default') && type !== 'image';
 			return {
 				name: String(item.name ?? ''),
-				defaultText: Object.prototype.hasOwnProperty.call(item, 'default')
-					? toText(item.default)
-					: ''
+				type,
+				defaultText: hasDefault ? toText(item.default) : ''
 			};
 		}
-		return { name: '', defaultText: '' };
+		return { name: '', type: 'string' as const, defaultText: '' };
 	});
 }
 
 const rows = ref<InputRow[]>(buildRows());
 
-/** 行 → config.inputVariables（空默认值不落 default 键，与后端「仅在存在 default 时生效」一致）。 */
+/**
+ * 行 → config.inputVariables。
+ * - 空默认值不落 default 键，与后端「仅在存在 default 时生效」一致；
+ * - type 为 'string' 不落 type 键，保证旧图字节级不变（WFI-1b 兼容红线）。
+ */
 function commit() {
 	config.inputVariables = rows.value.map(row => {
 		const name = row.name;
-		if (row.defaultText.trim() === '') return { name };
-		return { name, default: coerceDefault(row.defaultText) };
+		const typeKey = row.type === 'string' ? {} : { type: row.type };
+		if (row.type === 'image' || row.defaultText.trim() === '') {
+			return { name, ...typeKey };
+		}
+		return { name, ...typeKey, default: coerceDefault(row.defaultText) };
 	});
 	emit('update:modelValue', config);
 }
@@ -138,7 +164,7 @@ function getVarError(index: number): string {
 }
 
 function addVariable() {
-	rows.value.push({ name: '', defaultText: '' });
+	rows.value.push({ name: '', type: 'string', defaultText: '' });
 	commit();
 }
 

@@ -20,6 +20,47 @@ describe('useUpstreamVariables', () => {
 			expect(vars.map(v => v.variableName)).toEqual(['query', 'topic']);
 		});
 
+		it('WFI-1b：start 声明的 type 透传为 variableType，生图输出标 image', () => {
+			const elements = ref<any[]>([
+				{
+					id: 'start',
+					type: 'start',
+					label: '开始',
+					data: {
+						config: {
+							inputVariables: [
+								{ name: 'input_image', type: 'image' },
+								{ name: 'query' }
+							]
+						}
+					}
+				},
+				{
+					id: 'gen',
+					type: 'image_generator',
+					label: '生图',
+					data: { config: { outputVariable: 'cover' } }
+				},
+				{
+					id: 'llm',
+					type: 'llm',
+					label: 'LLM',
+					data: { config: { outputVariable: 'ans' } }
+				},
+				{ id: 'end', type: 'end', label: '结束', data: { config: {} } },
+				{ id: 'e1', source: 'start', target: 'gen' },
+				{ id: 'e2', source: 'gen', target: 'llm' },
+				{ id: 'e3', source: 'llm', target: 'end' }
+			]);
+			const { getUpstreamVariablesForNode } = useUpstreamVariables(elements);
+			const vars = getUpstreamVariablesForNode('end');
+			const byName = Object.fromEntries(vars.map(v => [v.variableName, v]));
+			expect(byName.input_image.variableType).toBe('image');
+			expect(byName.query.variableType).toBe('string');
+			expect(byName.cover.variableType).toBe('image');
+			expect(byName.ans.variableType).toBeUndefined();
+		});
+
 		it('收集上游节点的 outputVariable', () => {
 			const elements = ref<any[]>([
 				{ id: 'start', type: 'start', label: '开始', data: { config: { inputVariables: [] } } },

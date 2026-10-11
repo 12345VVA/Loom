@@ -9,8 +9,8 @@ describe('start-inputs', () => {
 		it('兼容旧写法（纯字符串数组）', () => {
 			const vars = parseStartInputVariables(['query', 'topic']);
 			expect(vars).toEqual([
-				{ name: 'query', hasDefault: false, defaultValue: undefined },
-				{ name: 'topic', hasDefault: false, defaultValue: undefined }
+				{ name: 'query', hasDefault: false, defaultValue: undefined, type: 'string' },
+				{ name: 'topic', hasDefault: false, defaultValue: undefined, type: 'string' }
 			]);
 		});
 
@@ -20,8 +20,8 @@ describe('start-inputs', () => {
 				{ name: 'image_count', default: 10 }
 			]);
 			expect(vars).toEqual([
-				{ name: 'input_query', hasDefault: false, defaultValue: undefined },
-				{ name: 'image_count', hasDefault: true, defaultValue: 10 }
+				{ name: 'input_query', hasDefault: false, defaultValue: undefined, type: 'string' },
+				{ name: 'image_count', hasDefault: true, defaultValue: 10, type: 'string' }
 			]);
 		});
 
@@ -36,6 +36,16 @@ describe('start-inputs', () => {
 			expect(parseStartInputVariables('query')).toEqual([]);
 			expect(parseStartInputVariables(['', '  ', { name: '' }, 42])).toEqual([]);
 		});
+
+		it('WFI-1b：v2 type 声明透传，非法 type 回落 string', () => {
+			const vars = parseStartInputVariables([
+				{ name: 'input_image', type: 'image' },
+				{ name: 'count', type: 'number' },
+				{ name: 'flag', type: 'boolean' },
+				{ name: 'weird', type: 'audio' }
+			]);
+			expect(vars.map(v => v.type)).toEqual(['image', 'number', 'boolean', 'string']);
+		});
 	});
 
 	describe('buildStartInputsTemplate', () => {
@@ -49,6 +59,15 @@ describe('start-inputs', () => {
 
 		it('无声明时返回空对象', () => {
 			expect(buildStartInputsTemplate(undefined)).toEqual({});
+		});
+
+		it('WFI-1b：未声明默认值时按类型产初值（image→空串、number→0、boolean→false）', () => {
+			const tpl = buildStartInputsTemplate([
+				{ name: 'input_image', type: 'image' },
+				{ name: 'count', type: 'number' },
+				{ name: 'flag', type: 'boolean' }
+			]);
+			expect(tpl).toEqual({ input_image: '', count: 0, flag: false });
 		});
 	});
 });

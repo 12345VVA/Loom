@@ -9,6 +9,8 @@ export interface UpstreamVariable {
 	nodeLabel: string;
 	variableName: string;
 	nodeType: string;
+	/** 变量语义类型（WFI-1b）：start 声明的 type；生图节点输出标 'image'。供图片变量下拉过滤。 */
+	variableType?: string;
 	jsonFields?: any[];
 	_isLoopContext?: boolean;
 }
@@ -64,7 +66,8 @@ export function useUpstreamVariables(elements: Ref<any[]>) {
 							nodeId: src.id,
 							nodeLabel: src.label,
 							variableName: v.name,
-							nodeType: src.type
+							nodeType: src.type,
+							variableType: v.type
 						});
 					}
 				} else {
@@ -75,7 +78,9 @@ export function useUpstreamVariables(elements: Ref<any[]>) {
 							nodeId: src.id,
 							nodeLabel: src.label,
 							variableName: outputVar,
-							nodeType: src.type
+							nodeType: src.type,
+							// 生图节点产出的是图片 URL（__src 后缀变量为运行时衍生，不单列）
+							variableType: src.type === 'image_generator' ? 'image' : undefined
 						};
 						if (src.type === 'llm' && (cfg as any).outputFormat === 'json') {
 							entry.jsonFields = (cfg as any).jsonFields || [];
