@@ -62,13 +62,17 @@ def _globals_from(config: dict[str, Any], variables: dict[str, Any]) -> dict[str
 
 def run_ai_chat(
     profile_code: str,
-    user_prompt: str,
+    user_prompt: str | list[dict[str, Any]],
     system_prompt: str | None = None,
     response_format: dict[str, Any] | None = None,
 ) -> str:
     """
     统一驱动对话模型，做空响应拦截防御。
     response_format 支持 json_schema / json_object / None(纯文本)。
+
+    WFI-2a：user_prompt 支持多模态 Content Parts（OpenAI 风格 IR 列表）——
+    执行器组装图文混合消息，适配器负责 IR → 厂商协议转换（Claude/Gemini）。
+    system_prompt 恒为纯文本（Claude 适配器约定）。
     """
     from app.core.database import SessionLocal
 
@@ -132,12 +136,48 @@ def run_ai_image(
         return {"url": image_url, "result": result, "request_payload": request_payload}
 
 
+def _resolve_image_inputs(config: dict[str, Any], variables: dict[str, Any]) -> list[str]:
+    """WFI-2a：解析 LLM 节点绑定的图片输入，展平为 URL 列表。
+
+    image_variables（变量引用，str 或 list）优先，image_template（模板渲染）兜底——
+    与生图节点的参考图提取惯例一致。值支持单值或数组（批量上游产出），
+    空值/非字符串过滤；渲染失败按纯文本执行（不阻断主流程）。
+    """
+    raw: Any = None
+    names = config.get("image_variables") or []
+    if isinstance(names, str):
+        names = [names]
+    collected = [variables.get(n) for n in names if isinstance(n, str) and variables.get(n)]
+    if collected:
+        raw = collected
+    elif config.get("image_template"):
+        try:
+            raw = render_template(config["image_template"], variables)
+        except Exception as e:
+            logger.warning("LLM 节点 image_template 渲染失败，按纯文本执行: %s", e)
+    # 递归展平（变量值本身可能是数组，如批量上游产出），过滤空值与非字符串
+    flat: list[str] = []
+
+    def _flatten(item: Any) -> None:
+        if isinstance(item, list):
+            for sub in item:
+                _flatten(sub)
+        elif isinstance(item, str) and item.strip():
+            flat.append(item.strip())
+
+    _flatten(raw)
+    return flat
+
+
 async def execute_llm_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     LLM 节点执行逻辑，支持分层 JSON 输出：
     Tier 1: json_schema（有 jsonFields 时自动生成 Schema）
     Tier 2: json_object（宽松 JSON 模式）
     Tier 3: 纯文本（无 response_format）
+
+    WFI-2a：支持多模态图片输入——image_variables/image_template 绑定的图片 URL
+    与文本 Prompt 组装为 OpenAI 风格 IR parts，由适配器转换为目标协议。
     """
     profile_code = config.get("model_profile_code")
     system_prompt_template = config.get("system_prompt_template", "")
@@ -158,8 +198,16 @@ async def execute_llm_node(variables: dict[str, Any], config: dict[str, Any]) ->
     system_prompt = render_template(system_prompt_template, variables) if system_prompt_template else None
     user_prompt = render_template(user_prompt_template, variables)
 
+    # WFI-2a：解析图片输入并组装多模态 IR parts（无图时维持纯文本零变化）
+    image_urls = _resolve_image_inputs(config, variables)
+    if image_urls:
+        user_content: str | list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
+        user_content += [{"type": "image_url", "image_url": {"url": u}} for u in image_urls]
+    else:
+        user_content = user_prompt
+
     # 调用统一的 AI 对话驱动
-    content = await asyncio.to_thread(run_ai_chat, profile_code, user_prompt, system_prompt, response_format)
+    content = await asyncio.to_thread(run_ai_chat, profile_code, user_content, system_prompt, response_format)
 
     return _parse_llm_output(content, output_format, output_variable)
 

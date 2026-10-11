@@ -430,7 +430,10 @@ class AiRuntimeMessage(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     role: str
-    content: str
+    # WFI-2a：放宽为多模态 Content Parts（OpenAI 风格 IR：[{type:'text',...},{type:'image_url',...}]）。
+    # 纯文本调用方零影响（str 优先匹配）；安全层 check_input_safety 已扫描 list 中的 text part。
+    # system 消息恒为纯文本（Claude 适配器的 join 对 list 会 TypeError）——由调用方约定保证。
+    content: str | list[Any]
 
 
 class AiResponseJsonSchema(BaseModel):

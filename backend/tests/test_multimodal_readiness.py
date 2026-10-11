@@ -6,7 +6,9 @@
 标明哪些环节已就绪、哪些是闸门/风险点，防止后续改造时误判改动范围。
 
 勘察结论索引：
-1. ``AiRuntimeMessage.content: str`` 是唯一的 DTO 闸门——放宽后其余链路大多为 dict 透传
+1. ``AiRuntimeMessage.content`` 的 DTO 闸门**已于 WFI-2a 放宽**（``str | list[Any]``）——
+   多模态 IR parts 可全链路构造/序列化（正向断言见 MultimodalDtoChainTest 与
+   tests/test_workflow_llm_multimodal.py）；其余链路大多为 dict 透传
 2. ``OpenAIHttpAdapter.chat`` 对 messages 原样透传，多模态 content parts 无损到达 HTTP payload
 3. Claude 适配器：user 的 list content 原样透传但仍是 OpenAI 风格 parts
    （Claude 原生协议要求 ``{type:'image', source:{...}}``，需要协议转换层）；
@@ -26,7 +28,6 @@ import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
-from pydantic import ValidationError
 
 from app.core.config import settings
 from app.modules.ai.model.ai import AiProvider, AiRuntimeMessage
@@ -49,22 +50,22 @@ class FakeResponse:
 
 
 class RuntimeMessageDtoGateTest(unittest.TestCase):
-    """结论 1：DTO 闸门定位——content 当前只收 str。"""
+    """结论 1（WFI-2a 已放宽）：content 接受 str 与多模态 IR parts。"""
 
-    def test_rejects_list_content(self) -> None:
-        """list 形式的多模态 content 会被 pydantic 拒绝（阶段二需放宽的第一道闸）。"""
-        with self.assertRaises(ValidationError):
-            AiRuntimeMessage(role="user", content=MULTIMODAL_CONTENT)
+    def test_accepts_list_content(self) -> None:
+        """WFI-2a 放宽后：list 形式的多模态 content 可直接构造（原为 ValidationError 闸门）。"""
+        msg = AiRuntimeMessage(role="user", content=MULTIMODAL_CONTENT)
+        self.assertEqual(msg.model_dump()["content"], MULTIMODAL_CONTENT)
 
-    def test_rejects_list_content_via_chat_request(self) -> None:
-        """AiChatRequest 的 messages 校验同样经过 AiRuntimeMessage，dict 传入也会被拦。"""
+    def test_accepts_list_content_via_chat_request(self) -> None:
+        """AiChatRequest 的 messages 校验同样放行 dict 形式的多模态消息。"""
         from app.modules.ai.model.ai import AiChatRequest
 
-        with self.assertRaises(ValidationError):
-            AiChatRequest(
-                profile_code="p1",
-                messages=[{"role": "user", "content": MULTIMODAL_CONTENT}],
-            )
+        payload = AiChatRequest(
+            profile_code="p1",
+            messages=[{"role": "user", "content": MULTIMODAL_CONTENT}],
+        )
+        self.assertEqual(payload.messages[0].model_dump()["content"], MULTIMODAL_CONTENT)
 
     def test_accepts_plain_str(self) -> None:
         msg = AiRuntimeMessage(role="user", content="普通文本")
