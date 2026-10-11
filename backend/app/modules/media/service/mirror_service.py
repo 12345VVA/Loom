@@ -73,12 +73,20 @@ class MediaMirrorService:
         return StorageService.get_instance().read(storage_url)
 
     def upload_mirror_object(
-        self, content: bytes, filename: str, *, mime_type: str | None = None, source_path: str = ""
+        self,
+        content: bytes,
+        filename: str,
+        *,
+        mime_type: str | None = None,
+        source_path: str = "",
+        prefix: str = "assets",
     ) -> str:
         """上传镜像对象并返回公网可访问 URL。
 
         独立 client + 独立 bucket（MEDIA_MIRROR_BUCKET，缺省回落 S3_BUCKET）；
-        无扩展名时从 source_path 推断。此方法为可 patch 边界（单测锚点）。
+        无扩展名时从 source_path 推断。prefix 区分生命周期：``assets/`` 长期保留
+        （产物镜像），``wf-temp/`` 临时中转（bucket 端 30 天过期，WFI-4a Ingress 用）。
+        此方法为可 patch 边界（单测锚点）。
         """
         import boto3
 
@@ -90,7 +98,7 @@ class MediaMirrorService:
         if not ext and source_path:
             ext = os.path.splitext(source_path)[1].lower()
         date_folder = datetime.now().strftime("%Y/%m")
-        object_key = f"assets/{date_folder}/{uuid.uuid4().hex}{ext or '.bin'}"
+        object_key = f"{prefix}/{date_folder}/{uuid.uuid4().hex}{ext or '.bin'}"
 
         client = boto3.client(
             "s3",
