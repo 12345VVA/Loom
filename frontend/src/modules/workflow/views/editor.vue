@@ -951,7 +951,6 @@ async function deleteSelectedNode() {
 	50% {
 		transform: translate(-6px, -6px);
 	}
-	}
 }
 .empty-hint-fade-enter-active,
 .empty-hint-fade-leave-active {
