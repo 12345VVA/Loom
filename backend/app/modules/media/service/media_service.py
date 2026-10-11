@@ -30,6 +30,7 @@ from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.base.service.authority_service import is_super_admin
 from app.modules.media.model.media import MEDIA_ASSET_TYPES, MediaAsset
+from app.modules.media.service.mirror_service import dispatch_media_mirror
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,7 @@ class MediaAssetService(BaseAdminCrudService):
             merged = self._transfer_artifact(asset, artifact)
             if merged is not asset:
                 # 命中去重：原资产已合并删除，返回既有资产信息
+                dispatch_media_mirror(merged.id)
                 return {
                     "id": merged.id,
                     "status": "success",
@@ -159,6 +161,7 @@ class MediaAssetService(BaseAdminCrudService):
             asset.error_message = None
             self.session.add(asset)
             self.session.commit()
+            dispatch_media_mirror(asset.id)
             return {
                 "id": asset.id,
                 "status": "success",
@@ -220,11 +223,14 @@ class MediaAssetService(BaseAdminCrudService):
             attempted += 1
             try:
                 # 命中去重时 asset 已被删除合并，不得再操作原实例
-                if self._transfer_artifact(asset, artifact) is not asset:
+                merged = self._transfer_artifact(asset, artifact)
+                if merged is not asset:
+                    dispatch_media_mirror(merged.id)
                     continue
                 asset.error_message = None
                 self.session.add(asset)
                 self.session.commit()
+                dispatch_media_mirror(asset.id)
                 succeeded += 1
             except Exception as exc:  # 单资产失败不影响其余
                 err_str = str(exc)
@@ -403,11 +409,17 @@ class MediaAssetService(BaseAdminCrudService):
             self.session.refresh(asset)
             try:
                 logger.info("媒体资产开始转存", extra={"asset_id": asset.id, "artifact": _artifact_summary(artifact)})
-                self._transfer_artifact(asset, artifact)
+                final_asset = self._transfer_artifact(asset, artifact)
                 logger.info(
                     "媒体资产转存成功",
-                    extra={"asset_id": asset.id, "storage_url": asset.storage_url, "status": asset.status},
+                    extra={
+                        "asset_id": final_asset.id,
+                        "storage_url": final_asset.storage_url,
+                        "status": final_asset.status,
+                    },
                 )
+                # WFI-3b：转存成功后派发异步镜像（开关关闭/派发失败均不影响主流程）
+                dispatch_media_mirror(final_asset.id)
             except Exception as exc:  # 转存失败不能影响 AI 任务状态
                 asset.status = "failed"
                 asset.error_message = str(exc)[:1000]

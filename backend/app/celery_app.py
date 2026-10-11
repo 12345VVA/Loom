@@ -32,6 +32,7 @@ celery_app = Celery(
         "app.modules.ai.tasks.generation_tasks",
         "app.modules.workflow.tasks.workflow_tasks",
         "app.modules.workflow_eval.tasks.eval_tasks",
+        "app.modules.media.tasks.mirror_tasks",
     ],
 )
 
@@ -55,6 +56,7 @@ celery_app.conf.update(
         Queue("default"),
         Queue("workflow"),
         Queue("workflow.eval"),  # T9：批量评估独立队列，生产用 -Q workflow.eval 独占 worker，避免饿死正式工作流
+        Queue("media.mirror"),  # WFI-3b：媒体产物 TOS 镜像低优先级队列（可并入 default worker 或独立部署）
         *(Queue(queue_name) for queue_name in AI_TASK_QUEUES),
     ),
     task_routes={
@@ -63,6 +65,7 @@ celery_app.conf.update(
         "workflow.eval.sweep_timeouts": {"queue": "default"},
         "workflow.version.sweep_archived": {"queue": "default"},
         "workflow.cleanup.sweep": {"queue": "default"},
+        "media.mirror_asset": {"queue": "media.mirror"},
         "ai.execute_generation_task": {"queue": "ai.chat"},
         "ai.clean_expired_governance_data": {"queue": "default"},
         # 系统任务统一走 default 队列，避免落到匿名 celery 队列造成分流混乱

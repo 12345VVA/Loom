@@ -159,6 +159,13 @@ class Settings(BaseSettings):
     S3_BUCKET: str = ""
     S3_REGION: str = "auto"
     S3_PUBLIC_BASE_URL: str = ""
+    # WFI-3b 媒体产物 TOS/S3 异步镜像（双轨存储）。默认关：镜像失败绝不影响主流程，
+    # 派发/上传全程 try-except 包裹仅 Warning。复用 S3* 凭证组（TOS 走 S3 兼容端点），
+    # 独立 bucket 与公网基地址（缺省按 bucket 域名拼接直链）。
+    MEDIA_MIRROR_ENABLED: bool = False
+    MEDIA_MIRROR_QUEUE: str = "media.mirror"
+    MEDIA_MIRROR_BUCKET: str = ""
+    MEDIA_MIRROR_PUBLIC_BASE_URL: str = ""
 
     # API 限流配置
     RATE_LIMIT_ENABLED: bool = True  # 是否启用全局限流
