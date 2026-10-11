@@ -1,10 +1,11 @@
 import { reactive, ref, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { findInvalidNodeInput } from '../utils';
-import { buildStartInputsTemplate } from '../utils/start-inputs';
+import { parseStartInputVariables } from '../utils/start-inputs';
 import { useStream } from '/@/cool/service/stream';
 import dayjs from 'dayjs';
 
+import { useTestForm } from './use-test-form';
 import type { FlowNode } from '../types/editor';
 
 // 实例终态：收到这些状态后停止 SSE 流
@@ -69,6 +70,9 @@ export function useWorkflowTest(
 	// 上次试运行输入缓存（session 级，按工作流隔离）：重复试运行免重填
 	const lastInputsCache = new Map<string, string>();
 
+	// WFI-1c：可视化表单模式（按 start 声明的变量类型渲染控件，图片可上传）
+	const testForm = useTestForm(service, t);
+
 	async function openTestDialog() {
 		if (!workflowId.value) {
 			ElMessage.warning(t('请先保存新建的工作流然后再进行测试。'));
@@ -84,29 +88,53 @@ export function useWorkflowTest(
 			ElMessage.warning(invalidInput.error);
 			return;
 		}
-		// 优先回填上次输入（迭代调试常见场景）；无缓存时从 start 节点推导空表单
-		const cached = lastInputsCache.get(workflowId.value);
-		if (cached !== undefined) {
-			testDialog.form.inputsJson = cached;
-			testDialog.visible = true;
-			return;
-		}
 		const startNode = elements.value.find(
 			(el: any) => !('source' in el) && el.type === 'start'
 		) as FlowNode | undefined;
-		// 有默认值的输入变量直接预填默认值，其余留空串待填
-		const inputs = buildStartInputsTemplate(startNode?.data?.config?.inputVariables);
-		testDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
+		const declared = parseStartInputVariables(startNode?.data?.config?.inputVariables);
+		// 优先回填上次输入（迭代调试常见场景）；无缓存时从 start 节点推导空表单
+		const cached = lastInputsCache.get(workflowId.value);
+		let initial: Record<string, unknown> | undefined;
+		if (cached !== undefined) {
+			try {
+				const parsed = JSON.parse(cached);
+				if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+					initial = parsed;
+				}
+			} catch {
+				initial = undefined; // 旧缓存损坏：弃用并按声明重建
+			}
+		}
+		if (declared.length > 0) {
+			// 表单模式：按声明初始化（含类型感知初值与上次值回填）
+			testForm.initFromVariables(
+				declared.map(v => ({ name: v.name, type: v.type })),
+				startNode?.data?.config?.inputVariables,
+				initial
+			);
+			testDialog.form.inputsJson = testForm.toJson();
+		} else {
+			// start 未声明变量：维持 JSON 模式（老工作流习惯不变）
+			testForm.initFromVariables([], null);
+			testDialog.form.inputsJson = JSON.stringify(initial || {}, null, 2);
+		}
 		testDialog.visible = true;
 	}
 
 	async function startTestRun() {
 		let inputs = {};
-		try {
-			inputs = JSON.parse(testDialog.form.inputsJson);
-		} catch (e) {
-			ElMessage.warning(t('初始输入变量 JSON 格式错误！'));
-			return;
+		if (testForm.mode.value === 'form' && testForm.formAvailable.value) {
+			const formInputs = testForm.getInputs();
+			if (!formInputs) return; // 校验失败已提示
+			inputs = formInputs;
+			testDialog.form.inputsJson = testForm.toJson();
+		} else {
+			try {
+				inputs = JSON.parse(testDialog.form.inputsJson);
+			} catch (e) {
+				ElMessage.warning(t('初始输入变量 JSON 格式错误！'));
+				return;
+			}
 		}
 
 		testDialog.loading = true;
@@ -390,12 +418,13 @@ export function useWorkflowTest(
 
 	return {
 		testDialog,
+		testForm,
 		testLogDrawer,
 		clearTestStatus,
 		reopenTestLogDrawer,
 		openTestDialog,
 		startTestRun,
-		// 保留原导出名 stopLogPolling，editor.vue 调用方零改动；内部已切换为 SSE 流
+		// 保留原导文名 stopLogPolling，editor.vue 调用方零改动；内部已切换为 SSE 流
 		stopLogPolling: stopStream,
 		expandAllTestLogs,
 		collapseAllTestLogs,

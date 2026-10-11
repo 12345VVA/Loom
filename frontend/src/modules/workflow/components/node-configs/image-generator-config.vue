@@ -36,11 +36,26 @@
 				<el-radio-button value="variable">{{ $t('变量引用') }}</el-radio-button>
 				<el-radio-button value="template">{{ $t('模板渲染') }}</el-radio-button>
 			</el-radio-group>
-			<el-input
+			<el-select
 				v-if="imageInputMode === 'variable'"
 				v-model="config.imageVariable"
-				:placeholder="$t('上游变量名，例如：reference_image')"
-			/>
+				style="width: 100%"
+				filterable
+				allow-create
+				default-first-option
+				clearable
+				:placeholder="$t(imageVariablePlaceholder)"
+			>
+				<el-option
+					v-for="opt in imageVariableOptions"
+					:key="opt.value"
+					:label="opt.label"
+					:value="opt.value"
+				/>
+			</el-select>
+			<div v-if="imageInputMode === 'variable' && imageVariableOptions.length === 0" class="field-hint">
+				{{ $t('上游未声明图片变量，可在开始节点添加，或直接输入变量名') }}
+			</div>
 			<el-input
 				v-if="imageInputMode === 'template'"
 				v-model="config.imageTemplate"
@@ -110,6 +125,7 @@ import {
 const props = defineProps<{
 	modelValue: Record<string, any>;
 	profiles: any[];
+	upstreamVariables?: { variableName: string; nodeLabel?: string; variableType?: string }[];
 }>();
 
 const config = props.modelValue;
@@ -129,6 +145,27 @@ const imageInputMode = computed({
 const selectedProfile = computed(() =>
 	props.profiles.find((p: any) => p.code === config.modelProfileCode)
 );
+
+/**
+ * WFI-1c：参考图变量的智能下拉——优先列出上游图片变量（start 的 image 声明、
+ * 生图节点输出）；无图片变量时列出全部上游变量兜底。allow-create 保留手输能力。
+ */
+const imageVariableOptions = computed(() => {
+	const vars = props.upstreamVariables || [];
+	const imageVars = vars.filter(v => v.variableType === 'image');
+	const pool = imageVars.length > 0 ? imageVars : vars;
+	return pool.map(v => ({
+		label: v.nodeLabel ? `${v.nodeLabel} / ${v.variableName}` : v.variableName,
+		value: v.variableName
+	}));
+});
+
+const imageVariablePlaceholder = computed(() =>
+	(props.upstreamVariables || []).some(v => v.variableType === 'image')
+		? '选择或输入上游图片变量'
+		: '上游变量名，例如：reference_image'
+);
+
 
 const providerKind = computed(() => detectProviderKind(selectedProfile.value));
 

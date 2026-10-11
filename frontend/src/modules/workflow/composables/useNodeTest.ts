@@ -1,6 +1,7 @@
 import { reactive, computed, ref, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { findInvalidNodeInput } from '../utils';
+import { useTestForm } from './use-test-form';
 import type { FlowNode } from '../types/editor';
 
 /** 单节点测试结果 */
@@ -42,7 +43,7 @@ export function useNodeTest(
 	isDirty: Ref<boolean>,
 	elements: Ref<any[]>,
 	saveWorkflow: () => Promise<boolean | undefined>,
-	getUpstreamVariablesForNode: (nodeId: string) => { variableName: string }[]
+	getUpstreamVariablesForNode: (nodeId: string) => { variableName: string; variableType?: string }[]
 ) {
 	// 用于缓存用户在该节点输入的测试数据
 	const mockVariablesCache = reactive<Record<string, string>>({});
@@ -89,6 +90,9 @@ export function useNodeTest(
 	// 并发测试隔离令牌：每次发起测试自增，过期请求（用户已切走/再次测试）的结果被丢弃
 	let testToken = 0;
 
+	// WFI-1c：表单模式（节点声明的 inputs 变量按上游类型渲染控件，图片可上传）
+	const nodeTestForm = useTestForm(service, t);
+
 	/**
 	 * 打开单节点测试弹窗。
 	 * 会自动检查未保存修改并触发保存，确保后端读到最新配置。
@@ -123,16 +127,32 @@ export function useNodeTest(
 		nodeTestHistory.value = loadHistory(node.id);
 
 		// 智能预填变量：优先使用缓存，其次根据上游变量推导
-		if (mockVariablesCache[node.id]) {
-			nodeTestDialog.form.inputsJson = mockVariablesCache[node.id];
-		} else {
+		let cachedJson = mockVariablesCache[node.id];
+		if (!cachedJson) {
 			const definedInputs = node.data?.config?.inputs || [];
 			const inputs: Record<string, any> = {};
 			definedInputs.forEach((v: any) => {
 				inputs[v.name] = '';
 			});
-			nodeTestDialog.form.inputsJson = JSON.stringify(inputs, null, 2);
+			cachedJson = JSON.stringify(inputs, null, 2);
 		}
+		nodeTestDialog.form.inputsJson = cachedJson;
+
+		// 表单模式声明：节点 inputs 变量 + 上游同名变量的类型（图片渲染上传控件）
+		const upstream = getUpstreamVariablesForNode(node.id) || [];
+		const typeOf = (name: string) =>
+			upstream.find(v => v.variableName === name)?.variableType === 'image' ? 'image' : 'string';
+		const declared = ((node.data?.config?.inputs || []) as any[])
+			.map(v => ({ name: String(v?.name ?? ''), type: typeOf(String(v?.name ?? '')) as 'string' | 'image' }))
+			.filter(v => v.name);
+		let initial: Record<string, unknown> | undefined;
+		try {
+			const parsed = JSON.parse(cachedJson);
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) initial = parsed;
+		} catch {
+			initial = undefined;
+		}
+		nodeTestForm.initFromVariables(declared, null, initial);
 		nodeTestDialog.visible = true;
 	}
 
@@ -146,14 +166,21 @@ export function useNodeTest(
 		const token = ++testToken;
 
 		let mockVariables = {};
-		try {
-			mockVariables = JSON.parse(nodeTestDialog.form.inputsJson);
-			// 解析成功后缓存用户的输入，方便重复测试
-			mockVariablesCache[testNodeId] = nodeTestDialog.form.inputsJson;
-		} catch (e) {
-			ElMessage.warning(t('初始输入变量 JSON 格式错误！'));
-			return;
+		if (nodeTestForm.mode.value === 'form' && nodeTestForm.formAvailable.value) {
+			const formInputs = nodeTestForm.getInputs();
+			if (!formInputs) return; // 校验失败已提示
+			mockVariables = formInputs;
+			nodeTestDialog.form.inputsJson = nodeTestForm.toJson();
+		} else {
+			try {
+				mockVariables = JSON.parse(nodeTestDialog.form.inputsJson);
+			} catch (e) {
+				ElMessage.warning(t('初始输入变量 JSON 格式错误！'));
+				return;
+			}
 		}
+		// 缓存用户的输入，方便重复测试
+		mockVariablesCache[testNodeId] = nodeTestDialog.form.inputsJson;
 
 		nodeTestDialog.loading = true;
 		nodeTestDialog.result = null;
@@ -233,6 +260,7 @@ export function useNodeTest(
 
 	return {
 		nodeTestDialog,
+		nodeTestForm,
 		nodeTestHistory,
 		openNodeTestDialog,
 		startNodeTest,

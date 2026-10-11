@@ -156,12 +156,96 @@
 		<el-dialog
 			v-model="testDialog.visible"
 			:title="$t('试运行（草稿版，不影响线上数据）')"
-			width="500px"
+			width="560px"
 			destroy-on-close
 		>
-			<el-form :model="testDialog.form" label-width="120px">
+			<el-form label-width="120px" @submit.prevent>
 				<el-form-item :label="$t('初始输入变量')">
-					<cl-editor-codemirror v-model="testDialog.form.inputsJson" :height="220" />
+					<el-radio-group
+						v-if="testForm.formAvailable.value"
+						v-model="testForm.mode.value"
+						size="small"
+						style="margin-bottom: 8px"
+					>
+						<el-radio-button value="form">{{ $t('表单模式') }}</el-radio-button>
+						<el-radio-button value="json">{{ $t('JSON 模式') }}</el-radio-button>
+					</el-radio-group>
+
+					<template v-if="testForm.mode.value === 'form' && testForm.formAvailable.value">
+						<div
+							v-for="v in testForm.declared.value"
+							:key="v.name"
+							style="margin-bottom: 10px"
+						>
+							<div class="test-form-label">
+								{{ v.name }}
+								<span v-if="v.required" class="test-form-required">*</span>
+								<el-tag v-if="v.type === 'image'" size="small" type="info">{{
+									$t('图片')
+								}}</el-tag>
+							</div>
+
+							<!-- 图片变量：上传 + URL 手输二合一 -->
+							<template v-if="v.type === 'image'">
+								<div class="test-form-image">
+									<el-image
+										v-if="testForm.values.value[v.name]"
+										:src="assetUrl(String(testForm.values.value[v.name]))"
+										fit="cover"
+										class="test-form-thumb"
+										:preview-src-list="[assetUrl(String(testForm.values.value[v.name]))]"
+										preview-teleported
+									/>
+									<div class="test-form-image-main">
+										<el-input
+											v-model="testForm.values.value[v.name] as any"
+											:placeholder="$t('上传图片或输入图片地址')"
+											clearable
+										/>
+										<div style="display: flex; gap: 6px; margin-top: 6px">
+											<el-upload
+												:show-file-list="false"
+												accept="image/*"
+												:http-request="
+													(opt: any) => testForm.uploadImage(v.name, opt.file)
+												"
+											>
+												<el-button size="small" :loading="testForm.uploadingKey.value === v.name">
+													{{ $t('上传图片') }}
+												</el-button>
+											</el-upload>
+											<el-button
+												v-if="testForm.values.value[v.name]"
+												size="small"
+												@click="testForm.values.value[v.name] = ''"
+											>
+												{{ $t('清除') }}
+											</el-button>
+										</div>
+									</div>
+								</div>
+							</template>
+
+							<el-input-number
+								v-else-if="v.type === 'number'"
+								v-model="testForm.values.value[v.name] as any"
+								style="width: 100%"
+							/>
+							<el-switch v-else-if="v.type === 'boolean'" v-model="testForm.values.value[v.name] as any" />
+							<el-input
+								v-else
+								v-model="testForm.values.value[v.name] as any"
+								type="textarea"
+								:autosize="{ minRows: 1, maxRows: 4 }"
+							/>
+						</div>
+					</template>
+
+					<cl-editor-codemirror
+						v-else
+						v-model="testDialog.form.inputsJson"
+						:height="220"
+					/>
 				</el-form-item>
 			</el-form>
 			<template #footer>
@@ -176,12 +260,79 @@
 		<el-dialog
 			v-model="nodeTestDialog.visible"
 			:title="$t('测试节点') + '：' + nodeTestDialog.nodeLabel"
-			width="500px"
+			width="560px"
 			destroy-on-close
 		>
-			<el-form :model="nodeTestDialog.form" label-width="120px" label-position="top">
+			<el-form :model="nodeTestDialog.form" label-width="120px" label-position="top" @submit.prevent>
 				<el-form-item :label="$t('模拟上游输入变量')">
-					<cl-editor-codemirror v-model="nodeTestDialog.form.inputsJson" :height="260" />
+					<el-radio-group
+						v-if="nodeTestForm.formAvailable.value"
+						v-model="nodeTestForm.mode.value"
+						size="small"
+						style="margin-bottom: 8px"
+					>
+						<el-radio-button value="form">{{ $t('表单模式') }}</el-radio-button>
+						<el-radio-button value="json">{{ $t('JSON 模式') }}</el-radio-button>
+					</el-radio-group>
+
+					<template v-if="nodeTestForm.mode.value === 'form' && nodeTestForm.formAvailable.value">
+						<div
+							v-for="v in nodeTestForm.declared.value"
+							:key="v.name"
+							style="margin-bottom: 10px"
+						>
+							<div class="test-form-label">
+								{{ v.name }}
+								<el-tag v-if="v.type === 'image'" size="small" type="info">{{
+									$t('图片')
+								}}</el-tag>
+							</div>
+							<template v-if="v.type === 'image'">
+								<div class="test-form-image">
+									<el-image
+										v-if="nodeTestForm.values.value[v.name]"
+										:src="assetUrl(String(nodeTestForm.values.value[v.name]))"
+										fit="cover"
+										class="test-form-thumb"
+										:preview-src-list="[assetUrl(String(nodeTestForm.values.value[v.name]))]"
+										preview-teleported
+									/>
+									<div class="test-form-image-main">
+										<el-input
+											v-model="nodeTestForm.values.value[v.name] as any"
+											:placeholder="$t('上传图片或输入图片地址')"
+											clearable
+										/>
+										<div style="display: flex; gap: 6px; margin-top: 6px">
+											<el-upload
+												:show-file-list="false"
+												accept="image/*"
+												:http-request="
+													(opt: any) => nodeTestForm.uploadImage(v.name, opt.file)
+												"
+											>
+												<el-button
+													size="small"
+													:loading="nodeTestForm.uploadingKey.value === v.name"
+												>
+													{{ $t('上传图片') }}
+												</el-button>
+											</el-upload>
+											<el-button
+												v-if="nodeTestForm.values.value[v.name]"
+												size="small"
+												@click="nodeTestForm.values.value[v.name] = ''"
+											>
+												{{ $t('清除') }}
+											</el-button>
+										</div>
+									</div>
+								</div>
+							</template>
+							<el-input v-else v-model="nodeTestForm.values.value[v.name] as any" />
+						</div>
+					</template>
+					<cl-editor-codemirror v-else v-model="nodeTestDialog.form.inputsJson" :height="260" />
 				</el-form-item>
 			</el-form>
 
@@ -275,6 +426,7 @@ import { useRoute } from 'vue-router';
 import { useCool } from '/@/cool';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
+import { useAssetUrl } from '/$/media';
 
 // 导入 Vue Flow
 import { VueFlow, useVueFlow } from '@vue-flow/core';
@@ -321,6 +473,8 @@ import ContextMenu from '../components/context-menu.vue';
 const { service } = useCool();
 const { t } = useI18n();
 const route = useRoute();
+// 试运行表单的图片缩略预览：/uploads 相对路径经此注入下载令牌
+const { assetUrl } = useAssetUrl();
 
 const { project, getSelectedNodes, viewport } = useVueFlow();
 
@@ -467,6 +621,7 @@ const { fetchWorkflowData, fetchAiProfiles, publishWorkflow, exportWorkflow } = 
 // 测试运行相关方法使用 composable
 const {
 	testDialog,
+	testForm,
 	testLogDrawer,
 	clearTestStatus,
 	reopenTestLogDrawer,
@@ -483,16 +638,23 @@ const { getUpstreamVariablesForNode, upstreamVariablesOf, invalidateUpstreamCach
 	useUpstreamVariables(elements);
 
 // 单节点测试 composable
-const { nodeTestDialog, nodeTestHistory, openNodeTestDialog, startNodeTest, closeNodeTestDialog, clearMockCache } =
-	useNodeTest(
-		service,
-		t,
-		workflowId,
-		isDirty,
-		elements,
-		saveWorkflow,
-		getUpstreamVariablesForNode
-	);
+const {
+	nodeTestDialog,
+	nodeTestForm,
+	nodeTestHistory,
+	openNodeTestDialog,
+	startNodeTest,
+	closeNodeTestDialog,
+	clearMockCache
+} = useNodeTest(
+	service,
+	t,
+	workflowId,
+	isDirty,
+	elements,
+	saveWorkflow,
+	getUpstreamVariablesForNode
+);
 
 // 历史条目点击：回填当时的模拟变量输入，便于复现
 function restoreNodeTestHistory(h: { inputsJson: string }) {
@@ -1116,5 +1278,38 @@ async function deleteSelectedNode() {
 :deep(.vue-flow__selection) {
 	background: rgba(64, 158, 255, 0.08);
 	border: 1px solid var(--el-color-primary);
+}
+
+/* 试运行 / 单节点测试的可视化表单（WFI-1c） */
+.test-form-label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 4px;
+	font-size: 12px;
+	color: var(--el-text-color-regular);
+
+	.test-form-required {
+		color: var(--el-color-danger);
+	}
+}
+
+.test-form-image {
+	display: flex;
+	gap: 10px;
+	align-items: flex-start;
+
+	.test-form-thumb {
+		width: 72px;
+		height: 72px;
+		border-radius: 6px;
+		border: 1px solid var(--el-border-color-lighter);
+		flex: none;
+	}
+
+	.test-form-image-main {
+		flex: 1;
+		min-width: 0;
+	}
 }
 </style>

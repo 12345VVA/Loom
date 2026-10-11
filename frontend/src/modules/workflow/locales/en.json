@@ -641,5 +641,19 @@
 	"支持插值变量，例如：画一张关于 {topic} 的图片": "Variable interpolation supported. E.g. draw a picture about {'{'}topic{'}'}",
 	"JSON": "JSON",
 	"字": "chars",
-	"默认为 ,": "Default ,"
+	"默认为 ,": "Default ,",
+	"图片": "Image",
+	"数值": "Number",
+	"布尔": "Boolean",
+	"上传图片": "Upload Image",
+	"表单模式": "Form",
+	"JSON 模式": "JSON",
+	"上传图片或输入图片地址": "Upload an image or paste its URL",
+	"上传成功但未返回地址": "Upload succeeded but no URL was returned",
+	"图片上传失败: ": "Image upload failed: ",
+	"变量 {name} 为必填项": "Variable {name} is required",
+	"变量 {name} 不支持直接粘贴 Base64，请上传图片后使用 URL": "Variable {name} does not accept pasted Base64; upload the image and use its URL",
+	"图片变量运行时上传": "Provided at runtime via upload",
+	"选择或输入上游图片变量": "Select or type an upstream image variable",
+	"上游未声明图片变量，可在开始节点添加，或直接输入变量名": "No upstream image variables declared. Add one on the start node, or type the variable name directly."
 }

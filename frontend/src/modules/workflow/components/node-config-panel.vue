@@ -116,6 +116,7 @@
 						v-model="selectedNode.data.config"
 						:node-id="selectedNode.id"
 						:profiles="filteredProfiles"
+						:upstream-variables="upstreamVariables"
 						:available-target-nodes="
 							selectedNode.type === 'loop_controller' ||
 							selectedNode.type === 'batch_processor'
