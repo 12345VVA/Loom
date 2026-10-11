@@ -59,46 +59,46 @@
 				</div>
 			</template>
 		</cl-upsert>
-	</cl-crud>
 
-	<el-drawer v-model="tester.visible" :title="$t('测试调用')" size="440px">
-		<el-form label-position="top">
-			<el-alert
-				v-if="tester.modelType === 'image'"
-				class="mb-12"
-				type="info"
-				:closable="false"
-				show-icon
-			>
-				{{ $t('图片配置会调用统一生图接口，结果可直接预览。') }}
-			</el-alert>
-			<el-form-item :label="$t('提示词')">
-				<el-input v-model="tester.prompt" type="textarea" :rows="6" />
-			</el-form-item>
-			<el-button type="primary" @click="runTest">{{ $t('调用') }}</el-button>
-		</el-form>
-		<div v-if="tester.imageItems.length" class="test-images">
-			<div v-for="(item, index) in tester.imageItems" :key="index" class="test-image">
-				<el-image
-					:src="item.src"
-					fit="contain"
-					:preview-src-list="tester.imageItems.map(i => i.src)"
-					:initial-index="index"
-					preview-teleported
-				/>
-				<el-button text type="primary" @click="copyText(item.value)">{{
-					$t('复制')
-				}}</el-button>
+		<el-drawer v-model="tester.visible" :title="$t('测试调用')" size="440px">
+			<el-form label-position="top">
+				<el-alert
+					v-if="tester.modelType === 'image'"
+					class="mb-12"
+					type="info"
+					:closable="false"
+					show-icon
+				>
+					{{ $t('图片配置会调用统一生图接口，结果可直接预览。') }}
+				</el-alert>
+				<el-form-item :label="$t('提示词')">
+					<el-input v-model="tester.prompt" type="textarea" :rows="6" />
+				</el-form-item>
+				<el-button type="primary" @click="runTest">{{ $t('调用') }}</el-button>
+			</el-form>
+			<div v-if="tester.imageItems.length" class="test-images">
+				<div v-for="(item, index) in tester.imageItems" :key="index" class="test-image">
+					<el-image
+						:src="item.src"
+						fit="contain"
+						:preview-src-list="tester.imageItems.map(i => i.src)"
+						:initial-index="index"
+						preview-teleported
+					/>
+					<el-button text type="primary" @click="copyText(item.value)">{{
+						$t('复制')
+					}}</el-button>
+				</div>
 			</div>
-		</div>
-		<el-input
-			v-if="tester.result"
-			v-model="tester.result"
-			type="textarea"
-			:rows="12"
-			class="result"
-		/>
-	</el-drawer>
+			<el-input
+				v-if="tester.result"
+				v-model="tester.result"
+				type="textarea"
+				:rows="12"
+				class="result"
+			/>
+		</el-drawer>
+	</cl-crud>
 </template>
 
 <script lang="ts" setup>

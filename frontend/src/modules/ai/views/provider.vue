@@ -42,35 +42,35 @@
 				</div>
 			</template>
 		</cl-upsert>
-	</cl-crud>
 
-	<el-drawer v-model="catalog.visible" :title="$t('导入模型厂商预设')" size="720px">
-		<el-table :data="catalog.items" border>
-			<el-table-column prop="name" :label="$t('厂商')" min-width="140" />
-			<el-table-column prop="adapter" :label="$t('适配器')" min-width="150" />
-			<el-table-column :label="$t('模型')" min-width="180">
-				<template #default="{ row }">
-					<div class="catalog-types">
-						<el-tag
-							v-for="item in modelTypeStats(row)"
-							:key="item.label"
-							size="small"
-							effect="plain"
-						>
-							{{ item.label }} {{ item.value }}
-						</el-tag>
-					</div>
-				</template>
-			</el-table-column>
-			<el-table-column :label="$t('操作')" width="90" align="center">
-				<template #default="{ row }">
-					<el-button text type="primary" @click="importCatalog(row)">{{
-						$t('导入')
-					}}</el-button>
-				</template>
-			</el-table-column>
-		</el-table>
-	</el-drawer>
+		<el-drawer v-model="catalog.visible" :title="$t('导入模型厂商预设')" size="720px">
+			<el-table :data="catalog.items" border>
+				<el-table-column prop="name" :label="$t('厂商')" min-width="140" />
+				<el-table-column prop="adapter" :label="$t('适配器')" min-width="150" />
+				<el-table-column :label="$t('模型')" min-width="180">
+					<template #default="{ row }">
+						<div class="catalog-types">
+							<el-tag
+								v-for="item in modelTypeStats(row)"
+								:key="item.label"
+								size="small"
+								effect="plain"
+							>
+								{{ item.label }} {{ item.value }}
+							</el-tag>
+						</div>
+					</template>
+				</el-table-column>
+				<el-table-column :label="$t('操作')" width="90" align="center">
+					<template #default="{ row }">
+						<el-button text type="primary" @click="importCatalog(row)">{{
+							$t('导入')
+						}}</el-button>
+					</template>
+				</el-table-column>
+			</el-table>
+		</el-drawer>
+	</cl-crud>
 </template>
 
 <script lang="ts" setup>

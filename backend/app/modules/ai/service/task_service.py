@@ -8,14 +8,49 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
+from app.framework.controller_meta import CrudQuery, RelationConfig
 from app.modules.ai.model.ai import AiGenerationTask, AiTaskSubmitRequest
-from app.modules.base.model.auth import User
+from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 
 
 class AiGenerationTaskService(BaseAdminCrudService):
     def __init__(self, session: Session):
         super().__init__(session, AiGenerationTask)
+
+    def list(
+        self,
+        query: CrudQuery | None = None,
+        current_user: User | None = None,
+        relations: tuple[RelationConfig, ...] | None = None,
+        is_tree: bool | None = None,
+        parent_field: str | None = None,
+    ) -> list[dict]:
+        rows = super().list(query, current_user, relations, is_tree, parent_field)
+        return [self._compact_task_row(item) for item in rows]
+
+    def page(
+        self,
+        query: CrudQuery,
+        current_user: User | None = None,
+        relations: tuple[RelationConfig, ...] = (),
+    ) -> PageResult[dict]:
+        result = super().page(query, current_user, relations)
+        result.items = [self._compact_task_row(item) for item in result.items]
+        return result
+
+    def _compact_task_row(self, data: dict) -> dict:
+        row = dict(data)
+        # 列表/分页中对超大结果（如 base64 图片）进行裁剪，避免超大体积拖垮传输并破坏响应信封
+        result_payload = row.get("resultPayload") or row.get("result_payload")
+        if isinstance(result_payload, str) and len(result_payload) > 2048:
+            row["resultPayload"] = None
+            row["result_payload"] = None
+        request_payload = row.get("requestPayload") or row.get("request_payload")
+        if isinstance(request_payload, str) and len(request_payload) > 4096:
+            row["requestPayload"] = None
+            row["request_payload"] = None
+        return row
 
     def submit(self, payload: AiTaskSubmitRequest | dict, current_user: User | None = None) -> dict:
         if isinstance(payload, dict):

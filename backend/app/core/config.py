@@ -186,7 +186,7 @@ class Settings(BaseSettings):
     ADMIN_CSRF_ORIGIN_CHECK_ENABLED: bool = False
 
     # 中间件/启动配置
-    RESPONSE_ENVELOPE_MAX_BYTES: int = 2 * 1024 * 1024
+    RESPONSE_ENVELOPE_MAX_BYTES: int = 20 * 1024 * 1024
     MODULE_LOAD_STRICT: bool = True
     METRICS_ENABLED: bool = False
     API_VERSION_PREFIX_ENABLED: bool = False

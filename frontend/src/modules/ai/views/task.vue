@@ -42,61 +42,61 @@
 			<cl-flex1 />
 			<cl-pagination />
 		</cl-row>
-	</cl-crud>
 
-	<el-drawer v-model="viewer.visible" :title="$t('任务详情')" size="640px">
-		<el-tabs>
-			<el-tab-pane :label="$t('请求')">
-				<pre>{{ formatJson(viewer.row?.requestPayload) }}</pre>
-			</el-tab-pane>
-			<el-tab-pane :label="$t('结果')">
-				<el-descriptions v-if="viewer.row" class="task-meta" border :column="2">
-					<el-descriptions-item label="Task ID">{{
-						viewer.row.id || '-'
-					}}</el-descriptions-item>
-					<el-descriptions-item :label="$t('状态')">{{
-						statusOptions.find(item => item.value === viewer.row.status)?.label ||
-						viewer.row.status ||
-						'-'
-					}}</el-descriptions-item>
-					<el-descriptions-item :label="$t('配置')">{{
-						viewer.row.profileCode || '-'
-					}}</el-descriptions-item>
-					<el-descriptions-item :label="$t('进度')">{{
-						viewer.row.progress ?? '-'
-					}}</el-descriptions-item>
-				</el-descriptions>
-				<div v-if="taskImageItems.length" class="image-results">
-					<div v-for="(item, index) in taskImageItems" :key="index" class="image-result">
-						<el-image
-							class="image-result__preview"
-							:src="item.src"
-							fit="contain"
-							:preview-src-list="taskPreviewUrls"
-							:initial-index="index"
-							preview-teleported
-						/>
-						<div class="image-result__actions">
-							<el-button text type="primary" @click="copyText(item.value)">{{
-								$t('复制')
-							}}</el-button>
-							<el-button
-								v-if="item.url"
-								text
-								type="primary"
-								@click="openUrl(item.url)"
-								>{{ $t('打开') }}</el-button
-							>
+		<el-drawer v-model="viewer.visible" :title="$t('任务详情')" size="640px">
+			<el-tabs>
+				<el-tab-pane :label="$t('请求')">
+					<pre>{{ formatJson(viewer.row?.requestPayload) }}</pre>
+				</el-tab-pane>
+				<el-tab-pane :label="$t('结果')">
+					<el-descriptions v-if="viewer.row" class="task-meta" border :column="2">
+						<el-descriptions-item label="Task ID">{{
+							viewer.row.id || '-'
+						}}</el-descriptions-item>
+						<el-descriptions-item :label="$t('状态')">{{
+							statusOptions.find(item => item.value === viewer.row.status)?.label ||
+							viewer.row.status ||
+							'-'
+						}}</el-descriptions-item>
+						<el-descriptions-item :label="$t('配置')">{{
+							viewer.row.profileCode || '-'
+						}}</el-descriptions-item>
+						<el-descriptions-item :label="$t('进度')">{{
+							viewer.row.progress ?? '-'
+						}}</el-descriptions-item>
+					</el-descriptions>
+					<div v-if="taskImageItems.length" class="image-results">
+						<div v-for="(item, index) in taskImageItems" :key="index" class="image-result">
+							<el-image
+								class="image-result__preview"
+								:src="item.src"
+								fit="contain"
+								:preview-src-list="taskPreviewUrls"
+								:initial-index="index"
+								preview-teleported
+							/>
+							<div class="image-result__actions">
+								<el-button text type="primary" @click="copyText(item.value)">{{
+									$t('复制')
+								}}</el-button>
+								<el-button
+									v-if="item.url"
+									text
+									type="primary"
+									@click="openUrl(item.url)"
+									>{{ $t('打开') }}</el-button
+								>
+							</div>
 						</div>
 					</div>
-				</div>
-				<pre>{{ formatJson(viewer.row?.resultPayload) }}</pre>
-			</el-tab-pane>
-			<el-tab-pane :label="$t('错误')">
-				<pre>{{ viewer.row?.errorMessage || '-' }}</pre>
-			</el-tab-pane>
-		</el-tabs>
-	</el-drawer>
+					<pre>{{ formatJson(viewer.row?.resultPayload) }}</pre>
+				</el-tab-pane>
+				<el-tab-pane :label="$t('错误')">
+					<pre>{{ viewer.row?.errorMessage || '-' }}</pre>
+				</el-tab-pane>
+			</el-tabs>
+		</el-drawer>
+	</cl-crud>
 </template>
 
 <script lang="ts" setup>
@@ -264,9 +264,19 @@ async function retryTask(row: any) {
 	loadStats();
 }
 
-function showPayload(row: any) {
+async function showPayload(row: Eps.task) {
 	viewer.row = row;
 	viewer.visible = true;
+	if (row?.id) {
+		try {
+			const detail = await service.ai.task.info({ id: row.id });
+			if (detail && viewer.row?.id === row.id) {
+				viewer.row = detail;
+			}
+		} catch (err) {
+			console.error('Failed to load task detail:', err);
+		}
+	}
 }
 
 function canCancel(row: any) {
@@ -282,7 +292,44 @@ function formatJson(value?: string) {
 		return '-';
 	}
 	try {
-		return JSON.stringify(JSON.parse(value), null, 2);
+		const parsed = JSON.parse(value);
+		// unknown 化递归（显式 any 会超本文件压制计数）：JSON 结构运行时形态，
+		// 收窄全靠 typeof/Array.isArray 守卫
+		const sanitize = (obj: unknown, depth = 0): unknown => {
+			if (depth > 6 || !obj) return obj;
+			if (typeof obj === 'string') {
+				if (
+					obj.length > 500 &&
+					(obj.startsWith('data:image') || /^[A-Za-z0-9+/=]{100,}$/.test(obj.slice(0, 100)))
+				) {
+					return `${obj.slice(0, 80)}... [base64 truncated: ${obj.length} chars]`;
+				}
+				return obj;
+			}
+			if (Array.isArray(obj)) {
+				return obj.map(item => sanitize(item, depth + 1));
+			}
+			if (typeof obj === 'object') {
+				const rec = obj as Record<string, unknown>;
+				const res: Record<string, unknown> = {};
+				for (const k of Object.keys(rec)) {
+					if (
+						(k === 'b64_json' || k === 'b64Json' || k === 'base64') &&
+						typeof rec[k] === 'string' &&
+						rec[k].length > 200
+					) {
+						res[k] = `${(rec[k] as string).slice(0, 60)}... [base64 truncated: ${
+							(rec[k] as string).length
+						} bytes]`;
+					} else {
+						res[k] = sanitize(rec[k], depth + 1);
+					}
+				}
+				return res;
+			}
+			return obj;
+		};
+		return JSON.stringify(sanitize(parsed), null, 2);
 	} catch {
 		return value;
 	}

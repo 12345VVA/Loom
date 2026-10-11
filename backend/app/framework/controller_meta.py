@@ -808,6 +808,8 @@ def _build_crud_query(
     # 处理过滤条件
     for key, val in all_params.items():
         raw_params[key] = val
+        if val is None or val == "":
+            continue
 
         # 基础过滤映射
         if key in eq_mappings:

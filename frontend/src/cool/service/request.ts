@@ -144,6 +144,17 @@ request.interceptors.response.use(
 		const { code, data, message } = res.data;
 
 		if (!code) {
+			// 兜底：若后端因超大响应跳过信封包装直接返回了 PageResult（items+total），自动转换为 cool-admin 规范结构
+			if (res.data && Array.isArray(res.data.items) && typeof res.data.total === 'number') {
+				return {
+					list: res.data.items,
+					pagination: {
+						page: res.data.page ?? 1,
+						size: res.data.pageSize ?? res.data.page_size ?? 10,
+						total: res.data.total
+					}
+				};
+			}
 			return res.data; // 返回数据
 		}
 
