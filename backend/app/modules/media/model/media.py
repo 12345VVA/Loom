@@ -32,6 +32,9 @@ class MediaAsset(BaseEntity, table=True):
     # VARCHAR(1000) 在 PG 强制截断会直接入库失败（SQLite 无长度校验掩盖了该缺陷）
     original_url: str | None = Field(default=None, sa_column=Column(Text))
     storage_url: str | None = Field(default=None, index=True, max_length=1000)
+    # 云端镜像直链（WFI-3a 双轨存储）：TOS/S3 异步镜像成功后回写的公网可访问 URL
+    # （公开读直链或预签名）。下游大模型消费端优先读取，本地受令牌保护地址兜底。
+    remote_url: str | None = Field(default=None, max_length=1000)
     file_name: str | None = Field(default=None, index=True, max_length=255)
     mime_type: str | None = Field(default=None, index=True, max_length=100)
     md5: str | None = Field(default=None, index=True, max_length=32)
@@ -62,6 +65,7 @@ class MediaAssetRead(BaseModel):
     profile_code: str | None = None
     original_url: str | None = None
     storage_url: str | None = None
+    remote_url: str | None = None
     file_name: str | None = None
     mime_type: str | None = None
     md5: str | None = None

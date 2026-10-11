@@ -31532,6 +31532,17 @@
                           ],
                           "title": "Providercode"
                         },
+                        "remoteUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Remoteurl"
+                        },
                         "sizeBytes": {
                           "default": 0,
                           "title": "Sizebytes",
@@ -32010,6 +32021,17 @@
                           ],
                           "title": "Providercode"
                         },
+                        "remoteUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Remoteurl"
+                        },
                         "sizeBytes": {
                           "default": 0,
                           "title": "Sizebytes",
@@ -32401,6 +32423,17 @@
                               }
                             ],
                             "title": "Providercode"
+                          },
+                          "remoteUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Remoteurl"
                           },
                           "sizeBytes": {
                             "default": 0,
@@ -32822,6 +32855,17 @@
                                   }
                                 ],
                                 "title": "Providercode"
+                              },
+                              "remoteUrl": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Remoteurl"
                               },
                               "sizeBytes": {
                                 "default": 0,
@@ -33502,6 +33546,17 @@
                           ],
                           "title": "Providercode"
                         },
+                        "remoteUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Remoteurl"
+                        },
                         "sizeBytes": {
                           "default": 0,
                           "title": "Sizebytes",
@@ -33882,6 +33937,18 @@
           "validate": null
         },
         {
+          "comment": "remote_url",
+          "dict": null,
+          "label": "remoteUrl",
+          "nullable": true,
+          "prop": "remoteUrl",
+          "propertyName": "remoteUrl",
+          "required": false,
+          "source": "remote_url",
+          "type": "string",
+          "validate": null
+        },
+        {
           "comment": "file_name",
           "dict": null,
           "label": "fileName",
@@ -34225,6 +34292,18 @@
             "value": true
           },
           "source": "storage_url",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "remote_url",
+          "dict": null,
+          "label": "remoteUrl",
+          "nullable": true,
+          "prop": "remoteUrl",
+          "propertyName": "remoteUrl",
+          "required": false,
+          "source": "remote_url",
           "type": "string",
           "validate": null
         },
