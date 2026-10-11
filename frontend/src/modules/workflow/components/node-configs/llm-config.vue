@@ -34,6 +34,45 @@
 		</el-form-item>
 	</node-config-section>
 
+	<node-config-section :title="$t('多模态图片输入')">
+		<el-form-item style="margin-bottom: 0">
+			<el-radio-group v-model="imageInputMode" size="small" style="margin-bottom: 6px">
+				<el-radio-button value="none">{{ $t('无') }}</el-radio-button>
+				<el-radio-button value="variable">{{ $t('变量引用') }}</el-radio-button>
+				<el-radio-button value="template">{{ $t('模板渲染') }}</el-radio-button>
+			</el-radio-group>
+
+			<el-select
+				v-if="imageInputMode === 'variable'"
+				v-model="config.imageVariables"
+				multiple
+				filterable
+				allow-create
+				default-first-option
+				clearable
+				style="width: 100%"
+				:placeholder="$t('选择上游图片变量（可多选）')"
+			>
+				<el-option
+					v-for="opt in imageVariableOptions"
+					:key="opt.value"
+					:label="opt.label"
+					:value="opt.value"
+				/>
+			</el-select>
+			<el-input
+				v-if="imageInputMode === 'template'"
+				v-model="config.imageTemplate"
+				:placeholder="$t('模板字符串，例如：{image_url}')"
+			/>
+
+			<div class="field-hint">{{ $t('绑定的图片将与提示词一起发送给模型（需具备视觉能力的多模态模型）') }}</div>
+			<div v-if="!selectedProfileSupportsVision" class="field-hint vision-warning">
+				{{ $t('当前模型可能不支持视觉输入，建议切换多模态模型') }}
+			</div>
+		</el-form-item>
+	</node-config-section>
+
 	<node-config-section :title="$t('输出')" :tooltip="$t('定义模型输出的内容及变量名')">
 		<template #actions>
 			<el-dropdown
@@ -130,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Upload, DocumentCopy, Plus } from '@element-plus/icons-vue';
 import ClJsonTreeEditor from '../cl-json-tree-editor.vue';
 import NodeConfigSection from './node-config-section.vue';
@@ -138,10 +177,47 @@ import NodeConfigSection from './node-config-section.vue';
 const props = defineProps<{
 	modelValue: Record<string, any>;
 	profiles: any[];
+	upstreamVariables?: { variableName: string; nodeLabel?: string; variableType?: string }[];
 }>();
 
 const config = props.modelValue;
 const jsonEditorRef = ref<InstanceType<typeof ClJsonTreeEditor>>();
+
+// WFI-2d：多模态图片输入（imageVariables 多选优先 / imageTemplate 模板兜底，
+// 与生图节点参考图惯例一致）。mode 为显式状态（computed setter 方案在清空互斥键后
+// 会因目标键为空立即回落 'none'，切不进 template——见 llm-config.test.ts 用例）
+const imageInputMode = ref<'none' | 'variable' | 'template'>(
+	(Array.isArray(config.imageVariables) && config.imageVariables.length > 0) || config.imageTemplate
+		? Array.isArray(config.imageVariables) && config.imageVariables.length > 0
+			? 'variable'
+			: 'template'
+		: 'none'
+);
+watch(imageInputMode, mode => {
+	if (mode !== 'variable') config.imageVariables = [];
+	if (mode !== 'template') config.imageTemplate = '';
+});
+
+const imageVariableOptions = computed(() => {
+	const vars = props.upstreamVariables || [];
+	const imageVars = vars.filter(v => v.variableType === 'image');
+	const pool = imageVars.length > 0 ? imageVars : vars;
+	return pool.map(v => ({
+		label: v.nodeLabel ? `${v.nodeLabel} / ${v.variableName}` : v.variableName,
+		value: v.variableName
+	}));
+});
+
+// 软警示：profile 数据带能力标签且明确不含 vision 时提示（以后端校验为准）
+const selectedProfileSupportsVision = computed(() => {
+	const p = props.profiles.find((item: any) => item.code === config.modelProfileCode) as any;
+	if (!p) return true;
+	const caps = String(
+		p.modelCapabilities || p.capabilities || p.model_capabilities || ''
+	).toLowerCase();
+	if (!caps) return true; // 无能力信息不警示
+	return caps.split(',').some((c: string) => c.trim() === 'vision');
+});
 </script>
 
 <style lang="scss" scoped>
@@ -150,6 +226,10 @@ const jsonEditorRef = ref<InstanceType<typeof ClJsonTreeEditor>>();
 	color: var(--el-text-color-placeholder);
 	margin-top: 4px;
 	line-height: 1.4;
+}
+
+.vision-warning {
+	color: var(--el-color-warning);
 }
 </style>
 
