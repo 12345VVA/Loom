@@ -4,7 +4,7 @@
 			<cl-variable-input
 				v-model="config.expression"
 				scope="global"
-				placeholder="例如: score > 80"
+				:placeholder="$t('例如: score > 80')"
 				@blur="validateExpression"
 			/>
 			<div v-if="exprError" class="var-error-tip">{{ exprError }}</div>

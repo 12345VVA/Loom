@@ -24,7 +24,7 @@
 				v-model="config.promptTemplate"
 				:height="220"
 				simple
-				placeholder="支持插值变量，例如：画一张关于 {topic} 的图片"
+				:placeholder="$t('支持插值变量，例如：画一张关于 {topic} 的图片')"
 			/>
 		</el-form-item>
 	</node-config-section>
@@ -39,12 +39,12 @@
 			<el-input
 				v-if="imageInputMode === 'variable'"
 				v-model="config.imageVariable"
-				placeholder="上游变量名，例如：reference_image"
+				:placeholder="$t('上游变量名，例如：reference_image')"
 			/>
 			<el-input
 				v-if="imageInputMode === 'template'"
 				v-model="config.imageTemplate"
-				placeholder="模板字符串，例如：{image_url}"
+				:placeholder="$t('模板字符串，例如：{image_url}')"
 			/>
 			<div class="field-hint">
 				仅火山方舟、阿里百炼、OpenAI 兼容渠道等支持图生图的模型下生效。
@@ -86,7 +86,7 @@
 
 	<node-config-section :title="$t('输出')">
 		<el-form-item :label="$t('图片 URL 写入变量')" style="margin-bottom: 0">
-			<el-input v-model="config.outputVariable" placeholder="默认: image_url" />
+			<el-input v-model="config.outputVariable" :placeholder="$t('默认: image_url')" />
 		</el-form-item>
 	</node-config-section>
 </template>

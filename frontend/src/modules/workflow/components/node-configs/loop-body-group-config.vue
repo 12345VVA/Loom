@@ -1,7 +1,7 @@
 <template>
 	<div class="loop-body-group-config">
 		<el-form-item :label="$t('容器名称')">
-			<el-input v-model="config.label" placeholder="循环体" />
+			<el-input v-model="config.label" :placeholder="$t('循环体')" />
 		</el-form-item>
 		<div class="group-hint">
 			<el-icon><info-filled /></el-icon>

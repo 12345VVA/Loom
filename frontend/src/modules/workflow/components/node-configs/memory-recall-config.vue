@@ -131,7 +131,7 @@
 				</el-select>
 			</el-form-item>
 			<el-form-item :label="$t('结果写入变量')" style="margin-bottom: 0">
-				<el-input v-model="config.outputVariable" placeholder="默认: memories" />
+				<el-input v-model="config.outputVariable" :placeholder="$t('默认: memories')" />
 			</el-form-item>
 			<div class="field-hint">
 				{{

@@ -5,7 +5,7 @@
 				<cl-variable-input
 					v-model="config.inputVariable"
 					scope="global"
-					placeholder="例如: loop_results"
+					:placeholder="$t('例如: loop_results')"
 				/>
 			</el-form-item>
 
@@ -21,7 +21,7 @@
 			</el-form-item>
 
 			<el-form-item v-if="config.transformType === 'join_array'" :label="$t('分隔符')">
-				<el-input v-model="config.transformArgs.separator" placeholder="默认为 ," />
+				<el-input v-model="config.transformArgs.separator" :placeholder="$t('默认为 ,')" />
 			</el-form-item>
 
 			<el-form-item
@@ -32,7 +32,7 @@
 				<cl-variable-input
 					v-model="config.transformArgs.path"
 					:show-variable-btn="false"
-					placeholder="例如: data.user.name"
+					:placeholder="$t('例如: data.user.name')"
 				/>
 				<div style="font-size: 12px; color: #999; line-height: 1.2; margin-top: 4px">
 					{{ $t('支持点号访问和数组下标，如 items.0.title') }}
@@ -49,7 +49,7 @@
 					scope="global"
 					type="textarea"
 					:rows="3"
-					placeholder="例如: ', '.join(input_value)"
+					:placeholder="$t('例如: \', \'.join(input_value)')"
 				/>
 				<div style="font-size: 12px; color: #999; line-height: 1.2; margin-top: 4px">
 					{{
@@ -63,7 +63,7 @@
 
 		<node-config-section :title="$t('输出')">
 			<el-form-item :label="$t('输出变量写入')" required style="margin-bottom: 0">
-				<el-input v-model="config.outputVariable" placeholder="例如: transformed_value" />
+				<el-input v-model="config.outputVariable" :placeholder="$t('例如: transformed_value')" />
 			</el-form-item>
 		</node-config-section>
 	</div>

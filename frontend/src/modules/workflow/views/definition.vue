@@ -222,7 +222,9 @@ function handleFileImport(e: Event) {
 			tempGraphJson.value = data.graph_json || data.graphJson || '{}';
 			// Open Add dialog
 			Crud.value?.rowAppend({
-				name: data.metadata?.name ? data.metadata.name + ' (导入)' : '导入的工作流',
+				name: data.metadata?.name
+					? `${data.metadata.name} (${t('导入')})`
+					: t('导入的工作流'),
 				description: data.metadata?.description || '',
 				status: 1
 			});

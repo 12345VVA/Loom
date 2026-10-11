@@ -130,6 +130,9 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { Plus, Delete, CaretRight } from '@element-plus/icons-vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps<{
 	node: any;
@@ -180,7 +183,7 @@ const placeholderText = computed(() => {
 	if (props.mode === 'value' && props.parentNode?.type === 'array') {
 		return props.index.toString();
 	}
-	return '字段名';
+	return t('字段名');
 });
 
 // 当父节点是 array 时，根据索引更新子节点的 name 属性

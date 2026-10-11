@@ -13,7 +13,7 @@
 					<el-input
 						v-model="row.name"
 						:class="{ 'is-error': getVarError(index) }"
-						placeholder="变量名 (如 query)"
+						:placeholder="$t('变量名 (如 query)')"
 						size="small"
 						@blur="validateVar(index)"
 						@input="commit"
@@ -25,7 +25,7 @@
 				<div style="flex: 1">
 					<el-input
 						v-model="row.defaultText"
-						placeholder="默认值 (可留空)"
+						:placeholder="$t('默认值 (可留空)')"
 						size="small"
 						@input="commit"
 					/>

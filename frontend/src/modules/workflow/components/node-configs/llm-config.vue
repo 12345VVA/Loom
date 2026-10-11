@@ -18,7 +18,7 @@
 				v-model="config.systemPromptTemplate"
 				:height="180"
 				simple
-				placeholder="用于设定大模型角色、背景约束、输出格式等，支持使用变量插值。例如：你是一个经验丰富的前端工程师..."
+				:placeholder="$t('用于设定大模型角色、背景约束、输出格式等，支持使用变量插值。例如：你是一个经验丰富的前端工程师...')"
 			/>
 		</el-form-item>
 	</node-config-section>
@@ -29,7 +29,7 @@
 				v-model="config.promptTemplate"
 				:height="220"
 				simple
-				placeholder="用户当前输入的具体问题或任务，支持使用变量插值。例如：请帮我写一段关于 {input_query} 的代码"
+				:placeholder="$t('用户当前输入的具体问题或任务，支持使用变量插值。例如：请帮我写一段关于 {input_query} 的代码')"
 			/>
 		</el-form-item>
 	</node-config-section>
@@ -124,7 +124,7 @@
 			:label="$t('输出变量写入')"
 			:style="{ marginTop: config.outputFormat === 'json' ? '16px' : '0' }"
 		>
-			<el-input v-model="config.outputVariable" placeholder="默认: output" />
+			<el-input v-model="config.outputVariable" :placeholder="$t('默认: output')" />
 		</el-form-item>
 	</node-config-section>
 </template>

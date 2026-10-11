@@ -16,7 +16,7 @@
 				/>
 			</div>
 			<el-form-item :label="$t('变量名')" class="assignment-field">
-				<el-input v-model="item.variable_name" placeholder="例如: base_url" />
+				<el-input v-model="item.variable_name" :placeholder="$t('例如: base_url')" />
 			</el-form-item>
 			<el-form-item :label="$t('类型')" class="assignment-field">
 				<el-select v-model="item.value_type" style="width: 100%">
@@ -31,7 +31,7 @@
 					v-model="item.value"
 					type="textarea"
 					:rows="2"
-					:placeholder="item.value_type === 'expression' ? '输入表达式' : '输入值'"
+					:placeholder="item.value_type === 'expression' ? $t('输入表达式') : $t('输入值')"
 					:show-variable-btn="item.value_type === 'expression'"
 					:scope="item.value_type === 'expression' ? 'global' : 'local'"
 				/>

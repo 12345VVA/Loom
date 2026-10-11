@@ -15,7 +15,7 @@
 	</node-config-section>
 	<node-config-section :title="$t('输出')">
 		<el-form-item :label="$t('输出变量写入')" style="margin-bottom: 0">
-			<el-input v-model="config.outputVariable" placeholder="默认: tool_result" />
+			<el-input v-model="config.outputVariable" :placeholder="$t('默认: tool_result')" />
 		</el-form-item>
 	</node-config-section>
 </template>

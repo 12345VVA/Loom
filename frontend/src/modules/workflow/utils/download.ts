@@ -1,6 +1,7 @@
 import { ElMessage } from 'element-plus';
 import { storage } from '/@/cool/utils';
 import { config } from '/@/config';
+import { i18n } from '/#/i18n/config';
 
 // CRC-32 计算表
 const CRC_TABLE = new Uint32Array(256);
@@ -334,7 +335,7 @@ export async function downloadSingleImage(url: string, filename?: string) {
 		}
 
 		triggerDownload(blob, finalName);
-		ElMessage.success('开始下载图片');
+		ElMessage.success(i18n.global.t('开始下载图片'));
 	} catch (err: any) {
 		console.error('Download image error, fallback to direct anchor:', err);
 		// 降级：直接用 a 标签打开/下载（跨域时 download 属性无效，会以新标签打开）
@@ -346,7 +347,7 @@ export async function downloadSingleImage(url: string, filename?: string) {
 		link.click();
 		document.body.removeChild(link);
 		// 明示降级结果（WFU-M23）：此前静默降级，用户以为点了下载却弹出网页或无反应
-		ElMessage.info('下载未能在后台完成，已尝试在新标签打开原图，可右键另存');
+		ElMessage.info(i18n.global.t('下载未能在后台完成，已尝试在新标签打开原图，可右键另存'));
 	}
 }
 
@@ -365,7 +366,7 @@ export async function downloadImagesAsZip(
 	onProgress?: (current: number, total: number) => void
 ) {
 	if (!items || items.length === 0) {
-		ElMessage.warning('没有可下载的图片');
+		ElMessage.warning(i18n.global.t('没有可下载的图片'));
 		return;
 	}
 
@@ -406,15 +407,20 @@ export async function downloadImagesAsZip(
 	}
 
 	if (files.length === 0) {
-		ElMessage.error('图片获取失败，无法打包');
+		ElMessage.error(i18n.global.t('图片获取失败，无法打包'));
 		return;
 	}
 
 	const zipBlob = createZipBlob(files);
 	triggerDownload(zipBlob, zipFilename);
 	if (files.length < total) {
-		ElMessage.warning(`已打包 ${files.length}/${total} 张图片（部分图片获取失败）`);
+		ElMessage.warning(
+			i18n.global.t('已打包 {ok}/{total} 张图片（部分图片获取失败）', {
+				ok: files.length,
+				total
+			})
+		);
 	} else {
-		ElMessage.success(`成功打包下载 ${files.length} 张图片！`);
+		ElMessage.success(i18n.global.t('成功打包下载 {count} 张图片！', { count: files.length }));
 	}
 }

@@ -92,7 +92,7 @@
 
 		<node-config-section :title="$t('输出')">
 			<el-form-item :label="$t('记忆 ID 写入变量')" style="margin-bottom: 0">
-				<el-input v-model="config.outputVariable" placeholder="默认: memory_id" />
+				<el-input v-model="config.outputVariable" :placeholder="$t('默认: memory_id')" />
 			</el-form-item>
 		</node-config-section>
 

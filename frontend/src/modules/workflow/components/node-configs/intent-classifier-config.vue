@@ -16,7 +16,7 @@
 			<cl-variable-input
 				v-model="config.inputVariable"
 				scope="global"
-				placeholder="留空则依次回落 query / user_query"
+				:placeholder="$t('留空则依次回落 query / user_query')"
 			/>
 			<div style="font-size: 12px; color: #999; line-height: 1.2; margin-top: 4px">
 				{{ $t('从上游输出中选择待分类的文本来源变量；留空时依次使用全局 query / user_query 变量。') }}
@@ -35,12 +35,12 @@
 				"
 			>
 				<el-form-item :label="$t('意图名称')" required style="margin-bottom: 8px">
-					<el-input v-model="intent.name" placeholder="例如: 翻译" size="small" />
+					<el-input v-model="intent.name" :placeholder="$t('例如: 翻译')" size="small" />
 				</el-form-item>
 				<el-form-item :label="$t('描述')" style="margin-bottom: 8px">
 					<el-input
 						v-model="intent.description"
-						placeholder="意图判定依据"
+						:placeholder="$t('意图判定依据')"
 						size="small"
 					/>
 				</el-form-item>

@@ -89,7 +89,7 @@
 			<cl-editor-markdown
 				v-model="config.outputTemplate"
 				:height="260"
-				placeholder="支持使用变量插值。例如：最终结果为 {LLM节点_output}"
+				:placeholder="$t('支持使用变量插值。例如：最终结果为 {LLM节点_output}')"
 			/>
 		</template>
 	</node-config-section>
