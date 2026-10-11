@@ -141,7 +141,7 @@
   },
   "src/modules/ai/views/task.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 7
+      "count": 6
     }
   },
   "src/modules/base/components/dept/check.vue": {
