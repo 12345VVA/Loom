@@ -83,7 +83,16 @@
 						<polyline points="2 12 12 17 22 12" />
 					</svg>
 					<span>{{ $t('产物总计') }}</span>
-					<strong>{{ items.length }}</strong>
+					<strong>{{ totalCount > items.length ? totalCount : items.length }}</strong>
+					<el-tooltip
+						v-if="totalCount > items.length"
+						:content="$t('单实例产物数量超过单页上限，画廊仅加载前 {n} 条', { n: items.length })"
+						placement="top"
+					>
+						<el-tag size="small" type="warning" effect="plain">
+							{{ $t('仅显示前 {n} 条', { n: items.length }) }}
+						</el-tag>
+					</el-tooltip>
 				</div>
 				<div v-if="imageItems.length > 0" class="summary-pill image">
 					<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -299,6 +308,8 @@ const drawerSize = computed(() => {
 
 const loading = ref(false);
 const loadError = ref(false);
+// 服务端产物总数（与单页 500 上限比对，超出时提示截断）
+const totalCount = ref(0);
 
 function retryLoad() {
 	if (props.instanceId) {
@@ -332,6 +343,8 @@ async function fetchArtifacts(instanceId: number) {
 		});
 		// 核心关键修复：CoolAdmin 标准分页接口返回的是 res.list，并兼容部分环境下的 res.items
 		items.value = res?.list || res?.items || [];
+		// 记录总数（WFU 低级）：超过单页 500 上限时统计栏提示「仅显示前 N 条」
+		totalCount.value = res?.pagination?.total ?? items.value.length;
 	} catch (err: any) {
 		// 记录错误态（WFU-M22）：此前一闪而过的 toast 后停留在「暂无产物」引导文案，
 		// 用户会误以为工作流没配置 end 输出而去查配置

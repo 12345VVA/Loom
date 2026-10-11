@@ -63,23 +63,46 @@ export function formatFullTime(value?: string): string {
 export function inferErrorCategory(msg: string, t: TranslateFn): string {
 	if (!msg) return t('执行异常');
 	const lower = msg.toLowerCase();
-	if (lower.includes('timeout') || lower.includes('timed out')) return 'TIMEOUT';
-	if (lower.includes('connect') || lower.includes('network') || lower.includes('connection'))
+	if (lower.includes('timeout') || lower.includes('timed out') || msg.includes('超时')) {
+		return 'TIMEOUT';
+	}
+	if (
+		lower.includes('connect') ||
+		lower.includes('network') ||
+		lower.includes('connection') ||
+		msg.includes('网络') ||
+		msg.includes('连接')
+	) {
 		return 'NETWORK';
+	}
 	if (
 		lower.includes('auth') ||
 		lower.includes('token') ||
 		lower.includes('permission') ||
 		lower.includes('401') ||
-		lower.includes('403')
-	)
+		lower.includes('403') ||
+		msg.includes('鉴权') ||
+		msg.includes('授权') ||
+		msg.includes('令牌') ||
+		msg.includes('权限')
+	) {
 		return 'AUTH';
-	if (lower.includes('rate') || lower.includes('limit') || lower.includes('429'))
+	}
+	if (lower.includes('rate') || lower.includes('limit') || lower.includes('429') || msg.includes('限流')) {
 		return 'RATE_LIMIT';
-	if (lower.includes('json') || lower.includes('parse') || lower.includes('syntax'))
+	}
+	if (lower.includes('json') || lower.includes('parse') || lower.includes('syntax') || msg.includes('解析')) {
 		return 'SYNTAX';
-	if (lower.includes('valid') || lower.includes('schema') || lower.includes('type'))
+	}
+	if (
+		lower.includes('valid') ||
+		lower.includes('schema') ||
+		lower.includes('type') ||
+		msg.includes('校验') ||
+		msg.includes('验证失败')
+	) {
 		return 'VALIDATION';
+	}
 	return t('运行时异常');
 }
 

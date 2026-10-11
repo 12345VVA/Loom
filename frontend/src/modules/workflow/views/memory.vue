@@ -30,22 +30,38 @@
 			</el-select>
 
 			<el-radio-group v-model="envFilter" style="margin-right: 10px" @change="onFilterChange">
-				<el-radio-button label="production">{{ $t('生产') }}</el-radio-button>
-				<el-radio-button label="test">{{ $t('测试') }}</el-radio-button>
-				<el-radio-button label="all">{{ $t('全部') }}</el-radio-button>
+				<el-radio-button value="production">{{ $t('生产') }}</el-radio-button>
+				<el-radio-button value="test">{{ $t('测试') }}</el-radio-button>
+				<el-radio-button value="all">{{ $t('全部') }}</el-radio-button>
 			</el-radio-group>
 
 			<el-select
 				v-model="sourceRunTypeFilter"
 				clearable
 				:placeholder="$t('来源渠道')"
-				style="width: 150px"
+				style="width: 150px; margin-right: 10px"
 				@change="onFilterChange"
 			>
 				<el-option :label="$t('生产运行')" value="production" />
 				<el-option :label="$t('试运行')" value="trial" />
 				<el-option :label="$t('单点测试')" value="test_node" />
 				<el-option :label="$t('管理页新增')" value="admin" />
+			</el-select>
+
+			<!-- 记忆类型筛选（后端 field_eq memoryType 一等支持，选项复用展示标签单一来源） -->
+			<el-select
+				v-model="memoryTypeFilter"
+				clearable
+				:placeholder="$t('记忆类型')"
+				style="width: 130px"
+				@change="onFilterChange"
+			>
+				<el-option
+					v-for="(label, value) in MEMORY_TYPE_LABELS"
+					:key="value"
+					:label="$t(label)"
+					:value="value"
+				/>
 			</el-select>
 		</cl-row>
 
@@ -277,16 +293,18 @@ interface DefinitionOption {
 const definitions = ref<DefinitionOption[]>([]);
 const embeddingProfiles = ref<Eps.profile[]>([]);
 
-// --- 筛选（§11：工作流主维度 + 环境分段 + source_run_type 一等筛选）---
+// --- 筛选（§11：工作流主维度 + 环境分段 + source_run_type 一等筛选 + 记忆类型）---
 const definitionFilter = ref<number | undefined>(undefined);
 const envFilter = ref<'production' | 'test' | 'all'>('production');
 const sourceRunTypeFilter = ref<string | undefined>(undefined);
+const memoryTypeFilter = ref<string | undefined>(undefined);
 
 function onFilterChange() {
 	Crud.value?.refresh({
 		definitionId: definitionFilter.value,
 		memoryEnv: envFilter.value === 'all' ? undefined : envFilter.value,
 		sourceRunType: sourceRunTypeFilter.value,
+		memoryType: memoryTypeFilter.value,
 		page: 1
 	});
 }

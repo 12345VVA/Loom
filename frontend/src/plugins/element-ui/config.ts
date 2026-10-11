@@ -3,6 +3,7 @@ import { config } from '/@/config';
 import ElementPlus from 'element-plus';
 import 'element-plus/theme-chalk/display.css';
 import zhCn from 'element-plus/es/locale/lang/zh-cn';
+import zhTw from 'element-plus/es/locale/lang/zh-tw';
 import en from 'element-plus/es/locale/lang/en';
 // import fr from 'element-plus/es/locale/lang/fr';
 // ...
@@ -11,6 +12,7 @@ import './css/index.scss';
 export default (): ModuleConfig => {
 	const lang = {
 		'zh-cn': zhCn,
+		'zh-tw': zhTw,
 		en
 		// fr...
 	};

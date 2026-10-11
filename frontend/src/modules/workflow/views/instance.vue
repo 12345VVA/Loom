@@ -6,13 +6,38 @@
 				{{ $t('正式运行') }}
 			</el-button>
 			<cl-flex1 />
+			<!-- 工作流/状态筛选（WFU-M36：与运行类型分段共用 onFilterChange，走 crud.params 持久合并） -->
+			<el-select
+				v-model="definitionFilter"
+				:placeholder="$t('工作流')"
+				clearable
+				filterable
+				style="width: 180px"
+				@change="onFilterChange"
+			>
+				<el-option v-for="d in definitions" :key="d.id" :label="d.name" :value="d.id" />
+			</el-select>
+			<el-select
+				v-model="statusFilter"
+				:placeholder="$t('运行状态')"
+				clearable
+				style="width: 130px"
+				@change="onFilterChange"
+			>
+				<el-option
+					v-for="s in statusOptions"
+					:key="s.value"
+					:label="$t(s.label)"
+					:value="s.value"
+				/>
+			</el-select>
 			<!-- 运行类型分段：默认只看生产（测试记录需显式切换，避免正式/测试混淆） -->
-			<el-radio-group v-model="runTypeFilter" @change="onRunTypeChange">
-				<el-radio-button label="production">{{ $t('生产') }}</el-radio-button>
-				<el-radio-button label="trial">{{ $t('试运行') }}</el-radio-button>
-				<el-radio-button label="eval">{{ $t('评估') }}</el-radio-button>
-				<el-radio-button label="test_node">{{ $t('单点') }}</el-radio-button>
-				<el-radio-button label="all">{{ $t('全部') }}</el-radio-button>
+			<el-radio-group v-model="runTypeFilter" @change="onFilterChange">
+				<el-radio-button value="production">{{ $t('生产') }}</el-radio-button>
+				<el-radio-button value="trial">{{ $t('试运行') }}</el-radio-button>
+				<el-radio-button value="eval">{{ $t('评估') }}</el-radio-button>
+				<el-radio-button value="test_node">{{ $t('单点') }}</el-radio-button>
+				<el-radio-button value="all">{{ $t('全部') }}</el-radio-button>
 			</el-radio-group>
 			<cl-search-key :placeholder="$t('搜索状态、当前节点')" />
 		</cl-row>
@@ -89,15 +114,19 @@
 		</template>
 	</el-dialog>
 
-	<!-- 人工确认审批弹窗 -->
+	<!-- 人工确认/断点续跑审批弹窗（WFU-M39：failed 实例文案与 paused 区分） -->
 	<el-dialog
 		v-model="approvalDialog.visible"
-		:title="$t('人工审批确认')"
+		:title="isResumeMode ? $t('断点续跑确认') : $t('人工审批确认')"
 		width="450px"
 		destroy-on-close
 	>
 		<div style="margin-bottom: 16px; color: var(--el-text-color-secondary)">
-			{{ $t('该工作流已运行至人工确认节点，请填写反馈并提交以恢复后续节点的执行：') }}
+			{{
+				isResumeMode
+					? $t('该工作流此前执行失败，若失败点前存在待确认的人工审批断点，可从此处恢复继续执行：')
+					: $t('该工作流已运行至人工确认节点，请填写反馈并提交以恢复后续节点的执行：')
+			}}
 		</div>
 		<el-form :model="approvalDialog.form" label-width="80px">
 			<el-form-item :label="$t('反馈输入')">
@@ -105,14 +134,14 @@
 					v-model="approvalDialog.form.userInput"
 					type="textarea"
 					:rows="4"
-					placeholder="例如: true 或 审批通过 的任何变量值"
+					:placeholder="$t('例如: true 或 审批通过 的任何变量值')"
 				/>
 			</el-form-item>
 		</el-form>
 		<template #footer>
 			<el-button @click="approvalDialog.visible = false">{{ $t('取消') }}</el-button>
 			<el-button type="primary" :loading="approvalDialog.loading" @click="submitApproval">
-				{{ $t('提交恢复') }}
+				{{ isResumeMode ? $t('从断点恢复') : $t('提交恢复') }}
 			</el-button>
 		</template>
 	</el-dialog>
@@ -144,7 +173,7 @@ defineOptions({
 
 import { useCrud, useTable } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
 import LogDrawer from '../components/log-drawer.vue';
@@ -214,8 +243,27 @@ const definitions = ref<WorkflowDefinition[]>([]);
 // 运行类型分段过滤：默认只看生产；「全部」时不传 runType（后端无此参数即不过滤）
 const runTypeFilter = ref<'production' | 'trial' | 'eval' | 'test_node' | 'all'>('production');
 
-function onRunTypeChange() {
-	Crud.value?.refresh({ runType: runTypeFilter.value === 'all' ? undefined : runTypeFilter.value, page: 1 });
+// 工作流/状态筛选（WFU-M36）：definition_id 为后端 field_eq 原生列名（无 camel 别名）
+const definitionFilter = ref<number | undefined>(undefined);
+const statusFilter = ref<string | undefined>(undefined);
+
+const statusOptions = [
+	{ label: '待运行', value: 'pending' },
+	{ label: '运行中', value: 'running' },
+	{ label: '已挂起', value: 'paused' },
+	{ label: '成功', value: 'success' },
+	{ label: '失败', value: 'failed' },
+	{ label: '已取消', value: 'cancelled' }
+];
+
+// 三类筛选统一入口：crud.params 持久合并，翻页/搜索自动携带（照 memory.vue 模式）
+function onFilterChange() {
+	Crud.value?.refresh({
+		runType: runTypeFilter.value === 'all' ? undefined : runTypeFilter.value,
+		definition_id: definitionFilter.value ?? undefined,
+		status: statusFilter.value ?? undefined,
+		page: 1
+	});
 }
 
 // 启动对话框表单
@@ -228,15 +276,18 @@ const startDialog = reactive({
 	}
 });
 
-// 审批对话框表单
+// 审批对话框表单（status 区分 paused 人工确认 / failed 断点续跑文案）
 const approvalDialog = reactive({
 	visible: false,
 	loading: false,
 	instanceId: undefined as number | undefined,
+	status: '',
 	form: {
 		userInput: 'true'
 	}
 });
+
+const isResumeMode = computed(() => approvalDialog.status === 'failed');
 
 // 日志抽屉状态
 const logDrawer = reactive({
@@ -338,10 +389,20 @@ const Table = useTable({
 					{
 						label: t('人工确认'),
 						type: 'warning',
-						// paused 直接恢复；failed 为断点续跑（WF-P2-17，仅有人工审批断点的
-						// 实例可续，无断点的由后端 409 提示重跑）
-						hidden: !['paused', 'failed'].includes(scope.row.status),
+						// paused：等待人工审批输入后恢复
+						hidden: scope.row.status !== 'paused',
 						onClick({ scope }: any) {
+							openApprovalDialog(scope.row);
+						}
+					},
+					{
+						label: t('从断点续跑'),
+						type: 'warning',
+						// failed 为断点续跑（WF-P2-17，仅有人工审批断点的实例可续，
+						// 无断点的由后端 409 提示重跑）；文案与 paused 人工确认区分（WFU-M39）
+						hidden: scope.row.status !== 'failed',
+						// 无类型标注（隐式 any）：文件 any 压制按计数，显式标注会超限全量报错
+						onClick({ scope }) {
 							openApprovalDialog(scope.row);
 						}
 					},
@@ -441,6 +502,7 @@ async function submitStartInstance() {
 
 function openApprovalDialog(row: WorkflowInstance) {
 	approvalDialog.instanceId = row.id;
+	approvalDialog.status = row.status;
 	approvalDialog.form.userInput = 'true';
 	approvalDialog.visible = true;
 }
