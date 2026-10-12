@@ -7,6 +7,7 @@ Create Date: 2026-10-11
 
 from __future__ import annotations
 
+import sqlalchemy as sa
 from alembic import op
 
 revision = "20261011_0023"
@@ -21,7 +22,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "media_asset",
-        op.Column("remote_url", op.String(length=1000), nullable=True),
+        sa.Column("remote_url", sa.String(length=1000), nullable=True),
     )
 
 
