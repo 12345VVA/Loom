@@ -14,10 +14,23 @@
 			</div>
 
 			<div class="message-bubble">
-				<!-- 用户气泡：纯文本保留换行 -->
-				<div v-if="message.role === 'user'" class="user-text">
-					{{ message.content }}
-				</div>
+				<!-- 用户气泡：附图缩略图 + 纯文本保留换行 -->
+				<template v-if="message.role === 'user'">
+					<div v-if="message.images?.length" class="user-images">
+						<el-image
+							v-for="(img, idx) in message.images"
+							:key="idx"
+							:src="img"
+							fit="cover"
+							:preview-src-list="message.images"
+							:initial-index="idx"
+							preview-teleported
+						/>
+					</div>
+					<div v-if="message.content" class="user-text">
+						{{ message.content }}
+					</div>
+				</template>
 
 				<!-- AI 气泡：Markdown 渲染 -->
 				<div v-else class="assistant-content">
@@ -208,6 +221,21 @@ async function copyText(text: string) {
 
 		.user-text {
 			white-space: pre-wrap;
+		}
+
+		.user-images {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px;
+			margin-bottom: 6px;
+
+			.el-image {
+				width: 96px;
+				height: 96px;
+				border-radius: 6px;
+				border: 1px solid var(--el-border-color-lighter);
+				cursor: zoom-in;
+			}
 		}
 
 		.assistant-content {

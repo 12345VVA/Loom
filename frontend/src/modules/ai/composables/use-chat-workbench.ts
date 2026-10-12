@@ -4,12 +4,28 @@ import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useStream } from '/@/cool/service/stream';
 import { aiRuntime } from '/$/ai';
+import {
+	CHAT_IMAGE_MAX_COUNT,
+	buildMessageContent,
+	readFileAsDataUri,
+	supportsVision,
+	validateImageFile
+} from '../utils/chat-images';
 
 export interface ChatMessageItem {
 	id: number;
 	role: 'user' | 'assistant';
 	content: string;
+	/** 用户消息附带图片（data URI，仅内存态不落库） */
+	images?: string[];
 	time?: string;
+}
+
+export interface ChatProfileOption {
+	label: string;
+	value: string;
+	/** 模型 capabilities 解析结果：true=支持视觉；false=明确不支持；null=未配置（放行） */
+	supportsVision: boolean | null;
 }
 
 export interface ChatFormState {
@@ -26,8 +42,9 @@ export function useChatWorkbench() {
 	const { t } = useI18n();
 	const stream = useStream();
 
-	const profileOptions = ref<{ label: string; value: string }[]>([]);
+	const profileOptions = ref<ChatProfileOption[]>([]);
 	const prompt = ref('');
+	const pendingImages = ref<string[]>([]);
 	const messagesContainer = ref<HTMLElement | null>(null);
 
 	const messages = ref<ChatMessageItem[]>([]);
@@ -91,7 +108,8 @@ export function useChatWorkbench() {
 			const list = Array.isArray(res) ? res : [];
 			profileOptions.value = list.map((item: any) => ({
 				label: `${item.name || item.code} / ${item.modelName || item.modelId || ''}`,
-				value: item.code
+				value: item.code,
+				supportsVision: supportsVision(item.modelCapabilities)
 			}));
 
 			if (!form.profileCode && profileOptions.value.length) {
@@ -103,7 +121,41 @@ export function useChatWorkbench() {
 		}
 	}
 
-	function buildContextMessages(currentPromptText: string): any[] {
+	/** 当前选中 profile 的视觉能力：true 可用；false 明确不支持（隐藏入口）；null 未配置（放行） */
+	const currentSupportsVision = computed<boolean | null>(() => {
+		const hit = profileOptions.value.find(p => p.value === form.profileCode);
+		return hit ? hit.supportsVision : null;
+	});
+
+	const canAttachImages = computed(() => currentSupportsVision.value !== false);
+
+	async function addImageFiles(files: File[] | FileList | null) {
+		if (!files || !files.length) return;
+		const list = Array.from(files);
+		for (const file of list) {
+			if (pendingImages.value.length >= CHAT_IMAGE_MAX_COUNT) {
+				ElMessage.warning(t('单条消息最多 {n} 张图片', { n: CHAT_IMAGE_MAX_COUNT }));
+				return;
+			}
+			const err = validateImageFile(file);
+			if (err) {
+				ElMessage.warning(t(err));
+				continue;
+			}
+			try {
+				const dataUri = await readFileAsDataUri(file);
+				pendingImages.value.push(dataUri);
+			} catch {
+				ElMessage.error(t('图片读取失败'));
+			}
+		}
+	}
+
+	function removeImage(idx: number) {
+		pendingImages.value.splice(idx, 1);
+	}
+
+	function buildContextMessages(currentPromptText: string, currentImages?: string[]): any[] {
 		const contextList: any[] = [];
 		if (form.systemPrompt && form.systemPrompt.trim()) {
 			contextList.push({
@@ -115,10 +167,11 @@ export function useChatWorkbench() {
 		if (form.carryContext) {
 			const history = messages.value.slice(-10);
 			for (const m of history) {
-				if (m.content) {
+				if (m.content || m.images?.length) {
+					// 多模态上下文：历史用户消息的图片一并携带（IR parts）；assistant 恒纯文本
 					contextList.push({
 						role: m.role,
-						content: m.content
+						content: m.role === 'user' ? buildMessageContent(m.content, m.images) : m.content
 					});
 				}
 			}
@@ -126,7 +179,7 @@ export function useChatWorkbench() {
 
 		contextList.push({
 			role: 'user',
-			content: currentPromptText
+			content: buildMessageContent(currentPromptText, currentImages)
 		});
 
 		return contextList;
@@ -134,7 +187,8 @@ export function useChatWorkbench() {
 
 	async function sendChat() {
 		const text = prompt.value.trim();
-		if (!text) {
+		const images = [...pendingImages.value];
+		if (!text && !images.length) {
 			ElMessage.warning(t('请输入提问内容'));
 			return;
 		}
@@ -145,6 +199,7 @@ export function useChatWorkbench() {
 			id: userMsgId,
 			role: 'user',
 			content: text,
+			images: images.length ? images : undefined,
 			time: formatTime()
 		});
 
@@ -158,11 +213,12 @@ export function useChatWorkbench() {
 		messages.value.push(assistantMsg);
 
 		prompt.value = '';
+		pendingImages.value = [];
 		loading.chat = true;
 		scrollToBottom();
 
 		try {
-			const ctxMessages = buildContextMessages(text);
+			const ctxMessages = buildContextMessages(text, images);
 			const payload: any = {
 				messages: ctxMessages,
 				scenario: form.scenario || 'default',
@@ -188,7 +244,8 @@ export function useChatWorkbench() {
 
 	async function sendStream() {
 		const text = prompt.value.trim();
-		if (!text) {
+		const images = [...pendingImages.value];
+		if (!text && !images.length) {
 			ElMessage.warning(t('请输入提问内容'));
 			return;
 		}
@@ -199,6 +256,7 @@ export function useChatWorkbench() {
 			id: userMsgId,
 			role: 'user',
 			content: text,
+			images: images.length ? images : undefined,
 			time: formatTime()
 		});
 
@@ -212,6 +270,7 @@ export function useChatWorkbench() {
 		messages.value.push(assistantMsg);
 
 		prompt.value = '';
+		pendingImages.value = [];
 		loading.stream = true;
 		currentStreamingId.value = assistantMsgId;
 		streamStatus.value = 'connecting';
@@ -219,7 +278,7 @@ export function useChatWorkbench() {
 		streamCancelled = false;
 		scrollToBottom();
 
-		const ctxMessages = buildContextMessages(text);
+		const ctxMessages = buildContextMessages(text, images);
 		const payload: any = {
 			messages: ctxMessages,
 			scenario: form.scenario || 'default',
@@ -304,20 +363,23 @@ export function useChatWorkbench() {
 		if (targetIdx === -1) return;
 
 		let prevUserMsg = '';
+		let prevUserImages: string[] = [];
 		for (let i = targetIdx - 1; i >= 0; i--) {
 			if (messages.value[i].role === 'user') {
 				prevUserMsg = messages.value[i].content;
+				prevUserImages = messages.value[i].images || [];
 				break;
 			}
 		}
 
-		if (!prevUserMsg) {
+		if (!prevUserMsg && !prevUserImages.length) {
 			ElMessage.warning(t('未找到上一条用户提问'));
 			return;
 		}
 
 		messages.value.splice(targetIdx);
 		prompt.value = prevUserMsg;
+		pendingImages.value = [...prevUserImages];
 		sendStream();
 	}
 
@@ -344,6 +406,7 @@ export function useChatWorkbench() {
 	return {
 		profileOptions,
 		prompt,
+		pendingImages,
 		messagesContainer,
 		messages,
 		streamEvents,
@@ -353,10 +416,14 @@ export function useChatWorkbench() {
 		loading,
 		isBusy,
 		form,
+		currentSupportsVision,
+		canAttachImages,
 		currentStreamingId,
 		isStreamingCurrent,
 		scrollToBottom,
 		initProfiles,
+		addImageFiles,
+		removeImage,
 		sendChat,
 		sendStream,
 		stopStream,

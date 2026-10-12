@@ -86,11 +86,15 @@
 			<chat-composer
 				ref="composerRef"
 				v-model="prompt"
+				:pending-images="pendingImages"
+				:can-attach-images="canAttachImages"
 				:is-busy="isBusy"
 				:loading="loading"
 				@send-chat="sendChat"
 				@send-stream="sendStream"
 				@stop-stream="stopStream"
+				@add-files="addImageFiles"
+				@remove-image="removeImage"
 			/>
 		</section>
 
@@ -131,6 +135,7 @@ import AiStreamDrawer from '../components/ai-stream-drawer.vue';
 const {
 	profileOptions,
 	prompt,
+	pendingImages,
 	messagesContainer,
 	messages,
 	streamEvents,
@@ -140,8 +145,11 @@ const {
 	loading,
 	isBusy,
 	form,
+	canAttachImages,
 	isStreamingCurrent,
 	initProfiles,
+	addImageFiles,
+	removeImage,
 	sendChat,
 	sendStream,
 	stopStream,

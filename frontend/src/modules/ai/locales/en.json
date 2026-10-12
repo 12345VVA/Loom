@@ -367,5 +367,12 @@
 	"新增": "Added",
 	"已更新": "Updated",
 	"同步失败": "Sync failed",
-	"失败": "Failed"
+	"失败": "Failed",
+	"附加图片": "Attach image",
+	"移除图片": "Remove image",
+	"当前模型不支持视觉输入": "Current model does not support vision input",
+	"不支持的图片类型（仅支持 PNG / JPEG / WebP / GIF）": "Unsupported image type (PNG / JPEG / WebP / GIF only)",
+	"单张图片不能超过 5MB": "Each image must be under 5MB",
+	"单条消息最多 {n} 张图片": "At most {n} images per message",
+	"图片读取失败": "Failed to read image"
 }

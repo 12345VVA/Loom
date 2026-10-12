@@ -1,6 +1,21 @@
 <template>
 	<footer class="composer-container">
 		<div class="composer-box">
+			<!-- 待发送图片缩略图条 -->
+			<div v-if="pendingImages.length" class="pending-images">
+				<div v-for="(img, idx) in pendingImages" :key="idx" class="pending-image-item">
+					<el-image :src="img" fit="cover" />
+					<button
+						type="button"
+						class="pending-image-remove"
+						:title="$t('移除图片')"
+						@click="$emit('remove-image', idx)"
+					>
+						<el-icon><close /></el-icon>
+					</button>
+				</div>
+			</div>
+
 			<el-input
 				ref="inputRef"
 				v-model="text"
@@ -10,10 +25,30 @@
 				class="chat-input"
 				:placeholder="$t('输入您的问题，按 Enter 发送，Shift + Enter 换行...')"
 				@keydown="handleKeydown"
+				@paste="handlePaste"
 			/>
 
 			<div class="composer-bar">
 				<div class="bar-left">
+					<!-- 附加图片（当前模型支持视觉时显示） -->
+					<el-upload
+						v-if="canAttachImages"
+						:show-file-list="false"
+						multiple
+						accept="image/png,image/jpeg,image/webp,image/gif"
+						:http-request="handleUpload"
+					>
+						<el-button link size="small" class="attach-btn">
+							<el-icon class="mr-2"><paperclip /></el-icon>
+							{{ $t('附加图片') }}
+						</el-button>
+					</el-upload>
+					<el-tooltip v-else :content="$t('当前模型不支持视觉输入')" placement="top">
+						<span class="attach-disabled-hint">
+							<el-icon><picture /></el-icon>
+						</span>
+					</el-tooltip>
+
 					<span class="key-hint">{{ $t('Enter 发送 / Shift + Enter 换行') }}</span>
 				</div>
 
@@ -67,11 +102,13 @@ defineOptions({
 });
 
 import { computed, ref } from 'vue';
-import { Promotion, VideoPause } from '@element-plus/icons-vue';
+import { Close, Paperclip, Picture, Promotion, VideoPause } from '@element-plus/icons-vue';
 
 const props = withDefaults(
 	defineProps<{
 		modelValue: string;
+		pendingImages?: string[];
+		canAttachImages?: boolean;
 		isBusy?: boolean;
 		loading: {
 			chat: boolean;
@@ -79,6 +116,8 @@ const props = withDefaults(
 		};
 	}>(),
 	{
+		pendingImages: () => [],
+		canAttachImages: false,
 		isBusy: false
 	}
 );
@@ -88,6 +127,8 @@ const emit = defineEmits<{
 	(e: 'send-chat'): void;
 	(e: 'send-stream'): void;
 	(e: 'stop-stream'): void;
+	(e: 'add-files', files: File[]): void;
+	(e: 'remove-image', idx: number): void;
 }>();
 
 const inputRef = ref();
@@ -104,6 +145,18 @@ function handleKeydown(e: Event | KeyboardEvent) {
 			emit('send-stream');
 		}
 	}
+}
+
+async function handleUpload(options: any) {
+	emit('add-files', [options.file]);
+}
+
+function handlePaste(e: ClipboardEvent) {
+	if (!props.canAttachImages || !e.clipboardData?.files?.length) return;
+	const files = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
+	if (!files.length) return;
+	e.preventDefault();
+	emit('add-files', files);
 }
 
 defineExpose({
@@ -141,6 +194,47 @@ defineExpose({
 			line-height: 1.5;
 		}
 
+		.pending-images {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			padding: 10px 14px 0;
+
+			.pending-image-item {
+				position: relative;
+				width: 64px;
+				height: 64px;
+				border: 1px solid var(--el-border-color-lighter);
+				border-radius: 6px;
+				overflow: hidden;
+
+				.el-image {
+					width: 100%;
+					height: 100%;
+				}
+
+				.pending-image-remove {
+					position: absolute;
+					top: 2px;
+					right: 2px;
+					display: grid;
+					place-items: center;
+					width: 18px;
+					height: 18px;
+					border: none;
+					border-radius: 50%;
+					background: rgba(0, 0, 0, 0.55);
+					color: #fff;
+					cursor: pointer;
+					font-size: 11px;
+
+					&:hover {
+						background: rgba(0, 0, 0, 0.75);
+					}
+				}
+			}
+		}
+
 		.composer-bar {
 			display: flex;
 			align-items: center;
@@ -151,9 +245,31 @@ defineExpose({
 			border-bottom-left-radius: 7px;
 			border-bottom-right-radius: 7px;
 
+			.bar-left {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				min-width: 0;
+			}
+
+			.attach-btn {
+				font-size: 12.5px;
+			}
+
+			.attach-disabled-hint {
+				display: inline-grid;
+				place-items: center;
+				width: 24px;
+				height: 24px;
+				border-radius: 4px;
+				color: var(--el-text-color-placeholder);
+				cursor: not-allowed;
+			}
+
 			.key-hint {
 				font-size: 11.5px;
 				color: var(--el-text-color-secondary);
+				white-space: nowrap;
 			}
 
 			.bar-right {
