@@ -361,6 +361,12 @@ class MediaMirrorTest(unittest.TestCase):
         service = MediaAssetService(self.session)
         self.storage.read.return_value = b"bytes"
         with (
+            # SSRF 校验含真实 DNS 解析（_validate_remote_url），假域名在 CI 裸环境必炸、
+            # 本地被代理 fake-ip DNS 掩盖——单元测试连同下载一并 mock
+            patch(
+                "app.modules.media.service.media_service._validate_remote_url",
+                return_value=("https://x.volces.com/a.png", "x.volces.com"),
+            ),
             patch(
                 "app.modules.media.service.media_service._download_remote_file",
                 return_value=(b"bytes", "image/png"),
