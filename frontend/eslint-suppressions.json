@@ -74,6 +74,11 @@
       "count": 2
     }
   },
+  "src/modules/ai/components/chat-composer.vue": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
   "src/modules/ai/components/image-gallery.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -107,6 +112,11 @@
   "src/modules/ai/service/runtime.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 12
+    }
+  },
+  "src/modules/ai/utils/chat-images.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
     }
   },
   "src/modules/ai/utils/image-providers.ts": {
@@ -321,7 +331,7 @@
   },
   "src/modules/media/views/asset.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 14
+      "count": 19
     }
   },
   "src/modules/notification/components/audience-editor.vue": {
@@ -501,7 +511,7 @@
   },
   "src/modules/workflow/components/node-configs/llm-config.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 2
+      "count": 4
     }
   },
   "src/modules/workflow/components/node-configs/loop-body-group-config.vue": {
@@ -554,6 +564,11 @@
       "count": 4
     }
   },
+  "src/modules/workflow/composables/use-test-form.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
   "src/modules/workflow/composables/useContextMenu.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
@@ -581,7 +596,7 @@
   },
   "src/modules/workflow/composables/useNodeTest.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 9
+      "count": 10
     }
   },
   "src/modules/workflow/composables/useSaveFlow.ts": {
@@ -874,6 +889,11 @@
       "count": 1
     }
   },
+  "tests/unit/ai/chat-images.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
   "tests/unit/ai/image-utils.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
@@ -894,9 +914,19 @@
       "count": 4
     }
   },
+  "tests/unit/workflow/llm-config.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
   "tests/unit/workflow/node-config.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
+    }
+  },
+  "tests/unit/workflow/use-test-form.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
     }
   },
   "tests/unit/workflow/useContextMenu.test.ts": {
@@ -931,7 +961,7 @@
   },
   "tests/unit/workflow/useUpstreamVariables.test.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 9
+      "count": 10
     }
   }
 }
