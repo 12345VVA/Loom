@@ -1475,6 +1475,11 @@ declare namespace Eps {
 		storageUrl?: string;
 
 		/**
+		 * remote_url
+		 */
+		remoteUrl?: string;
+
+		/**
 		 * file_name
 		 */
 		fileName?: string;
@@ -3240,6 +3245,7 @@ declare namespace Eps {
 		/** profileCode */ profileCode?: string | null;
 		/** originalUrl */ originalUrl?: string | null;
 		/** storageUrl */ storageUrl?: string | null;
+		/** remoteUrl */ remoteUrl?: string | null;
 		/** fileName */ fileName?: string | null;
 		/** mimeType */ mimeType?: string | null;
 		/** md5 */ md5?: string | null;
@@ -3274,6 +3280,7 @@ declare namespace Eps {
 		/** profileCode */ profileCode?: string | null;
 		/** originalUrl */ originalUrl?: string | null;
 		/** storageUrl */ storageUrl?: string | null;
+		/** remoteUrl */ remoteUrl?: string | null;
 		/** fileName */ fileName?: string | null;
 		/** mimeType */ mimeType?: string | null;
 		/** md5 */ md5?: string | null;
@@ -3523,11 +3530,6 @@ declare namespace Eps {
 		/** hint */ hint?: string | null;
 	}
 
-	interface WorkflowVersionPageResponse {
-		pagination: PagePagination;
-		list: version[];
-	}
-
 	interface WorkflowMemoryAddResponse {
 		/** id */ id: number;
 		/** definitionId */ definitionId: number;
@@ -3552,6 +3554,11 @@ declare namespace Eps {
 	interface WorkflowMemoryPageResponse {
 		pagination: PagePagination;
 		list: memory[];
+	}
+
+	interface WorkflowVersionPageResponse {
+		pagination: PagePagination;
+		list: version[];
 	}
 
 	interface Workflow_annotationAnnotationAddResponse {
@@ -5028,6 +5035,21 @@ declare namespace Eps {
 		list(data?: any): Promise<asset[]>;
 
 		/**
+		 * 手动镜像单个资产到云端
+		 */
+		mirror(data?: any): Promise<any>;
+
+		/**
+		 * 存量补镜像批量派发
+		 */
+		mirrorBackfill(data?: any): Promise<any>;
+
+		/**
+		 * 云端镜像连通性自检
+		 */
+		mirrorProbe(data?: any): Promise<any>;
+
+		/**
 		 * 获取分页
 		 */
 		page(data?: any): Promise<MediaAssetPageResponse>;
@@ -5071,6 +5093,9 @@ declare namespace Eps {
 			downloadToken: string;
 			info: string;
 			list: string;
+			mirror: string;
+			mirrorBackfill: string;
+			mirrorProbe: string;
 			page: string;
 			proxyImage: string;
 			retry: string;
@@ -5089,6 +5114,9 @@ declare namespace Eps {
 			downloadToken: boolean;
 			info: boolean;
 			list: boolean;
+			mirror: boolean;
+			mirrorBackfill: boolean;
+			mirrorProbe: boolean;
 			page: boolean;
 			proxyImage: boolean;
 			retry: boolean;
@@ -5665,6 +5693,40 @@ declare namespace Eps {
 		request: Request;
 	}
 
+	interface WorkflowMemory {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<WorkflowMemoryAddResponse>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<memory>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<WorkflowMemoryPageResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: { add: string; delete: string; info: string; page: string };
+
+		/**
+		 * 权限状态
+		 */
+		_permission: { add: boolean; delete: boolean; info: boolean; page: boolean };
+
+		request: Request;
+	}
+
 	interface WorkflowVersion {
 		/**
 		 * 两版本结构对比
@@ -5719,40 +5781,6 @@ declare namespace Eps {
 			publish: boolean;
 			rollback: boolean;
 		};
-
-		request: Request;
-	}
-
-	interface WorkflowMemory {
-		/**
-		 * 新增
-		 */
-		add(data?: any): Promise<WorkflowMemoryAddResponse>;
-
-		/**
-		 * 删除
-		 */
-		delete(data?: any): Promise<any>;
-
-		/**
-		 * 获取详情
-		 */
-		info(data: { id: number }): Promise<memory>;
-
-		/**
-		 * 获取分页
-		 */
-		page(data?: any): Promise<WorkflowMemoryPageResponse>;
-
-		/**
-		 * 权限标识
-		 */
-		permission: { add: string; delete: string; info: string; page: string };
-
-		/**
-		 * 权限状态
-		 */
-		_permission: { add: boolean; delete: boolean; info: boolean; page: boolean };
 
 		request: Request;
 	}
@@ -6090,8 +6118,8 @@ declare namespace Eps {
 			artifact: WorkflowArtifact;
 			definition: WorkflowDefinition;
 			instance: WorkflowInstance;
-			version: WorkflowVersion;
 			memory: WorkflowMemory;
+			version: WorkflowVersion;
 		};
 		workflow_annotation: { annotation: Workflow_annotationAnnotation };
 		workflow_eval: {
