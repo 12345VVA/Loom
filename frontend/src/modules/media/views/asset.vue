@@ -24,6 +24,20 @@
 				<el-icon><refresh /></el-icon>
 				{{ $t('重试失败资源') }} ({{ stats.statusCounts.failed }})
 			</el-button>
+			<el-button
+				v-if="stats.mirrorPendingCount > 0"
+				type="warning"
+				plain
+				:loading="backfilling"
+				@click="backfillMirror"
+			>
+				<el-icon><upload-filled /></el-icon>
+				{{ $t('补镜像存量') }} ({{ stats.mirrorPendingCount }})
+			</el-button>
+			<el-button :loading="probing" @click="runMirrorProbe">
+				<el-icon><connection /></el-icon>
+				{{ $t('测试云端存储') }}
+			</el-button>
 			<cl-flex1 />
 			<div class="media-stats">
 				<span v-for="item in statItems" :key="item.label" class="stat-chip">
@@ -54,6 +68,17 @@
 					}}</el-tag>
 				</template>
 
+				<template #column-mirrorTag="{ scope }">
+					<el-tag
+						v-if="scope.row.status === 'success'"
+						:type="scope.row.remoteUrl ? 'success' : 'info'"
+						effect="plain"
+					>
+						{{ scope.row.remoteUrl ? $t('已镜像') : $t('未镜像') }}
+					</el-tag>
+					<span v-else>-</span>
+				</template>
+
 				<template #column-sizeBytes="{ scope }">
 					{{ formatSize(scope.row.sizeBytes) }}
 				</template>
@@ -71,6 +96,22 @@
 					>
 						{{ $t('重试转存') }}
 					</el-button>
+					<el-button
+						v-if="scope.row.status === 'success' && !scope.row.remoteUrl"
+						text
+						type="primary"
+						:loading="mirroringIds.has(scope.row.id)"
+						@click="mirrorAsset(scope.row)"
+					>
+						{{ $t('镜像') }}
+					</el-button>
+					<el-button
+						v-if="scope.row.remoteUrl"
+						text
+						type="primary"
+						@click="openUrl(scope.row.remoteUrl)"
+						>{{ $t('打开云端') }}</el-button
+					>
 					<el-button
 						v-if="scope.row.storageUrl"
 						text
@@ -151,6 +192,30 @@
 				<el-descriptions-item :label="$t('资源链接')">{{
 					viewer.row.storageUrl || '-'
 				}}</el-descriptions-item>
+				<el-descriptions-item :label="$t('云端镜像')">
+					<div v-if="viewer.row.remoteUrl" class="remote-url">
+						<span class="remote-url__text">{{ viewer.row.remoteUrl }}</span>
+						<el-button text type="primary" size="small" @click="copyText(viewer.row.remoteUrl)">{{
+							$t('复制')
+						}}</el-button>
+						<el-button text type="primary" size="small" @click="openUrl(viewer.row.remoteUrl)">{{
+							$t('打开')
+						}}</el-button>
+					</div>
+					<template v-else>
+						<span>{{ viewer.row.status === 'success' ? $t('未镜像') : '-' }}</span>
+						<el-button
+							v-if="viewer.row.status === 'success'"
+							text
+							type="primary"
+							size="small"
+							:loading="mirroringIds.has(viewer.row.id)"
+							@click="mirrorAsset(viewer.row)"
+						>
+							{{ $t('立即镜像') }}
+						</el-button>
+					</template>
+				</el-descriptions-item>
 				<el-descriptions-item :label="$t('原始链接')">{{
 					viewer.row.originalUrlPreview || viewer.row.originalUrl || '-'
 				}}</el-descriptions-item>
@@ -178,6 +243,35 @@
 			</el-descriptions>
 		</div>
 	</el-drawer>
+
+	<el-dialog v-model="probe.visible" :title="$t('云端存储自检')" width="600px">
+		<div v-if="probe.data" class="mirror-probe">
+			<el-descriptions border :column="1" size="small">
+				<el-descriptions-item :label="$t('镜像开关')">
+					<el-tag :type="probe.data.config.enabled ? 'success' : 'danger'" effect="plain" size="small">
+						{{ probe.data.config.enabled ? $t('已开启') : $t('未开启') }}
+					</el-tag>
+				</el-descriptions-item>
+				<el-descriptions-item :label="$t('端点')">{{ probe.data.config.endpoint || '-' }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('桶')">{{ probe.data.config.bucket || '-' }}</el-descriptions-item>
+				<el-descriptions-item :label="$t('传输方式')">
+					{{ probe.data.config.transport === 'tos-native' ? 'TOS 原生 SDK' : 'S3 兼容 (boto3)' }}
+				</el-descriptions-item>
+				<el-descriptions-item label="AccessKey">{{ probe.data.config.accessKey || '-' }}</el-descriptions-item>
+			</el-descriptions>
+			<div class="mirror-probe__steps">
+				<div v-for="(step, key) in probe.data.steps" :key="key" class="mirror-probe__step">
+					<el-icon :class="step.ok ? 'is-ok' : 'is-fail'">
+						<circle-check-filled v-if="step.ok" />
+						<circle-close-filled v-else />
+					</el-icon>
+					<span class="mirror-probe__step-name">{{ stepName(String(key)) }}</span>
+					<span class="mirror-probe__step-meta">{{ step.elapsedMs }}ms</span>
+					<span v-if="!step.ok && step.error" class="mirror-probe__step-error">{{ step.error }}</span>
+				</div>
+			</div>
+		</div>
+	</el-dialog>
 </template>
 
 <script lang="ts" setup>
@@ -188,7 +282,17 @@ defineOptions({
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Document, Headset, Picture, Refresh, VideoCamera } from '@element-plus/icons-vue';
+import {
+	CircleCloseFilled,
+	CircleCheckFilled,
+	Connection,
+	Document,
+	Headset,
+	Picture,
+	Refresh,
+	UploadFilled,
+	VideoCamera
+} from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useAssetUrl } from '../composables/use-asset-url';
@@ -199,6 +303,13 @@ const mediaService = (service as any).media.asset;
 
 const retryingIds = reactive(new Set<number>());
 const retryingAll = ref(false);
+const mirroringIds = reactive(new Set<number>());
+const backfilling = ref(false);
+const probing = ref(false);
+const probe = reactive({
+	visible: false,
+	data: null as any
+});
 
 const assetTypeOptions = [
 	{ label: t('图片'), value: 'image' },
@@ -223,7 +334,9 @@ const statusOptions = [
 const stats = reactive({
 	typeCounts: {} as Record<string, number>,
 	statusCounts: {} as Record<string, number>,
-	sourceCounts: {} as Record<string, number>
+	sourceCounts: {} as Record<string, number>,
+	mirroredCount: 0,
+	mirrorPendingCount: 0
 });
 const viewer = reactive({
 	visible: false,
@@ -235,7 +348,8 @@ const statItems = computed(() => [
 	{ label: t('视频'), value: stats.typeCounts.video || 0 },
 	{ label: t('音频'), value: stats.typeCounts.audio || 0 },
 	{ label: t('文件'), value: stats.typeCounts.file || 0 },
-	{ label: t('失败'), value: stats.statusCounts.failed || 0 }
+	{ label: t('失败'), value: stats.statusCounts.failed || 0 },
+	{ label: t('已镜像'), value: stats.mirroredCount || 0 }
 ]);
 
 const Table = useTable({
@@ -261,6 +375,11 @@ const Table = useTable({
 			formatter: ({ status }: any) => optionLabel(statusOptions, status)
 		},
 		{
+			label: t('云端'),
+			prop: 'mirrorTag',
+			minWidth: 90
+		},
+		{
 			label: t('来源实例'),
 			prop: 'workflowInstanceId',
 			minWidth: 100,
@@ -270,7 +389,7 @@ const Table = useTable({
 		{ label: 'MD5', prop: 'md5', minWidth: 220, showOverflowTooltip: true },
 		{ label: t('提示词'), prop: 'prompt', minWidth: 220, showOverflowTooltip: true },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
-		{ type: 'op', width: 280, buttons: ['slot-op'] }
+		{ type: 'op', width: 350, buttons: ['slot-op'] }
 	]
 });
 
@@ -297,6 +416,89 @@ async function loadStats() {
 	stats.typeCounts = res?.typeCounts || {};
 	stats.statusCounts = res?.statusCounts || {};
 	stats.sourceCounts = res?.sourceCounts || {};
+	stats.mirroredCount = res?.mirroredCount || 0;
+	stats.mirrorPendingCount = res?.mirrorPendingCount || 0;
+}
+
+async function mirrorAsset(row: any) {
+	if (!row?.id) return;
+	mirroringIds.add(row.id);
+	try {
+		const res = await mediaService.request({
+			url: '/mirror',
+			method: 'POST',
+			data: { id: row.id }
+		});
+		if (res?.remoteUrl) {
+			row.remoteUrl = res.remoteUrl;
+			if (viewer.visible && viewer.row?.id === row.id) {
+				viewer.row.remoteUrl = res.remoteUrl;
+			}
+			ElMessage.success(t('镜像成功'));
+			loadStats();
+		} else {
+			ElMessage.warning(res?.reason || t('镜像跳过'));
+		}
+	} catch (err: any) {
+		ElMessage.error(err.message || t('镜像失败'));
+	} finally {
+		mirroringIds.delete(row.id);
+	}
+}
+
+async function backfillMirror() {
+	try {
+		await ElMessageBox.confirm(
+			t('确定为存量资产派发镜像任务（成功转存且未镜像的资源，异步执行）？'),
+			t('提示'),
+			{ type: 'warning' }
+		);
+	} catch {
+		return;
+	}
+
+	backfilling.value = true;
+	try {
+		const res = await mediaService.request({
+			url: '/mirrorBackfill',
+			method: 'POST',
+			data: { limit: 100 }
+		});
+		if (res?.message) {
+			ElMessage.warning(res.message);
+		} else {
+			ElMessage.success(t('已派发 {n} 个镜像任务', { n: res?.dispatched ?? 0 }));
+		}
+	} catch (err: any) {
+		ElMessage.error(err.message || t('批量派发失败'));
+	} finally {
+		backfilling.value = false;
+	}
+}
+
+async function runMirrorProbe() {
+	probing.value = true;
+	try {
+		const res = await mediaService.request({
+			url: '/mirrorProbe',
+			method: 'GET'
+		});
+		probe.data = res;
+		probe.visible = true;
+	} catch (err: any) {
+		ElMessage.error(err.message || t('自检请求失败'));
+	} finally {
+		probing.value = false;
+	}
+}
+
+function stepName(key: string) {
+	const names: Record<string, string> = {
+		upload: t('上传探针对象'),
+		anonymousGet: t('匿名公网读取'),
+		cleanup: t('清理探针')
+	};
+	return names[key] || key;
 }
 
 async function uploadAsset(options: any) {
@@ -543,6 +745,60 @@ function iconFor(type: string) {
 	white-space: pre-wrap;
 	word-break: break-word;
 	font-size: 12px;
+}
+
+.remote-url {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+}
+
+.remote-url__text {
+	flex: 1;
+	min-width: 0;
+	word-break: break-all;
+	color: var(--el-text-color-regular);
+}
+
+.mirror-probe {
+	display: grid;
+	gap: 14px;
+}
+
+.mirror-probe__steps {
+	display: grid;
+	gap: 8px;
+}
+
+.mirror-probe__step {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+
+	.is-ok {
+		color: var(--el-color-success);
+	}
+
+	.is-fail {
+		color: var(--el-color-danger);
+	}
+}
+
+.mirror-probe__step-name {
+	min-width: 96px;
+}
+
+.mirror-probe__step-meta {
+	color: var(--el-text-color-secondary);
+	font-size: 12px;
+}
+
+.mirror-probe__step-error {
+	color: var(--el-color-danger);
+	font-size: 12px;
+	word-break: break-all;
 }
 
 .failure-alert {
