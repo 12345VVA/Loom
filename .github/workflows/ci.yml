@@ -161,7 +161,8 @@ jobs:
         continue-on-error: true
         run: npm audit --audit-level=high
 
-      # eps.d.ts 已入库（tsconfig types 引用 build/cool/eps），无需后端在线生成
+      # eps.d.ts/eps.json 成对入库（tsconfig types 引用 build/cool/eps），类型检查
+      # 直接消费入库基线，无需后端在线生成；产物是否新鲜由末尾漂移检查把关
       - name: 类型检查
         run: npm run type-check
 
@@ -182,3 +183,12 @@ jobs:
 
       - name: 生产构建
         run: npm run build
+
+      # EPS 产物漂移检查（必须放 build 之后）：build 会从入库 eps.json 离线重生成
+      # eps.d.ts + eps.json，与入库版字节不一致（降级版入库/漏同步/生成器漂移）即红。
+      # 处理：起后端 + dev server 重新生成 → 更新 backend/eps_baseline.json（接口面变更时）
+      # → 四件一并提交（后端接口代码 + eps_baseline.json + eps.d.ts + eps.json）
+      - name: EPS 产物漂移检查
+        run: |
+          git diff --stat -- build/cool/eps.d.ts build/cool/eps.json || true
+          git diff --exit-code -- build/cool/eps.d.ts build/cool/eps.json

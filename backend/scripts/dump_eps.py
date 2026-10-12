@@ -1,15 +1,16 @@
 """EPS 契约基线导出与校验（G5/M2）。
 
-后端接口面（路由/入参模型/列元数据/OpenAPI schema）的规范化快照，作为 CI 门禁基线：
+后端接口面（路由/入参完整实体/OpenAPI schema）的规范化快照，作为 CI 门禁基线：
 - 生成/更新：python scripts/dump_eps.py
 - 校验（CI 用）：python scripts/dump_eps.py --check，不一致退出码 1
 
 与 frontend/build/cool/eps.json 的关系：后者是 vite-plugin 对本导出做二次变换后
-的产物（字段裁剪 + search 派生），Python 侧不复刻其字节格式——基线走 sort_keys
-规范化对比，语义等价。接口面变更时的操作顺序：
-  1. 启动 dev server 重新生成 frontend/build/cool/eps.d.ts（与 eps.json）
+的产物（完整实体持久化 + search 派生 + dictTypes 缓存），Python 侧不复刻其字节
+格式——基线走 sort_keys 规范化对比，语义等价；前端另有 eps-baseline.test.ts 做
+eps.json ↔ 本基线的跨库语义对比。接口面变更时的操作顺序（四同提交）：
+  1. 起后端 + dev server 重新生成 frontend/build/cool/eps.d.ts（与 eps.json）
   2. python scripts/dump_eps.py 更新本基线
-  3. 三者一并提交
+  3. 四件一并提交：后端接口代码 + eps_baseline.json + eps.d.ts + eps.json
 """
 
 from __future__ import annotations
@@ -41,8 +42,9 @@ def main() -> int:
             return 1
         if BASELINE_PATH.read_text(encoding="utf-8") != render(data):
             print("FAIL: EPS 导出与基线不一致——后端接口面已变更。")
-            print("处理：① dev server 重新生成 frontend/build/cool/eps.d.ts；")
-            print("      ② python scripts/dump_eps.py 更新基线；③ 一并提交。")
+            print("处理：① 起后端 + dev server 重新生成 frontend/build/cool/eps.d.ts（与 eps.json）；")
+            print("      ② python scripts/dump_eps.py 更新基线；③ 四件一并提交")
+            print("      （后端接口代码 + eps_baseline.json + eps.d.ts + eps.json）。")
             return 1
         print(f"OK: EPS 契约基线一致（{entity_count} 个实体）")
         return 0

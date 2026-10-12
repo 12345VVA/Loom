@@ -1,8 +1,7 @@
-import { createDir, error, firstUpperCase, readFile, rootDir, toCamel } from "../utils";
+import { createDir, error, firstUpperCase, readFile, rootDir, toCamel, writeFileAtomic } from "../utils";
 import { join } from "path";
 import axios from "axios";
 import { compact, isArray, isEmpty, last, uniq, uniqBy, values } from "lodash";
-import { createWriteStream } from "fs";
 import prettier from "prettier";
 import { config } from "../config";
 import type { Eps } from "../../types";
@@ -13,6 +12,18 @@ import { interfaceToType } from "../uniapp-x/utils";
 const service = {};
 // eps 实体列表
 let list: Eps.Entity[] = [];
+// 字典枚举缓存（随 eps 主请求一并拉取，持久化进 eps.json——离线重生成时 DictKey 不降级）
+let dictTypes: string[] = [];
+// 远程不可达退避截止时间（ms 时间戳）：窗口期内不再重复 5s 超时等待，直接用本地 eps.json。
+// 手动刷新（/__cool_eps）会调 resetEpsRemote 清零，后端中途启动可立即恢复。
+let remoteRetryAfter = 0;
+// 远程请求超时（eps 主请求与字典请求共用）
+const REMOTE_TIMEOUT = 5000;
+// 远程不可达退避时长
+const REMOTE_RETRY_MS = 60_000;
+// 在线替换 sanity 比例：远程实体数低于缓存的该比例时拒绝替换（防 uvicorn reload
+// 窗口内"部分导出"覆盖全量缓存——该降级态自洽，CI 漂移门禁测不出）
+const REMOTE_SANITY_RATIO = 0.9;
 
 /**
  * 获取 eps 请求地址
@@ -220,33 +231,74 @@ async function formatCode(text: string): Promise<string | null> {
 }
 
 /**
- * 获取 eps 数据（本地优先，远程兜底）
+ * 获取 eps 数据（本地 eps.json 为确定性基线，远程在线时刷新）
+ *
+ * 核心不变式：同一份入库 eps.json，后端在线/离线生成的 eps.d.ts 字节一致。
+ * - 在线：远程数据经 sanity 校验后替换缓存，字典枚举一并拉取，随后整体持久化；
+ * - 离线/退避窗口：直接用本地 eps.json（字段完整，重生成不降级）。
  */
 async function getData() {
-	// 读取本地 eps.json
-	list = readFile(getEpsPath("eps.json"), true) || [];
+	// 读取本地 eps.json（兼容旧版裸数组格式）
+	const raw: any = readFile(getEpsPath("eps.json"), true);
 
-	// 拼接请求地址
-	const url = config.reqUrl + getEpsUrl();
+	if (Array.isArray(raw)) {
+		list = raw;
+		dictTypes = [];
+	} else if (raw && typeof raw === "object") {
+		list = raw.list || [];
+		dictTypes = raw.dictTypes || [];
+	} else {
+		list = [];
+		dictTypes = [];
+	}
 
-	// 请求远程 eps 数据
-	await axios
-		.get(url, {
-			timeout: 5000,
-		})
-		.then((res) => {
-			const { code, data, message } = res.data;
-			if (code === 1000) {
-				if (!isEmpty(data) && data) {
-					list = values(data).flat();
+	// 退避窗口内跳过远程（避免离线时每次 HMR 都白等 5s 超时）
+	if (Date.now() >= remoteRetryAfter) {
+		// 拼接请求地址
+		const url = config.reqUrl + getEpsUrl();
+
+		// 请求远程 eps 数据
+		const remote: any[] | null = await axios
+			.get(url, {
+				timeout: REMOTE_TIMEOUT,
+			})
+			.then((res) => {
+				const { code, data, message } = res.data;
+				if (code === 1000) {
+					if (!isEmpty(data) && data) {
+						return values(data).flat();
+					}
+				} else {
+					error(`[cool-eps] ${message || "Failed to fetch data"}`);
 				}
+				return null;
+			})
+			.catch((err) => {
+				// 仅网络层失败（无响应）设置退避；HTTP 错误（403/5xx 等）只提示
+				if (!err?.response) {
+					remoteRetryAfter = Date.now() + REMOTE_RETRY_MS;
+				}
+				error(`[cool-eps] API service is not running → ${url}`);
+				return null;
+			});
+
+		// sanity 校验：远程实体数显著低于缓存时拒绝替换（远程仍可用缓存兜底）
+		if (remote) {
+			if (list.length > 0 && remote.length < list.length * REMOTE_SANITY_RATIO) {
+				error(
+					`[cool-eps] 远程实体数(${remote.length})远低于缓存(${list.length})，疑似部分导出，拒绝替换；如确需重建请删除 eps.json`,
+				);
 			} else {
-				error(`[cool-eps] ${message || "Failed to fetch data"}`);
+				list = remote;
 			}
-		})
-		.catch(() => {
-			error(`[cool-eps] API service is not running → ${url}`);
-		});
+		}
+
+		// 字典枚举在此拉取（原在 createDescribe 内 await，会导致 eps.json 的
+		// dictTypes 永远慢一拍）。主请求刚因网络失败退避时一并跳过
+		if (Date.now() >= remoteRetryAfter) {
+			await fetchDictTypes();
+		}
+	}
 
 	// 初始化处理，补全缺省字段
 	list.forEach((e) => {
@@ -268,43 +320,65 @@ async function getData() {
 }
 
 /**
- * 创建 eps.json 文件
+ * 拉取字典枚举类型（与 eps 主请求共享超时与失败语义，结果持久化进 eps.json）
+ */
+async function fetchDictTypes() {
+	let p = "";
+
+	switch (config.type) {
+		case "app":
+		case "uniapp-x":
+			p = "/app";
+			break;
+		case "admin":
+			p = "/admin";
+			break;
+	}
+
+	const url = config.reqUrl + p + "/dict/info/types";
+
+	await axios
+		.get(url, {
+			timeout: REMOTE_TIMEOUT,
+		})
+		.then((res) => {
+			const { code, data } = res.data as { code: number; data: any[] };
+
+			if (code === 1000 && !isEmpty(data)) {
+				dictTypes = data.map((e) => e.key);
+			}
+		})
+		.catch((err) => {
+			if (!err?.response) {
+				remoteRetryAfter = Date.now() + REMOTE_RETRY_MS;
+			}
+			error(`[cool-eps] Error：${url}`);
+		});
+}
+
+/**
+ * 重置远程退避（dev server /__cool_eps 手动刷新时调用——后端中途启动后可立即重试）
+ */
+export function resetEpsRemote() {
+	remoteRetryAfter = 0;
+}
+
+/**
+ * 创建 eps.json（确定性缓存：完整持久化补全后的 list 实体与字典枚举缓存）
+ *
+ * 不再做字段裁剪——被丢弃的字段（summary/tag/module 等）只要生成器哪天开始消费，
+ * 在线/离线输出立即分叉。后端不可达时从这里重生成与在线版字节一致。
  * @returns {boolean} 是否有更新
  */
 function createJson(): boolean {
-	let data: any[] = [];
-
-	if (config.type != "uniapp-x") {
-		data = list.map((e) => {
-			return {
-				prefix: e.prefix,
-				name: e.name || "",
-				api: e.api.map((apiItem) => ({
-					name: apiItem.name,
-					method: apiItem.method,
-					path: apiItem.path,
-					// 持久化 dts/columns，后端不可达时重生成不降级
-					dts: apiItem.dts,
-				})),
-				search: e.search,
-				columns: e.columns,
-				pageColumns: e.pageColumns,
-			};
-		});
-	} else {
-		data = list;
-	}
-
-	const content = JSON.stringify(data);
+	const content = JSON.stringify({ list, dictTypes });
 	const local_content = readFile(getEpsPath("eps.json"));
 
-	// 判断是否需要更新
-	const isUpdate = content != local_content;
+	// 判断是否需要更新；list 为空（首跑离线且无缓存）时不写，避免空数据覆盖入库缓存
+	const isUpdate = list.length > 0 && content != local_content;
 
 	if (isUpdate) {
-		createWriteStream(getEpsPath("eps.json"), {
-			flags: "w",
-		}).write(content);
+		writeFileAtomic(getEpsPath("eps.json"), content);
 	}
 
 	return isUpdate;
@@ -648,10 +722,8 @@ async function createDescribe({ list, service }: { list: Eps.Entity[]; service: 
 
 	// 是否需要更新
 	if (content && content != local_content && list.length > 0) {
-		// 创建 eps 描述文件
-		createWriteStream(getEpsPath(name), {
-			flags: "w",
-		}).write(content);
+		// 创建 eps 描述文件（原子写：临时文件+rename，防多进程并发写损坏）
+		writeFileAtomic(getEpsPath(name), content);
 	}
 }
 
@@ -844,43 +916,15 @@ function createServiceCode(): { content: string; types: string[] } {
 }
 
 /**
- * 获取字典类型定义
- * @returns {Promise<string>} 字典类型 type 定义
+ * 获取字典类型定义（消费 getData 缓存的 dictTypes，不再自行发请求——保证 eps.json
+ * 的 dictTypes 不慢一拍；离线时用缓存，后端不可达/无字典兜底 string 避免 DictKey 悬空）
+ * @returns {Promise<string>} 字典枚举 type 定义
  */
 async function createDict(): Promise<string> {
-	let p = "";
-
-	switch (config.type) {
-		case "app":
-		case "uniapp-x":
-			p = "/app";
-			break;
-		case "admin":
-			p = "/admin";
-			break;
+	if (isEmpty(dictTypes)) {
+		return "type DictKey = string;";
 	}
-
-	const url = config.reqUrl + p + "/dict/info/types";
-
-	const text = await axios
-		.get(url)
-		.then((res) => {
-			const { code, data } = res.data as { code: number; data: any[] };
-
-			if (code === 1000) {
-				let v = "string";
-				if (!isEmpty(data)) {
-					v = data.map((e) => `"${e.key}"`).join(" | ");
-				}
-				return `type DictKey = ${v}`;
-			}
-		})
-		.catch(() => {
-			error(`[cool-eps] Error：${url}`);
-		});
-
-	// 后端不可达时兜底，避免 DictKey 引用悬空
-	return text || "type DictKey = string;";
+	return `type DictKey = ${dictTypes.map((e) => `"${e}"`).join(" | ")}`;
 }
 
 /**

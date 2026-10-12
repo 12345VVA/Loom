@@ -9,6 +9,7 @@ exports.toCamel = toCamel;
 exports.createDir = createDir;
 exports.readFile = readFile;
 exports.writeFile = writeFile;
+exports.writeFileAtomic = writeFileAtomic;
 exports.parseJson = parseJson;
 exports.formatContent = formatContent;
 exports.error = error;
@@ -122,6 +123,25 @@ function writeFile(path, data) {
     }
     catch (err) { }
     return "";
+}
+// 原子写入：临时文件(唯一命名+同目录保证同卷) + rename 覆盖。
+// 防两类历史事故：createWriteStream 裸写不等 flush 的部分内容落盘、
+// 多 vite 进程并发写同一目标文件互相截断（06f07c1 曾修过一次文件损坏）。
+// Windows 上目标被杀毒/索引器短暂占用时 rename 会 EPERM——不静默：
+// 打印目标路径后跳过，等下次触发（HMR/重启）重写。
+function writeFileAtomic(path, data) {
+    const tmp = (0, path_1.join)((0, path_1.dirname)(path), `.${(0, path_1.basename)(path)}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`);
+    try {
+        fs_1.default.writeFileSync(tmp, data);
+        fs_1.default.renameSync(tmp, path);
+    }
+    catch (err) {
+        try {
+            fs_1.default.unlinkSync(tmp);
+        }
+        catch { }
+        error(`[cool-eps] Atomic write failed (skipped, retry on next trigger): ${path} → ${err?.message || err}`);
+    }
 }
 // 解析body
 function parseJson(req) {

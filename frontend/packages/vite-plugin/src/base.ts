@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { createEps } from "./eps";
+import { createEps, resetEpsRemote } from "./eps";
 import { parseJson } from "./utils";
 import { updatePlugin } from "./plugin";
 import { updateProxy } from "./proxy";
@@ -27,8 +27,9 @@ export function base(): Plugin {
 							await createFile(body);
 							break;
 
-						// 创建 eps 文件
+						// 创建 eps 文件（手动刷新先清远程退避，后端刚启动可立即重试）
 						case "/__cool_eps":
+							resetEpsRemote();
 							await createEps();
 							break;
 

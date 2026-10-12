@@ -1,5 +1,5 @@
 import fs from "fs";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 import { config } from "../config";
 import prettier from "prettier";
 
@@ -111,6 +111,29 @@ export function writeFile(path: string, data: any) {
 	} catch (err) {}
 
 	return "";
+}
+
+// 原子写入：临时文件(唯一命名+同目录保证同卷) + rename 覆盖。
+// 防两类历史事故：createWriteStream 裸写不等 flush 的部分内容落盘、
+// 多 vite 进程并发写同一目标文件互相截断（06f07c1 曾修过一次文件损坏）。
+// Windows 上目标被杀毒/索引器短暂占用时 rename 会 EPERM——不静默：
+// 打印目标路径后跳过，等下次触发（HMR/重启）重写。
+export function writeFileAtomic(path: string, data: any) {
+	const tmp = join(
+		dirname(path),
+		`.${basename(path)}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
+	);
+
+	try {
+		fs.writeFileSync(tmp, data);
+		fs.renameSync(tmp, path);
+	} catch (err: any) {
+		try {
+			fs.unlinkSync(tmp);
+		} catch {}
+
+		error(`[cool-eps] Atomic write failed (skipped, retry on next trigger): ${path} → ${err?.message || err}`);
+	}
 }
 
 // 解析body

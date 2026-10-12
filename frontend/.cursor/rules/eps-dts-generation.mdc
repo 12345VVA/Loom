@@ -10,9 +10,11 @@ globs: packages/vite-plugin/**/*.ts,build/cool/eps.d.ts,src/cool/service/**/*.ts
 ## 生成链全景
 
 ```text
-后端 /admin/base/open/eps（仅 DEBUG）
-  → packages/vite-plugin getData()（远程优先，eps.json 缓存兜底）
-  → createDescribe() 渲染 → build/cool/eps.d.ts + build/cool/eps.json
+后端 /admin/base/open/eps + /admin/dict/info/types（仅 DEBUG，均 5s 超时）
+  → packages/vite-plugin getData()（远程在线时 sanity 校验后刷新，字典枚举在此一并拉取；
+    离线/退避窗口内直接用本地 eps.json）
+  → createJson() 完整持久化 { list, dictTypes } → build/cool/eps.json（入库，确定性缓存）
+  → createDescribe() 渲染（createDict 消费缓存）→ build/cool/eps.d.ts（入库）
   → tsconfig.json types 引用 → service 调用侧类型
 ```
 
@@ -53,12 +55,19 @@ globs: packages/vite-plugin/**/*.ts,build/cool/eps.d.ts,src/cool/service/**/*.ts
 
 - 必须保留 `[key: string]: any` 索引签名——它是调用侧兼容的关键（未知属性访问不报错，已知字段获得类型提示）。删除它会把全仓属性访问变成编译错误。
 
-## 缓存与产物
+## 缓存与产物（确定性不变式）
 
-- `createJson()` 必须持久化 `dts`/`columns`/`pageColumns`——否则后端停机后 dev server 重启会用瘦缓存**把已入库的 eps.d.ts 降级覆盖成空壳**（历史上全部实体空壳即此成因）。
+**核心不变式：同一份入库 eps.json，后端在线/离线、本地/CI、任意进程，生成的 eps.d.ts 字节一致；任何漂移 CI「EPS 产物漂移检查」变红。**
+
+- eps.json 与 eps.d.ts 成对入库（.gitignore 白名单放行）。eps.json 为 `{ list, dictTypes }` 新格式——`createJson()` **原样整存补全后的实体**，禁止再做字段裁剪（被丢弃的字段只要生成器哪天开始消费，在线/离线输出立即分叉）。
+- 写入一律走 `writeFileAtomic()`（临时文件唯一命名+同目录 + rename 覆盖）：防 createWriteStream 裸写不等 flush 的部分内容落盘、防多 vite 进程并发互相截断（06f07c1 曾修过一次）。Windows 上目标被占用时 rename EPERM——打印路径后跳过等下次触发，不静默。
+- 远程替换有 sanity：远程实体数 < 缓存 × 0.9 时拒绝替换（防 uvicorn reload 窗口部分导出覆盖全量缓存——该降级态自洽，diff 门禁测不出）。确需重建：删除 eps.json 再跑。
+- 远程不可达退避：网络层失败后 60s 内不再重试远程（防离线时每次 HMR 白等 5s 超时）；`/__cool_eps` 手动刷新会清退避，后端中途启动可立即恢复。**HTTP 错误（403/5xx）不设退避**。
+- 字典枚举在 getData() 阶段拉取（原在 createDescribe 内 await，会导致 eps.json 的 dictTypes 永远慢一拍、isUpdate 恒真、HMR 每次全量刷新）。`createDict()` 消费缓存不再自行请求；离线兜底 `type DictKey = string;`。
 - `virtual.ts` 序列化 `virtual:eps` 前必须剥离 `dts` 键（运行时只用 path/method/search），防止缓存加胖撑大产物。
-- `createDict()` 后端不可达时兜底 `type DictKey = string;`——`src/modules/dict/types/index.d.ts` 引用了 `Eps.DictKey`，缺失即悬空。
 - `config.ts` 的 mapping 表需覆盖后端 scanner 类型（string/number/boolean/datetime/select）；漏映射的类型会原样漏进 d.ts 生成非法 TS（如 `fieldName?: select`）。
+- **DictKey 是运行时 DB 数据**（dict 表），冻结于 eps.json 提交时刻——DB 字典增删后需起后端在线重生成一次，否则 eps.d.ts 的 DictKey 与库不同步（有 dict 缓存兜底，不会悬空）。
+- **eps.json 只认 frontend/ 为 cwd 的写入**（getEpsPath admin 分支相对 cwd）：一切 vite 工具必须从 frontend/ 启动，从仓库根启动会读写根下幽灵副本（被根 .gitignore 忽略，不变式静默失效）。
 
 ## 重生成与验证流程
 
@@ -70,7 +79,8 @@ globs: packages/vite-plugin/**/*.ts,build/cool/eps.d.ts,src/cool/service/**/*.ts
 陷阱：
 
 - **dev server 覆盖陷阱**：dev server 存活期间，任何 src 文件变动都会触发其 HMR 用**当前加载的（旧）插件代码**重新生成并覆盖 eps.d.ts/eps.json。改完插件必须重启 dev server，否则产物会被旧代码反复降级，制造"改动不生效"的假象。
-- build 时远程拉取若撞上后端 uvicorn reload 重启窗口，会静默回退瘦缓存——产物行数骤减是信号，重跑即可。
+- **reload 窗口**：build 撞上后端 uvicorn reload 重启窗口会拿到部分导出——生成器有实体数 sanity（<缓存×0.9 拒绝替换）兜底；如遇拒绝提示，确认后端完全启动后重跑。
+- **迁移首跑必须后端在线**：守卫测试断言 api 项 summary 在位、DictKey 非裸 string——离线首跑产出的"自洽降级态"（两文件互相一致但都是降级版）能骗过 diff 门禁，过不了守卫测试。
 - build/ 被 ESLint 忽略，eps.d.ts 里的 any 无计数约束；但手改的 src 文件受 `eslint-suppressions.json` 计数制约束——any 字面量的增减必须 lockstep 更新计数，**减少而不更新计数同样会挂**（unused suppression）。
 
 ## 调用侧收窄规律
@@ -97,6 +107,7 @@ globs: packages/vite-plugin/**/*.ts,build/cool/eps.d.ts,src/cool/service/**/*.ts
 （`backend/scripts/dump_eps.py --check` 对比 `backend/eps_baseline.json`），失同步即红。
 变更后端接口面时的完整顺序：
 
-1. dev server 重启后重生成 `frontend/build/cool/eps.d.ts`（与 eps.json）
+1. 确认无存活的旧 dev server（旧代码会回写产物），起后端 + dev server 重生成 `frontend/build/cool/eps.d.ts`（与 eps.json）
 2. `cd backend && python scripts/dump_eps.py` 更新契约基线
-3. eps.d.ts、eps_baseline.json 与后端改动一并提交
+3. **四同提交**：后端接口代码 + eps_baseline.json + eps.d.ts + eps.json
+4. CI 末端「EPS 产物漂移检查」从入库 eps.json 离线重生成对比——漏同步在此红

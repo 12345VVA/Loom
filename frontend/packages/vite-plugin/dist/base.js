@@ -25,8 +25,9 @@ function base() {
                         case "/__cool_createFile":
                             await (0, file_1.createFile)(body);
                             break;
-                        // 创建 eps 文件
+                        // 创建 eps 文件（手动刷新先清远程退避，后端刚启动可立即重试）
                         case "/__cool_eps":
+                            (0, eps_1.resetEpsRemote)();
                             await (0, eps_1.createEps)();
                             break;
                         // 更新插件
