@@ -47,6 +47,79 @@ def dispatch_media_mirror(asset_id: int | None) -> None:
         logger.warning("媒体镜像任务派发失败 asset_id=%s（不影响主流程）", asset_id, exc_info=True)
 
 
+def probe_mirror() -> dict:
+    """云端镜像连通性自检（管理侧诊断，mirrorProbe 接口用）。
+
+    配置脱敏摘要 + 三步真探针（上传 → 匿名公网读 → 清理）。每步独立 try/except：
+    一步失败不阻断仍可执行的后续步骤（如上传失败时匿名读直接判失败但清理仍尝试）。
+    诊断接口永不抛异常，结构化结果全量返回。
+    """
+    import time
+
+    ak = settings.S3_ACCESS_KEY_ID
+    bucket = settings.MEDIA_MIRROR_BUCKET or settings.S3_BUCKET
+    config = {
+        "enabled": settings.MEDIA_MIRROR_ENABLED,
+        "bucket": bucket,
+        "endpoint": settings.S3_ENDPOINT_URL,
+        "region": settings.S3_REGION,
+        "transport": "tos-native" if _is_tos_native_endpoint(settings.S3_ENDPOINT_URL) else "s3-compat",
+        "publicBaseUrl": settings.MEDIA_MIRROR_PUBLIC_BASE_URL or None,
+        "accessKey": f"{ak[:6]}***" if ak else "",
+    }
+
+    object_key = f"wf-temp/probe/{datetime.now().strftime('%Y/%m')}/{uuid.uuid4().hex}.txt"
+    service = MediaMirrorService()
+    steps: dict = {}
+    probe_url: str | None = None
+
+    started = time.monotonic()
+    try:
+        if not bucket:
+            raise RuntimeError("镜像 bucket 未配置（MEDIA_MIRROR_BUCKET / S3_BUCKET 均为空）")
+        probe_url = service.put_mirror_object(object_key, b"loom mirror probe", mime_type="text/plain")
+        steps["upload"] = {"ok": True, "elapsedMs": round((time.monotonic() - started) * 1000)}
+    except Exception as exc:
+        logger.warning("mirrorProbe 上传步骤失败", exc_info=True)
+        steps["upload"] = {"ok": False, "error": str(exc), "elapsedMs": round((time.monotonic() - started) * 1000)}
+
+    started = time.monotonic()
+    if probe_url:
+        try:
+            import httpx
+
+            resp = httpx.get(probe_url, timeout=10)
+            body_ok = resp.status_code == 200 and b"loom mirror probe" in resp.content
+            steps["anonymousGet"] = {
+                "ok": body_ok,
+                "httpStatus": resp.status_code,
+                "elapsedMs": round((time.monotonic() - started) * 1000),
+                **({} if body_ok else {"error": f"HTTP {resp.status_code}（桶/对象非公共读？）"}),
+            }
+        except Exception as exc:
+            logger.warning("mirrorProbe 匿名读步骤失败", exc_info=True)
+            steps["anonymousGet"] = {
+                "ok": False,
+                "error": str(exc),
+                "elapsedMs": round((time.monotonic() - started) * 1000),
+            }
+    else:
+        steps["anonymousGet"] = {"ok": False, "error": "上传失败，无探针对象可读"}
+
+    started = time.monotonic()
+    if probe_url:
+        try:
+            service.delete_mirror_object(object_key)
+            steps["cleanup"] = {"ok": True, "elapsedMs": round((time.monotonic() - started) * 1000)}
+        except Exception as exc:
+            logger.warning("mirrorProbe 清理步骤失败", exc_info=True)
+            steps["cleanup"] = {"ok": False, "error": str(exc), "elapsedMs": round((time.monotonic() - started) * 1000)}
+    else:
+        steps["cleanup"] = {"ok": True, "skipped": True}
+
+    return {"config": config, "steps": steps, "probeUrl": probe_url}
+
+
 class MediaMirrorService:
     """镜像执行体（Celery 任务内调用；单测可直接实例化）。"""
 
@@ -95,23 +168,40 @@ class MediaMirrorService:
         独立 client + 独立 bucket（MEDIA_MIRROR_BUCKET，缺省回落 S3_BUCKET）；
         无扩展名时从 source_path 推断。prefix 区分生命周期：``assets/`` 长期保留
         （产物镜像），``wf-temp/`` 临时中转（bucket 端 30 天过期，WFI-4a Ingress 用）。
-        传输按端点自动分派（TOS 原生 SDK / boto3 S3 兼容）。此方法为可 patch 边界（单测锚点）。
+        此方法为可 patch 边界（单测锚点），内部经 ``put_mirror_object`` 做传输分派。
         """
-        bucket = settings.MEDIA_MIRROR_BUCKET or settings.S3_BUCKET
-        if not bucket:
-            raise RuntimeError("镜像 bucket 未配置（MEDIA_MIRROR_BUCKET / S3_BUCKET 均为空）")
-
         ext = os.path.splitext(filename)[1].lower()
         if not ext and source_path:
             ext = os.path.splitext(source_path)[1].lower()
         date_folder = datetime.now().strftime("%Y/%m")
         object_key = f"{prefix}/{date_folder}/{uuid.uuid4().hex}{ext or '.bin'}"
+        return self.put_mirror_object(object_key, content, mime_type=mime_type)
+
+    def put_mirror_object(self, object_key: str, content: bytes, *, mime_type: str | None = None) -> str:
+        """按端点分派上传指定 key 的对象并返回公网 URL（probe 探针同用此入口）。"""
+        bucket = settings.MEDIA_MIRROR_BUCKET or settings.S3_BUCKET
+        if not bucket:
+            raise RuntimeError("镜像 bucket 未配置（MEDIA_MIRROR_BUCKET / S3_BUCKET 均为空）")
 
         if _is_tos_native_endpoint(settings.S3_ENDPOINT_URL):
             self._put_tos_native(bucket, object_key, content, mime_type)
         else:
             self._put_s3_compat(bucket, object_key, content, mime_type)
+        return self._public_url(bucket, object_key)
 
+    def delete_mirror_object(self, object_key: str) -> None:
+        """删除镜像对象（probe 清理用；按端点分派）。"""
+        bucket = settings.MEDIA_MIRROR_BUCKET or settings.S3_BUCKET
+        if not bucket:
+            raise RuntimeError("镜像 bucket 未配置（MEDIA_MIRROR_BUCKET / S3_BUCKET 均为空）")
+        if _is_tos_native_endpoint(settings.S3_ENDPOINT_URL):
+            self._tos_client().delete_object(bucket, object_key)
+        else:
+            self._s3_client().delete_object(Bucket=bucket, Key=object_key)
+
+    @staticmethod
+    def _public_url(bucket: str, object_key: str) -> str:
+        """公网 URL：``MEDIA_MIRROR_PUBLIC_BASE_URL`` 优先（CDN/自定义域），缺省按虚拟主机域名拼接。"""
         base = (settings.MEDIA_MIRROR_PUBLIC_BASE_URL or "").rstrip("/")
         if base:
             return f"{base}/{object_key}"
@@ -121,34 +211,42 @@ class MediaMirrorService:
         return f"https://{bucket}.s3.amazonaws.com/{object_key}"
 
     @staticmethod
-    def _put_tos_native(bucket: str, object_key: str, content: bytes, mime_type: str | None) -> None:
-        """TOS 原生 SDK 上传（ark 自动桶等不被 S3 兼容网关服务的桶）。显式公共读 ACL。"""
+    def _tos_client():
         import tos
 
-        client = tos.TosClientV2(
+        return tos.TosClientV2(
             settings.S3_ACCESS_KEY_ID,
             settings.S3_SECRET_ACCESS_KEY,
             settings.S3_ENDPOINT_URL.split("://", 1)[-1].rstrip("/"),
             settings.S3_REGION or "cn-beijing",
         )
-        kwargs: dict = {"acl": tos.ACLType.ACL_Public_Read}
-        if mime_type:
-            kwargs["content_type"] = mime_type
-        client.put_object(bucket, object_key, content=content, **kwargs)
 
     @staticmethod
-    def _put_s3_compat(bucket: str, object_key: str, content: bytes, mime_type: str | None) -> None:
-        """boto3 S3 兼容上传（MinIO/R2/标准 S3 及 tos-s3-* 兼容端点）。"""
+    def _s3_client():
         import boto3
 
-        client = boto3.client(
+        return boto3.client(
             "s3",
             endpoint_url=settings.S3_ENDPOINT_URL or None,
             aws_access_key_id=settings.S3_ACCESS_KEY_ID or None,
             aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY or None,
             region_name=settings.S3_REGION or None,
         )
+
+    @classmethod
+    def _put_tos_native(cls, bucket: str, object_key: str, content: bytes, mime_type: str | None) -> None:
+        """TOS 原生 SDK 上传（ark 自动桶等不被 S3 兼容网关服务的桶）。显式公共读 ACL。"""
+        import tos
+
+        kwargs: dict = {"acl": tos.ACLType.ACL_Public_Read}
+        if mime_type:
+            kwargs["content_type"] = mime_type
+        cls._tos_client().put_object(bucket, object_key, content=content, **kwargs)
+
+    @classmethod
+    def _put_s3_compat(cls, bucket: str, object_key: str, content: bytes, mime_type: str | None) -> None:
+        """boto3 S3 兼容上传（MinIO/R2/标准 S3 及 tos-s3-* 兼容端点）。"""
         extra_args: dict = {}
         if mime_type:
             extra_args["ContentType"] = mime_type
-        client.put_object(Bucket=bucket, Key=object_key, Body=content, **extra_args)
+        cls._s3_client().put_object(Bucket=bucket, Key=object_key, Body=content, **extra_args)

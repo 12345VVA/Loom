@@ -323,6 +323,67 @@ class MediaAssetService(BaseAdminCrudService):
         result["success"] = not failed_ids
         return result
 
+    def mirror_single(self, asset_id: int, current_user: User | None = None) -> dict:
+        """手动镜像单个资产到云端（同步执行，管理操作即时反馈）。
+
+        归属检查与 retry_single 一致；执行体 MediaMirrorService.run 自带幂等与
+        skipped 语义（已镜像/未成功转存/无本地地址），此处透传其返回。
+        """
+        asset = self.session.get(MediaAsset, asset_id)
+        if not asset or asset.delete_time is not None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="媒体资产不存在")
+
+        if current_user and not is_super_admin(self.session, current_user):
+            if asset.created_by != current_user.id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权操作该媒体资产")
+
+        from app.modules.media.service.mirror_service import MediaMirrorService
+
+        result = MediaMirrorService().run(asset_id)
+        # run 在独立会话提交 remote_url；refresh 请求会话使响应带上最新值
+        self.session.refresh(asset)
+        return {"id": asset_id, "remoteUrl": asset.remote_url, **result}
+
+    def mirror_backfill(self, limit: int = 100, current_user: User | None = None) -> dict:
+        """存量补镜像：为 success 且无 remote_url 的资产异步派发镜像任务。
+
+        异步派发（不阻塞请求；幂等由 run 的 remote_url 检查保证）。数据权限与
+        stats 一致：非超管仅操作本人资产。单条派发失败仅跳过（不阻断批量）。
+        """
+        statement = (
+            select(MediaAsset)
+            .where(
+                MediaAsset.status == "success",
+                MediaAsset.remote_url == None,  # noqa: E711
+                MediaAsset.delete_time == None,  # noqa: E711
+            )
+            .order_by(MediaAsset.created_at.desc())
+        )
+        if current_user and not is_super_admin(self.session, current_user):
+            statement = statement.where(MediaAsset.created_by == current_user.id)
+        rows = list(self.session.exec(statement).all())
+        total_pending = len(rows)
+        targets = rows[:limit]
+
+        if not settings.MEDIA_MIRROR_ENABLED:
+            return {
+                "dispatched": 0,
+                "totalPending": total_pending,
+                "assetIds": [],
+                "message": "镜像开关未开启（MEDIA_MIRROR_ENABLED=false）",
+            }
+
+        from app.celery_app import celery_app
+
+        dispatched = 0
+        for row in targets:
+            try:
+                celery_app.send_task("media.mirror_asset", args=[row.id], queue=settings.MEDIA_MIRROR_QUEUE)
+                dispatched += 1
+            except Exception:
+                logger.warning("镜像补量派发失败 asset_id=%s（跳过，不阻断批量）", row.id, exc_info=True)
+        return {"dispatched": dispatched, "totalPending": total_pending, "assetIds": [row.id for row in targets[:10]]}
+
     def stats(self, current_user: User | None = None) -> dict:
         statement = select(MediaAsset).where(MediaAsset.delete_time == None)  # noqa: E711
         if current_user and not is_super_admin(self.session, current_user):
@@ -331,11 +392,23 @@ class MediaAssetService(BaseAdminCrudService):
         type_counts: dict[str, int] = {}
         status_counts: dict[str, int] = {}
         source_counts: dict[str, int] = {}
+        mirrored_count = 0
+        mirror_pending_count = 0
         for item in rows:
             type_counts[item.asset_type] = type_counts.get(item.asset_type, 0) + 1
             status_counts[item.status] = status_counts.get(item.status, 0) + 1
             source_counts[item.source_type] = source_counts.get(item.source_type, 0) + 1
-        return {"typeCounts": type_counts, "statusCounts": status_counts, "sourceCounts": source_counts}
+            if item.remote_url:
+                mirrored_count += 1
+            elif item.status == "success":
+                mirror_pending_count += 1
+        return {
+            "typeCounts": type_counts,
+            "statusCounts": status_counts,
+            "sourceCounts": source_counts,
+            "mirroredCount": mirrored_count,
+            "mirrorPendingCount": mirror_pending_count,
+        }
 
     def create_from_ai_task(self, task: AiGenerationTask) -> list[MediaAsset]:
         if task.status != "success" or not task.result_payload:

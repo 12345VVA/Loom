@@ -19,7 +19,7 @@ from sqlmodel import Session, SQLModel
 from app.core.config import settings
 from app.modules.media.model.media import MediaAsset
 from app.modules.media.service.media_service import MediaAssetService
-from app.modules.media.service.mirror_service import MediaMirrorService, dispatch_media_mirror
+from app.modules.media.service.mirror_service import MediaMirrorService, dispatch_media_mirror, probe_mirror
 
 _PNG = base64.b64encode(b"mirror-png").decode()
 
@@ -165,6 +165,162 @@ class MediaMirrorTest(unittest.TestCase):
         self.assertEqual(put.call_args[1]["Body"], b"png")
         self.assertEqual(put.call_args[1]["ContentType"], "image/png")
         self.assertIn("b2.tos-s3-cn-beijing.volces.com", url)
+
+    # ---------- 管理接口：mirror_single / mirror_backfill / probe_mirror / stats 计数 ----------
+
+    def _user(self, uid: int, super_admin: bool = False):
+        from app.modules.base.model.auth import User
+
+        return User(
+            id=uid,
+            username=f"u{uid}",
+            full_name=f"u{uid}",
+            password_hash="x",
+            is_active=True,
+            is_super_admin=super_admin,
+        )
+
+    def test_mirror_single_sync_returns_remote_url(self):
+        from app.modules.media.service.media_service import MediaAssetService
+
+        asset = self._make_asset()
+        with (
+            self._patch_session_local(),
+            patch("app.framework.storage.StorageService.get_instance", return_value=self.storage),
+            patch.object(
+                MediaMirrorService, "upload_mirror_object", return_value="https://mirror.example.com/assets/a.png"
+            ),
+        ):
+            result = MediaAssetService(self.session).mirror_single(asset.id, self._user(1, super_admin=True))
+        self.assertEqual(result["remoteUrl"], "https://mirror.example.com/assets/a.png")
+        self.assertNotIn("skipped", result)
+
+    def test_mirror_single_skipped_reason_passthrough(self):
+        from app.modules.media.service.media_service import MediaAssetService
+
+        failed = self._make_asset(status="failed", storage_url=None)
+        with self._patch_session_local():
+            result = MediaAssetService(self.session).mirror_single(failed.id, self._user(1, super_admin=True))
+        self.assertTrue(result["skipped"])
+        self.assertIsNone(result["remoteUrl"])
+
+    def test_mirror_single_not_owned_forbidden(self):
+        from fastapi import HTTPException
+
+        from app.modules.media.service.media_service import MediaAssetService
+
+        asset = self._make_asset(created_by=1)
+        with (
+            self._patch_session_local(),
+            patch.object(MediaMirrorService, "run") as run,  # 权限拒绝时不应触达执行体
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                MediaAssetService(self.session).mirror_single(asset.id, self._user(999))
+        self.assertEqual(ctx.exception.status_code, 403)
+        run.assert_not_called()
+
+    def test_mirror_backfill_dispatches_only_pending_success(self):
+        from app.modules.media.service.media_service import MediaAssetService
+
+        pending_a = self._make_asset(created_by=1)
+        pending_b = self._make_asset(created_by=1)
+        self._make_asset(remote_url="https://mirror.example.com/done.png", created_by=1)  # 已镜像不派
+        self._make_asset(status="failed", storage_url=None, created_by=1)  # 非成功不派
+
+        with (
+            patch.object(settings, "MEDIA_MIRROR_ENABLED", True),
+            patch("app.celery_app.celery_app.send_task") as send,
+        ):
+            result = MediaAssetService(self.session).mirror_backfill(
+                limit=100, current_user=self._user(1, super_admin=True)
+            )
+        self.assertEqual(result["dispatched"], 2)
+        self.assertEqual(result["totalPending"], 2)
+        dispatched_ids = {call.kwargs["args"][0] for call in send.call_args_list}
+        self.assertEqual(dispatched_ids, {pending_a.id, pending_b.id})
+        for call in send.call_args_list:
+            self.assertEqual(call.args[0], "media.mirror_asset")
+            self.assertEqual(call.kwargs["queue"], settings.MEDIA_MIRROR_QUEUE)
+
+    def test_mirror_backfill_disabled_returns_message(self):
+        from app.modules.media.service.media_service import MediaAssetService
+
+        self._make_asset()
+        with (
+            patch.object(settings, "MEDIA_MIRROR_ENABLED", False),
+            patch("app.celery_app.celery_app.send_task") as send,
+        ):
+            result = MediaAssetService(self.session).mirror_backfill(current_user=self._user(1, super_admin=True))
+        self.assertEqual(result["dispatched"], 0)
+        self.assertEqual(result["totalPending"], 1)
+        self.assertIn("MEDIA_MIRROR_ENABLED", result["message"])
+        send.assert_not_called()
+
+    def test_mirror_backfill_respects_limit(self):
+        from app.modules.media.service.media_service import MediaAssetService
+
+        for _ in range(3):
+            self._make_asset()
+        with (
+            patch.object(settings, "MEDIA_MIRROR_ENABLED", True),
+            patch("app.celery_app.celery_app.send_task") as send,
+        ):
+            result = MediaAssetService(self.session).mirror_backfill(
+                limit=2, current_user=self._user(1, super_admin=True)
+            )
+        self.assertEqual(result["dispatched"], 2)
+        self.assertEqual(result["totalPending"], 3)
+        self.assertEqual(send.call_count, 2)
+
+    def test_probe_mirror_all_steps_ok(self):
+        resp = Mock(status_code=200, content=b"loom mirror probe")
+        with (
+            patch.object(settings, "MEDIA_MIRROR_BUCKET", "pb"),
+            patch.object(settings, "S3_ENDPOINT_URL", "https://tos-cn-beijing.volces.com"),
+            patch.object(settings, "S3_ACCESS_KEY_ID", "AKLTzz"),
+            patch.object(
+                MediaMirrorService, "put_mirror_object", return_value="https://pb.tos-cn-beijing.volces.com/x.txt"
+            ) as put,
+            patch.object(MediaMirrorService, "delete_mirror_object") as delete,
+            patch("httpx.get", return_value=resp) as http_get,
+        ):
+            result = probe_mirror()
+
+        self.assertEqual(result["config"]["transport"], "tos-native")
+        self.assertEqual(result["config"]["accessKey"], "AKLTzz***")
+        self.assertTrue(result["steps"]["upload"]["ok"])
+        self.assertTrue(result["steps"]["anonymousGet"]["ok"])
+        self.assertTrue(result["steps"]["cleanup"]["ok"])
+        self.assertIn("wf-temp/probe/", put.call_args[0][0])
+        http_get.assert_called_once()
+        delete.assert_called_once_with(put.call_args[0][0])
+
+    def test_probe_mirror_upload_failure_isolated(self):
+        with (
+            patch.object(settings, "MEDIA_MIRROR_BUCKET", "pb"),
+            patch.object(settings, "S3_ENDPOINT_URL", "https://tos-cn-beijing.volces.com"),
+            patch.object(MediaMirrorService, "put_mirror_object", side_effect=RuntimeError("凭证无效")),
+            patch.object(MediaMirrorService, "delete_mirror_object") as delete,
+        ):
+            result = probe_mirror()
+
+        self.assertFalse(result["steps"]["upload"]["ok"])
+        self.assertIn("凭证无效", result["steps"]["upload"]["error"])
+        self.assertFalse(result["steps"]["anonymousGet"]["ok"])  # 上传失败时匿名读判定失败但不抛
+        self.assertTrue(result["steps"]["cleanup"]["ok"])  # 清理跳过视为成功
+        self.assertTrue(result["steps"]["cleanup"].get("skipped"))
+        self.assertIsNone(result["probeUrl"])
+        delete.assert_not_called()
+
+    def test_stats_mirror_counts(self):
+        from app.modules.media.service.media_service import MediaAssetService
+
+        self._make_asset(remote_url="https://mirror.example.com/a.png")  # 已镜像
+        self._make_asset()  # 成功未镜像 → pending
+        self._make_asset(status="failed", storage_url=None)  # 失败不计 pending
+        stats = MediaAssetService(self.session).stats(self._user(1, super_admin=True))
+        self.assertEqual(stats["mirroredCount"], 1)
+        self.assertEqual(stats["mirrorPendingCount"], 1)
 
     def test_dispatch_disabled_by_default(self):
         with patch("app.celery_app.celery_app.send_task") as send:

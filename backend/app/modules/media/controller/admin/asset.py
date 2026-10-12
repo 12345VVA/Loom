@@ -44,6 +44,14 @@ class RetryFailedAssetsRequest(BaseModel):
     window_hours: int = Field(default=24, ge=1, le=168)
 
 
+class MirrorAssetRequest(BaseModel):
+    id: int
+
+
+class MirrorBackfillRequest(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+
+
 def _inline_image_response(declared_mime: str | None, safe_name: str) -> tuple[str, dict[str, str]]:
     """按 MIME 白名单构造响应：仅图片（不含可内嵌脚本的 SVG）允许 inline。
 
@@ -221,6 +229,38 @@ class MediaAssetController(BaseController):
         return MediaAssetService(session).retry_failed(
             limit=limit, window_hours=window_hours, current_user=current_user
         )
+
+    @Post("/mirror", summary="手动镜像单个资产到云端", permission="media:asset:update")
+    def mirror(
+        self,
+        payload: MirrorAssetRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        """同步执行单资产镜像（管理操作即时反馈）；幂等，已镜像直接返回现有 remote_url。"""
+        return MediaAssetService(session).mirror_single(payload.id, current_user)
+
+    @Post("/mirrorBackfill", summary="存量补镜像批量派发", permission="media:asset:update")
+    def mirror_backfill(
+        self,
+        payload: MirrorBackfillRequest | None = None,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> dict:
+        """为 success 且无 remote_url 的存量资产异步派发镜像任务（Celery 消费）。"""
+        return MediaAssetService(session).mirror_backfill(
+            limit=payload.limit if payload else 100, current_user=current_user
+        )
+
+    @Get("/mirrorProbe", summary="云端镜像连通性自检", permission="media:asset:stats")
+    def mirror_probe(
+        self,
+        current_user: User = Depends(get_current_user),
+    ) -> dict:
+        """TOS/S3 镜像配置脱敏摘要 + 上传/匿名公网读/清理三步真探针，永不抛异常。"""
+        from app.modules.media.service.mirror_service import probe_mirror
+
+        return probe_mirror()
 
 
 router = MediaAssetController.router
