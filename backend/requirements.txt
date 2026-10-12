@@ -19,6 +19,9 @@ email-validator>=2.3.0
 PyJWT>=2.15.1
 typer>=0.27.2
 boto3>=1.43.106
+# 火山引擎 TOS 原生 SDK：ark 自动桶不支持 S3 兼容网关（InvalidPathAccess），
+# 媒体镜像 TOS 原生端点走此 SDK 并显式公共读 ACL（2026-10-12 真机验证）
+tos>=2.9.3
 cryptography>=50.0.2
 Pillow>=12.3.0
 # langgraph 下限由 compiler.py 的顶层硬导入 `from langgraph.errors import GraphBubbleUp` 决定：

@@ -113,6 +113,59 @@ class MediaMirrorTest(unittest.TestCase):
             self.assertEqual(refreshed.status, "success")
             self.assertIsNone(refreshed.remote_url)
 
+    # ---------- 传输分派：TOS 原生 SDK / boto3 S3 兼容（2026-10-12 真机验证补充） ----------
+
+    def test_endpoint_detection(self):
+        from app.modules.media.service.mirror_service import _is_tos_native_endpoint
+
+        self.assertTrue(_is_tos_native_endpoint("https://tos-cn-beijing.volces.com"))
+        self.assertTrue(_is_tos_native_endpoint("tos-cn-shanghai.volces.com"))
+        self.assertFalse(_is_tos_native_endpoint("https://tos-s3-cn-beijing.volces.com"))  # S3 兼容网关
+        self.assertFalse(_is_tos_native_endpoint("https://minio.example.com"))
+        self.assertFalse(_is_tos_native_endpoint(""))
+
+    def test_tos_native_branch_sets_public_read_acl(self):
+        """ark 自动桶场景：原生 SDK 上传 + 显式公共读 ACL（匿名可读是 remote_url 前提）。"""
+        import tos
+
+        with (
+            patch.object(settings, "MEDIA_MIRROR_BUCKET", "b1"),
+            patch.object(settings, "S3_ENDPOINT_URL", "https://tos-cn-beijing.volces.com"),
+            patch.object(settings, "S3_ACCESS_KEY_ID", "ak"),
+            patch.object(settings, "S3_SECRET_ACCESS_KEY", "sk"),
+            patch.object(settings, "S3_REGION", "cn-beijing"),
+            patch.object(settings, "MEDIA_MIRROR_PUBLIC_BASE_URL", ""),
+            patch("tos.TosClientV2") as client_cls,
+        ):
+            url = MediaMirrorService().upload_mirror_object(b"png", "a.png", mime_type="image/png")
+        client_cls.assert_called_once_with("ak", "sk", "tos-cn-beijing.volces.com", "cn-beijing")
+        put = client_cls.return_value.put_object
+        put.assert_called_once()
+        self.assertEqual(put.call_args[0][0], "b1")
+        self.assertTrue(put.call_args[0][1].startswith("assets/"))
+        self.assertEqual(put.call_args[1]["content"], b"png")
+        self.assertEqual(put.call_args[1]["acl"], tos.ACLType.ACL_Public_Read)
+        self.assertEqual(put.call_args[1]["content_type"], "image/png")
+        # 虚拟主机域名直链（native 端点形态）
+        host = url.split("/")[2]
+        self.assertEqual(host, "b1.tos-cn-beijing.volces.com")
+
+    def test_s3_compat_branch_uses_boto3(self):
+        with (
+            patch.object(settings, "MEDIA_MIRROR_BUCKET", "b2"),
+            patch.object(settings, "S3_ENDPOINT_URL", "https://tos-s3-cn-beijing.volces.com"),
+            patch.object(settings, "MEDIA_MIRROR_PUBLIC_BASE_URL", ""),
+            patch("boto3.client") as boto_client,
+        ):
+            url = MediaMirrorService().upload_mirror_object(b"png", "a.png", mime_type="image/png")
+        boto_client.assert_called_once()
+        put = boto_client.return_value.put_object
+        put.assert_called_once()
+        self.assertEqual(put.call_args[1]["Bucket"], "b2")
+        self.assertEqual(put.call_args[1]["Body"], b"png")
+        self.assertEqual(put.call_args[1]["ContentType"], "image/png")
+        self.assertIn("b2.tos-s3-cn-beijing.volces.com", url)
+
     def test_dispatch_disabled_by_default(self):
         with patch("app.celery_app.celery_app.send_task") as send:
             with patch.object(settings, "MEDIA_MIRROR_ENABLED", False):
