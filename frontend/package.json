@@ -70,7 +70,7 @@
 	},
 	"devDependencies": {
 		"@cool-vue/vite-plugin": "^8.2.2",
-		"@intlify/unplugin-vue-i18n": "^6.0.3",
+		"@intlify/unplugin-vue-i18n": "^11.2.5",
 		"@playwright/test": "^1.59.1",
 		"@rushstack/eslint-patch": "^1.10.5",
 		"@tsconfig/node20": "^20.1.4",
