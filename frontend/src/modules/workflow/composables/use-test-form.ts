@@ -19,7 +19,12 @@ export interface TestFormVariable {
 	required?: boolean;
 }
 
-export function useTestForm(service: any, t: any) {
+/** request 拦截器 reject 的错误形态（Promise.reject({ message })，非 Error 实例） */
+interface ApiError {
+	message?: string;
+}
+
+export function useTestForm(service: Eps.Service, t: (key: string) => string) {
 	const mode = ref<'form' | 'json'>('form');
 	const values = ref<Record<string, unknown>>({});
 	const declared = ref<TestFormVariable[]>([]);
@@ -87,8 +92,8 @@ export function useTestForm(service: any, t: any) {
 			} else {
 				ElMessage.error(t('上传成功但未返回地址'));
 			}
-		} catch (err: any) {
-			ElMessage.error(t('图片上传失败: ') + (err?.message || err));
+		} catch (err) {
+			ElMessage.error(t('图片上传失败: ') + ((err as ApiError)?.message || String(err)));
 		} finally {
 			uploadingKey.value = '';
 		}

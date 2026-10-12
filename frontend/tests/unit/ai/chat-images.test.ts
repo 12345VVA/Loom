@@ -6,9 +6,15 @@ import {
 	supportsVision,
 	validateImageFile
 } from '/$/ai/utils/chat-images';
+import type { ChatContentPart, ChatImageUrlContentPart } from '/$/ai/utils/chat-images';
 
 function makeImageFile(type = 'image/png', sizeMb = 0.01) {
 	return new File([new ArrayBuffer(sizeMb * 1024 * 1024)], 'a.png', { type });
+}
+
+/** buildMessageContent 返回值的数组侧收窄（无图时为纯字符串） */
+function asParts(v: ReturnType<typeof buildMessageContent>): ChatContentPart[] {
+	return Array.isArray(v) ? v : [];
 }
 
 describe('ai/utils/chat-images', () => {
@@ -48,14 +54,18 @@ describe('ai/utils/chat-images', () => {
 		});
 
 		it('多图顺序保持', () => {
-			const parts: any[] = buildMessageContent('t', ['data:a', 'data:b', 'data:c']);
-			expect(parts.filter(p => p.type === 'image_url')).toHaveLength(3);
-			expect(parts[1].image_url.url).toBe('data:a');
-			expect(parts[3].image_url.url).toBe('data:c');
+			const list = asParts(buildMessageContent('t', ['data:a', 'data:b', 'data:c']));
+			expect(list.filter(p => p.type === 'image_url')).toHaveLength(3);
+			// 联合类型下 filter 不自动收窄，用类型谓词取 image part 的 url
+			expect(
+				list
+					.filter((p): p is ChatImageUrlContentPart => p.type === 'image_url')
+					.map(p => p.image_url.url)
+			).toEqual(['data:a', 'data:b', 'data:c']);
 		});
 
 		it('空文本省略 text part（纯图消息）', () => {
-			const parts = buildMessageContent('  ', ['data:a']);
+			const parts = asParts(buildMessageContent('  ', ['data:a']));
 			expect(parts).toHaveLength(1);
 			expect(parts[0].type).toBe('image_url');
 		});

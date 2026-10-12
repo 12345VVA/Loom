@@ -1,18 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { ref } from 'vue';
 import { useUpstreamVariables } from '/$/workflow/composables/useUpstreamVariables';
+import type { FlowEdge, FlowNode } from '/$/workflow/types/editor';
+
+/** fixture 工厂：补齐 FlowNode 必填的 position/label（断言只看返回的 vars，默认值不参与比较） */
+function makeNode(overrides: Partial<FlowNode> & Pick<FlowNode, 'id' | 'type'>): FlowNode {
+	return { label: '', position: { x: 0, y: 0 }, data: { config: {} }, ...overrides };
+}
 
 describe('useUpstreamVariables', () => {
 	describe('getUpstreamVariablesForNode', () => {
 		it('收集 start 节点的输入变量', () => {
-			const elements = ref<any[]>([
-				{
+			const elements = ref<(FlowNode | FlowEdge)[]>([
+				makeNode({
 					id: 'start',
 					type: 'start',
 					label: '开始',
 					data: { config: { inputVariables: ['query', 'topic'] } }
-				},
-				{ id: 'end', type: 'end', label: '结束', data: { config: {} } },
+				}),
+				makeNode({ id: 'end', type: 'end', label: '结束' }),
 				{ id: 'e1', source: 'start', target: 'end' }
 			]);
 			const { getUpstreamVariablesForNode } = useUpstreamVariables(elements);
@@ -21,8 +27,8 @@ describe('useUpstreamVariables', () => {
 		});
 
 		it('WFI-1b：start 声明的 type 透传为 variableType，生图输出标 image', () => {
-			const elements = ref<any[]>([
-				{
+			const elements = ref<(FlowNode | FlowEdge)[]>([
+				makeNode({
 					id: 'start',
 					type: 'start',
 					label: '开始',
@@ -34,20 +40,15 @@ describe('useUpstreamVariables', () => {
 							]
 						}
 					}
-				},
-				{
+				}),
+				makeNode({
 					id: 'gen',
 					type: 'image_generator',
 					label: '生图',
 					data: { config: { outputVariable: 'cover' } }
-				},
-				{
-					id: 'llm',
-					type: 'llm',
-					label: 'LLM',
-					data: { config: { outputVariable: 'ans' } }
-				},
-				{ id: 'end', type: 'end', label: '结束', data: { config: {} } },
+				}),
+				makeNode({ id: 'llm', type: 'llm', label: 'LLM', data: { config: { outputVariable: 'ans' } } }),
+				makeNode({ id: 'end', type: 'end', label: '结束' }),
 				{ id: 'e1', source: 'start', target: 'gen' },
 				{ id: 'e2', source: 'gen', target: 'llm' },
 				{ id: 'e3', source: 'llm', target: 'end' }
@@ -62,10 +63,10 @@ describe('useUpstreamVariables', () => {
 		});
 
 		it('收集上游节点的 outputVariable', () => {
-			const elements = ref<any[]>([
-				{ id: 'start', type: 'start', label: '开始', data: { config: { inputVariables: [] } } },
-				{ id: 'llm', type: 'llm', label: 'LLM', data: { config: { outputVariable: 'answer' } } },
-				{ id: 'end', type: 'end', label: '结束', data: { config: {} } },
+			const elements = ref<(FlowNode | FlowEdge)[]>([
+				makeNode({ id: 'start', type: 'start', label: '开始', data: { config: { inputVariables: [] } } }),
+				makeNode({ id: 'llm', type: 'llm', label: 'LLM', data: { config: { outputVariable: 'answer' } } }),
+				makeNode({ id: 'end', type: 'end', label: '结束' }),
 				{ id: 'e1', source: 'start', target: 'llm' },
 				{ id: 'e2', source: 'llm', target: 'end' }
 			]);
@@ -75,8 +76,8 @@ describe('useUpstreamVariables', () => {
 		});
 
 		it('llm 输出 json 时附带 jsonFields', () => {
-			const elements = ref<any[]>([
-				{
+			const elements = ref<(FlowNode | FlowEdge)[]>([
+				makeNode({
 					id: 'llm',
 					type: 'llm',
 					label: 'LLM',
@@ -87,8 +88,8 @@ describe('useUpstreamVariables', () => {
 							jsonFields: [{ name: 'a' }]
 						}
 					}
-				},
-				{ id: 'end', type: 'end', label: '结束', data: { config: {} } },
+				}),
+				makeNode({ id: 'end', type: 'end', label: '结束' }),
 				{ id: 'e1', source: 'llm', target: 'end' }
 			]);
 			const { getUpstreamVariablesForNode } = useUpstreamVariables(elements);
@@ -98,26 +99,26 @@ describe('useUpstreamVariables', () => {
 		});
 
 		it('循环上下文：注入 controller 的 itemVariable 并置于首位', () => {
-			const elements = ref<any[]>([
-				{
+			const elements = ref<(FlowNode | FlowEdge)[]>([
+				makeNode({
 					id: 'lc',
 					type: 'loop_controller',
 					label: '循环',
 					data: { config: { itemVariable: 'item' } }
-				},
-				{
+				}),
+				makeNode({
 					id: 'grp',
 					type: 'loop_body_group',
 					label: '循环体',
 					data: { config: { controllerNodeId: 'lc' } }
-				},
-				{
+				}),
+				makeNode({
 					id: 'inner',
 					type: 'llm',
 					label: '内',
 					parentNode: 'grp',
 					data: { config: { outputVariable: 'inner_out' } }
-				},
+				}),
 				{ id: 'e1', source: 'lc', target: 'inner' }
 			]);
 			const { getUpstreamVariablesForNode } = useUpstreamVariables(elements);
@@ -126,9 +127,9 @@ describe('useUpstreamVariables', () => {
 		});
 
 		it('去环：环路不会无限递归', () => {
-			const elements = ref<any[]>([
-				{ id: 'a', type: 'llm', label: 'A', data: { config: { outputVariable: 'va' } } },
-				{ id: 'b', type: 'llm', label: 'B', data: { config: { outputVariable: 'vb' } } },
+			const elements = ref<(FlowNode | FlowEdge)[]>([
+				makeNode({ id: 'a', type: 'llm', label: 'A', data: { config: { outputVariable: 'va' } } }),
+				makeNode({ id: 'b', type: 'llm', label: 'B', data: { config: { outputVariable: 'vb' } } }),
 				{ id: 'e1', source: 'a', target: 'b' },
 				{ id: 'e2', source: 'b', target: 'a' }
 			]);
@@ -137,7 +138,7 @@ describe('useUpstreamVariables', () => {
 		});
 
 		it('目标节点不存在时返回空数组', () => {
-			const elements = ref<any[]>([]);
+			const elements = ref<(FlowNode | FlowEdge)[]>([]);
 			const { getUpstreamVariablesForNode } = useUpstreamVariables(elements);
 			expect(getUpstreamVariablesForNode('missing')).toEqual([]);
 		});
@@ -145,43 +146,43 @@ describe('useUpstreamVariables', () => {
 
 	describe('upstreamVariablesOf 缓存', () => {
 		it('缓存命中：未失效前修改 elements 仍返回旧快照', () => {
-			const elements = ref<any[]>([
-				{
+			const elements = ref<(FlowNode | FlowEdge)[]>([
+				makeNode({
 					id: 'start',
 					type: 'start',
 					label: '开始',
 					data: { config: { inputVariables: ['q1'] } }
-				},
-				{ id: 'end', type: 'end', label: '结束', data: { config: {} } },
+				}),
+				makeNode({ id: 'end', type: 'end', label: '结束' }),
 				{ id: 'e1', source: 'start', target: 'end' }
 			]);
 			const { upstreamVariablesOf } = useUpstreamVariables(elements);
 			expect(upstreamVariablesOf('end').map(v => v.variableName)).toEqual(['q1']);
 			// 加新输入变量但未失效缓存
-			elements.value[0].data.config.inputVariables.push('q2');
+			(elements.value[0] as FlowNode).data.config.inputVariables.push('q2');
 			expect(upstreamVariablesOf('end').map(v => v.variableName)).toEqual(['q1']);
 		});
 
 		it('invalidateUpstreamCache 后重新计算', () => {
-			const elements = ref<any[]>([
-				{
+			const elements = ref<(FlowNode | FlowEdge)[]>([
+				makeNode({
 					id: 'start',
 					type: 'start',
 					label: '开始',
 					data: { config: { inputVariables: ['q1'] } }
-				},
-				{ id: 'end', type: 'end', label: '结束', data: { config: {} } },
+				}),
+				makeNode({ id: 'end', type: 'end', label: '结束' }),
 				{ id: 'e1', source: 'start', target: 'end' }
 			]);
 			const { upstreamVariablesOf, invalidateUpstreamCache } = useUpstreamVariables(elements);
 			upstreamVariablesOf('end');
-			elements.value[0].data.config.inputVariables.push('q2');
+			(elements.value[0] as FlowNode).data.config.inputVariables.push('q2');
 			invalidateUpstreamCache();
 			expect(upstreamVariablesOf('end').map(v => v.variableName)).toEqual(['q1', 'q2']);
 		});
 
 		it('nodeId 为空时返回 []', () => {
-			const elements = ref<any[]>([]);
+			const elements = ref<(FlowNode | FlowEdge)[]>([]);
 			const { upstreamVariablesOf } = useUpstreamVariables(elements);
 			expect(upstreamVariablesOf(null)).toEqual([]);
 			expect(upstreamVariablesOf(undefined)).toEqual([]);

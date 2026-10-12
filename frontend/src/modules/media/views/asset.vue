@@ -154,7 +154,7 @@
 						<el-button
 							size="small"
 							type="warning"
-							:loading="retryingIds.has(viewer.row.id)"
+							:loading="retryingIds.has(viewer.row.id as number)"
 							@click="retryAsset(viewer.row)"
 						>
 							{{ $t('立即重试转存') }}
@@ -209,7 +209,7 @@
 							text
 							type="primary"
 							size="small"
-							:loading="mirroringIds.has(viewer.row.id)"
+							:loading="mirroringIds.has(viewer.row.id as number)"
 							@click="mirrorAsset(viewer.row)"
 						>
 							{{ $t('立即镜像') }}
@@ -282,6 +282,8 @@ defineOptions({
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import type { UploadAjaxError } from 'element-plus/es/components/upload/src/ajax';
+import type { UploadRequestOptions } from 'element-plus';
 import {
 	CircleCloseFilled,
 	CircleCheckFilled,
@@ -297,9 +299,35 @@ import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useAssetUrl } from '../composables/use-asset-url';
 
+/** request 拦截器 reject 的错误形态（Promise.reject({ message })，非 Error 实例） */
+interface ApiError {
+	message?: string;
+}
+
+/** 云端存储自检弹窗数据（后端 probe_mirror()：config 脱敏摘要 + 三步探针） */
+interface MirrorProbeStep {
+	ok: boolean;
+	/** cleanup 跳过场景后端不返回该键 */
+	elapsedMs?: number;
+	error?: string;
+}
+
+interface MirrorProbeConfig {
+	enabled: boolean;
+	endpoint?: string | null;
+	bucket?: string | null;
+	transport?: string;
+	accessKey?: string;
+}
+
+interface MirrorProbeResult {
+	config: MirrorProbeConfig;
+	steps: Record<string, MirrorProbeStep>;
+}
+
 const { service } = useCool();
 const { t } = useI18n();
-const mediaService = (service as any).media.asset;
+const mediaService = service.media.asset;
 
 const retryingIds = reactive(new Set<number>());
 const retryingAll = ref(false);
@@ -308,7 +336,7 @@ const backfilling = ref(false);
 const probing = ref(false);
 const probe = reactive({
 	visible: false,
-	data: null as any
+	data: null as MirrorProbeResult | null
 });
 
 const assetTypeOptions = [
@@ -340,7 +368,7 @@ const stats = reactive({
 });
 const viewer = reactive({
 	visible: false,
-	row: null as any
+	row: null as Eps.asset | null
 });
 
 const statItems = computed(() => [
@@ -352,7 +380,7 @@ const statItems = computed(() => [
 	{ label: t('已镜像'), value: stats.mirroredCount || 0 }
 ]);
 
-const Table = useTable({
+const Table = useTable<Eps.asset>({
 	columns: [
 		{ label: t('预览'), prop: 'preview', width: 92 },
 		{ label: t('文件名'), prop: 'fileName', minWidth: 190, showOverflowTooltip: true },
@@ -360,19 +388,19 @@ const Table = useTable({
 			label: t('类型'),
 			prop: 'assetType',
 			minWidth: 90,
-			formatter: ({ assetType }: any) => optionLabel(assetTypeOptions, assetType)
+			formatter: ({ assetType }) => optionLabel(assetTypeOptions, assetType)
 		},
 		{
 			label: t('来源'),
 			prop: 'sourceType',
 			minWidth: 110,
-			formatter: ({ sourceType }: any) => optionLabel(sourceTypeOptions, sourceType)
+			formatter: ({ sourceType }) => optionLabel(sourceTypeOptions, sourceType)
 		},
 		{
 			label: t('状态'),
 			prop: 'status',
 			minWidth: 120,
-			formatter: ({ status }: any) => optionLabel(statusOptions, status)
+			formatter: ({ status }) => optionLabel(statusOptions, status)
 		},
 		{
 			label: t('云端'),
@@ -383,7 +411,7 @@ const Table = useTable({
 			label: t('来源实例'),
 			prop: 'workflowInstanceId',
 			minWidth: 100,
-			formatter: ({ workflowInstanceId }: any) => workflowInstanceId ?? '-'
+			formatter: ({ workflowInstanceId }) => workflowInstanceId ?? '-'
 		},
 		{ label: t('大小'), prop: 'sizeBytes', minWidth: 100 },
 		{ label: 'MD5', prop: 'md5', minWidth: 220, showOverflowTooltip: true },
@@ -420,7 +448,7 @@ async function loadStats() {
 	stats.mirrorPendingCount = res?.mirrorPendingCount || 0;
 }
 
-async function mirrorAsset(row: any) {
+async function mirrorAsset(row: Eps.asset) {
 	if (!row?.id) return;
 	mirroringIds.add(row.id);
 	try {
@@ -431,7 +459,7 @@ async function mirrorAsset(row: any) {
 		});
 		if (res?.remoteUrl) {
 			row.remoteUrl = res.remoteUrl;
-			if (viewer.visible && viewer.row?.id === row.id) {
+			if (viewer.visible && viewer.row && viewer.row.id === row.id) {
 				viewer.row.remoteUrl = res.remoteUrl;
 			}
 			ElMessage.success(t('镜像成功'));
@@ -439,8 +467,8 @@ async function mirrorAsset(row: any) {
 		} else {
 			ElMessage.warning(res?.reason || t('镜像跳过'));
 		}
-	} catch (err: any) {
-		ElMessage.error(err.message || t('镜像失败'));
+	} catch (err) {
+		ElMessage.error((err as ApiError).message || t('镜像失败'));
 	} finally {
 		mirroringIds.delete(row.id);
 	}
@@ -469,8 +497,8 @@ async function backfillMirror() {
 		} else {
 			ElMessage.success(t('已派发 {n} 个镜像任务', { n: res?.dispatched ?? 0 }));
 		}
-	} catch (err: any) {
-		ElMessage.error(err.message || t('批量派发失败'));
+	} catch (err) {
+		ElMessage.error((err as ApiError).message || t('批量派发失败'));
 	} finally {
 		backfilling.value = false;
 	}
@@ -485,8 +513,8 @@ async function runMirrorProbe() {
 		});
 		probe.data = res;
 		probe.visible = true;
-	} catch (err: any) {
-		ElMessage.error(err.message || t('自检请求失败'));
+	} catch (err) {
+		ElMessage.error((err as ApiError).message || t('自检请求失败'));
 	} finally {
 		probing.value = false;
 	}
@@ -501,7 +529,7 @@ function stepName(key: string) {
 	return names[key] || key;
 }
 
-async function uploadAsset(options: any) {
+async function uploadAsset(options: UploadRequestOptions) {
 	const form = new FormData();
 	form.append('file', options.file);
 	try {
@@ -514,13 +542,13 @@ async function uploadAsset(options: any) {
 		Crud.value?.refresh();
 		loadStats();
 		options.onSuccess?.({});
-	} catch (err: any) {
-		ElMessage.error(err.message || t('上传失败'));
-		options.onError?.(err);
+	} catch (err) {
+		ElMessage.error((err as ApiError).message || t('上传失败'));
+		options.onError?.(err as UploadAjaxError);
 	}
 }
 
-async function deleteAsset(row: any) {
+async function deleteAsset(row: Eps.asset) {
 	await ElMessageBox.confirm(t('确认删除该资源？'), t('提示'), { type: 'warning' });
 	const res = await mediaService.delete({ ids: [row.id] });
 	if (res?.failedIds?.length) {
@@ -532,21 +560,21 @@ async function deleteAsset(row: any) {
 	loadStats();
 }
 
-async function retryAsset(row: any) {
+async function retryAsset(row: Eps.asset) {
 	if (!row?.id) return;
 	retryingIds.add(row.id);
 	try {
 		const res = await mediaService.retry({ id: row.id });
 		ElMessage.success(res?.message || t('重试转存成功'));
-		if (viewer.visible && viewer.row?.id === row.id) {
+		if (viewer.visible && viewer.row && viewer.row.id === row.id) {
 			viewer.row.status = 'success';
 			viewer.row.storageUrl = res.storage_url || viewer.row.storageUrl;
-			viewer.row.errorMessage = null;
+			viewer.row.errorMessage = undefined;
 		}
 		Crud.value?.refresh();
 		loadStats();
-	} catch (err: any) {
-		ElMessage.error(err.message || t('重试转存失败'));
+	} catch (err) {
+		ElMessage.error((err as ApiError).message || t('重试转存失败'));
 	} finally {
 		retryingIds.delete(row.id);
 	}
@@ -574,14 +602,14 @@ async function retryAllFailed() {
 		);
 		Crud.value?.refresh();
 		loadStats();
-	} catch (err: any) {
-		ElMessage.error(err.message || t('批量重试失败'));
+	} catch (err) {
+		ElMessage.error((err as ApiError).message || t('批量重试失败'));
 	} finally {
 		retryingAll.value = false;
 	}
 }
 
-function openPreview(row: any) {
+function openPreview(row: Eps.asset) {
 	viewer.row = row;
 	viewer.visible = true;
 }
@@ -595,7 +623,7 @@ function openUrl(url: string) {
 	window.open(url, '_blank');
 }
 
-function previewSrc(row: any) {
+function previewSrc(row?: Eps.asset | null) {
 	if (!row || row.assetType !== 'image') {
 		return '';
 	}
@@ -643,7 +671,7 @@ function statusType(status: string) {
 	return 'info';
 }
 
-function optionLabel(options: { label: string; value: string }[], value: string) {
+function optionLabel(options: { label: string; value: string }[], value?: string) {
 	return options.find(item => item.value === value)?.label || value || '-';
 }
 

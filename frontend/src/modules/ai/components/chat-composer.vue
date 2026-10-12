@@ -103,6 +103,7 @@ defineOptions({
 
 import { computed, ref } from 'vue';
 import { Close, Paperclip, Picture, Promotion, VideoPause } from '@element-plus/icons-vue';
+import type { UploadRequestOptions } from 'element-plus';
 
 const props = withDefaults(
 	defineProps<{
@@ -147,7 +148,7 @@ function handleKeydown(e: Event | KeyboardEvent) {
 	}
 }
 
-async function handleUpload(options: any) {
+async function handleUpload(options: UploadRequestOptions) {
 	emit('add-files', [options.file]);
 }
 

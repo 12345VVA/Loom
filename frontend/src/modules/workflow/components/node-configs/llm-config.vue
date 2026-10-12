@@ -6,7 +6,7 @@
 					v-for="profile in profiles"
 					:key="profile.code"
 					:label="profile.name + ' (' + profile.code + ')'"
-					:value="profile.code"
+					:value="profile.code || ''"
 				/>
 			</el-select>
 		</el-form-item>
@@ -153,7 +153,7 @@
 		<template v-if="config.outputFormat === 'json'">
 			<cl-json-tree-editor
 				ref="jsonEditorRef"
-				v-model="config.jsonFields"
+				v-model="jsonFieldsModel"
 				mode="schema"
 				:hide-footer="true"
 			/>
@@ -174,14 +174,32 @@ import { Upload, DocumentCopy, Plus } from '@element-plus/icons-vue';
 import ClJsonTreeEditor from '../cl-json-tree-editor.vue';
 import NodeConfigSection from './node-config-section.vue';
 
+/** LLM 节点 config 的已知键（template v-model / watch 全量核对；config 由 node-config-panel 以 Record 透传） */
+type LlmNodeConfig = {
+	modelProfileCode?: string;
+	systemPromptTemplate?: string;
+	promptTemplate?: string;
+	imageVariables?: string[];
+	imageTemplate?: string;
+	outputFormat?: string;
+	jsonFields?: unknown[];
+	outputVariable?: string;
+};
+
 const props = defineProps<{
-	modelValue: Record<string, any>;
-	profiles: any[];
+	modelValue: LlmNodeConfig;
+	profiles: Eps.profile[];
 	upstreamVariables?: { variableName: string; nodeLabel?: string; variableType?: string }[];
 }>();
 
 const config = props.modelValue;
 const jsonEditorRef = ref<InstanceType<typeof ClJsonTreeEditor>>();
+
+// cl-json-tree-editor 的 modelValue 为非空 any[]；jsonFields 未配置时以空数组代理（写回仍落 config 键）
+const jsonFieldsModel = computed({
+	get: () => config.jsonFields ?? [],
+	set: v => (config.jsonFields = v)
+});
 
 // WFI-2d：多模态图片输入（imageVariables 多选优先 / imageTemplate 模板兜底，
 // 与生图节点参考图惯例一致）。mode 为显式状态（computed setter 方案在清空互斥键后
@@ -210,7 +228,7 @@ const imageVariableOptions = computed(() => {
 
 // 软警示：profile 数据带能力标签且明确不含 vision 时提示（以后端校验为准）
 const selectedProfileSupportsVision = computed(() => {
-	const p = props.profiles.find((item: any) => item.code === config.modelProfileCode) as any;
+	const p = props.profiles.find(item => item.code === config.modelProfileCode);
 	if (!p) return true;
 	const caps = String(
 		p.modelCapabilities || p.capabilities || p.model_capabilities || ''

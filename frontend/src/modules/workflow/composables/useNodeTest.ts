@@ -2,12 +2,19 @@ import { reactive, computed, ref, type Ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { findInvalidNodeInput } from '../utils';
 import { useTestForm } from './use-test-form';
-import type { FlowNode } from '../types/editor';
+import type { FlowEdge, FlowNode, NodeInputVariable } from '../types/editor';
+import type { UpstreamVariable } from './useUpstreamVariables';
+
+/** request 拦截器 reject 的错误形态（Promise.reject({ message })，非 Error 实例） */
+interface ApiError {
+	message?: string;
+}
 
 /** 单节点测试结果 */
 interface NodeTestResult {
 	status: 'success' | 'error';
-	outputData: any;
+	/** 后端 output 实为 JSON 对象；按消费侧 formatJson(val?: string) 契约收为 string（非字符串原样回显） */
+	outputData: string;
 	timeCost: number;
 	error?: string;
 	isTimeout?: boolean;
@@ -17,7 +24,8 @@ interface NodeTestResult {
 interface NodeTestHistoryEntry {
 	time: string;
 	inputsJson: string;
-	outputData: any;
+	/** 契约同 NodeTestResult.outputData */
+	outputData: string;
 	timeCost: number;
 	error?: string;
 	status: 'success' | 'error';
@@ -38,12 +46,12 @@ interface NodeTestDialogState {
 
 export function useNodeTest(
 	service: Eps.Service,
-	t: any,
+	t: (key: string) => string,
 	workflowId: Ref<string | null>,
 	isDirty: Ref<boolean>,
-	elements: Ref<any[]>,
+	elements: Ref<(FlowNode | FlowEdge)[]>,
 	saveWorkflow: () => Promise<boolean | undefined>,
-	getUpstreamVariablesForNode: (nodeId: string) => { variableName: string; variableType?: string }[]
+	getUpstreamVariablesForNode: (nodeId: string) => UpstreamVariable[]
 ) {
 	// 用于缓存用户在该节点输入的测试数据
 	const mockVariablesCache = reactive<Record<string, string>>({});
@@ -115,9 +123,9 @@ export function useNodeTest(
 			return;
 		}
 
-		const node = elements.value.find((el: any) => !('source' in el) && el.id === nodeId) as
-			| FlowNode
-			| undefined;
+		const node = elements.value.find(
+			(el): el is FlowNode => !('source' in el) && el.id === nodeId
+		);
 		if (!node) return;
 
 		nodeTestDialog.nodeId = node.id;
@@ -130,8 +138,8 @@ export function useNodeTest(
 		let cachedJson = mockVariablesCache[node.id];
 		if (!cachedJson) {
 			const definedInputs = node.data?.config?.inputs || [];
-			const inputs: Record<string, any> = {};
-			definedInputs.forEach((v: any) => {
+			const inputs: Record<string, string> = {};
+			definedInputs.forEach((v: NodeInputVariable) => {
 				inputs[v.name] = '';
 			});
 			cachedJson = JSON.stringify(inputs, null, 2);
@@ -142,7 +150,7 @@ export function useNodeTest(
 		const upstream = getUpstreamVariablesForNode(node.id) || [];
 		const typeOf = (name: string) =>
 			upstream.find(v => v.variableName === name)?.variableType === 'image' ? 'image' : 'string';
-		const declared = ((node.data?.config?.inputs || []) as any[])
+		const declared = ((node.data?.config?.inputs || []) as NodeInputVariable[])
 			.map(v => ({ name: String(v?.name ?? ''), type: typeOf(String(v?.name ?? '')) as 'string' | 'image' }))
 			.filter(v => v.name);
 		let initial: Record<string, unknown> | undefined;
@@ -226,8 +234,8 @@ export function useNodeTest(
 
 			// 同步写入画布节点 runLog，画布上节点下方也显示执行日志
 			const node = elements.value.find(
-				(el: any) => !('source' in el) && el.id === testNodeId
-			) as FlowNode | undefined;
+				(el): el is FlowNode => !('source' in el) && el.id === testNodeId
+			);
 			if (node) {
 				if (!node.data) node.data = { config: {} };
 				node.data.runLog = {
@@ -237,8 +245,8 @@ export function useNodeTest(
 					timeCost: res.latencyMs || 0
 				};
 			}
-		} catch (err: any) {
-			ElMessage.error(t('测试节点失败: ') + (err.message || err));
+		} catch (err) {
+			ElMessage.error(t('测试节点失败: ') + ((err as ApiError).message || String(err)));
 		} finally {
 			// 仅当本次令牌仍最新时才复位 loading，避免覆盖新测试的 loading 状态
 			if (token === testToken) {

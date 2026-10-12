@@ -52,7 +52,28 @@ const stubs = {
 	ElIcon: { template: '<span><slot /></span>' }
 };
 
-function mountWith(config: Record<string, any>, profiles: any[] = [], upstreamVariables: any[] = []) {
+// 与 llm-config.vue 的 LlmNodeConfig / Eps.profile / upstreamVariables prop 同形；
+// tests/ 不在 tsconfig include 内，故用本地 stub（勿引用 Eps 全局命名空间）
+type LlmNodeConfigStub = {
+	modelProfileCode?: string;
+	systemPromptTemplate?: string;
+	promptTemplate?: string;
+	imageVariables?: string[];
+	imageTemplate?: string;
+	outputFormat?: string;
+	jsonFields?: unknown[];
+	outputVariable?: string;
+};
+
+type LlmProfileStub = { code?: string; name?: string; modelCapabilities?: string };
+
+type LlmUpstreamVariableStub = { variableName: string; nodeLabel?: string; variableType?: string };
+
+function mountWith(
+	config: LlmNodeConfigStub,
+	profiles: LlmProfileStub[] = [],
+	upstreamVariables: LlmUpstreamVariableStub[] = []
+) {
 	return mount(LlmConfig, {
 		props: { modelValue: config, profiles, upstreamVariables } as never,
 		global: { plugins: [i18n], stubs }
@@ -75,7 +96,7 @@ describe('workflow llm-config 多模态图片输入（WFI-2d）', () => {
 	});
 
 	it('切换模式清空互斥键：variable → template 清空 imageVariables，再切 none 清空 imageTemplate', async () => {
-		const config: Record<string, any> = {
+		const config: LlmNodeConfigStub = {
 			modelProfileCode: 'p1',
 			imageVariables: ['input_image'],
 			imageTemplate: ''

@@ -42,3 +42,9 @@ export interface FlowEdge {
 	};
 	sourceHandle?: string;
 }
+
+/** start 节点 config.inputs 声明的输入变量（findInvalidNodeInput 校验与单节点测试预填共用锚点） */
+export interface NodeInputVariable {
+	name: string;
+	required?: boolean;
+}

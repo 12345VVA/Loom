@@ -36,16 +36,33 @@ export function readFileAsDataUri(file: File): Promise<string> {
 	});
 }
 
+/** OpenAI 风格消息 content part（对话测试页多模态 IR，三渠道 adapter 直通） */
+export interface ChatTextContentPart {
+	type: 'text';
+	text: string;
+}
+
+export interface ChatImageUrlContentPart {
+	type: 'image_url';
+	image_url: { url: string };
+}
+
+export type ChatContentPart = ChatTextContentPart | ChatImageUrlContentPart;
+
+export type ChatMessageContent = string | ChatContentPart[];
+
 /**
  * 组装消息 content（OpenAI 风格 IR）：
  * - 无图 → 原样返回 str（与既有纯文本请求格式完全一致，后端零感知）；
  * - 有图 → [{type:'text'},{type:'image_url',image_url:{url:dataUri}},...]，文本为空时省略 text part。
  */
-export function buildMessageContent(text: string, images?: string[]): string | any[] {
+export function buildMessageContent(text: string, images?: string[]): ChatMessageContent {
 	if (!images || !images.length) {
 		return text;
 	}
-	const parts: any[] = images.map(url => ({ type: 'image_url', image_url: { url } }));
+	const parts: ChatContentPart[] = images.map(
+		(url): ChatImageUrlContentPart => ({ type: 'image_url', image_url: { url } })
+	);
 	const trimmed = (text || '').trim();
 	if (trimmed) {
 		parts.unshift({ type: 'text', text: trimmed });

@@ -13,7 +13,7 @@ function makeForm() {
 		}
 	};
 	const t = (s: string) => s;
-	return useTestForm(service as any, t);
+	return useTestForm(service as Parameters<typeof useTestForm>[0], t);
 }
 
 describe('useTestForm（WFI-1c 试运行可视化表单）', () => {
