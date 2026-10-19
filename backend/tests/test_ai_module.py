@@ -4,7 +4,7 @@ import json
 import threading
 import time
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import httpx
@@ -17,6 +17,7 @@ from app.core.secret import decrypt_secret, encrypt_secret, mask_secret
 from app.framework.controller_meta import CrudQuery, _invoke_service
 from app.modules.ai.model.ai import (
     AI_ADAPTERS,
+    AI_MODEL_TYPES,
     AiCatalogImportRequest,
     AiChatRequest,
     AiGenerationTask,
@@ -37,7 +38,7 @@ from app.modules.ai.model.ai import (
     AiRuntimeInvocation,
     AiTaskSubmitRequest,
 )
-from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
+from app.modules.ai.service.adapters.base import AdapterInputError, UnsupportedCapabilityError
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
 from app.modules.ai.service.adapters.factory import (
     ADAPTERS,
@@ -46,6 +47,7 @@ from app.modules.ai.service.adapters.factory import (
     QianfanAdapter,
     VolcengineArkAdapter,
     _adapt_deepseek_options,
+    build_adapter,
 )
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
@@ -60,6 +62,7 @@ from app.modules.ai.service.ai_service import (
     AiModelService,
     AiProviderService,
 )
+from app.modules.ai.service.errors import AiInvocationError
 from app.modules.ai.service.runtime_service import _STREAM_HEARTBEAT, _with_heartbeat
 from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
 
@@ -464,6 +467,42 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(events[-1]["status"], 501)
         log = self.session.exec(select(AiModelCallLog)).one()
         self.assertEqual(log.status, "unsupported")
+
+    def test_runtime_stream_chat_adapter_input_error_after_delta_emits_error(self):
+        """P2：流中途抛 AdapterInputError 也必须收尾——否则前端只收到半截正文，无 done 无 error。"""
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(provider_id=provider.id, code="gpt-test", name="GPT Test", model_type="chat", is_active=True)
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAdapter:
+            def stream_chat(self, *, model, messages, options):
+                yield {"event": "delta", "content": "半截"}
+                raise AdapterInputError("工具调用参数非法")
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            events = _parse_sse_chunks(
+                list(
+                    AiModelRuntimeService(self.session).stream_chat(
+                        AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+                    )
+                )
+            )
+
+        self.assertEqual([item["event"] for item in events], ["start", "delta", "error"])
+        self.assertEqual(events[-1]["status"], 400)
+        self.assertTrue(events[-1]["truncated"])  # 已下发正文 → 显式标记截断
+        log = self.session.exec(select(AiModelCallLog)).one()
+        self.assertEqual(log.status, "error")
 
     def test_runtime_stream_chat_fallback_only_before_first_delta(self):
         primary_provider = AiProvider(code="primary", name="Primary", adapter="openai-compatible", is_active=True)
@@ -1491,11 +1530,11 @@ class AiModuleTestCase(unittest.TestCase):
         provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
         adapter = BailianAdapter(provider)
 
-        with self.assertRaises(HTTPException) as ctx:
+        # AI-009：参数组合错误抛 AdapterInputError（领域异常），运行时不降级不重试
+        with self.assertRaises(AdapterInputError) as ctx:
             adapter.image(model="wan2.6-t2i", prompt="draw", options={"negative_prompt": "blur"})
 
-        self.assertEqual(ctx.exception.status_code, 400)
-        self.assertIn("negative_prompt", str(ctx.exception.detail))
+        self.assertIn("negative_prompt", str(ctx.exception))
 
     def test_bailian_adapter_wan26_async_keeps_negative_prompt(self):
         provider = AiProvider(
@@ -1813,11 +1852,11 @@ class AiModuleTestCase(unittest.TestCase):
         )
         adapter = VolcengineArkAdapter(provider)
 
-        with self.assertRaises(HTTPException) as ctx:
+        # AI-009：参数错误抛 AdapterInputError（领域异常），运行时不降级不重试
+        with self.assertRaises(AdapterInputError) as ctx:
             adapter.image(model="doubao-seedream-4-5-251128", prompt="draw", options={"size": "1536x1536"})
 
-        self.assertEqual(ctx.exception.status_code, 400)
-        self.assertIn("3686400", ctx.exception.detail)
+        self.assertIn("3686400", str(ctx.exception))
 
     def test_gemini_adapter_chat_transforms_response(self):
         provider = AiProvider(code="gemini", name="Gemini", adapter="gemini", api_key_cipher=encrypt_secret("key"))
@@ -3006,6 +3045,855 @@ class AiModuleTestCase(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             service.update(AiModelUpdateRequest(id=m2.id, code="code-1"))
         self.assertEqual(ctx.exception.status_code, 409)
+
+    # ------------------------------------------------------------------
+    # 第一批止血回归（评审 2026-10-18 派修：AI-001/002/003/004/005）
+    # ------------------------------------------------------------------
+
+    def _seed_chat_runtime(self, *, pricing_config: str | None = None) -> tuple[AiProvider, AiModel, AiModelProfile]:
+        """造一套可解析的 chat provider/model/profile 三件套并落库。"""
+        provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(
+            provider_id=provider.id,
+            code="gpt-test",
+            name="GPT Test",
+            model_type="chat",
+            pricing_config=pricing_config,
+            is_active=True,
+        )
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(
+            code="default-chat", name="Default", model_id=model.id, scenario="default", is_default=True, is_active=True
+        )
+        self.session.add(profile)
+        self.session.commit()
+        return provider, model, profile
+
+    def test_options_cannot_override_upstream_payload_fields(self):
+        """AI-002：请求级 options 不得覆盖服务端构造的 payload 主字段（model/messages 等）。"""
+        provider, model, profile = self._seed_chat_runtime()
+
+        captured = {}
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                captured.update({"model": model, "messages": messages, "options": options})
+                return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
+
+        service_messages = [{"role": "user", "content": "hi"}]
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(
+                    messages=service_messages,
+                    options={
+                        "model": "evil-model",
+                        "messages": [{"role": "user", "content": "evil"}],
+                        "temperature": 0.5,
+                    },
+                )
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(captured["model"], model.code)
+        self.assertEqual(captured["messages"], service_messages)
+        self.assertNotIn("model", captured["options"])
+        self.assertNotIn("messages", captured["options"])
+        # 非保留字仍正常透传
+        self.assertEqual(captured["options"]["temperature"], 0.5)
+
+    def test_openai_http_stream_chat_carries_include_usage(self):
+        """AI-003：OpenAI 兼容流式请求必须携带 stream_options.include_usage，最后一帧 usage 可计量。"""
+        provider = AiProvider(code="bailian", name="百炼", adapter="bailian", api_key_cipher=encrypt_secret("sk"))
+        adapter = BailianAdapter(provider)
+
+        class FakeStreamResponse:
+            headers = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def raise_for_status(self):
+                return None
+
+            def iter_lines(self):
+                return iter(
+                    [
+                        'data: {"choices":[{"delta":{"content":"hi"}}]}',
+                        "",
+                        'data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}',
+                        "",
+                        "data: [DONE]",
+                        "",
+                    ]
+                )
+
+        with patch("httpx.stream", return_value=FakeStreamResponse()) as mock_stream:
+            events = list(
+                adapter.stream_chat(model="qwen-plus", messages=[{"role": "user", "content": "hi"}], options={})
+            )
+
+        payload = mock_stream.call_args.kwargs["json"]
+        self.assertTrue(payload["stream"])
+        self.assertEqual(payload["stream_options"], {"include_usage": True})
+        self.assertEqual(payload["model"], "qwen-plus")
+        self.assertEqual(payload["messages"], [{"role": "user", "content": "hi"}])
+        usage_event = next(e for e in events if e.get("usage"))
+        self.assertEqual(usage_event["usage"]["totalTokens"], 3)
+
+    def test_invalid_pricing_config_costs_zero_and_keeps_success(self):
+        """AI-005：定价配置非法（如 "0.15元"）时按 0 计费，调用保持 success，不落入失败/降级路径。"""
+        provider, model, profile = self._seed_chat_runtime(
+            pricing_config='{"input_per_1m": "0.15元", "output_per_1m": "0.6元"}'
+        )
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "usage": {"promptTokens": 100, "completionTokens": 50, "totalTokens": 150}}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
+
+        self.assertTrue(result["success"])
+        log = self.session.exec(select(AiModelCallLog)).one()
+        self.assertEqual(log.status, "success")
+        self.assertEqual(log.cost_micro_usd, 0)
+
+    def test_soft_deleted_config_not_resolvable(self):
+        """AI-001：软删除的 profile/model/provider 运行时解析一律视同不存在，不得继续计费。"""
+        provider, model, profile = self._seed_chat_runtime()
+        registry = AiModelRegistryService(self.session)
+        now = datetime.now(UTC)
+
+        # 基线：未删除时可解析
+        resolved = registry.resolve(model_type="chat", scenario="default")
+        self.assertEqual(resolved["profile"].id, profile.id)
+
+        profile.delete_time = now
+        self.session.add(profile)
+        self.session.commit()
+        with self.assertRaises(AiInvocationError) as ctx:
+            registry.resolve(model_type="chat", scenario="default")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+        profile.delete_time = None
+        model.delete_time = now
+        self.session.add(profile)
+        self.session.add(model)
+        self.session.commit()
+        # 默认场景路径：join 直接过滤软删 model，404（配置已不存在）
+        with self.assertRaises(AiInvocationError) as ctx:
+            registry.resolve(model_type="chat", scenario="default")
+        self.assertEqual(ctx.exception.status_code, 404)
+        # profile_code 指定路径：profile 仍可查到，model 经 live_record 断言拦下，400
+        with self.assertRaises(AiInvocationError) as ctx:
+            registry.resolve(model_type="chat", profile_code=profile.code)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+        model.delete_time = None
+        provider.delete_time = now
+        self.session.add(model)
+        self.session.add(provider)
+        self.session.commit()
+        with self.assertRaises(AiInvocationError) as ctx:
+            registry.resolve(model_type="chat", profile_code=profile.code)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_fallback_skips_soft_deleted_target(self):
+        """AI-001：fallback 目标被软删除时不得降级到它（否则删除的配置仍会被调用并计费）。"""
+        provider, model, profile = self._seed_chat_runtime()
+        fb_provider = AiProvider(code="fb", name="FB", adapter="openai-compatible", is_active=True)
+        self.session.add(fb_provider)
+        self.session.commit()
+        self.session.refresh(fb_provider)
+        fb_model = AiModel(provider_id=fb_provider.id, code="fb-model", name="FB", model_type="chat", is_active=True)
+        self.session.add(fb_model)
+        self.session.commit()
+        self.session.refresh(fb_model)
+        fb_profile = AiModelProfile(
+            code="fb-profile", name="FB Profile", model_id=fb_model.id, scenario="default", is_active=True
+        )
+        self.session.add(fb_profile)
+        self.session.commit()
+        profile.fallback_profile_id = fb_profile.id
+        fb_profile.delete_time = datetime.now(UTC)
+        self.session.add(profile)
+        self.session.add(fb_profile)
+        self.session.commit()
+
+        called = {"fallback": False}
+
+        class FailingAdapter:
+            def chat(self, *, model, messages, options):
+                raise RuntimeError("upstream down")
+
+        class OkAdapter:
+            def chat(self, *, model, messages, options):
+                called["fallback"] = True
+                return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
+
+        def fake_build(provider_obj):
+            return FailingAdapter() if provider_obj.id == provider.id else OkAdapter()
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda p: fake_build(p)):
+            with self.assertRaises(AiInvocationError):
+                AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertFalse(called["fallback"])
+
+    def test_concurrent_keys_persisted_and_released_after_cancel(self):
+        """AI-004：cc_keys 必须落库；worker 内存丢失（新会话）后 cancel 仍能从列恢复并精确 decr。"""
+        from app.modules.base.service.cache_service import cache_get
+
+        provider, model, profile = self._seed_chat_runtime()
+        self.session.add(
+            AiGovernanceRule(
+                code="conc-cancel",
+                name="Concurrent Cancel",
+                scope_type="profile",
+                profile_id=profile.id,
+                period="day",
+                max_concurrent=1,
+                is_active=True,
+            )
+        )
+        task = AiGenerationTask(task_type="chat", scenario="default", status="running", request_payload="{}")
+        self.session.add(task)
+        self.session.commit()
+
+        from app.modules.ai.service.governance_service import AiGovernanceService
+
+        governance = AiGovernanceService(self.session)
+        invocation = governance.begin(user=None, provider=provider, model=model, profile=profile, task_id=task.id)
+
+        # 核心回归：cc_keys 必须写进列（修复前只赋内存属性 _cc_keys，列永远为 None）
+        self.assertIsNotNone(invocation.cc_keys)
+        self.assertIn("ai:gov:cc:profile:", invocation.cc_keys)
+        profile_key = f"ai:gov:cc:profile:{profile.id}"
+        self.assertEqual(cache_get(profile_key), "1")
+
+        # 模拟 worker 被 terminate：新会话重新加载（无内存属性），cancel 路径按列恢复并 decr
+        with Session(self.engine) as fresh:
+            fresh_task = fresh.get(AiGenerationTask, task.id)
+            released = AiGovernanceService(fresh).release_for_generation_task(fresh_task)
+            fresh.commit()
+        self.assertEqual(released, 1)
+        self.assertEqual(cache_get(profile_key), "0")
+
+        with Session(self.engine) as verify:
+            inv = verify.exec(select(AiRuntimeInvocation)).one()
+            self.assertEqual(inv.status, "error")
+            self.assertIsNone(inv.cc_keys)
+
+    def test_adapter_input_error_does_not_trigger_fallback_or_retry(self):
+        """AI-009：适配器参数错误（AdapterInputError）不降级不重试，直接 4xx，上游只被调一次。"""
+        provider, model, profile = self._seed_chat_runtime()
+        fb_provider = AiProvider(code="fb", name="FB", adapter="openai-compatible", is_active=True)
+        self.session.add(fb_provider)
+        self.session.commit()
+        self.session.refresh(fb_provider)
+        fb_model = AiModel(provider_id=fb_provider.id, code="fb-model", name="FB", model_type="chat", is_active=True)
+        self.session.add(fb_model)
+        self.session.commit()
+        self.session.refresh(fb_model)
+        fb_profile = AiModelProfile(
+            code="fb-profile", name="FB Profile", model_id=fb_model.id, scenario="default", is_active=True
+        )
+        self.session.add(fb_profile)
+        self.session.commit()
+        profile.fallback_profile_id = fb_profile.id
+        profile.retry_count = 2  # 即使配置了重试，参数错误也不得重试
+        self.session.add(profile)
+        self.session.commit()
+
+        calls = {"failing": 0, "ok": 0}
+
+        class FailingAdapter:
+            def chat(self, *, model, messages, options):
+                calls["failing"] += 1
+                raise AdapterInputError("百炼 wan2.6 同步生图暂不支持 negative_prompt")
+
+        class OkAdapter:
+            def chat(self, *, model, messages, options):
+                calls["ok"] += 1
+                return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
+
+        with patch(
+            "app.modules.ai.service.runtime_service.build_adapter",
+            side_effect=lambda p: FailingAdapter() if p.id == provider.id else OkAdapter(),
+        ):
+            with self.assertRaises(AiInvocationError) as ctx:
+                AiModelRuntimeService(self.session).chat(AiChatRequest(messages=[{"role": "user", "content": "hi"}]))
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("negative_prompt", str(ctx.exception.detail))
+        self.assertEqual(calls["failing"], 1)  # 重试未发生（否则 3 次）
+        self.assertEqual(calls["ok"], 0)  # fallback 未触发（否则二次计费）
+
+    def test_adapter_metadata_single_source_consistency(self):
+        """AI-010：ADAPTERS 实现与 constants.AI_ADAPTERS 单一权威一致，队列与模型类型派生一致。"""
+        self.assertEqual(set(ADAPTERS), set(AI_ADAPTERS))
+        self.assertEqual(set(AI_TASK_QUEUES), {f"ai.{t}" for t in AI_MODEL_TYPES})
+
+    def test_governance_metric_sums_single_query_values(self):
+        """AI-019：_metric_sums 单次聚合三指标数值正确，且窗口外/其他 scope 的记录不计入。"""
+        from app.modules.ai.service.governance_service import AiGovernanceService
+
+        provider, model, profile = self._seed_chat_runtime()
+        governance = AiGovernanceService(self.session)
+        now = datetime.now(UTC)
+
+        def add_log(**kw):
+            self.session.add(
+                AiModelCallLog(
+                    provider_id=provider.id,
+                    model_id=model.id,
+                    profile_id=kw.get("profile_id", profile.id),
+                    user_id=kw.get("user_id"),
+                    scenario="default",
+                    model_type="chat",
+                    status="success",
+                    total_tokens=kw.get("tokens", 0),
+                    cost_micro_usd=kw.get("cost", 0),
+                    created_at=kw.get("created_at", now),
+                )
+            )
+
+        # 窗口内：2 次调用、300 token、500 micro-usd；窗口外 1 次；其他 profile 1 次
+        add_log(tokens=100, cost=200)
+        add_log(tokens=200, cost=300)
+        add_log(tokens=999, cost=999, created_at=now - timedelta(days=2))
+        other_profile = AiModelProfile(code="other-profile", name="Other", model_id=model.id, is_active=True)
+        self.session.add(other_profile)
+        self.session.commit()
+        add_log(tokens=888, cost=888, profile_id=other_profile.id)
+        self.session.commit()
+
+        rule = AiGovernanceRule(
+            code="metric-rule",
+            name="Metric",
+            scope_type="profile",
+            profile_id=profile.id,
+            period="day",
+            max_requests=100,
+            max_tokens=100_000,
+            max_cost_micro_usd=1_000_000,
+            is_active=True,
+        )
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        count, tokens, cost = governance._metric_sums(rule, None, profile.id, start, end)
+        self.assertEqual((count, tokens, cost), (2, 300, 500))
+
+        # 空规则（三 limit 全 None）短路不查库，直接零值
+        empty_rule = AiGovernanceRule(code="empty-rule", name="Empty", scope_type="global", period="day")
+        self.assertEqual(governance._metric_sums(empty_rule, None, profile.id, start, end), (0, 0, 0))
+
+    def test_profile_batch_decorate_matches_single(self):
+        """AI-036：profile 批量装饰与单条装饰输出一致（page 场景消除 N+1）。"""
+        from app.modules.ai.service.profile_service import AiModelProfileService
+
+        provider, model, profile = self._seed_chat_runtime()
+        service = AiModelProfileService(self.session)
+
+        rows = service.list()
+        target = next(r for r in rows if r["id"] == profile.id)
+        self.assertEqual(target["modelName"], model.name)
+        self.assertEqual(target["modelCode"], model.code)
+        self.assertEqual(target["providerName"], provider.name)
+        self.assertEqual(target["providerAdapter"], provider.adapter)
+        # 批量与单条路径输出一致
+        single = service.info(profile.id)
+        self.assertEqual(single["modelName"], target["modelName"])
+        self.assertEqual(single["providerName"], target["providerName"])
+
+    def test_soft_delete_session_invariant_and_escape_hatch(self):
+        """AI-034：Session 级软删不变量——所有 ORM SELECT 自动过滤，逃生口显式放行。"""
+        from app.core.database import INCLUDE_DELETED_EXECUTION_OPTION
+
+        provider, model, profile = self._seed_chat_runtime()
+        now = datetime.now(UTC)
+        profile.delete_time = now
+        model.delete_time = now
+        self.session.add(profile)
+        self.session.add(model)
+        self.session.commit()
+
+        # 不变量：手写 select 也被自动过滤（不再依赖"记得写 where"）
+        self.assertEqual(self.session.exec(select(AiModelProfile).where(AiModelProfile.id == profile.id)).first(), None)
+        # get 路径：新会话（无 identity map 缓存）同样被过滤；同会话内存中已加载对象仍可访问（正确语义）
+        with Session(self.engine) as fresh:
+            self.assertEqual(fresh.get(AiModel, model.id), None)
+            self.assertEqual(fresh.get(AiModelProfile, profile.id), None)
+
+        # 逃生口：显式 execution option 放行（回收站/对账场景）
+        visible = self.session.exec(
+            select(AiModelProfile)
+            .where(AiModelProfile.id == profile.id)
+            .execution_options(**{INCLUDE_DELETED_EXECUTION_OPTION: True})
+        ).first()
+        self.assertIsNotNone(visible)
+        self.assertIsNotNone(visible.delete_time)
+
+    def test_call_log_records_task_id_for_generation_cost(self):
+        """AI-030：异步生成任务调用日志落 task_id，任务维度成本可归集。"""
+        provider, model, profile = self._seed_chat_runtime()
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
+
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}]), task_id=77
+            )
+
+        log = self.session.exec(select(AiModelCallLog)).one()
+        self.assertEqual(log.task_id, 77)
+
+    def test_bootstrap_seeds_default_governance_rule_idempotent(self):
+        """AI-027：bootstrap 幂等种入默认全局治理规则（observe 模式，不阻断调用）。"""
+        from app.modules.ai import config as ai_config
+
+        ai_config.bootstrap(self.session)
+        ai_config.bootstrap(self.session)  # 幂等：重复调用不重复种
+
+        from app.modules.ai.model.ai import AiGovernanceRule
+
+        rules = self.session.exec(select(AiGovernanceRule).where(AiGovernanceRule.code == "default-global-daily")).all()
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0].mode, "observe")
+        self.assertEqual(rules[0].scope_type, "global")
+        self.assertTrue(rules[0].max_tokens and rules[0].max_cost_micro_usd)
+
+    def test_ai_model_unique_constraint_rejects_duplicates(self):
+        """AI-012：(provider_id, code, model_type) 库层唯一约束拦截并发导入重复。"""
+        from sqlalchemy.exc import IntegrityError
+
+        provider, model, profile = self._seed_chat_runtime()
+        dup = AiModel(provider_id=provider.id, code=model.code, name="Dup", model_type=model.model_type)
+        self.session.add(dup)
+        with self.assertRaises(IntegrityError):
+            self.session.exec(select(AiModel)).all()  # flush 触发约束
+            self.session.commit()
+
+    def test_ai_model_unique_index_ignores_soft_deleted_rows(self):
+        """AI-012 修正：部分唯一索引只约束活跃行——软删后可重建同 code，活跃行仍互斥。"""
+        from sqlalchemy.exc import IntegrityError
+
+        provider, model, profile = self._seed_chat_runtime()
+        model.delete_time = datetime.now(UTC)
+        self.session.add(model)
+        self.session.commit()
+
+        # 软删行不占键：同 (provider, code, model_type) 可重新创建
+        rebuilt = AiModel(provider_id=provider.id, code=model.code, name="Rebuilt", model_type=model.model_type)
+        self.session.add(rebuilt)
+        self.session.commit()
+        self.assertIsNotNone(rebuilt.id)
+
+        # 活跃行之间仍互斥
+        self.session.add(AiModel(provider_id=provider.id, code=model.code, name="Dup2", model_type=model.model_type))
+        with self.assertRaises(IntegrityError):
+            self.session.commit()
+
+    def test_skip_masking_ignored_unless_globally_enabled(self):
+        """AI-014：客户端传 skipMasking:true 不得关闭 PII 脱敏，仅在全局开关闭合时生效。"""
+        provider, model, profile = self._seed_chat_runtime()
+
+        class FakeAdapter:
+            def chat(self, *, model, messages, options):
+                return {
+                    "content": "我的手机号是 13800138000",
+                    "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2},
+                }
+
+        messages = [{"role": "user", "content": "hi"}]
+        with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAdapter()):
+            # 默认全局开关关闭：skip_masking=True 被忽略，脱敏照常执行
+            result = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=messages, skip_masking=True))
+            self.assertNotIn("13800138000", result["content"])
+            self.assertIn("138****8000", result["content"])
+
+            # 全局开关闭合：才允许跳过脱敏（内部场景显式配置）
+            with patch("app.modules.ai.service.runtime_service.settings.AI_ALLOW_SKIP_MASKING", True):
+                result2 = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=messages, skip_masking=True))
+            self.assertIn("13800138000", result2["content"])
+
+            # 开关闭合但客户端未请求跳过：仍脱敏
+            with patch("app.modules.ai.service.runtime_service.settings.AI_ALLOW_SKIP_MASKING", True):
+                result3 = AiModelRuntimeService(self.session).chat(AiChatRequest(messages=messages))
+            self.assertNotIn("13800138000", result3["content"])
+
+    def test_retry_skips_non_retryable_status_and_uses_backoff(self):
+        """AI-025：401/400 类非瞬态错误不重试直接抛；5xx 可重试。"""
+        from app.modules.ai.service.adapters.base import UpstreamApiError
+        from app.modules.ai.service.runtime_service import _is_retryable
+
+        # 分类函数：HTTP 语义判定
+        self.assertFalse(_is_retryable(UpstreamApiError("401", status_code=401)))
+        self.assertFalse(_is_retryable(UpstreamApiError("400", status_code=400)))
+        self.assertFalse(_is_retryable(UpstreamApiError("403 审核拒绝", status_code=403)))
+        self.assertTrue(_is_retryable(UpstreamApiError("500", status_code=500)))
+        self.assertTrue(_is_retryable(UpstreamApiError("429", status_code=429)))
+        self.assertTrue(_is_retryable(UpstreamApiError("408", status_code=408)))
+        self.assertTrue(_is_retryable(UpstreamApiError("连接超时")))  # 无 status_code = 网络层瞬态
+        # P2：无状态码但属代码缺陷，重试结果相同
+        self.assertFalse(_is_retryable(TypeError("unexpected keyword argument")))
+        self.assertFalse(_is_retryable(KeyError("missing")))
+        self.assertFalse(_is_retryable(AttributeError("no attribute")))
+
+        provider, model, profile = self._seed_chat_runtime()
+        profile.retry_count = 2
+        profile.retry_delay_seconds = 0
+        self.session.add(profile)
+        self.session.commit()
+
+        class UnauthorizedAdapter:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, *, model, messages, options):
+                self.calls += 1
+                raise UpstreamApiError("401 Unauthorized", status_code=401)
+
+        class ServerErrorAdapter:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, *, model, messages, options):
+                self.calls += 1
+                if self.calls < 3:
+                    raise UpstreamApiError("502 Bad Gateway", status_code=502)
+                return {"content": "ok", "usage": {"promptTokens": 1, "completionTokens": 1, "totalTokens": 2}}
+
+        service = AiModelRuntimeService(self.session)
+        kwargs = {"messages": [{"role": "user", "content": "hi"}], "options": {}}
+
+        unauthorized = UnauthorizedAdapter()
+        with self.assertRaises(UpstreamApiError):
+            service._invoke_with_retry(unauthorized, "chat", profile, model.code, kwargs)
+        self.assertEqual(unauthorized.calls, 1)  # 401 不重试（否则 3 次）
+
+        server_error = ServerErrorAdapter()
+        result = service._invoke_with_retry(server_error, "chat", profile, model.code, kwargs)
+        self.assertEqual(result["content"], "ok")
+        self.assertEqual(server_error.calls, 3)  # 5xx 按配置重试至成功
+
+    def test_retry_does_not_retry_defect_exceptions(self):
+        """P2：无状态码的代码缺陷类异常不重试，避免一个 bug 被放大成 N 次上游调用与日志。"""
+        _, model, profile = self._seed_chat_runtime()
+        profile.retry_count = 3
+        profile.retry_delay_seconds = 0
+        self.session.add(profile)
+        self.session.commit()
+
+        class DefectAdapter:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, *, model, messages, options):
+                self.calls += 1
+                raise TypeError("chat() got an unexpected keyword argument 'foo'")
+
+        adapter = DefectAdapter()
+        with self.assertRaises(TypeError):
+            AiModelRuntimeService(self.session)._invoke_with_retry(
+                adapter,
+                "chat",
+                profile,
+                model.code,
+                {"messages": [{"role": "user", "content": "hi"}], "options": {}},
+            )
+        self.assertEqual(adapter.calls, 1)
+
+    def test_options_reserved_keys_dropped_with_warning(self):
+        """P2：保留键被丢弃时留痕，但只记键名（值可能是越权提示词）。"""
+        from app.modules.ai.service.utils import _options_without_governance
+
+        options = {"system": "你是一个越权提示词", "model": "gpt-x", "temperature": 0.2, "timeout": 30, "_trace": "t"}
+        with self.assertLogs("app.modules.ai.service.utils", level="WARNING") as captured:
+            filtered = _options_without_governance(options)
+
+        self.assertEqual(filtered, {"temperature": 0.2})
+        self.assertEqual(captured.records[0].dropped_option_keys, ["_trace", "model", "system"])
+        self.assertNotIn("越权", captured.records[0].getMessage())
+
+        # 无保留键时不告警，避免正常流量刷日志
+        with patch("app.modules.ai.service.utils.logger") as mock_logger:
+            _options_without_governance({"temperature": 0.2})
+        mock_logger.warning.assert_not_called()
+
+    def test_build_adapter_reuses_instances_for_same_config(self):
+        """AI-017：同配置复用同一 adapter 实例（SDK client 随之复用），配置变更返回新实例。"""
+        base = dict(code="pool-test", name="Pool", adapter="openai-compatible", is_active=True)
+        p1 = AiProvider(base_url="https://api.a.com/v1", api_key_cipher=encrypt_secret("k1"), **base)
+        a1 = build_adapter(p1)
+        a2 = build_adapter(p1)
+        self.assertIs(a1, a2)  # 同配置命中实例池
+
+        p2 = AiProvider(base_url="https://api.a.com/v1", api_key_cipher=encrypt_secret("k2"), **base)
+        a3 = build_adapter(p2)
+        self.assertIsNot(a1, a3)  # 密钥变更 → 指纹变化 → 新实例
+
+        p3 = AiProvider(base_url="https://api.b.com/v1", api_key_cipher=encrypt_secret("k1"), **base)
+        a4 = build_adapter(p3)
+        self.assertIsNot(a1, a4)  # baseUrl 变更同理
+
+        with self.assertRaises(AdapterInputError):
+            build_adapter(AiProvider(adapter="no-such-adapter", **{k: v for k, v in base.items() if k != "adapter"}))
+
+    def test_adapter_timeout_yields_isolated_copy(self):
+        """AI-017 并发修正：超时上下文产出副本，不改池化实例的 timeout/client。"""
+        from app.modules.ai.service.utils import _adapter_timeout
+
+        class _FakeAdapter:
+            def __init__(self):
+                self.timeout = 60
+
+        pooled = _FakeAdapter()
+        with _adapter_timeout(pooled, 300) as call_adapter:
+            self.assertIsNot(call_adapter, pooled)
+            self.assertEqual(call_adapter.timeout, 300)
+        # 池中实例保持原值：并发请求不会互相覆盖超时
+        self.assertEqual(pooled.timeout, 60)
+
+        with _adapter_timeout(pooled, None) as same:
+            self.assertIs(same, pooled)  # 未配置超时时零开销直接透传
+
+    def test_stream_options_unsupported_detection(self):
+        """AI-003 兜底判定：仅参数类 4xx + 报文点名该字段才算可降级。"""
+        from app.modules.ai.service.adapters.base import UpstreamApiError, stream_options_unsupported
+
+        self.assertTrue(
+            stream_options_unsupported(
+                UpstreamApiError("400 Bad Request: extra fields not permitted: stream_options", status_code=400)
+            )
+        )
+        self.assertTrue(stream_options_unsupported(UpstreamApiError("422 invalid include_usage", status_code=422)))
+        # 无关 400 不降级，否则"模型不存在"等真实错误会被掩盖成"少个 usage"
+        self.assertFalse(stream_options_unsupported(UpstreamApiError("400 model not found", status_code=400)))
+        # 5xx 走既有重试链，不在此处吞掉
+        self.assertFalse(stream_options_unsupported(UpstreamApiError("500 stream_options", status_code=500)))
+        self.assertFalse(stream_options_unsupported(RuntimeError("stream_options unsupported")))
+
+    def test_openai_http_stream_falls_back_without_stream_options(self):
+        """白名单网关 400 拒绝 stream_options 时去字段重试一次：正文不丢、不重复（AI-003 兜底）。"""
+        from app.modules.ai.service.adapters.openai_http import OpenAIHttpAdapter
+
+        provider = AiProvider(
+            code="whitelist-gw",
+            name="白名单网关",
+            adapter="openai-compatible",
+            base_url="https://api.example.com/v1",
+            api_key_cipher=encrypt_secret("sk"),
+        )
+        adapter = OpenAIHttpAdapter(provider)
+
+        class RejectResponse:
+            status_code = 400
+            reason_phrase = "Bad Request"
+            headers: dict = {}
+            text = '{"error":{"message":"extra fields not permitted: stream_options"}}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def read(self):
+                return b""
+
+            def json(self):
+                raise ValueError("not json")
+
+            def raise_for_status(self):
+                request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+                raise httpx.HTTPStatusError("400", request=request, response=self)
+
+            def iter_lines(self):
+                return iter([])
+
+        class OkResponse:
+            status_code = 200
+            headers = {"x-request-id": "rid-2"}
+            text = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def raise_for_status(self):
+                return None
+
+            def iter_lines(self):
+                return iter(['data: {"choices":[{"delta":{"content":"hi"}}]}', "", "data: [DONE]", ""])
+
+        # 用快照记录每次请求体：payload 在重试时被原地 pop，Mock 只存引用会两次都看到终态
+        calls: list[dict] = []
+        responses = [RejectResponse(), OkResponse()]
+
+        def _fake_stream(method, url, **kwargs):
+            calls.append(json.loads(json.dumps(kwargs["json"])))
+            return responses[len(calls) - 1]
+
+        with patch("httpx.stream", side_effect=_fake_stream):
+            events = list(adapter.stream_chat(model="m", messages=[{"role": "user", "content": "hi"}], options={}))
+
+        self.assertEqual(len(calls), 2)  # 只重试一次
+        self.assertEqual(calls[0]["stream_options"], {"include_usage": True})
+        self.assertNotIn("stream_options", calls[1])
+        self.assertEqual([e["content"] for e in events if e["event"] == "delta"], ["hi"])
+
+    def test_openai_compatible_stream_falls_back_without_stream_options(self):
+        """SDK 路径同样兜底：首个 chunk 前抛 400 才重试，且不再携带 stream_options。"""
+        from unittest.mock import Mock
+
+        from app.modules.ai.service.adapters.openai_compatible import OpenAICompatibleAdapter
+
+        provider = AiProvider(
+            code="sdk-gw",
+            name="SDK 网关",
+            adapter="openai-compatible",
+            base_url="https://gw.example.com/v1",
+            api_key_cipher=encrypt_secret("sk"),
+        )
+        adapter = OpenAICompatibleAdapter(provider)
+
+        class BadRequestError(Exception):
+            status_code = 400
+
+        class Chunk:
+            def __init__(self, data: dict):
+                self._data = data
+
+            def model_dump(self, mode: str = "json"):
+                return self._data
+
+        seen: list[dict] = []
+
+        def _create(**kwargs):
+            seen.append(dict(kwargs))
+            if len(seen) == 1:
+                raise BadRequestError("Error code: 400 - Unrecognized request argument supplied: stream_options")
+            return iter([Chunk({"choices": [{"delta": {"content": "hi"}, "finish_reason": "stop"}]})])
+
+        adapter.client = Mock()
+        adapter.client.chat.completions.create.side_effect = _create
+
+        events = list(adapter.stream_chat(model="m", messages=[{"role": "user", "content": "hi"}], options={}))
+
+        self.assertEqual(len(seen), 2)
+        self.assertEqual(seen[0]["stream_options"], {"include_usage": True})
+        self.assertNotIn("stream_options", seen[1])
+        self.assertEqual([e["content"] for e in events if e["event"] == "delta"], ["hi"])
+
+    def test_pooled_adapter_survives_detached_provider(self):
+        """AI-017 池化回归：provider detached+expired 后复用池化 adapter 不抛 DetachedInstanceError。
+
+        Session 默认 expire_on_commit=True：首次请求 commit + close 后实体过期且脱离，
+        第二次同配置请求命中实例池。修复前 image() 日志路径访问 self.provider.adapter/.code
+        即 DetachedInstanceError（生产第二次同配置生图必炸）；修复后初始化期物化。
+        """
+        from unittest.mock import Mock
+
+        from sqlalchemy.orm.exc import DetachedInstanceError
+
+        provider = AiProvider(code="pool-detach", name="PD", adapter="openai-compatible", is_active=True)
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        a1 = build_adapter(provider)
+        self.session.commit()  # expire_on_commit=True：provider 实体自此过期
+        self.session.close()  # 请求结束：实体 detached + expired
+
+        class _FakeImageResponse:
+            def model_dump(self, mode: str = "json"):
+                return {"data": [{"url": "https://img.example/a.png"}], "usage": None}
+
+        with Session(self.engine) as fresh:
+            p2 = fresh.exec(select(AiProvider).where(AiProvider.code == "pool-detach")).first()
+            a2 = build_adapter(p2)
+            self.assertIs(a1, a2)  # 同一库行同配置 → 命中实例池
+            # 前提自证：旧实体确实 detached+expired（修复前日志路径就是这么炸的）
+            with self.assertRaises(DetachedInstanceError):
+                _ = a1.provider.adapter
+            a1.client = Mock()
+            a1.client.images.generate.return_value = _FakeImageResponse()
+            result = a1.image(model="m", prompt="draw", options={})
+        a1.client.images.generate.assert_called_once()
+        self.assertEqual(result["data"][0]["url"], "https://img.example/a.png")
+        self.assertEqual(a1.provider_code, "pool-detach")
+        self.assertEqual(a1.adapter_code, "openai-compatible")
+
+    def test_persistable_cc_keys_truncates_by_whole_key(self):
+        """cc_keys 落库截断按整数个 key 进行：恒为合法 JSON（修复前字符串切 500 产生坏 JSON）。"""
+        from app.modules.ai.service.governance_service import _CC_KEYS_MAX_LEN, _persistable_cc_keys
+
+        keys = [f"ai:gov:cc:profile:{i}-aaaaaaaaaaaaaaaaaaaa" for i in range(30)]
+        payload = _persistable_cc_keys(keys)
+        self.assertLessEqual(len(payload), _CC_KEYS_MAX_LEN)
+        decoded = json.loads(payload)  # 修复前：截断产物 json.loads 直接抛
+        self.assertEqual(keys[: len(decoded)], decoded)  # 保留的是原列表前缀
+
+        # 极端：单 key 就超限 → 空列表仍是合法 JSON
+        self.assertEqual(json.loads(_persistable_cc_keys(["k" * 600])), [])
+
+    def test_release_concurrent_tolerates_corrupt_persisted_keys(self):
+        """_release_concurrent 对持久化坏 JSON（旧版截断遗留数据）容错跳过，cancel 路径不炸。"""
+        from app.modules.ai.service.governance_service import AiGovernanceService
+
+        provider, model, profile = self._seed_chat_runtime()
+        invocation = AiRuntimeInvocation(
+            invocation_id="inv-corrupt-cc-keys",
+            provider_id=provider.id,
+            model_id=model.id,
+            profile_id=profile.id,
+            status="running",
+            started_at=datetime.now(UTC),
+            cc_keys='["ai:gov:cc:gl',  # 模拟旧版 [:500] 字符串截断产物
+        )
+        self.session.add(invocation)
+        self.session.commit()
+
+        AiGovernanceService(self.session)._release_concurrent(invocation)  # 修复前此处 json.loads 抛
+        self.assertEqual(invocation._cc_keys, [])
+
+    def test_bootstrap_revives_soft_deleted_rule(self):
+        """AI-027 补漏：默认治理规则被软删后重启，bootstrap 复活种子而非撞 code 唯一键。
+
+        修复前存在性检查被软删不变量过滤 → 误判不存在 → 插入同 code 行 →
+        IntegrityError（MODULE_LOAD_STRICT 默认 True 时炸启动）。
+        """
+        from app.modules.ai import config as ai_config
+        from app.modules.ai.service.utils import statement_including_deleted
+
+        ai_config.bootstrap(self.session)
+        rule = self.session.exec(select(AiGovernanceRule).where(AiGovernanceRule.code == "default-global-daily")).one()
+        rule.delete_time = datetime.now(UTC)
+        self.session.add(rule)
+        self.session.commit()
+
+        ai_config.bootstrap(self.session)  # 修复前此处 IntegrityError
+
+        rows = self.session.exec(
+            statement_including_deleted(select(AiGovernanceRule).where(AiGovernanceRule.code == "default-global-daily"))
+        ).all()
+        self.assertEqual(len(rows), 1)  # 复活而非新建
+        self.assertIsNone(rows[0].delete_time)
+        self.assertTrue(rows[0].is_active)
 
 
 if __name__ == "__main__":
