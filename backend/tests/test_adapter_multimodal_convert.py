@@ -15,7 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from app.modules.ai.model.ai import AiProvider
-from app.modules.ai.service.adapters.base import UpstreamApiError
+from app.modules.ai.service.adapters.base import AdapterInputError, UpstreamApiError
 from app.modules.ai.service.adapters.claude import ClaudeAdapter, _to_claude_content
 from app.modules.ai.service.adapters.gemini import _gemini_content
 from app.modules.ai.service.adapters.media_fetch import extract_system_text, parse_data_uri
@@ -147,9 +147,10 @@ class MediaFetchUtilTest(unittest.TestCase):
         self.assertEqual(data, b64)
 
     def test_parse_data_uri_invalid(self) -> None:
-        with self.assertRaises(UpstreamApiError):
+        # AI-009 二分类：输入格式错误抛 AdapterInputError（不重试不降级），非上游故障
+        with self.assertRaises(AdapterInputError):
             parse_data_uri("data:image/png;base64,!!!")
-        with self.assertRaises(UpstreamApiError):
+        with self.assertRaises(AdapterInputError):
             parse_data_uri("not-a-data-uri")
 
     def test_extract_system_text_mixed(self) -> None:

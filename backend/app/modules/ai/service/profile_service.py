@@ -18,7 +18,12 @@ from app.modules.ai.model.ai import (
     AiProvider,
 )
 from app.modules.ai.service.runtime_service import AiModelRuntimeService
-from app.modules.ai.service.utils import _dump_response_format, _validate_json_config
+from app.modules.ai.service.utils import (
+    _dump_response_format,
+    _validate_json_config,
+    collect_ids,
+    statement_including_deleted,
+)
 from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 
@@ -100,18 +105,18 @@ class AiModelProfileService(BaseAdminCrudService):
         parent_field: str | None = None,
     ) -> list[dict]:
         query = self._profile_query(query)
-        return [self._decorate(item) for item in super().list(query, current_user, relations, is_tree, parent_field)]
+        return self._batch_decorate(list(super().list(query, current_user, relations, is_tree, parent_field)))
 
     def page(
         self, query: CrudQuery, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()
     ) -> PageResult[dict]:
         query = self._profile_query(query)
         result = super().page(query, current_user, relations)
-        result.items = [self._decorate(item) for item in result.items]
+        result.items = self._batch_decorate(list(result.items))
         return result
 
     def info(self, id: Any, current_user: User | None = None, relations: tuple[RelationConfig, ...] = ()) -> dict:
-        return self._decorate(super().info(id, current_user, relations))
+        return self._batch_decorate([super().info(id, current_user, relations)])[0]
 
     def set_default(self, id: int) -> dict:
         profile = self.session.get(AiModelProfile, id)
@@ -146,7 +151,8 @@ class AiModelProfileService(BaseAdminCrudService):
     def _ensure_unique_code(self, code: str | None, exclude_id: int | None = None) -> None:
         if not code:
             return
-        statement = select(AiModelProfile).where(AiModelProfile.code == code)
+        # 唯一性校验含软删行：code 列库层 unique，软删行仍占用编码（AI-034 逃生口）
+        statement = statement_including_deleted(select(AiModelProfile).where(AiModelProfile.code == code))
         if exclude_id is not None:
             statement = statement.where(AiModelProfile.id != exclude_id)
         if self.session.exec(statement).first():
@@ -189,17 +195,35 @@ class AiModelProfileService(BaseAdminCrudService):
             depth += 1
 
     def _decorate(self, data: dict) -> dict:
-        model = self.session.get(AiModel, data.get("modelId") or data.get("model_id"))
-        provider = self.session.get(AiProvider, model.provider_id) if model else None
-        data["modelName"] = model.name if model else None
-        data["modelType"] = model.model_type if model else None
-        data["modelCode"] = model.code if model else None
-        data["modelCapabilities"] = model.capabilities if model else None
-        data["providerName"] = provider.name if provider else None
-        data["providerCode"] = provider.code if provider else None
-        data["providerAdapter"] = provider.adapter if provider else None
-        data["modelDefaultConfig"] = model.default_config if model else None
-        return data
+        return self._batch_decorate([data])[0]
+
+    def _batch_decorate(self, items: list[dict]) -> list[dict]:
+        """批量装饰：一次加载本批涉及的 model/provider（原逐行 session.get 在 page 场景 N+1）。"""
+        model_ids = collect_ids(items, "modelId", "model_id")
+        models = (
+            {row.id: row for row in self.session.exec(select(AiModel).where(AiModel.id.in_(model_ids))).all()}
+            if model_ids
+            else {}
+        )
+        provider_ids = {m.provider_id for m in models.values() if m.provider_id is not None}
+        providers = (
+            {row.id: row for row in self.session.exec(select(AiProvider).where(AiProvider.id.in_(provider_ids))).all()}
+            if provider_ids
+            else {}
+        )
+        for data in items:
+            mid = data.get("modelId") if data.get("modelId") is not None else data.get("model_id")
+            model = models.get(mid)
+            provider = providers.get(model.provider_id) if model else None
+            data["modelName"] = model.name if model else None
+            data["modelType"] = model.model_type if model else None
+            data["modelCode"] = model.code if model else None
+            data["modelCapabilities"] = model.capabilities if model else None
+            data["providerName"] = provider.name if provider else None
+            data["providerCode"] = provider.code if provider else None
+            data["providerAdapter"] = provider.adapter if provider else None
+            data["modelDefaultConfig"] = model.default_config if model else None
+        return items
 
     def _profile_query(self, query: CrudQuery | None) -> CrudQuery | None:
         model_type = (query.raw_params.get("modelType") or query.raw_params.get("model_type")) if query else None

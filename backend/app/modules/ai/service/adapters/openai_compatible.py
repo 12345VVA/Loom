@@ -6,7 +6,12 @@ from typing import Any
 from openai import OpenAI
 
 from app.modules.ai.model.ai import AiProvider
-from app.modules.ai.service.adapters.base import BaseHttpAdapter, UnsupportedCapabilityError, normalize_usage
+from app.modules.ai.service.adapters.base import (
+    BaseHttpAdapter,
+    UnsupportedCapabilityError,
+    normalize_usage,
+    stream_options_unsupported,
+)
 from app.modules.ai.service.utils import (
     extract_request_id,
     sanitize_options_for_log,
@@ -41,7 +46,32 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         }
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
-        stream = self.client.chat.completions.create(model=model, messages=messages, stream=True, **options)
+        # OpenAI 兼容协议下 usage 仅在带 stream_options.include_usage 的最后一帧返回，
+        # 不传则流式请求零计量，token/成本治理对流式流量完全失效（AI-003）
+        call_options = dict(options or {})
+        stream_options = {"include_usage": True}
+        user_stream_options = call_options.pop("stream_options", None)
+        if isinstance(user_stream_options, dict):
+            stream_options.update(user_stream_options)
+        try:
+            stream = self._create_stream(model, messages, call_options, stream_options)
+        except Exception as exc:
+            # 白名单网关见到 stream_options 直接 400/422（SDK 在首个 chunk 前抛出），
+            # 去字段重试不会重复正文，代价仅是该条流失去 usage 计量
+            if not stream_options_unsupported(exc):
+                raise
+            logger.warning(
+                "上游拒绝 stream_options，已去字段重试（本条流不计 token）",
+                extra={
+                    "provider_adapter": self.adapter_code,
+                    "provider_code": self.provider_code,
+                    "base_url": self.base_url,
+                    "model": model,
+                    "user_supplied": isinstance(user_stream_options, dict),
+                    "error_message": str(exc)[:500],
+                },
+            )
+            stream = self._create_stream(model, messages, call_options, None)
         request_id = extract_request_id(stream)
         for chunk in stream:
             data = chunk.model_dump(mode="json") if hasattr(chunk, "model_dump") else {}
@@ -64,6 +94,18 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
                     "finishReason": finish_reason,
                     "requestId": request_id,
                 }
+
+    def _create_stream(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        call_options: dict[str, Any],
+        stream_options: dict[str, Any] | None,
+    ):
+        kwargs = dict(call_options)
+        if stream_options is not None:
+            kwargs["stream_options"] = stream_options
+        return self.client.chat.completions.create(model=model, messages=messages, stream=True, **kwargs)
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         response = self.client.embeddings.create(model=model, input=input, **options)
@@ -104,8 +146,8 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         logger.info(
             "OpenAI Compatible 生图上游请求开始",
             extra={
-                "provider_adapter": self.provider.adapter,
-                "provider_code": self.provider.code,
+                "provider_adapter": self.adapter_code,
+                "provider_code": self.provider_code,
                 "base_url": self.base_url,
                 "model": model,
                 "prompt": summarize_prompt(prompt),
@@ -117,8 +159,8 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
             logger.warning(
                 "OpenAI Compatible 生图参数已拦截非标准字段",
                 extra={
-                    "provider_adapter": self.provider.adapter,
-                    "provider_code": self.provider.code,
+                    "provider_adapter": self.adapter_code,
+                    "provider_code": self.provider_code,
                     "base_url": self.base_url,
                     "model": model,
                     "dropped_option_keys": sorted(dropped_options.keys()),
@@ -133,8 +175,8 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
             logger.error(
                 "OpenAI Compatible 生图上游请求失败",
                 extra={
-                    "provider_adapter": self.provider.adapter,
-                    "provider_code": self.provider.code,
+                    "provider_adapter": self.adapter_code,
+                    "provider_code": self.provider_code,
                     "base_url": self.base_url,
                     "model": model,
                     "error_type": type(exc).__name__,
@@ -149,8 +191,8 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         logger.info(
             "OpenAI Compatible 生图上游请求完成",
             extra={
-                "provider_adapter": self.provider.adapter,
-                "provider_code": self.provider.code,
+                "provider_adapter": self.adapter_code,
+                "provider_code": self.provider_code,
                 "base_url": self.base_url,
                 "model": model,
                 "upstream_request_id": request_id,

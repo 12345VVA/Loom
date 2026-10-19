@@ -6,12 +6,16 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from fastapi import HTTPException, status
-
 from app.core.secret import decrypt_secret
+from app.modules.ai.constants import AI_ADAPTERS
 from app.modules.ai.model.ai import AiProvider
 from app.modules.ai.service.adapters.bailian_openapi import list_workspace_authorized_models
-from app.modules.ai.service.adapters.base import UpstreamApiError, normalize_usage, openai_image_result
+from app.modules.ai.service.adapters.base import (
+    AdapterInputError,
+    UpstreamApiError,
+    normalize_usage,
+    openai_image_result,
+)
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
 from app.modules.ai.service.adapters.gemini import GeminiAdapter
 from app.modules.ai.service.adapters.ollama import OllamaAdapter
@@ -152,15 +156,21 @@ class DeepSeekAdapter(OpenAIHttpAdapter):
 class VolcengineArkAdapter(OpenAIHttpAdapter):
     default_base_url = "https://ark.cn-beijing.volces.com/api/v3"
 
+    def __init__(self, provider: AiProvider):
+        super().__init__(provider)
+        # AI-017 实例池：管理密钥初始化期物化，禁止方法内惰性访问 ORM 实体（detached 即炸）
+        self.admin_access_key = decrypt_secret(provider.admin_access_key_cipher)
+        self.admin_secret_key = decrypt_secret(provider.admin_secret_key_cipher)
+
     def list_models(self) -> list[dict[str, Any]]:
         # 方舟推理域名不提供 OpenAI 风格 /models；模型开通列表走火山 OpenAPI（AK/SK V4 签名）
-        access_key = decrypt_secret(self.provider.admin_access_key_cipher)
-        secret_key = decrypt_secret(self.provider.admin_secret_key_cipher)
-        if not access_key or not secret_key:
+        if not self.admin_access_key or not self.admin_secret_key:
             raise UpstreamApiError(
                 "火山方舟模型列表仅支持 Access Key 鉴权，请先在厂商配置中填写管理 Access Key/Secret Key"
             )
-        return iter_ark_available_models(access_key=access_key, secret_key=secret_key, timeout=self.timeout)
+        return iter_ark_available_models(
+            access_key=self.admin_access_key, secret_key=self.admin_secret_key, timeout=self.timeout
+        )
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
         normalized_options = _normalize_volcengine_image_options(model, options or {})
@@ -252,14 +262,43 @@ ADAPTERS = {
     "poryf": PoryfAdapter,
 }
 
+# 单一权威一致性校验（AI-010）：实现映射与 constants.AI_ADAPTERS 漂移即 import 失败，
+# 新增厂商漏改任何一侧都在启动期暴露，而非运行期 400
+if set(ADAPTERS) != AI_ADAPTERS:
+    raise RuntimeError(f"ADAPTERS 实现与 constants.AI_ADAPTERS 不一致: {set(ADAPTERS) ^ set(AI_ADAPTERS)}（AI-010）")
+
+
+# 适配器实例池（AI-017）：适配器全部状态都是初始化期只读配置（api_key/base_url/
+# extra_config 派生字段，含 OpenAI SDK client），无请求级可变状态，可安全跨请求复用；
+# 免去每次调用重建 SDK client / 重新解密密钥的开销。键 = 配置全量指纹，配置变更自然失效。
+_ADAPTER_CACHE: dict[tuple, Any] = {}
+_ADAPTER_CACHE_MAX = 256
+
 
 def build_adapter(provider: AiProvider):
+    cache_key = (
+        provider.id,
+        provider.adapter,
+        provider.base_url or "",
+        provider.api_key_cipher or "",
+        provider.extra_config or "",
+        # 管理密钥参与指纹：ark 等适配器在初始化期物化 admin AK/SK（list_models 用），
+        # 不入键则改密后旧凭证复用至进程重启；其余 provider 恒 None 不影响区分度
+        provider.admin_access_key_cipher or "",
+        provider.admin_secret_key_cipher or "",
+    )
+    cached = _ADAPTER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     adapter_cls = ADAPTERS.get(provider.adapter)
     if adapter_cls is None:
-        from fastapi import HTTPException, status
-
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的模型厂商适配器")
-    return adapter_cls(provider)
+        # 配置错误不是上游故障：不降级（掩盖配置问题），直接 4xx 显性暴露（AI-009）
+        raise AdapterInputError(f"不支持的模型厂商适配器: {provider.adapter}")
+    adapter = adapter_cls(provider)
+    # 键空间 = 历史配置组合数，变更低频；上限防御异常刷写场景，超限后退化为每次新建
+    if len(_ADAPTER_CACHE) < _ADAPTER_CACHE_MAX:
+        _ADAPTER_CACHE[cache_key] = adapter
+    return adapter
 
 
 def _resolve_bailian_image_protocol(model: str, options: dict[str, Any]) -> str:
@@ -283,9 +322,9 @@ def _build_bailian_wan26_sync_payload(model: str, prompt: str, options: dict[str
 
     is_wan26 = model.lower().replace("_", "-").startswith("wan2.6")
     if neg_prompt and is_wan26:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="百炼 wan2.6 同步生图暂不支持 negative_prompt，请启用异步或使用支持负向提示词的模型",
+        # 参数组合错误：换模型重跑结果相同，抛 AdapterInputError 阻断降级二次计费（AI-009）
+        raise AdapterInputError(
+            "百炼 wan2.6 同步生图暂不支持 negative_prompt，请启用异步或使用支持负向提示词的模型",
         )
 
     parameters = _bailian_image_parameters(options)
@@ -452,9 +491,9 @@ def _validate_seedream_4_size(size: Any) -> None:
 
     pixels = parsed[0] * parsed[1]
     if pixels < 3_686_400:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="火山 Seedream 4.x 图片尺寸至少需要 3686400 像素，请使用 2560x1440、1440x2560、2048x2048 或更高分辨率",
+        # 参数错误：同上，阻断降级二次计费（AI-009）
+        raise AdapterInputError(
+            "火山 Seedream 4.x 图片尺寸至少需要 3686400 像素，请使用 2560x1440、1440x2560、2048x2048 或更高分辨率",
         )
 
 

@@ -73,7 +73,7 @@ class PoryfAdapter(OpenAIHttpAdapter):
             logger.warning(
                 "Poryf 生图参数已拦截非标准字段",
                 extra={
-                    "provider_code": self.provider.code,
+                    "provider_code": self.provider_code,
                     "model": model,
                     "dropped_option_keys": sorted(dropped_options.keys()),
                 },
@@ -83,7 +83,7 @@ class PoryfAdapter(OpenAIHttpAdapter):
         if len(image_urls) > 1:
             logger.warning(
                 "Poryf 图片编辑当前仅支持单张参考图，已忽略多余项",
-                extra={"provider_code": self.provider.code, "model": model, "image_count": len(image_urls)},
+                extra={"provider_code": self.provider_code, "model": model, "image_count": len(image_urls)},
             )
 
         payload: dict[str, Any] = {"model": model, "prompt": prompt}
@@ -92,7 +92,7 @@ class PoryfAdapter(OpenAIHttpAdapter):
         if isinstance(n_value, int) and n_value > 1:
             logger.warning(
                 "Poryf 生图仅支持 n=1，已自动截断",
-                extra={"provider_code": self.provider.code, "model": model, "original_n": n_value},
+                extra={"provider_code": self.provider_code, "model": model, "original_n": n_value},
             )
         # n 不上行：Poryf 默认即单图
 
@@ -241,7 +241,7 @@ def _normalize_netloc(parsed) -> tuple[str, int]:
 
 
 def _own_backend_netlocs() -> set[tuple[str, int]]:
-    """与 runtime_service._make_absolute_url 的 base 候选保持一致：
+    """与 runtime_service.make_absolute_url 的 base 候选保持一致：
     BACKEND_URL → EXTERNAL_URL → HOST:PORT 兜底；那边改动时须同步这里。
     """
     bases = [settings.BACKEND_URL, settings.EXTERNAL_URL]

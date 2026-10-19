@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -12,7 +13,10 @@ from app.modules.ai.service.adapters.base import (
     openai_chat_result,
     openai_embedding_result,
     openai_image_result,
+    stream_options_unsupported,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIHttpAdapter(BaseHttpAdapter):
@@ -28,7 +32,44 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
         options = dict(options or {})
-        payload = {"model": model, "messages": messages, **options, "stream": True}
+        # OpenAI 兼容协议下 usage 仅在带 stream_options.include_usage 的最后一帧返回，
+        # 不传则流式请求零计量，token/成本治理对流式流量完全失效（AI-003）
+        stream_options = {"include_usage": True}
+        user_stream_options = options.pop("stream_options", None)
+        if isinstance(user_stream_options, dict):
+            stream_options.update(user_stream_options)
+        payload = {
+            "model": model,
+            "messages": messages,
+            **options,
+            "stream": True,
+            "stream_options": stream_options,
+        }
+        yielded = False
+        try:
+            for event in self._iter_stream_events(payload):
+                yielded = True
+                yield event
+        except Exception as exc:
+            # 白名单网关见到 stream_options 直接 400/422。此时尚未产出任何 delta，
+            # 去字段重试不会重复正文，代价仅是该条流失去 usage 计量
+            if yielded or not stream_options_unsupported(exc):
+                raise
+            logger.warning(
+                "上游拒绝 stream_options，已去字段重试（本条流不计 token）",
+                extra={
+                    "provider_adapter": self.adapter_code,
+                    "provider_code": self.provider_code,
+                    "base_url": self.base_url,
+                    "model": model,
+                    "user_supplied": isinstance(user_stream_options, dict),
+                    "error_message": str(exc)[:500],
+                },
+            )
+            payload.pop("stream_options", None)
+            yield from self._iter_stream_events(payload)
+
+    def _iter_stream_events(self, payload: dict[str, Any]):
         with httpx.stream(
             "POST",
             f"{self.base_url}{self.chat_path}",
