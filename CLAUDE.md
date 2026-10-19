@@ -143,7 +143,7 @@ Loom 是一个全栈 AI 内容生成平台，基于 Vue 3 + FastAPI + Celery。�
 ### 参考文档
 
 - `AGENTS.md` — 代理工作边界和约定
-- `docs/` — 框架说明、自动路由、EPS 规范、字段映射、Controller/Service/Model 使用规范等
+- `docs/` — 框架说明、自动路由、EPS 规范、字段映射、Controller/Service/Model 使用规范等（**本地维护，已 gitignore，不入版本库**）
 - `frontend/.cursorrules` — 前端目录结构和别名
 - `frontend/.cursor/rules/` — 前端开发规范（CRUD、模块、表单、表格、权限等 `.mdc` 文件）
 - `backend/.cursor/rules/` — 后端开发规范（模块、控制器、Service、模型、测试、EPS 等 `.mdc` 文件）

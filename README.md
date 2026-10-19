@@ -38,7 +38,7 @@ Loom 把 **多厂商模型统一运行时、可视化工作流编排（LangGraph
 - [评测与治理](#评测与治理)
 - [示例工作流](#示例工作流)
 - [项目结构](#项目结构)
-- [文档索引](#文档索引)
+- [文档](#文档)
 - [贡献指南](#贡献指南)
 - [路线图](#路线图)
 - [开源协议](#开源协议)
@@ -182,14 +182,14 @@ celery -A app.celery_app beat --loglevel=info
 
 ## 框架底座能力
 
-- **模块化架构**：模块自治，独立中间件、白名单、数据初始化与菜单注入 —— [框架说明文档](./docs/框架说明文档.md)
-- **自动路由**：按 `controller/{scope}/` 约定注册，URL 遵循 `/{scope}/{module}/{resource}/{action}` —— [模块自动路由与管理端鉴权说明](./docs/模块自动路由与管理端鉴权说明.md)
-- **声明式 CRUD 控制器**：`@CoolController` 自动注册 add / delete / update / info / list / page —— [框架 Controller 使用规范](./docs/框架Controller使用规范.md)
-- **EPS 元数据**：自动导出模型字段与校验规则，驱动前端表单 / 表格 / 校验 —— [EPS规范原理与操作指南](./docs/EPS规范原理与操作指南.md)
-- **数据权限**：`DataScope` 查询期自动注入（全部 / 本人 / 本部门 / 本部门及下属 / 自定义）—— [权限管理与登录模块设计](./docs/权限管理与登录模块设计.md)
-- **软删除**：含 `delete_time` 的模型自动过滤已删除记录 —— [框架说明文档](./docs/框架说明文档.md)
-- **字段映射**：`snake_case` ↔ `camelCase` 自动转换 —— [字段映射使用规范](./docs/字段映射使用规范.md)
-- **缓存命名空间与降级**：Redis 命名空间隔离，开发环境自动降级为进程内缓存 —— [框架说明文档](./docs/框架说明文档.md)
+- **模块化架构**：模块自治，独立中间件、白名单、数据初始化与菜单注入 —— 框架说明文档
+- **自动路由**：按 `controller/{scope}/` 约定注册，URL 遵循 `/{scope}/{module}/{resource}/{action}` —— 模块自动路由与管理端鉴权说明
+- **声明式 CRUD 控制器**：`@CoolController` 自动注册 add / delete / update / info / list / page —— 框架 Controller 使用规范
+- **EPS 元数据**：自动导出模型字段与校验规则，驱动前端表单 / 表格 / 校验 —— EPS规范原理与操作指南
+- **数据权限**：`DataScope` 查询期自动注入（全部 / 本人 / 本部门 / 本部门及下属 / 自定义）—— 权限管理与登录模块设计
+- **软删除**：含 `delete_time` 的模型自动过滤已删除记录 —— 框架说明文档
+- **字段映射**：`snake_case` ↔ `camelCase` 自动转换 —— 字段映射使用规范
+- **缓存命名空间与降级**：Redis 命名空间隔离，开发环境自动降级为进程内缓存 —— 框架说明文档
 
 ## 技术栈与架构
 
@@ -244,7 +244,7 @@ flowchart LR
 
 ## 工作流引擎
 
-工作流引擎以 **LangGraph** 为执行内核：前端画布拓扑**先经拓扑校验、再编译**为 StateGraph，运行期是编译后的图，比解释执行更可靠。完整设计见 [AI 与工作流系统架构说明](./docs/AI与工作流系统架构说明.md)。
+工作流引擎以 **LangGraph** 为执行内核：前端画布拓扑**先经拓扑校验、再编译**为 StateGraph，运行期是编译后的图，比解释执行更可靠。完整设计见 `docs/02-业务模块/AI与工作流系统架构说明.md`。
 
 ### 编译链路
 
@@ -302,7 +302,7 @@ Checkpoint 是人工交互挂起 / 恢复的基础——`human_input` 节点 `in
 
 ### 评测系统
 
-Loom 内置面向工作流的回归评测 harness：围绕「同一测试集 × 不同图版本，跑真实实例 + 规则 / LLM 打分 + 按 `case_key` 对齐 diff」组织。详细对标分析见 [评测系统对标分析-2026-06-26](./docs/评测系统对标分析-2026-06-26.md)。
+Loom 内置面向工作流的回归评测 harness：围绕「同一测试集 × 不同图版本，跑真实实例 + 规则 / LLM 打分 + 按 `case_key` 对齐 diff」组织。（对标分析报告 2026-06-26 已归档：5 个硬伤中 4 个已修复、1 个大部分修复。）
 
 **四类业务对象**：测试集 `WorkflowTestSet`、测试用例 `WorkflowTestCase`、评估运行 `WorkflowEvalRun`、回归对比（多版本 `WorkflowEvalRun` 按 `case_key` 对齐）。
 
@@ -393,7 +393,7 @@ Loom/
 │   │   └── modules/               # 业务模块（9 个，见下表）
 │   ├── tests/                     # pytest 自动化测试
 │   └── alembic/                   # 数据库迁移骨架
-├── docs/                          # 项目文档（见文末索引）
+├── docs/                          # 项目文档（本地维护，不入库）
 ├── examples/workflows/            # 13 个示例工作流 JSON
 ├── scripts/                       # 本地验证脚本
 ├── docker-compose.yml
@@ -418,20 +418,26 @@ Loom/
 
 `ai`、`base`、`dict`、`media`、`notification`、`task`、`workflow`、`workflow_annotation`、`workflow_eval`。其中 AI 模块含对话测试台（SSE 流式）、生图工作台、厂商 / 模型 / 配置管理、治理规则 / 事件、看板、日志、异步任务等页面；工作流模块含 Vue Flow 编辑器、节点配置面板、试运行 / 单节点测试 / 实时日志抽屉、实例管理（含人工审批恢复）。
 
-## 文档索引
+## 文档
 
-完整文档索引见 [docs/README.md](./docs/README.md)，关键文档包括：
+项目文档维护在本地 `docs/` 目录，按 `01-框架与规范` / `02-业务模块` / `03-工作流专项` / `04-安全专项` / `05-治理与运维` 分类，总索引在 `docs/README.md`。
 
-- [AI 与工作流系统架构说明](./docs/AI与工作流系统架构说明.md)：AI 模块、工作流模块、task 模块的完整架构与集成关系。
-- [评测系统对标分析-2026-06-26](./docs/评测系统对标分析-2026-06-26.md)：工作流评测系统能力边界与提升路线图。
-- [框架说明文档](./docs/框架说明文档.md)：模块化、自动路由、EPS、DataScope 等核心机制。
-- [模块自动路由与管理端鉴权说明](./docs/模块自动路由与管理端鉴权说明.md)：路由约定与权限校验。
-- [EPS规范原理与操作指南](./docs/EPS规范原理与操作指南.md)：EPS 元数据协议。
-- [字段映射使用规范](./docs/字段映射使用规范.md)：snake_case ↔ camelCase 字段映射。
-- [框架 Controller 使用规范](./docs/框架Controller使用规范.md) / [框架 Service 使用规范](./docs/框架Service使用规范.md) / [框架 Model 使用规范](./docs/框架Model使用规范.md)：CRUD 与建模规范。
-- [权限管理与登录模块设计](./docs/权限管理与登录模块设计.md)：JWT、动态菜单、数据权限。
-- [通知系统框架说明](./docs/通知系统框架说明.md)：通知与模板。
-- [自动化测试使用说明](./docs/自动化测试使用说明.md)：pytest / 单元测试 / E2E。
+> `docs/` 与 `deliverables/` 均不随仓库分发（见 `.gitignore`），克隆后需另行获取。文档内相对链接可用 `python scripts/check_doc_links.py --all` 校验。
+
+主要文档：
+
+| 文档 | 内容 |
+|------|------|
+| AI 与工作流系统架构说明 | AI / 工作流 / task 模块的架构与集成关系 |
+| 工作流多模态与图片输入总报告 | 图片输入的调研、数据契约与四批次落地记录 |
+| 框架说明文档 | 模块化、自动路由、EPS、DataScope 等核心机制 |
+| 模块自动路由与管理端鉴权说明 | 路由约定与权限校验 |
+| EPS 规范原理与操作指南 | EPS 元数据协议 |
+| 字段映射使用规范 | snake_case ↔ camelCase 字段映射 |
+| 框架 Controller / Service / Model 使用规范 | CRUD 与建模规范 |
+| 权限管理与登录模块设计 | JWT、动态菜单、数据权限 |
+| 通知系统框架说明 | 通知与模板 |
+| 自动化测试使用说明 | pytest / 单元测试 / E2E |
 
 项目启动后还可访问实时 API 文档：<http://localhost:8000/docs>、<http://localhost:8000/redoc>。
 

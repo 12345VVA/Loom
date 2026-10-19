@@ -57,7 +57,11 @@ logs/
 .antigravity*
 .vscode/
 .workbuddy/
+.archify/
 deliverables/
+# 项目文档：本地维护，不随仓库分发（分类结构见 docs/README.md）
+# 前导 / 限定仅根目录：backend/docs、frontend/docs 下的说明文档照常入库
+/docs/
 .gstack/
 .idea/
 .claude/
