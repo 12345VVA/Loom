@@ -13,6 +13,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.framework.controller_meta import CrudQuery, RelationConfig
+from app.framework.runtime import FrameworkRuntimeError, registry
 from app.modules.ai.model.ai import (
     AiGenerationTask,
     AiGovernanceEvent,
@@ -25,13 +26,16 @@ from app.modules.ai.model.ai import (
     AiRuntimeInvocation,
 )
 from app.modules.ai.service.utils import _window_bounds
+from app.modules.ai.service.utils import bulk_attr_map as _bulk_attr_map
+from app.modules.ai.service.utils import collect_ids as _collect_ids
 from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 from app.modules.base.service.cache_service import cache_decr, cache_incr
-from app.modules.notification.model.notification import AudienceRule
-from app.modules.notification.service.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
+
+# 治理告警回调的 registry 名（notification 模块在 main.py 装配期注册）
+GOVERNANCE_ALERT_CALLBACK = "governance_alert"
 
 
 class AiGovernanceRuleService(BaseAdminCrudService):
@@ -188,25 +192,18 @@ class AiGovernanceEventService(BaseAdminCrudService):
 # 并发计数 Redis key 的兜底 TTL（秒），防止僵尸调用永久占用配额
 _CONCURRENT_TTL = 7200
 
-
-def _collect_ids(items: list[dict], camel: str, snake: str) -> set:
-    """从一批 dict 中收集关联 id（兼容 camelCase / snake_case 两种 key）。"""
-    ids: set = set()
-    for d in items:
-        value = d.get(camel)
-        if value is None:
-            value = d.get(snake)
-        if value is not None:
-            ids.add(value)
-    return ids
+# cc_keys 持久化列长上限（列定义 500）。截断必须按整数个 key 进行：
+# 直接切字符串会产生非法 JSON，_release_concurrent 恢复释放时 json.loads 即炸
+_CC_KEYS_MAX_LEN = 500
 
 
-def _bulk_attr_map(session: Session, model: Any, ids: set, attr: str) -> dict:
-    """一次性按 id 批量加载关联实体的某个属性，返回 id→属性值 映射。"""
-    if not ids:
-        return {}
-    rows = session.exec(select(model).where(model.id.in_(ids))).all()
-    return {row.id: getattr(row, attr) for row in rows}
+def _persistable_cc_keys(keys: list[str]) -> str:
+    """并发预占 key 列表序列化为可落库 JSON：超出列长时逐个丢弃尾部 key，保证恒为合法 JSON。"""
+    payload = json.dumps(keys, ensure_ascii=False)
+    while len(payload) > _CC_KEYS_MAX_LEN and keys:
+        keys = keys[:-1]
+        payload = json.dumps(keys, ensure_ascii=False)
+    return payload
 
 
 class AiGovernanceBlocked(Exception):
@@ -278,7 +275,10 @@ class AiGovernanceService:
             started_at=datetime.now(UTC),
         )
         invocation._cc_keys = concurrent_keys
-        # 持久化 cc_keys：worker 被 terminate 后内存属性丢失，cancel 仍可从 DB 字段恢复并精确 decr
+        # 持久化 cc_keys：worker 被 terminate 后内存属性丢失，cancel 仍可从 DB 字段恢复并精确 decr。
+        # 必须赋给列属性 cc_keys（仅 _cc_keys 是内存实例属性，不会落库，release_for_generation_task
+        # 在新会话重新加载后拿不到），列长 500，key 形如 ai:gov:cc:user:{id} 远小于上限
+        invocation.cc_keys = _persistable_cc_keys(list(concurrent_keys))
         try:
             self.session.add(invocation)
             self.session.commit()
@@ -434,11 +434,18 @@ class AiGovernanceService:
         """释放本次调用预占的并发计数。幂等。"""
         if not invocation:
             return
-        # 优先用内存中的 _cc_keys（正常 finish 路径）；缺失时从持久化字段恢复（worker 重启/cancel）
+        # 优先用内存中的 _cc_keys（正常 finish 路径）；缺失时从持久化字段恢复（worker 重启/cancel）。
+        # 历史坏数据（旧版字符串截断产生的非法 JSON）容错跳过：恢复释放失败只留 TTL 兜底，
+        # 不能让 cancel 路径炸掉
         keys = getattr(invocation, "_cc_keys", None)
         if keys is None:
             raw = getattr(invocation, "cc_keys", None)
-            keys = json.loads(raw) if raw else []
+            keys: list = []
+            if raw:
+                try:
+                    keys = json.loads(raw)
+                except ValueError:
+                    logger.warning("invocation %s 持久化 cc_keys 非法，跳过恢复释放（等待 TTL 过期）", invocation.id)
         for key in keys:
             cache_decr(key, ttl_seconds=_CONCURRENT_TTL)
         invocation._cc_keys = []
@@ -463,20 +470,12 @@ class AiGovernanceService:
         profile: AiModelProfile,
     ) -> None:
         window_start, window_end = _window_bounds(rule.period)
+        # AI-019：三指标同 scope 同窗口，合并为一次聚合；limit 未配置的指标不参与判定也不查数
+        request_count, token_sum, cost_sum = self._metric_sums(rule, user_id, profile.id, window_start, window_end)
         checks = [
-            (
-                "request",
-                rule.max_requests,
-                self._request_count(rule, user_id, profile.id, window_start, window_end) + 1,
-                False,
-            ),
-            ("token", rule.max_tokens, self._token_sum(rule, user_id, profile.id, window_start, window_end), True),
-            (
-                "cost",
-                rule.max_cost_micro_usd,
-                self._cost_sum(rule, user_id, profile.id, window_start, window_end),
-                True,
-            ),
+            ("request", rule.max_requests, request_count + 1, False),
+            ("token", rule.max_tokens, token_sum, True),
+            ("cost", rule.max_cost_micro_usd, cost_sum, True),
         ]
         for metric, limit, current, block_at_limit in checks:
             if limit is None or limit <= 0:
@@ -536,11 +535,13 @@ class AiGovernanceService:
         user_id = user.id if user else None
         rules = self.match_rules(user_id=user_id, profile_id=profile.id)
         for rule in rules:
+            if rule.max_tokens is None and rule.max_cost_micro_usd is None:
+                continue
             window_start, window_end = _window_bounds(rule.period)
-            token_current = self._token_sum(rule, user_id, profile.id, window_start, window_end) + int(
-                usage.get("totalTokens") or 0
-            )
-            cost_current = self._cost_sum(rule, user_id, profile.id, window_start, window_end) + cost_micro_usd
+            # AI-019：token/cost 两指标合并为一次聚合
+            _, token_sum, cost_sum = self._metric_sums(rule, user_id, profile.id, window_start, window_end)
+            token_current = token_sum + int(usage.get("totalTokens") or 0)
+            cost_current = cost_sum + cost_micro_usd
             for metric, limit, current in (
                 ("token", rule.max_tokens, token_current),
                 ("cost", rule.max_cost_micro_usd, cost_current),
@@ -568,34 +569,23 @@ class AiGovernanceService:
                     window_end,
                     message,
                     notified,
+                    commit=False,  # finish() 尾部统一提交（AI-019）
                 )
 
-    def _request_count(
+    def _metric_sums(
         self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime
-    ) -> int:
-        statement = select(func.count(AiModelCallLog.id)).where(
-            AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end
-        )
+    ) -> tuple[int, int, int]:
+        """同 scope 同窗口的 request/token/cost 三指标一次聚合（AI-019，原 3 次查询并 1 次）。"""
+        if rule.max_requests is None and rule.max_tokens is None and rule.max_cost_micro_usd is None:
+            return 0, 0, 0
+        statement = select(
+            func.count(AiModelCallLog.id),
+            func.coalesce(func.sum(AiModelCallLog.total_tokens), 0),
+            func.coalesce(func.sum(AiModelCallLog.cost_micro_usd), 0),
+        ).where(AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end)
         statement = self._apply_rule_filter(statement, rule, user_id, profile_id, AiModelCallLog)
-        return int(self.session.exec(statement).one() or 0)
-
-    def _token_sum(
-        self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime
-    ) -> int:
-        statement = select(func.coalesce(func.sum(AiModelCallLog.total_tokens), 0)).where(
-            AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end
-        )
-        statement = self._apply_rule_filter(statement, rule, user_id, profile_id, AiModelCallLog)
-        return int(self.session.exec(statement).one() or 0)
-
-    def _cost_sum(
-        self, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, start: datetime, end: datetime
-    ) -> int:
-        statement = select(func.coalesce(func.sum(AiModelCallLog.cost_micro_usd), 0)).where(
-            AiModelCallLog.created_at >= start, AiModelCallLog.created_at < end
-        )
-        statement = self._apply_rule_filter(statement, rule, user_id, profile_id, AiModelCallLog)
-        return int(self.session.exec(statement).one() or 0)
+        count, tokens, cost = self.session.exec(statement).one()
+        return int(count or 0), int(tokens or 0), int(cost or 0)
 
     def _apply_rule_filter(self, statement, rule: AiGovernanceRule, user_id: int | None, profile_id: int | None, table):
         if rule.scope_type == "user":
@@ -619,7 +609,14 @@ class AiGovernanceService:
         window_end: datetime,
         message: str,
         notified: bool,
+        *,
+        commit: bool = True,
     ) -> None:
+        """写入治理事件。默认立即 commit：blocked 场景事件必须先于异常落库（审计不随回滚丢失）。
+
+        commit=False 供 _record_post_events 批量路径使用——调用链 finish() 尾部统一 commit，
+        免去循环内逐条提交（AI-019）。
+        """
         self.session.add(
             AiGovernanceEvent(
                 rule_id=rule.id,
@@ -637,7 +634,8 @@ class AiGovernanceService:
                 notified=notified,
             )
         )
-        self.session.commit()
+        if commit:
+            self.session.commit()
 
     def _notify_once(
         self,
@@ -660,16 +658,22 @@ class AiGovernanceService:
         ).first()
         if exists:
             return False
+        # registry 回调解耦（ai 不 import notification）：告警是可选副作用，
+        # 未注册（未装配）或发送失败均降级为未通知，不影响治理主流程
         try:
-            NotificationService(self.session).send_business(
-                title="AI 治理告警",
-                content=message,
-                audience=AudienceRule(all_admins=True),
-                source_module="ai",
-                business_key=f"{rule.id}:{metric}:{event_type}:{window_start.isoformat()}",
-                level="warning" if event_type == "warn" else "error",
-                link_url="/ai/governance-event",
+            callback = registry.resolve(GOVERNANCE_ALERT_CALLBACK)
+        except FrameworkRuntimeError:
+            logger.debug("治理告警回调未注册（%s），本次跳过通知", GOVERNANCE_ALERT_CALLBACK)
+            return False
+        try:
+            return bool(
+                callback(
+                    self.session,
+                    message=message,
+                    business_key=f"{rule.id}:{metric}:{event_type}:{window_start.isoformat()}",
+                    level="warning" if event_type == "warn" else "error",
+                )
             )
-            return True
         except Exception:
+            logger.debug("治理告警发送失败（不影响治理主流程）", exc_info=True)
             return False
