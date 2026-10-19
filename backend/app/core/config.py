@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     # OpenAI / Ollama 配置
     OPENAI_API_KEY: str  # 启动时自动从 .env 中读取
     OPENAI_BASE_URL: str  # 启动时自动从 .env 中读取
+    # AI 输出 PII 脱敏的跳过开关（AI-014）：请求级 skip_masking 字段仅在开关闭合时生效，
+    # 默认 False——任何调用方传 skipMasking:true 不得自行关闭脱敏
+    AI_ALLOW_SKIP_MASKING: bool = False
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = ""

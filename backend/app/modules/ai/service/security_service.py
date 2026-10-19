@@ -6,9 +6,8 @@ import logging
 import re
 from typing import Any
 
-from fastapi import HTTPException, status
-
 from app.modules.ai.model.ai import AiRuntimeMessage
+from app.modules.ai.service.errors import AiInvocationError
 
 logger = logging.getLogger(__name__)
 
@@ -101,17 +100,12 @@ class AiSecurityService:
             # 检查 DoS
             if total_length > MAX_INPUT_LENGTH:
                 logger.warning(f"AI 调用被拦截: 输入长度超限 ({total_length} > {MAX_INPUT_LENGTH})")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail="请求内容过长，为防止系统过载已被拦截。"
-                )
+                raise AiInvocationError("请求内容过长，为防止系统过载已被拦截。", status_code=400)
 
             # 检查 Prompt Injection / Jailbreak
             if INJECTION_REGEX.search(content):
                 logger.warning(f"AI 调用被拦截: 疑似提示词注入攻击. Content Snippet: {content[:100]}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="检测到潜在的安全风险（如提示词注入或越狱），请求已被拦截。",
-                )
+                raise AiInvocationError("检测到潜在的安全风险（如提示词注入或越狱），请求已被拦截。", status_code=400)
 
     @staticmethod
     def mask_sensitive_output(text: str) -> str:

@@ -7,7 +7,7 @@
 2. ``/uploads`` 相对路径（本地落盘资产）：
    a. ``prefer_remote`` 且 ``MediaAsset.remote_url`` 已回写 → 直接返回
       （阶段三镜像产物，0 搬运、同机房直连）；
-   b. 配置了 ``BACKEND_URL`` / ``EXTERNAL_URL`` 公网域名 → ``_make_absolute_url``
+   b. 配置了 ``BACKEND_URL`` / ``EXTERNAL_URL`` 公网域名 → ``make_absolute_url``
       拼接返回；
    c. 均不可用（纯私网/开发环境兜底地址）且镜像存储可用（MEDIA_MIRROR_ENABLED +
       bucket）→ 读本地字节经 ``wf-temp/`` 前缀中转上传，返回免签公网 URL
@@ -25,7 +25,7 @@ import logging
 import os
 
 from app.core.config import settings
-from app.modules.ai.service.runtime_service import _make_absolute_url
+from app.modules.ai.service.runtime_service import make_absolute_url
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +51,10 @@ def resolve_consumable_image_url(image_ref: str, *, prefer_remote: bool = True) 
             remote = _lookup_remote_url(image_ref)
             if remote:
                 return remote
-        # 2b. 公网域名拼接（BACKEND_URL > EXTERNAL_URL，与 _make_absolute_url 同判定：
+        # 2b. 公网域名拼接（BACKEND_URL > EXTERNAL_URL，与 make_absolute_url 同判定：
         # 二者均未配置时其兜底是 host:port 私网地址，厂商不可达）
         if settings.BACKEND_URL or settings.EXTERNAL_URL:
-            return _make_absolute_url(image_ref)
+            return make_absolute_url(image_ref)
         # 2c. wf-temp/ 临时中转（镜像存储可用时）
         transit = _ingress_transit(image_ref)
         if transit:

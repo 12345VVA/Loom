@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException, status
+from typing import TypeVar
+
 from sqlmodel import Session, select
 
 from app.modules.ai.model.ai import AiModel, AiModelProfile, AiProvider
+from app.modules.ai.service.errors import AiInvocationError
 from app.modules.ai.service.utils import _loads, normalize_response_format
+
+_EntityT = TypeVar("_EntityT")
+
+
+def live_record(obj: _EntityT | None) -> _EntityT | None:
+    """软删除不变量（AI-001）：delete_time 非空即已删除，运行时解析一律视同不存在。
+
+    session.get() 与手写 select 都不会自动过滤软删行，所有运行时解析路径
+    （resolve / _fallback / _stream_fallback）必须经由本 helper 判定，防止
+    后台"删除"的配置仍被调用并计费。
+    """
+    if obj is None or getattr(obj, "delete_time", None) is not None:
+        return None
+    return obj
 
 
 class AiModelRegistryService:
@@ -16,7 +32,11 @@ class AiModelRegistryService:
     def resolve(self, *, model_type: str, scenario: str = "default", profile_code: str | None = None) -> dict:
         if profile_code:
             profile = self.session.exec(
-                select(AiModelProfile).where(AiModelProfile.code == profile_code, AiModelProfile.is_active == True)  # noqa: E712
+                select(AiModelProfile).where(
+                    AiModelProfile.code == profile_code,
+                    AiModelProfile.is_active == True,  # noqa: E712
+                    AiModelProfile.delete_time == None,  # noqa: E711
+                )
             ).first()
         else:
             profile = self.session.exec(
@@ -26,21 +46,23 @@ class AiModelRegistryService:
                     AiModelProfile.scenario == scenario,
                     AiModelProfile.is_default == True,  # noqa: E712
                     AiModelProfile.is_active == True,  # noqa: E712
+                    AiModelProfile.delete_time == None,  # noqa: E711
                     AiModel.model_type == model_type,
                     AiModel.is_active == True,  # noqa: E712
+                    AiModel.delete_time == None,  # noqa: E711
                 )
                 .order_by(AiModelProfile.sort_order.desc(), AiModelProfile.created_at.desc())
             ).first()
         if not profile:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到可用的模型调用配置")
-        model = self.session.get(AiModel, profile.model_id)
+            raise AiInvocationError("未找到可用的模型调用配置", status_code=404)
+        model = live_record(self.session.get(AiModel, profile.model_id))
         if not model or not model.is_active:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="模型不存在或已禁用")
-        provider = self.session.get(AiProvider, model.provider_id)
+            raise AiInvocationError("模型不存在或已禁用", status_code=400)
+        provider = live_record(self.session.get(AiProvider, model.provider_id))
         if not provider or not provider.is_active:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="模型厂商不存在或已禁用")
+            raise AiInvocationError("模型厂商不存在或已禁用", status_code=400)
         if model.model_type != model_type:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="调用配置模型类型不匹配")
+            raise AiInvocationError("调用配置模型类型不匹配", status_code=400)
         return {
             "profile": profile,
             "model": model,

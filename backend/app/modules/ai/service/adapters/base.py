@@ -18,6 +18,16 @@ class UnsupportedCapabilityError(NotImplementedError):
     pass
 
 
+class AdapterInputError(RuntimeError):
+    """适配器参数/配置类错误（wan2.6 不支持 negative_prompt、Seedream 尺寸不足、
+    多模态 data URI 非法等）。
+
+    与 UpstreamApiError（上游故障，可重试可降级）二分类（评审 AI-009）：这类错误
+    换一个模型重跑结果相同，降级只会二次计费并产生误导性 error 审计。运行时对它
+    不重试、不 fallback，直接以 4xx 语义透出。
+    """
+
+
 class UpstreamApiError(RuntimeError):
     def __init__(self, message: str, *, status_code: int | None = None, request_id: str | None = None):
         super().__init__(message)
@@ -31,34 +41,40 @@ class BaseHttpAdapter:
 
     def __init__(self, provider: AiProvider):
         self.provider = provider
+        # AI-017 实例池：适配器跨请求复用，provider 是某次请求 Session 的 ORM 实体
+        # （Session 默认 expire_on_commit=True，commit 后过期、close 后 detached——
+        # 方法内再访问 self.provider.xxx 会抛 DetachedInstanceError），初始化期必须
+        # 物化全部所需值，禁止方法内惰性访问
+        self.adapter_code = provider.adapter
+        self.provider_code = provider.code
         self.api_key = decrypt_secret(provider.api_key_cipher)
         self.base_url = (provider.base_url or self.default_base_url).rstrip("/")
         self.extra_config = self._loads(provider.extra_config)
         self.timeout = float(self.extra_config.get("timeout", 60))
 
     def chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]) -> dict:
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持 chat")
+        raise UnsupportedCapabilityError(f"{self.adapter_code} 暂不支持 chat")
 
     def stream_chat(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持 stream_chat")
+        raise UnsupportedCapabilityError(f"{self.adapter_code} 暂不支持 stream_chat")
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持 embedding")
+        raise UnsupportedCapabilityError(f"{self.adapter_code} 暂不支持 embedding")
 
     def image(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持 image")
+        raise UnsupportedCapabilityError(f"{self.adapter_code} 暂不支持 image")
 
     def audio(self, *, model: str, input: str, options: dict[str, Any]) -> dict:
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持 audio")
+        raise UnsupportedCapabilityError(f"{self.adapter_code} 暂不支持 audio")
 
     def video(self, *, model: str, prompt: str, options: dict[str, Any]) -> dict:
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持 video")
+        raise UnsupportedCapabilityError(f"{self.adapter_code} 暂不支持 video")
 
     def rerank(self, *, model: str, query: str, documents: list[str], options: dict[str, Any]) -> dict:
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持 rerank")
+        raise UnsupportedCapabilityError(f"{self.adapter_code} 暂不支持 rerank")
 
     def test(self) -> dict:
-        raise UnsupportedCapabilityError(f"{self.provider.adapter} 暂不支持连接测试")
+        raise UnsupportedCapabilityError(f"{self.adapter_code} 暂不支持连接测试")
 
     def list_models(self) -> list[dict[str, Any]]:
         data, _ = self._get(getattr(self, "models_path", "/models"))
@@ -74,7 +90,7 @@ class BaseHttpAdapter:
 
     def capability_status(self) -> dict:
         return {
-            "adapter": self.provider.adapter,
+            "adapter": self.adapter_code,
             "supportedCapabilities": sorted(self.supported_capabilities),
         }
 
@@ -126,6 +142,27 @@ class BaseHttpAdapter:
             return data if isinstance(data, dict) else {}
         except Exception:
             return {}
+
+
+_STREAM_OPTION_REJECTED_STATUS = frozenset({400, 422})
+_STREAM_OPTION_MARKERS = ("stream_options", "include_usage")
+
+
+def stream_options_unsupported(exc: BaseException) -> bool:
+    """判断异常是否由「上游不认 stream_options」引起（AI-003 兜底）。
+
+    流式计量依赖 OpenAI 协议的 stream_options.include_usage，但该字段并非所有兼容
+    网关都实现：旧版 Ollama、部分国产网关按参数白名单校验，见到即返回 400/422
+    （如 "extra fields not permitted"）。这类失败发生在首个 delta 之前，去掉该字段
+    重试一次即可降级为「有内容、无 usage」，优于整条流失败。
+
+    仅在状态码属参数类 4xx 且报文点名该字段时判定为真，避免把无关 400（如模型
+    不存在、messages 非法）误判成可降级，从而掩盖真实错误。
+    """
+    if getattr(exc, "status_code", None) not in _STREAM_OPTION_REJECTED_STATUS:
+        return False
+    message = str(exc).lower()
+    return any(marker in message for marker in _STREAM_OPTION_MARKERS)
 
 
 def normalize_usage(data: dict[str, Any] | None) -> dict[str, int]:

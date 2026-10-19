@@ -102,13 +102,14 @@ def run_ai_embedding(text: str, profile_code: str | None = None) -> tuple[list[f
       调用方不自行拼装；
     - 失败态：(None, model_code)——resolve 在调用前完成（code 不依赖调用成败），
       裸 code（无维度段），检索侧 embedding 为 NULL 本就跳过精排，不会被误判可比；
-    - 未配置态：(None, None)——无可用 embedding profile（HTTPException 归此态）。
+    - 未配置态：(None, None)——无可用 embedding profile（AiInvocationError 归此态）。
 
     放本模块而非 node_executors 的「统一 AI 封装区」：管理页 add 与执行器共用，
     避免 service ↔ node_executors 循环导入（见实施方案 §0.3）。
     """
     from app.core.database import SessionLocal
     from app.modules.ai.model.ai import AiEmbeddingRequest
+    from app.modules.ai.service.errors import AiInvocationError
     from app.modules.ai.service.registry_service import AiModelRegistryService
     from app.modules.ai.service.runtime_service import AiModelRuntimeService
 
@@ -117,8 +118,9 @@ def run_ai_embedding(text: str, profile_code: str | None = None) -> tuple[list[f
         runtime = AiModelRuntimeService(session)
         try:
             resolved = registry.resolve(model_type="embedding", profile_code=profile_code or None)
-        except HTTPException:
+        except AiInvocationError:
             # 404 未找到 profile / 400 模型不可用，均归「未配置 embedding」
+            # （批次3收口后 ai 边界窄类型：不再泛接 HTTPException，语义不再过载）
             return None, None
         model_code = resolved["model"].code
         try:
@@ -685,6 +687,8 @@ def sweep_memory_tombstones(keep_days: int, batch_size: int = 500, session: Sess
 
 
 def _sweep_tombstones_in_session(session: Session, cutoff: datetime, batch_size: int) -> int:
+    from app.core.database import INCLUDE_DELETED_EXECUTION_OPTION
+
     removed_total = 0
     while True:
         rows = list(
@@ -695,6 +699,8 @@ def _sweep_tombstones_in_session(session: Session, cutoff: datetime, batch_size:
                     WorkflowMemory.delete_time < cutoff,
                 )
                 .limit(batch_size)
+                # 墓碑清理天然按软删行查询，跳过 Session 级软删不变量（AI-034 逃生口）
+                .execution_options(**{INCLUDE_DELETED_EXECUTION_OPTION: True})
             ).all()
         )
         if not rows:

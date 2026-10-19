@@ -9,6 +9,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from app.framework.controller_meta import CrudQuery, RelationConfig
+from app.modules.ai.constants import ai_task_queue
 from app.modules.ai.model.ai import AiGenerationTask, AiTaskSubmitRequest
 from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
@@ -72,7 +73,7 @@ class AiGenerationTaskService(BaseAdminCrudService):
         from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
 
         try:
-            async_result = execute_ai_generation_task.apply_async(args=(task.id,), queue=f"ai.{task.task_type}")
+            async_result = execute_ai_generation_task.apply_async(args=(task.id,), queue=ai_task_queue(task.task_type))
         except Exception as exc:
             task.status = "failed"
             task.progress = 100
@@ -144,7 +145,7 @@ class AiGenerationTaskService(BaseAdminCrudService):
         from app.modules.ai.tasks.generation_tasks import execute_ai_generation_task
 
         try:
-            async_result = execute_ai_generation_task.apply_async(args=(task.id,), queue=f"ai.{task.task_type}")
+            async_result = execute_ai_generation_task.apply_async(args=(task.id,), queue=ai_task_queue(task.task_type))
         except Exception as exc:
             task.status = "failed"
             task.progress = 100

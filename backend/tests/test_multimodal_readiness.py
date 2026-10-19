@@ -16,7 +16,7 @@
    不再 ``str()`` 化；chat 链路用严格版 media_fetch，生图链路维持宽松版零件）
 5. ``AiSecurityService.check_input_safety`` 已扫描多模态 list 中的 text part，注入检测不被 list 绕过
 6. 媒体转存 ``_decode_base64_payload`` 已支持 data URI 头解析
-7. 生图链路 ``_make_absolute_url`` 已实现相对路径 → 绝对 URL（BACKEND_URL > EXTERNAL_URL > host:port 兜底）；
+7. 生图链路 ``make_absolute_url`` 已实现相对路径 → 绝对 URL（BACKEND_URL > EXTERNAL_URL > host:port 兜底）；
    该函数仅接入 image 链路，chat 多模态链路尚未接入
 """
 
@@ -33,7 +33,7 @@ from app.modules.ai.model.ai import AiProvider, AiRuntimeMessage
 from app.modules.ai.service.adapters.claude import ClaudeAdapter
 from app.modules.ai.service.adapters.factory import OpenAIHttpAdapter
 from app.modules.ai.service.adapters.gemini import _gemini_content, _prepare_gemini_image_part
-from app.modules.ai.service.runtime_service import _make_absolute_url
+from app.modules.ai.service.runtime_service import make_absolute_url
 from app.modules.ai.service.security_service import AiSecurityService
 from app.modules.media.service.media_service import _decode_base64_payload
 
@@ -219,21 +219,21 @@ class IngressUrlResolveTest(unittest.TestCase):
     """结论 7：生图链路的相对路径 → 绝对 URL 解析已落地（报告 4.3 情景 B 的既有基础）。"""
 
     def test_http_url_passthrough(self) -> None:
-        self.assertEqual(_make_absolute_url("https://example.com/a.png"), "https://example.com/a.png")
+        self.assertEqual(make_absolute_url("https://example.com/a.png"), "https://example.com/a.png")
 
     def test_data_uri_passthrough(self) -> None:
-        self.assertEqual(_make_absolute_url("data:image/png;base64,xx"), "data:image/png;base64,xx")
+        self.assertEqual(make_absolute_url("data:image/png;base64,xx"), "data:image/png;base64,xx")
 
     def test_relative_path_with_backend_url(self) -> None:
         with patch.object(settings, "BACKEND_URL", "http://backend:8000"):
-            self.assertEqual(_make_absolute_url("/uploads/a.png"), "http://backend:8000/uploads/a.png")
+            self.assertEqual(make_absolute_url("/uploads/a.png"), "http://backend:8000/uploads/a.png")
 
     def test_backend_url_falls_back_to_external_url(self) -> None:
         with (
             patch.object(settings, "BACKEND_URL", ""),
             patch.object(settings, "EXTERNAL_URL", "https://ext.example.com"),
         ):
-            self.assertEqual(_make_absolute_url("/uploads/a.png"), "https://ext.example.com/uploads/a.png")
+            self.assertEqual(make_absolute_url("/uploads/a.png"), "https://ext.example.com/uploads/a.png")
 
     def test_last_resort_host_port(self) -> None:
         with (
@@ -244,9 +244,9 @@ class IngressUrlResolveTest(unittest.TestCase):
         ):
             # 兜底拼出的 127.0.0.1 地址公网厂商必然拉不到——
             # 报告 4.3 情景 C 的"前置拦截 + 友好报错"正是补这个缺口
-            self.assertEqual(_make_absolute_url("/uploads/a.png"), "http://127.0.0.1:8000/uploads/a.png")
+            self.assertEqual(make_absolute_url("/uploads/a.png"), "http://127.0.0.1:8000/uploads/a.png")
 
     def test_bare_relative_path_untouched(self) -> None:
         """无前导斜杠的相对路径原样返回（不会被拼接）——上游传值需规范为 / 开头。"""
         with patch.object(settings, "BACKEND_URL", "http://backend:8000"):
-            self.assertEqual(_make_absolute_url("uploads/a.png"), "uploads/a.png")
+            self.assertEqual(make_absolute_url("uploads/a.png"), "uploads/a.png")

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import logging
 import re
 from collections.abc import Iterable
 from contextlib import contextmanager
@@ -10,8 +12,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlmodel import select
 
+from app.core.config import settings
 from app.modules.ai.model.ai import AiModel, AiResponseFormatRequest
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_json_config(value: str | None, field_label: str, expected_type: type | None = None) -> None:
@@ -133,22 +139,93 @@ def _window_bounds(period: str) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
+def _safe_rate(value: Any, label: str) -> float:
+    """定价数值容错：非法配置（如 "0.15元"）按 0 计费并告警，绝不因定价脏数据打断调用收尾。"""
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        logger.warning("AI 模型定价配置非法 %s=%r，按 0 计费（请检查 pricing_config）", label, value)
+        return 0.0
+
+
 def _calculate_cost_micro_usd(model: AiModel, usage: dict[str, Any]) -> int:
     pricing = _loads(model.pricing_config)
     if not isinstance(pricing, dict):
         return 0
-    input_rate = float(pricing.get("input_per_1m") or pricing.get("inputPer1m") or 0)
-    output_rate = float(pricing.get("output_per_1m") or pricing.get("outputPer1m") or 0)
+    input_rate = _safe_rate(pricing.get("input_per_1m") or pricing.get("inputPer1m"), "input_per_1m")
+    output_rate = _safe_rate(pricing.get("output_per_1m") or pricing.get("outputPer1m"), "output_per_1m")
     prompt_tokens = int(usage.get("promptTokens") or 0)
     completion_tokens = int(usage.get("completionTokens") or 0)
     usd = (prompt_tokens / 1_000_000 * input_rate) + (completion_tokens / 1_000_000 * output_rate)
     return int(round(usd * 1_000_000))
 
 
+# 请求级 options 的保留字：这些键是适配器按服务端参数构造的 payload 主字段
+# （OpenAI 系 model/messages/input、Claude system、Gemini contents、rerank query/documents、
+# 流式开关 stream），允许请求 options 覆盖会打穿注入检测、模型白名单与审计可信度（AI-002）。
+_OPTIONS_RESERVED_KEYS = frozenset(
+    {"model", "messages", "input", "prompt", "contents", "query", "documents", "stream", "system"}
+)
+
+
 def _options_without_governance(options: dict[str, Any]) -> dict[str, Any]:
     data = dict(options or {})
     data.pop("timeout", None)
-    return {k: v for k, v in data.items() if not k.startswith("_")}
+    # 静默丢弃会让调用方误以为生效（如以为能覆盖 system 提示词）→ 只记键名（值可能含
+    # 提示词等敏感内容），便于定位；不抛错以免直接打断历史调用方（P2）
+    dropped = sorted(key for key in data if key in _OPTIONS_RESERVED_KEYS or key.startswith("_"))
+    if dropped:
+        logger.warning("请求 options 含保留键，已被丢弃", extra={"dropped_option_keys": dropped})
+    return {k: v for k, v in data.items() if k not in _OPTIONS_RESERVED_KEYS and not k.startswith("_")}
+
+
+def make_absolute_url(path: str) -> str:
+    """相对路径 → 绝对 URL（生图参考图等场景；原 runtime_service 定义，AI-013 搬迁归位）。"""
+    if not path:
+        return path
+    if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
+        return path
+    if path.startswith("/"):
+        base_url = settings.BACKEND_URL or settings.EXTERNAL_URL
+        if not base_url:
+            host = settings.HOST
+            if host == "0.0.0.0":
+                host = "127.0.0.1"
+            base_url = f"http://{host}:{settings.PORT}"
+
+        return f"{base_url.rstrip('/')}{path}"
+    return path
+
+
+def collect_ids(items: list[dict], camel: str, snake: str) -> set:
+    """从一批 dict 中收集关联 id（兼容 camelCase / snake_case 两种 key）。"""
+    ids: set = set()
+    for d in items:
+        value = d.get(camel)
+        if value is None:
+            value = d.get(snake)
+        if value is not None:
+            ids.add(value)
+    return ids
+
+
+def bulk_attr_map(session, model: Any, ids: set, attr: str) -> dict:
+    """一次性按 id 批量加载关联实体的某个属性，返回 id→属性值 映射（列表装饰防 N+1）。"""
+    if not ids:
+        return {}
+    rows = session.exec(select(model).where(model.id.in_(ids))).all()
+    return {row.id: getattr(row, attr) for row in rows}
+
+
+def statement_including_deleted(statement):
+    """AI-034 逃生口：本语句跳过 Session 级软删过滤。
+
+    适用两类场景：唯一性校验（软删行仍占用 code 唯一键，新建重用同 code 会撞库层约束）
+    与软删恢复（sync_models / import_catalog 读出软删行复活）。
+    """
+    from app.core.database import INCLUDE_DELETED_EXECUTION_OPTION
+
+    return statement.execution_options(**{INCLUDE_DELETED_EXECUTION_OPTION: True})
 
 
 def summarize_prompt(value: Any, limit: int = 240) -> dict[str, Any]:
@@ -235,23 +312,25 @@ def _summarize_binary_like(value: Any, kind: str = "binary") -> dict[str, Any]:
 
 @contextmanager
 def _adapter_timeout(adapter, timeout: int | None):
-    """临时收紧适配器上游超时。
+    """产出「本次调用专用」的适配器副本，按调用方超时收紧上游。
 
     语义是 httpx 的 read timeout（两次数据到达之间的最大间隔），并非整条流的总时长上限：
     流式场景下它约束逐 chunk 的静默间隔，防上游挂死；对下游客户端的连接保活由
     _with_heartbeat 负责，两者正交，勿混用。
+
+    必须是副本而非原地改 adapter：适配器实例由 ``factory.build_adapter`` 池化跨请求复用
+    （AI-017），原地改 timeout/client 再 finally 还原会在并发请求间互相覆盖——A 归还的
+    旧值可能把 B 正在使用的超时改小，且流式路径的 with 块在生成器真正读上游之前就退出，
+    还原后 profile.timeout 事实上从未生效。
+    副本用浅拷贝：api_key/base_url/extra_config 等均为初始化期只读字段，共享安全；
+    ``with_options`` 不新建底层 httpx 连接池（共享 transport），故副本无需 close。
     """
     if timeout is None:
-        yield
+        yield adapter
         return
-    previous_timeout = getattr(adapter, "timeout", None)
-    previous_client = getattr(adapter, "client", None)
-    adapter.timeout = float(timeout)
-    if previous_client is not None and hasattr(previous_client, "with_options"):
-        adapter.client = previous_client.with_options(timeout=float(timeout))
-    try:
-        yield
-    finally:
-        adapter.timeout = previous_timeout
-        if previous_client is not None:
-            adapter.client = previous_client
+    call_adapter = copy.copy(adapter)
+    call_adapter.timeout = float(timeout)
+    client = getattr(adapter, "client", None)
+    if client is not None and hasattr(client, "with_options"):
+        call_adapter.client = client.with_options(timeout=float(timeout))
+    yield call_adapter

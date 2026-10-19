@@ -340,7 +340,9 @@ class ScopeCapTestCase(unittest.TestCase):
         self.assertNotIn(m1, active_ids)  # 最旧被淘
         tombstones = list(
             self.session.exec(
-                select(WorkflowMemory).where(WorkflowMemory.delete_time.is_not(None))  # type: ignore[attr-defined]
+                select(WorkflowMemory)  # AI-034 逃生口：墓碑断言需读软删行
+                .where(WorkflowMemory.delete_time.is_not(None))  # type: ignore[attr-defined]
+                .execution_options(include_deleted=True)
             ).all()
         )
         self.assertEqual(len(tombstones), 2)  # 软删入墓碑（淘汰批量 2）
@@ -370,7 +372,12 @@ class ScopeCapTestCase(unittest.TestCase):
             _upsert(self.session, memory_key="k3", content="newest")  # 超限（active=3 > 2），淘 1 条
         row = self.session.get(WorkflowMemory, m1)
         self.assertIsNone(row.delete_time)  # 刚 update 的不被淘
-        evicted = [r for r in self.session.exec(select(WorkflowMemory)).all() if r.delete_time is not None]
+        # AI-034 逃生口：驱逐断言需读软删行
+        evicted = [
+            r
+            for r in self.session.exec(select(WorkflowMemory).execution_options(include_deleted=True)).all()
+            if r.delete_time is not None
+        ]
         self.assertEqual(len(evicted), 1)
         self.assertEqual(evicted[0].memory_key, "k2")
 
@@ -418,7 +425,8 @@ class LifecycleTestCase(unittest.TestCase):
         self.session.commit()
         removed = sweep_memory_tombstones(keep_days=90, session=self.session)
         self.assertEqual(removed, 1)
-        survived = list(self.session.exec(select(WorkflowMemory)).all())
+        # AI-034 逃生口：断言"未过期墓碑存活"需读软删行
+        survived = list(self.session.exec(select(WorkflowMemory).execution_options(include_deleted=True)).all())
         self.assertEqual(len(survived), 1)
         self.assertEqual(survived[0].memory_key, "fresh")
 

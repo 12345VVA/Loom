@@ -1,46 +1,60 @@
-"""AI 模型统一运行时服务。"""
+"""AI 模型统一运行时服务。
+
+实现拆分在 ``service/runtime/`` 包（AI-013 纯搬迁，逻辑零改动）：
+
+- common.py    共享状态（fallback 深度 contextvar / _InvocationState）
+- heartbeat.py 流式心跳保活 + 流式独立会话
+- input_guard.py vision 能力前置校验
+- retry.py     重试分类 + 指数退避（AI-025，RetryMixin）
+- audit.py     治理收尾 + 调用审计日志（_log_call 唯一写点，AuditMixin）
+- fallback.py  降级链（运行期防环 + sync/stream 双路径，FallbackMixin）
+
+``AiModelRuntimeService`` 类体（公共入口 + _invoke/_stream_invoke 两条管线）
+**留在本文件**：测试套件以 ``patch("...runtime_service.build_adapter")`` /
+``patch("...runtime_service.settings")`` 方式打桩（30+ 处），桩替换的是本模块
+命名空间的名字，管线方法必须在本模块命名空间解析这些符号，搬走即静默失效。
+"""
 
 from __future__ import annotations
 
-import contextvars
-import json
 import logging
-import queue
-import threading
 import time
-import time as time_module
 from collections.abc import Iterable
-from dataclasses import dataclass
 from typing import Any
 
-from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.core.logging import workflow_instance_id_ctx
 from app.modules.ai.model.ai import (
     AiAudioRequest,
     AiChatRequest,
     AiEmbeddingRequest,
     AiImageRequest,
-    AiModel,
-    AiModelCallLog,
-    AiModelProfile,
-    AiProvider,
     AiRerankRequest,
-    AiRuntimeInvocation,
     AiVideoRequest,
 )
 from app.modules.ai.service.adapters import build_adapter
-from app.modules.ai.service.adapters.base import UnsupportedCapabilityError
-from app.modules.ai.service.governance_service import (
-    AiGovernanceBlocked,
-    AiGovernanceService,
-    AiGovernanceUnavailable,
-)
+from app.modules.ai.service.adapters.base import AdapterInputError, UnsupportedCapabilityError
+from app.modules.ai.service.errors import AiInvocationError
+from app.modules.ai.service.governance_service import AiGovernanceBlocked, AiGovernanceUnavailable
 from app.modules.ai.service.registry_service import AiModelRegistryService
+from app.modules.ai.service.runtime.audit import AuditMixin
+from app.modules.ai.service.runtime.common import (
+    MAX_FALLBACK_DEPTH,
+    _fallback_depth,
+    _InvocationState,
+)
+from app.modules.ai.service.runtime.fallback import FallbackMixin
+from app.modules.ai.service.runtime.heartbeat import (
+    _STREAM_DONE,
+    _STREAM_HEARTBEAT,
+    _STREAM_HEARTBEAT_INTERVAL_SECONDS,
+    _independent_session,
+    _with_heartbeat,
+)
+from app.modules.ai.service.runtime.input_guard import _check_vision_capability
+from app.modules.ai.service.runtime.retry import _RETRY_DELAY_CAP_SECONDS, RetryMixin, _is_retryable
 from app.modules.ai.service.security_service import AiSecurityService
-from app.modules.ai.service.stats_service import invalidate_summary_cache
 from app.modules.ai.service.utils import (
     _adapter_timeout,
     _calculate_cost_micro_usd,
@@ -49,6 +63,7 @@ from app.modules.ai.service.utils import (
     _parse_content,
     _sse_event,
     _with_parsed_content,
+    make_absolute_url,
     normalize_response_format,
     sanitize_options_for_log,
     summarize_image_result_items,
@@ -58,151 +73,24 @@ from app.modules.base.model.auth import User
 
 logger = logging.getLogger(__name__)
 
-# 当前请求内 fallback 降级深度：跨 _fallback/_stream_fallback 递归累加，
-# 防止 fallback 链成环时 _invoke 失败→_fallback→_invoke 形成无限递归（最终 RecursionError 崩 worker）
-_fallback_depth: contextvars.ContextVar[int] = contextvars.ContextVar("ai_fallback_depth", default=0)
-MAX_FALLBACK_DEPTH = 5
-
-# 流式静默心跳间隔：上游超过该时长无任何事件产出时输出 SSE 注释帧保活，
-# 避免首 token 等待 / 深度思考期间被中间代理或公网网关（Cloudflare/ALB 默认空闲超时）掐断
-_STREAM_HEARTBEAT_INTERVAL_SECONDS = 15.0
-
-# 心跳/结束哨兵：仅在 _with_heartbeat 的内部队列中流转，不会进入业务事件流
-_STREAM_HEARTBEAT = object()
-_STREAM_DONE = object()
-
-
-def _with_heartbeat(events: Iterable[dict], interval: float = _STREAM_HEARTBEAT_INTERVAL_SECONDS) -> Iterable[dict]:
-    """为同步上游事件流插入心跳哨兵（静默超过 interval 秒时产出 _STREAM_HEARTBEAT）。
-
-    同步生成器阻塞在上游 read 时控制权不回到循环体，无法自行插心跳；
-    借一个 pump 线程把"等待下一条事件"转成"带超时的队列等待"。上游异常经
-    队列原样透传给主迭代重新 raise，保持现有降级分支语义不变。生成器关闭
-    （客户端断开）时通过 stop 事件通知 pump 退出——若其正阻塞在上游 read，
-    最迟在下一条数据或 adapter 读超时后退出（daemon 线程兜底）。
-    """
-    events_queue: queue.Queue = queue.Queue()
-    stop = threading.Event()
-
-    def _pump() -> None:
-        try:
-            for event in events:
-                if stop.is_set():
-                    break
-                events_queue.put(event)
-        except BaseException as exc:  # noqa: BLE001 - 需要把上游任意异常转交主迭代处理
-            events_queue.put(exc)
-        finally:
-            events_queue.put(_STREAM_DONE)
-
-    threading.Thread(target=_pump, daemon=True, name="ai-stream-heartbeat-pump").start()
-    try:
-        while True:
-            try:
-                item = events_queue.get(timeout=interval)
-            except queue.Empty:
-                yield _STREAM_HEARTBEAT
-                continue
-            if item is _STREAM_DONE:
-                return
-            if isinstance(item, BaseException):
-                raise item
-            yield item
-    finally:
-        stop.set()
+__all__ = [
+    "AiModelRuntimeService",
+    "MAX_FALLBACK_DEPTH",
+    "_RETRY_DELAY_CAP_SECONDS",
+    "_InvocationState",
+    "_STREAM_DONE",
+    "_STREAM_HEARTBEAT",
+    "_STREAM_HEARTBEAT_INTERVAL_SECONDS",
+    "_check_vision_capability",
+    "_fallback_depth",
+    "_independent_session",
+    "_is_retryable",
+    "_with_heartbeat",
+    "make_absolute_url",
+]
 
 
-def _independent_session(request_session: Session) -> Session:
-    """为流式生成器创建与请求会话同库的独立 Session。
-
-    流式生成器由 Starlette 在 AnyIO 线程池中迭代,线程与创建请求会话的事件循环不同,
-    而 SQLAlchemy Session 非线程安全(流式专项审查 P1)。这里按请求会话的 bind 另开
-    会话:生产环境与请求同库,测试环境天然指向用例自身的内存库引擎(make_test_engine)。
-    不能改用全局 SessionLocal——其绑定全局 engine,会写穿测试隔离。
-    """
-    return Session(request_session.get_bind())
-
-
-def _make_absolute_url(path: str) -> str:
-    if not path:
-        return path
-    if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
-        return path
-    if path.startswith("/"):
-        base_url = settings.BACKEND_URL or settings.EXTERNAL_URL
-        if not base_url:
-            host = settings.HOST
-            if host == "0.0.0.0":
-                host = "127.0.0.1"
-            base_url = f"http://{host}:{settings.PORT}"
-
-        return f"{base_url.rstrip('/')}{path}"
-    return path
-
-
-def _check_vision_capability(resolved: dict, messages: list[Any]) -> dict | None:
-    """WFI-2c：多模态输入的 vision 前置校验（多模态一期报告 §6.3）。
-
-    消息含 list content（多模态 IR parts）且模型 capabilities 已配置但不含
-    vision → 返回 ``{"success": False, "errorMessage": ...}``（沿既有错误流由
-    run_ai_chat 转 ValueError）；capabilities 未配置时放行（存量自定义模型不阻断，
-    仅 Warning），纯文本调用零影响。
-    """
-    has_image = False
-    for msg in messages:
-        content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
-        if isinstance(content, list):
-            has_image = True
-            break
-    if not has_image:
-        return None
-
-    model = resolved.get("model")
-    capabilities = (getattr(model, "capabilities", None) or "").lower()
-    if not capabilities:
-        logger.warning("模型 capabilities 未配置，跳过 vision 前置校验（model=%s）", getattr(model, "code", "?"))
-        return None
-    if "vision" not in [c.strip() for c in capabilities.split(",")]:
-        model_code = getattr(model, "code", "未知模型")
-        return {
-            "success": False,
-            "errorMessage": (
-                f"当前模型 {model_code} 不支持视觉输入，请切换多模态模型（如 GPT-4o / Qwen-VL）或移除图片绑定"
-            ),
-        }
-    return None
-
-
-@dataclass
-class _InvocationState:
-    """单次模型调用的治理/审计上下文（_invoke 与 _stream_invoke 共用前置流程）。
-
-    `closed` 标记治理收尾（finish/block）是否已发生：流式路径的 finally 兜底
-    依赖它避免双重收尾；非流式路径忽略。
-    """
-
-    provider: AiProvider
-    model: AiModel
-    profile: AiModelProfile
-    governance: AiGovernanceService
-    start: float
-    invocation: AiRuntimeInvocation | None = None
-    closed: bool = False
-
-    @classmethod
-    def from_resolved(cls, session: Session, resolved: dict, start: float) -> _InvocationState:
-        return cls(
-            provider=resolved["provider"],
-            model=resolved["model"],
-            profile=resolved["profile"],
-            governance=AiGovernanceService(session),
-            invocation=None,
-            closed=False,
-            start=start,
-        )
-
-
-class AiModelRuntimeService:
+class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
     def __init__(self, session: Session):
         self.session = session
 
@@ -216,110 +104,6 @@ class AiModelRuntimeService:
     def _begin_invocation(self, st: _InvocationState, user: User | None, task_id: int | None = None):
         st.invocation = st.governance.begin(
             user=user, provider=st.provider, model=st.model, profile=st.profile, task_id=task_id
-        )
-
-    def _audit_success(
-        self,
-        st: _InvocationState,
-        usage: dict[str, Any],
-        *,
-        session: Session,
-        user: User | None,
-        cost_micro_usd: int,
-        request_id: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> None:
-        """治理收尾（success）+ 成功审计日志，并标记 closed。"""
-        st.governance.finish(
-            st.invocation,
-            status_value="success",
-            user=user,
-            provider=st.provider,
-            model=st.model,
-            profile=st.profile,
-            usage=usage,
-            cost_micro_usd=cost_micro_usd,
-        )
-        st.closed = True
-        self._log_call(
-            st.provider,
-            st.model,
-            st.profile,
-            "success",
-            st.start,
-            usage,
-            user=user,
-            cost_micro_usd=cost_micro_usd,
-            request_id=request_id,
-            options=options,
-            session=session,
-        )
-
-    def _audit_failure(
-        self,
-        st: _InvocationState,
-        status_value: str,
-        usage: dict[str, Any],
-        detail: str | None,
-        *,
-        session: Session,
-        user: User | None,
-        request_id: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> None:
-        """治理收尾（指定状态，cost=0）+ 失败审计日志，并标记 closed。"""
-        st.governance.finish(
-            st.invocation,
-            status_value=status_value,
-            user=user,
-            provider=st.provider,
-            model=st.model,
-            profile=st.profile,
-            usage=usage,
-            cost_micro_usd=0,
-        )
-        st.closed = True
-        self._log_call(
-            st.provider,
-            st.model,
-            st.profile,
-            status_value,
-            st.start,
-            usage,
-            detail,
-            user=user,
-            request_id=request_id,
-            options=options,
-            session=session,
-        )
-
-    def _block_invocation(
-        self,
-        st: _InvocationState,
-        status_value: str,
-        usage: dict[str, Any],
-        detail: str,
-        *,
-        session: Session,
-        user: User | None,
-        request_id: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> None:
-        """治理阻断（block_invocation，用于 Redis 故障 fail-closed / 规则拦截）+ 审计日志。"""
-        st.governance.block_invocation(st.invocation)
-        st.closed = True
-        self._log_call(
-            st.provider,
-            st.model,
-            st.profile,
-            status_value,
-            st.start,
-            usage,
-            detail,
-            user=user,
-            request_id=request_id,
-            options=options,
-            session=session,
         )
 
     def chat(self, payload: AiChatRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
@@ -338,7 +122,8 @@ class AiModelRuntimeService:
             request_options=payload.options,
             structured_response=options.get("response_format"),
             response_format_overridden=response_format_overridden,
-            skip_masking=payload.skip_masking,
+            # AI-014：客户端传 skipMasking 不得自行关闭 PII 脱敏，仅在全局开关闭合时生效
+            skip_masking=settings.AI_ALLOW_SKIP_MASKING and payload.skip_masking,
             messages=[item.model_dump() if hasattr(item, "model_dump") else item for item in payload.messages],
             options=options,
         )
@@ -355,6 +140,8 @@ class AiModelRuntimeService:
             request_options=payload.options,
             structured_response=options.get("response_format"),
             response_format_overridden=response_format_overridden,
+            # 与 sync 路径同口径（AI-013 漂移症状之一）：全局开关闭合时方可跳过脱敏
+            skip_masking=settings.AI_ALLOW_SKIP_MASKING and payload.skip_masking,
         )
 
     def embedding(
@@ -376,9 +163,9 @@ class AiModelRuntimeService:
         if payload.image:
             image_val = payload.image
             if isinstance(image_val, str):
-                image_val = _make_absolute_url(image_val)
+                image_val = make_absolute_url(image_val)
             elif isinstance(image_val, list):
-                image_val = [_make_absolute_url(url) for url in image_val]
+                image_val = [make_absolute_url(url) for url in image_val]
             options["image"] = image_val
             payload.image = image_val
         logger.info(
@@ -442,6 +229,21 @@ class AiModelRuntimeService:
             options=options,
         )
 
+    def _resolve_chat(self, payload: AiChatRequest) -> tuple[dict, dict[str, Any], bool]:
+        resolved = AiModelRegistryService(self.session).resolve(
+            model_type="chat", scenario=payload.scenario, profile_code=payload.profile_code
+        )
+        options = {**resolved["options"], **payload.options}
+        response_format_overridden = payload.response_format is not None
+        request_response_format = (
+            normalize_response_format(payload.response_format) if payload.response_format else None
+        )
+        if request_response_format:
+            options["response_format"] = request_response_format
+        elif response_format_overridden:
+            options.pop("response_format", None)
+        return resolved, options, response_format_overridden
+
     def _invoke(
         self,
         resolved: dict,
@@ -455,7 +257,7 @@ class AiModelRuntimeService:
         **kwargs: Any,
     ) -> dict:
         start = time.perf_counter()
-        st = _InvocationState.from_resolved(self.session, resolved, start)
+        st = _InvocationState.from_resolved(self.session, resolved, start, task_id=task_id)
         provider, model, profile = st.provider, st.model, st.profile
         usage: dict[str, Any] = {}
         request_options = request_options or {}
@@ -524,18 +326,26 @@ class AiModelRuntimeService:
             self._block_invocation(
                 st, "unavailable", usage, str(exc), user=current_user, options=effective_options, session=self.session
             )
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+            raise AiInvocationError(str(exc), status_code=503) from exc
         except AiGovernanceBlocked as exc:
             self._block_invocation(
                 st, "blocked", usage, str(exc), user=current_user, options=effective_options, session=self.session
             )
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+            raise AiInvocationError(str(exc), status_code=429) from exc
         except UnsupportedCapabilityError as exc:
             self._audit_failure(
                 st, "unsupported", usage, str(exc), user=current_user, options=effective_options, session=self.session
             )
-            raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+            raise AiInvocationError(str(exc), status_code=501) from exc
+        except AdapterInputError as exc:
+            # 适配器参数/配置错误：换模型重跑结果相同，不降级（避免二次计费）直接 4xx（AI-009）
+            self._audit_failure(
+                st, "error", usage, str(exc), user=current_user, options=effective_options, session=self.session
+            )
+            raise AiInvocationError(str(exc), status_code=400) from exc
         except Exception as exc:
+            # 先回滚再审计/降级：PG 下事务 aborted 时后续 commit 会抛 PendingRollbackError（AI-006）
+            self.session.rollback()
             self._audit_failure(
                 st, "error", usage, str(exc), user=current_user, options=effective_options, session=self.session
             )
@@ -566,45 +376,7 @@ class AiModelRuntimeService:
             )
             if fallback is not None:
                 return fallback
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"模型调用失败: {exc}") from exc
-
-    def _invoke_with_retry(
-        self, adapter, method: str, profile: AiModelProfile, model_code: str, kwargs: dict[str, Any]
-    ) -> dict:
-        attempts = max(0, int(profile.retry_count or 0)) + 1
-        retry_delay = max(0, int(profile.retry_delay_seconds or 0))
-        last_exc: Exception | None = None
-        for index in range(attempts):
-            try:
-                call_kwargs = dict(kwargs)
-                effective_timeout = (call_kwargs.get("options") or {}).get("timeout") or profile.timeout
-                call_kwargs["options"] = _options_without_governance(call_kwargs.get("options") or {})
-                with _adapter_timeout(adapter, effective_timeout):
-                    return getattr(adapter, method)(model=model_code, **call_kwargs)
-            except UnsupportedCapabilityError:
-                raise
-            except Exception as exc:
-                last_exc = exc
-                if index >= attempts - 1:
-                    break
-                if retry_delay:
-                    time_module.sleep(retry_delay)
-        raise last_exc or RuntimeError("模型调用失败")
-
-    def _resolve_chat(self, payload: AiChatRequest) -> tuple[dict, dict[str, Any], bool]:
-        resolved = AiModelRegistryService(self.session).resolve(
-            model_type="chat", scenario=payload.scenario, profile_code=payload.profile_code
-        )
-        options = {**resolved["options"], **payload.options}
-        response_format_overridden = payload.response_format is not None
-        request_response_format = (
-            normalize_response_format(payload.response_format) if payload.response_format else None
-        )
-        if request_response_format:
-            options["response_format"] = request_response_format
-        elif response_format_overridden:
-            options.pop("response_format", None)
-        return resolved, options, response_format_overridden
+            raise AiInvocationError(f"模型调用失败: {exc}", status_code=400) from exc
 
     def _stream_invoke(
         self,
@@ -637,9 +409,11 @@ class AiModelRuntimeService:
                 {"event": "start", "provider": provider.code, "model": model.code, "profile": profile.code}
             )
             adapter = build_adapter(provider)
-            with _adapter_timeout(adapter, profile.timeout):
+            # 超时上下文产出的是本次调用专用副本（池化 adapter 不在原地改，并发不串扰）；
+            # 副本被生成器闭包持有，with 退出后仍按 profile.timeout 读上游
+            with _adapter_timeout(adapter, profile.timeout) as call_adapter:
                 stream_events = _with_heartbeat(
-                    adapter.stream_chat(
+                    call_adapter.stream_chat(
                         model=model.code, messages=messages, options=_options_without_governance(options)
                     )
                 )
@@ -734,7 +508,29 @@ class AiModelRuntimeService:
                 session=session,
             )
             yield _sse_event({"event": "error", "message": str(exc), "status": 501})
+        except AdapterInputError as exc:
+            # 适配器参数/配置错误：不降级，直接以 error 事件收尾（AI-009）。
+            # 参数错误多数发生在首帧前，但流中途也可能抛：此时若静默返回，前端只收到
+            # 半截正文、既无 done 也无 error，表现为"模型说一半卡住"（P2 静默截断）
+            if not done_sent:
+                self._audit_failure(
+                    st,
+                    "error",
+                    usage,
+                    str(exc),
+                    user=current_user,
+                    request_id=request_id,
+                    options=request_options,
+                    session=session,
+                )
+                payload: dict[str, Any] = {"event": "error", "message": str(exc), "status": 400}
+                if emitted_delta:
+                    # 已下发部分正文：显式标记截断，与"整段失败"区分
+                    payload["truncated"] = True
+                yield _sse_event(payload)
         except Exception as exc:
+            # 先回滚再审计/降级：PG 下事务 aborted 时后续 commit 会抛 PendingRollbackError（AI-006）
+            session.rollback()
             logger.error(
                 "AI 模型调用失败",
                 extra={
@@ -800,180 +596,3 @@ class AiModelRuntimeService:
                     cost_micro_usd=0,
                 )
             session.close()
-
-    def _fallback_chain_has_cycle(self, profile: AiModelProfile, session: Session) -> bool:
-        """运行期同步检测 fallback 链是否存在环或超过最大深度。
-
-        不依赖 contextvar，对流式生成器的惰性求值同样可靠，作为保存期环校验的运行期兜底
-        （堵住 TOCTOU 并发或直接改库形成的环）。返回 True 时调用方应停止降级。
-        """
-        visited: set[int] = set()
-        cursor = profile
-        depth = 0
-        while cursor is not None and cursor.fallback_profile_id and depth < MAX_FALLBACK_DEPTH:
-            if cursor.id in visited:
-                return True
-            visited.add(cursor.id)
-            nxt = session.get(AiModelProfile, cursor.fallback_profile_id)
-            if nxt is None:
-                return False
-            cursor = nxt
-            depth += 1
-        return cursor is not None and cursor.fallback_profile_id is not None
-
-    def _stream_fallback(
-        self,
-        profile: AiModelProfile,
-        messages: list[dict[str, Any]],
-        request_options: dict[str, Any],
-        structured_response: dict[str, Any] | None = None,
-        response_format_overridden: bool = False,
-        current_user: User | None = None,
-        *,
-        session: Session,
-    ) -> Iterable[str] | None:
-        if not profile.fallback_profile_id:
-            return None
-        # 运行期同步防环（不依赖 contextvar 的生成器时序，流式路径可靠）：堵住并发/脏数据成环导致的无限递归
-        if self._fallback_chain_has_cycle(profile, session):
-            logger.warning("AI 流式 fallback 链检测到环或超深，停止降级")
-            return None
-        # 深度兜底：fallback 链过长时停止降级
-        depth = _fallback_depth.get()
-        if depth >= MAX_FALLBACK_DEPTH:
-            logger.warning("AI 流式 fallback 链已达最大深度 %d，停止降级", MAX_FALLBACK_DEPTH)
-            return None
-        token = _fallback_depth.set(depth + 1)
-        try:
-            fallback = session.get(AiModelProfile, profile.fallback_profile_id)
-            if not fallback:
-                return None
-            model = session.get(AiModel, fallback.model_id)
-            provider = session.get(AiProvider, model.provider_id) if model else None
-            if not model or not provider or not model.is_active or not provider.is_active:
-                return None
-            options = {**AiModelRegistryService(session)._merge_options(model, fallback), **request_options}
-            if structured_response:
-                options["response_format"] = structured_response
-            elif response_format_overridden:
-                options.pop("response_format", None)
-            return self._stream_invoke(
-                {"provider": provider, "model": model, "profile": fallback, "options": options},
-                current_user=current_user,
-                messages=messages,
-                options=options,
-                request_options=request_options,
-                structured_response=structured_response or options.get("response_format"),
-                response_format_overridden=response_format_overridden,
-            )
-        finally:
-            _fallback_depth.reset(token)
-
-    def _fallback(
-        self,
-        profile: AiModelProfile,
-        method: str,
-        kwargs: dict[str, Any],
-        request_options: dict[str, Any],
-        structured_response: dict[str, Any] | None = None,
-        response_format_overridden: bool = False,
-        current_user: User | None = None,
-        task_id: int | None = None,
-    ) -> dict | None:
-        if not profile.fallback_profile_id:
-            return None
-        # 运行期同步防环（不依赖 contextvar）：堵住并发/脏数据成环导致的无限递归
-        if self._fallback_chain_has_cycle(profile, self.session):
-            logger.warning("AI fallback 链检测到环或超深，停止降级")
-            return None
-        # 深度兜底：fallback 链过长时停止降级
-        depth = _fallback_depth.get()
-        if depth >= MAX_FALLBACK_DEPTH:
-            logger.warning("AI fallback 链已达最大深度 %d，停止降级", MAX_FALLBACK_DEPTH)
-            return None
-        token = _fallback_depth.set(depth + 1)
-        try:
-            fallback = self.session.get(AiModelProfile, profile.fallback_profile_id)
-            if not fallback:
-                return None
-            model = self.session.get(AiModel, fallback.model_id)
-            provider = self.session.get(AiProvider, model.provider_id) if model else None
-            if not model or not provider or not model.is_active or not provider.is_active:
-                return None
-            options = {**AiModelRegistryService(self.session)._merge_options(model, fallback), **request_options}
-            if structured_response:
-                options["response_format"] = structured_response
-            elif response_format_overridden:
-                options.pop("response_format", None)
-            if method == "image":
-                logger.warning(
-                    "AI 生图触发兜底模型",
-                    extra={
-                        "method": method,
-                        "from_profile": profile.code,
-                        "to_profile": fallback.code,
-                        "to_provider": provider.code,
-                        "to_model": model.code,
-                        "options": sanitize_options_for_log(options),
-                    },
-                )
-            fallback_kwargs = {**kwargs, "options": options}
-            return self._invoke(
-                {"provider": provider, "model": model, "profile": fallback, "options": options},
-                method,
-                current_user=current_user,
-                task_id=task_id,
-                request_options=request_options,
-                structured_response=structured_response or options.get("response_format"),
-                response_format_overridden=response_format_overridden,
-                **fallback_kwargs,
-            )
-        finally:
-            _fallback_depth.reset(token)
-
-    def _log_call(
-        self,
-        provider: AiProvider,
-        model: AiModel,
-        profile: AiModelProfile,
-        status_value: str,
-        start: float,
-        usage: dict,
-        error: str | None = None,
-        *,
-        session: Session,
-        user: User | None = None,
-        cost_micro_usd: int = 0,
-        request_id: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> None:
-        request_options_str: str | None = None
-        if options:
-            try:
-                request_options_str = json.dumps(sanitize_options_for_log(options), ensure_ascii=False)
-            except Exception:
-                pass
-
-        log = AiModelCallLog(
-            provider_id=provider.id,
-            model_id=model.id,
-            profile_id=profile.id,
-            user_id=user.id if user else None,
-            scenario=profile.scenario,
-            model_type=model.model_type,
-            status=status_value,
-            latency_ms=int((time.perf_counter() - start) * 1000),
-            prompt_tokens=int(usage.get("promptTokens") or 0),
-            completion_tokens=int(usage.get("completionTokens") or 0),
-            total_tokens=int(usage.get("totalTokens") or 0),
-            cost_micro_usd=cost_micro_usd,
-            currency="USD",
-            error_message=(error or "")[:500] or None,
-            request_id=request_id,
-            workflow_instance_id=workflow_instance_id_ctx.get(),
-            request_options=request_options_str,
-        )
-        session.add(log)
-        session.commit()
-        # 失效统计看板缓存：新调用日志已落库，旧聚合结果不再准确
-        invalidate_summary_cache()
