@@ -9,29 +9,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
-from sqlalchemy import DateTime, Index
+from sqlalchemy import DateTime, Index, text
 from sqlmodel import Field
 
 from app.framework.api.naming import resolve_alias
 from app.framework.models.entity import BaseEntity
+from app.modules.ai.constants import AI_ADAPTERS, AI_MODEL_TYPES
 
-AI_ADAPTERS = {
-    "openai-compatible",
-    "ollama",
-    "gemini",
-    "claude",
-    "deepseek",
-    "volcengine-ark",
-    "bailian",
-    "hunyuan",
-    "qianfan",
-    "zhipu",
-    "minimax",
-    "mimo",
-    "toapis",
-    "poryf",
-}
-AI_MODEL_TYPES = {"chat", "embedding", "image", "audio", "video", "rerank"}
 AI_GOVERNANCE_SCOPE_TYPES = {"global", "user", "profile"}
 AI_GOVERNANCE_PERIODS = {"minute", "day", "month"}
 AI_GOVERNANCE_MODES = {"enforce", "observe"}
@@ -59,6 +43,22 @@ class AiProvider(BaseEntity, table=True):
 
 class AiModel(BaseEntity, table=True):
     __tablename__ = "ai_model"
+
+    # 部分唯一索引（AI-012）：**只约束活跃行**（delete_time IS NULL）。
+    # 普通唯一约束会把软删行也算进键，导致「删除后重建同 code」永久失败——列表里看不到
+    # 软删行、创建却报已存在；且历史软删重复行会让加约束的迁移直接失败。
+    # WHERE 子句让活跃行仍互斥，软删行与新建行可共存。
+    __table_args__ = (
+        Index(
+            "uq_ai_model_provider_code_type",
+            "provider_id",
+            "code",
+            "model_type",
+            unique=True,
+            postgresql_where=text("delete_time IS NULL"),
+            sqlite_where=text("delete_time IS NULL"),
+        ),
+    )
 
     provider_id: int = Field(index=True)
     code: str = Field(index=True, max_length=150)
@@ -124,6 +124,8 @@ class AiModelCallLog(BaseEntity, table=True):
     request_id: str | None = Field(default=None, index=True, max_length=100)
     # 工作流实例关联：评估按 instance 精确聚合 token/cost（手动 chat 等非工作流调用为空）
     workflow_instance_id: int | None = Field(default=None, index=True)
+    # 生成任务关联：异步生成任务维度的成本归集（AI-030；同步/流式调用为空）
+    task_id: int | None = Field(default=None, index=True)
     # 请求参数与选项快照（已脱敏的 JSON 字符串，便于复盘审计）
     request_options: str | None = Field(default=None)
 

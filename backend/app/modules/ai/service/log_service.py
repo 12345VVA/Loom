@@ -4,30 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.framework.controller_meta import CrudQuery, RelationConfig
 from app.modules.ai.model.ai import AiModel, AiModelCallLog, AiModelProfile, AiProvider
+from app.modules.ai.service.utils import bulk_attr_map as _bulk_attr_map
+from app.modules.ai.service.utils import collect_ids as _collect_ids
 from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
-
-
-def _collect_ids(items: list[dict], camel: str, snake: str) -> set:
-    ids: set = set()
-    for d in items:
-        value = d.get(camel)
-        if value is None:
-            value = d.get(snake)
-        if value is not None:
-            ids.add(value)
-    return ids
-
-
-def _bulk_attr_map(session: Session, model: Any, ids: set, attr: str) -> dict:
-    if not ids:
-        return {}
-    rows = session.exec(select(model).where(model.id.in_(ids))).all()
-    return {row.id: getattr(row, attr) for row in rows}
 
 
 class AiModelCallLogService(BaseAdminCrudService):

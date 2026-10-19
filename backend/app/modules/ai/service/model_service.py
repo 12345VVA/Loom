@@ -64,6 +64,9 @@ class AiModelService(BaseAdminCrudService):
     ) -> None:
         if provider_id is None or not code or not model_type:
             return
+        # 唯一性只校验**活跃行**：库层是部分唯一索引（WHERE delete_time IS NULL），
+        # 软删行不占键——若这里连软删行一起查，会出现「列表看不到、创建却报已存在」。
+        # 普通 select 已被 Session 级软删不变量自动追加 delete_time IS NULL。
         statement = select(AiModel).where(
             AiModel.provider_id == provider_id, AiModel.code == code, AiModel.model_type == model_type
         )
