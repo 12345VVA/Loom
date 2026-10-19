@@ -14,7 +14,7 @@ from app.framework.controller_meta import CrudQuery, RelationConfig
 from app.modules.ai.model.ai import AiCatalogImportRequest, AiModel, AiProvider
 from app.modules.ai.service.adapters import build_adapter
 from app.modules.ai.service.catalog import get_catalog
-from app.modules.ai.service.utils import _validate_json_config
+from app.modules.ai.service.utils import _validate_json_config, statement_including_deleted
 from app.modules.base.model.auth import PageResult, User
 from app.modules.base.service.admin_service import BaseAdminCrudService
 
@@ -142,7 +142,9 @@ class AiProviderService(BaseAdminCrudService):
             pricing = item.get("pricing")
             pricing_json = json.dumps(pricing, ensure_ascii=False) if pricing else None
             exists = self.session.exec(
-                select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == code)
+                statement_including_deleted(
+                    select(AiModel).where(AiModel.provider_id == provider.id, AiModel.code == code)
+                )
             ).first()
             if exists:
                 existing_count += 1
@@ -178,7 +180,9 @@ class AiProviderService(BaseAdminCrudService):
         imported_providers = 0
         imported_models = 0
         for item in items:
-            provider = self.session.exec(select(AiProvider).where(AiProvider.code == item["code"])).first()
+            provider = self.session.exec(
+                statement_including_deleted(select(AiProvider).where(AiProvider.code == item["code"]))
+            ).first()
             if provider is None:
                 provider = AiProvider(
                     code=item["code"],
@@ -202,10 +206,12 @@ class AiProviderService(BaseAdminCrudService):
 
             for model_item in item.get("models", []):
                 exists = self.session.exec(
-                    select(AiModel).where(
-                        AiModel.provider_id == provider.id,
-                        AiModel.code == model_item["code"],
-                        AiModel.model_type == model_item.get("model_type", "chat"),
+                    statement_including_deleted(
+                        select(AiModel).where(
+                            AiModel.provider_id == provider.id,
+                            AiModel.code == model_item["code"],
+                            AiModel.model_type == model_item.get("model_type", "chat"),
+                        )
                     )
                 ).first()
                 if exists and not payload.overwrite_models:
@@ -231,7 +237,8 @@ class AiProviderService(BaseAdminCrudService):
     def _ensure_unique_code(self, code: str | None, exclude_id: int | None = None) -> None:
         if not code:
             return
-        statement = select(AiProvider).where(AiProvider.code == code)
+        # 唯一性校验含软删行：code 列库层 unique，软删行仍占用编码（AI-034 逃生口）
+        statement = statement_including_deleted(select(AiProvider).where(AiProvider.code == code))
         if exclude_id is not None:
             statement = statement.where(AiProvider.id != exclude_id)
         if self.session.exec(statement).first():
