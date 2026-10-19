@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from sqlalchemy import event, inspect, text
+from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import SessionTransactionOrigin
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -45,6 +46,36 @@ _autodiscover_models()
 def timestamp_before_update(mapper, connection, target):
     """在更新前自动刷新 updated_at 字段"""
     target.updated_at = datetime.now(UTC)
+
+
+# 软删除 Session 级不变量（AI-034）：所有 ORM SELECT 对主实体自动追加 delete_time IS NULL，
+# 不再依赖各 service"记得写 where"——手写 select / session.get 与 QueryBuilder 路径
+# 同等受保护，后台软删的记录对运行时与管理端一律视同不存在。
+# 逃生口：select(X).execution_options(INCLUDE_DELETED_EXECUTION_OPTION=True)（回收站、
+# 软删对账等显式场景）。raw SQL（text()）与纯聚合列（无实体）不经此守护，保持原语义。
+# 注：with_loader_criteria 在 SQLModel/pydantic 下不可用（构建期对非映射基类求值炸），
+# 故用 where 改写；join 的从表沿用 QueryBuilder 同口径（仅主实体），ai 模块内 join
+# 条件已由 AI-001 手写补齐。
+INCLUDE_DELETED_EXECUTION_OPTION = "include_deleted"
+
+
+@event.listens_for(OrmSession, "do_orm_execute")
+def _soft_delete_invariant(execute_state):
+    if not execute_state.is_select or execute_state.is_column_load:
+        return
+    if execute_state.execution_options.get(INCLUDE_DELETED_EXECUTION_OPTION):
+        return
+    statement = execute_state.statement
+    try:
+        descriptions = statement.column_descriptions
+    except Exception:  # noqa: BLE001 - 非 Select 形态（union 等）不守护，保持原语义
+        return
+    for desc in descriptions or []:
+        entity = desc.get("entity")
+        if entity is None or not hasattr(entity, "__table__") or "delete_time" not in entity.__table__.c:
+            continue
+        statement = statement.where(entity.__table__.c.delete_time.is_(None))
+    execute_state.statement = statement
 
 
 DATABASE_URL = settings.DATABASE_URL
