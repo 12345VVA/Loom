@@ -58,6 +58,8 @@ from app.modules.base.service.authority_service import (
 from app.modules.base.service.cache_service import cache_get, cache_incr, cache_set, get_redis_client
 from app.modules.base.service.security_service import get_current_user
 from app.modules.media.model.media import MediaAsset
+from app.modules.media.service.ingest_service import ingest_ai_result_callback
+from app.modules.notification.service.governance_alert import send_governance_alert
 
 configure_logging(
     log_level=settings.effective_log_level,
@@ -120,6 +122,10 @@ registry.register("cache_incr", cache_incr)
 registry.register("cache_set", cache_set)
 registry.register("cache_get", cache_get)
 registry.register("audit_write", audit.write_operation_log)
+# media 向 ai 提供同步生图资产转存回调（ai↔media 方向解耦：ai 侧 registry.resolve，不 import media）
+registry.register("media_ingest_ai_result", ingest_ai_result_callback)
+# notification 向 ai 提供治理告警回调（ai→notification 方向解耦：ai 侧 registry.resolve，不 import notification）
+registry.register("governance_alert", send_governance_alert)
 
 api_router = create_api_router()
 app.include_router(api_router)

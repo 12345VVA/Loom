@@ -14,6 +14,7 @@ from app.core.database import Session as DbSession
 from app.core.database import engine, get_session
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
 from app.framework.router.route_meta import Post
+from app.framework.runtime import FrameworkRuntimeError, registry
 from app.modules.ai.model.ai import (
     AiAudioRequest,
     AiChatRequest,
@@ -30,11 +31,63 @@ from app.modules.base.service.authority_service import (
     is_super_admin,
 )
 from app.modules.base.service.security_service import get_current_user
-from app.modules.media.service.media_service import MediaAssetService
 
 logger = logging.getLogger(__name__)
 
 AI_INVOKE_PERMISSION = "ai:model:invoke"
+
+# 媒体资产转存回调的 registry 名（media 模块在 main.py 装配期注册）
+MEDIA_INGEST_CALLBACK = "media_ingest_ai_result"
+
+
+def _ingest_media_result(
+    session: Session,
+    *,
+    result: dict,
+    request_payload: dict,
+    current_user_id: int | None,
+    profile_code: str | None,
+) -> None:
+    """同步生图结果的媒体资产写入（registry 回调解耦，ai 不 import media）。
+
+    回调由 media 模块在应用装配期注册；未注册（未装配）或执行失败均仅记日志，
+    不影响生图主流程（与原内联写入的失败容忍口径一致）。归属字段经回调透传，
+    ai 侧不感知媒体模型。
+    """
+    try:
+        callback = registry.resolve(MEDIA_INGEST_CALLBACK)
+    except FrameworkRuntimeError:
+        logger.warning("媒体资产回调未注册（%s），跳过同步生图资产写入", MEDIA_INGEST_CALLBACK)
+        return
+    try:
+        asset_count = callback(
+            session,
+            task_type="image",
+            result=result,
+            request_payload=request_payload,
+            source_type="ai_sync",
+            created_by=current_user_id,
+            profile_code=profile_code,
+        )
+        logger.info(
+            "同步生图媒体资产写入完成",
+            extra={
+                "execution_mode": "sync_threadpool",
+                "request_path": "/aiapi/ai/model/image",
+                "profile_code": profile_code,
+                "asset_count": asset_count,
+            },
+        )
+    except Exception:
+        logger.error(
+            "同步生图媒体资产写入失败",
+            extra={
+                "execution_mode": "sync_threadpool",
+                "request_path": "/aiapi/ai/model/image",
+                "profile_code": profile_code,
+            },
+            exc_info=True,
+        )
 
 
 def require_ai_call_permission(
@@ -184,42 +237,11 @@ def _run_sync_image_pipeline(*, payload: AiImageRequest, current_user_id: int | 
             },
         )
         result = AiModelRuntimeService(thread_session).image(payload, current_user=current_user)
-        try:
-            logger.info(
-                "同步生图开始写入媒体资产",
-                extra={
-                    "execution_mode": "sync_threadpool",
-                    "thread_offloaded": True,
-                    "request_path": "/aiapi/ai/model/image",
-                    "profile_code": payload.profile_code,
-                },
-            )
-            MediaAssetService(thread_session).create_from_ai_result(
-                task_type="image",
-                result=result,
-                request_payload=payload.model_dump(),
-                source_type="ai_sync",
-                created_by=current_user_id,
-                profile_code=payload.profile_code,
-            )
-            logger.info(
-                "同步生图媒体资产写入完成",
-                extra={
-                    "execution_mode": "sync_threadpool",
-                    "thread_offloaded": True,
-                    "request_path": "/aiapi/ai/model/image",
-                    "profile_code": payload.profile_code,
-                },
-            )
-        except Exception as exc:
-            logger.error(
-                "同步生图媒体资产写入失败",
-                extra={
-                    "execution_mode": "sync_threadpool",
-                    "thread_offloaded": True,
-                    "request_path": "/aiapi/ai/model/image",
-                    "profile_code": payload.profile_code,
-                },
-                exc_info=exc,
-            )
+        _ingest_media_result(
+            thread_session,
+            result=result,
+            request_payload=payload.model_dump(),
+            current_user_id=current_user_id,
+            profile_code=payload.profile_code,
+        )
         return result

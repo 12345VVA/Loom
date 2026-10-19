@@ -9,8 +9,7 @@ from kombu import Queue
 
 from app.core.config import settings
 from app.core.logging import configure_logging
-
-AI_TASK_QUEUES = ("ai.chat", "ai.image", "ai.embedding", "ai.rerank", "ai.audio", "ai.video")
+from app.modules.ai.constants import AI_TASK_QUEUES
 
 
 @setup_logging.connect
@@ -33,6 +32,7 @@ celery_app = Celery(
         "app.modules.workflow.tasks.workflow_tasks",
         "app.modules.workflow_eval.tasks.eval_tasks",
         "app.modules.media.tasks.mirror_tasks",
+        "app.modules.media.tasks.ingest_tasks",
     ],
 )
 
@@ -66,6 +66,8 @@ celery_app.conf.update(
         "workflow.version.sweep_archived": {"queue": "default"},
         "workflow.cleanup.sweep": {"queue": "default"},
         "media.mirror_asset": {"queue": "media.mirror"},
+        "media.ingest_ai_task": {"queue": "default"},
+        "media.ingest.sweep_uningested": {"queue": "default"},
         "ai.execute_generation_task": {"queue": "ai.chat"},
         "ai.clean_expired_governance_data": {"queue": "default"},
         # 系统任务统一走 default 队列，避免落到匿名 celery 队列造成分流混乱
@@ -111,5 +113,10 @@ celery_app.conf.beat_schedule = {
     "sweep-workflow-cleanup-daily": {
         "task": "workflow.cleanup.sweep",
         "schedule": crontab(hour=4, minute=30),
+    },
+    # 每小时补偿扫描「success 但从未落资产」的 AI 任务（兜底媒体转存派发丢失）
+    "sweep-uningested-ai-media-ingest": {
+        "task": "media.ingest.sweep_uningested",
+        "schedule": 3600.0,
     },
 }

@@ -212,15 +212,17 @@ class MediaModuleTestCase(unittest.TestCase):
         storage.save.assert_called_once()
 
     def test_sync_image_controller_ignores_media_persist_failure(self):
+        """registry 回调抛错不影响生图返回（失败容忍口径与原内联写入一致）"""
         controller = AiRuntimeController()
         payload = AiImageRequest(profile_code="image-profile", prompt="draw")
         expected = {"success": True, "data": [{"url": "https://example.com/a.png"}]}
+        failing_callback = Mock(side_effect=RuntimeError("persist failed"))
 
         with patch("app.modules.ai.controller.aiapi.model.run_in_threadpool", side_effect=lambda func: func()):
             with patch("app.modules.ai.controller.aiapi.model.AiModelRuntimeService") as runtime_cls:
                 runtime_cls.return_value.image.return_value = expected
-                with patch("app.modules.ai.controller.aiapi.model.MediaAssetService") as media_cls:
-                    media_cls.return_value.create_from_ai_result.side_effect = RuntimeError("persist failed")
+                with patch("app.modules.ai.controller.aiapi.model.registry") as registry_mock:
+                    registry_mock.resolve.return_value = failing_callback
                     with patch("app.modules.ai.controller.aiapi.model.logger") as logger_mock:
                         import asyncio
 
@@ -233,7 +235,35 @@ class MediaModuleTestCase(unittest.TestCase):
                         )
 
         self.assertEqual(result, expected)
+        failing_callback.assert_called_once()
         logger_mock.error.assert_called()
+
+    def test_sync_image_controller_skips_when_ingest_callback_unregistered(self):
+        """回调未注册（media 未装配）时仅 Warning，生图主流程不受影响"""
+        from app.core.runtime import FrameworkRuntimeError
+
+        controller = AiRuntimeController()
+        payload = AiImageRequest(profile_code="image-profile", prompt="draw")
+        expected = {"success": True, "data": [{"url": "https://example.com/a.png"}]}
+
+        with patch("app.modules.ai.controller.aiapi.model.run_in_threadpool", side_effect=lambda func: func()):
+            with patch("app.modules.ai.controller.aiapi.model.AiModelRuntimeService") as runtime_cls:
+                runtime_cls.return_value.image.return_value = expected
+                with patch("app.modules.ai.controller.aiapi.model.registry") as registry_mock:
+                    registry_mock.resolve.side_effect = FrameworkRuntimeError("未注册")
+                    with patch("app.modules.ai.controller.aiapi.model.logger") as logger_mock:
+                        import asyncio
+
+                        result = asyncio.run(
+                            controller.image(
+                                payload,
+                                User(id=1, username="u1", full_name="u1", password_hash="x", is_active=True),
+                                self.session,
+                            )
+                        )
+
+        self.assertEqual(result, expected)
+        logger_mock.warning.assert_called()
 
     def test_sync_image_controller_uses_threadpool_wrapper(self):
         controller = AiRuntimeController()
@@ -266,17 +296,22 @@ class MediaModuleTestCase(unittest.TestCase):
         self.session.add(user)
         self.session.commit()
         self.session.refresh(user)
+        callback = Mock(return_value=1)
 
         with patch("app.modules.ai.controller.aiapi.model.AiModelRuntimeService") as runtime_cls:
             runtime_cls.return_value.image.return_value = {
                 "success": True,
                 "data": [{"url": "https://example.com/a.png"}],
             }
-            with patch("app.modules.ai.controller.aiapi.model.MediaAssetService") as media_cls:
+            with patch("app.modules.ai.controller.aiapi.model.registry") as registry_mock:
+                registry_mock.resolve.return_value = callback
                 result = _run_sync_image_pipeline(payload=payload, current_user_id=user.id)
 
         self.assertTrue(result["success"])
-        media_cls.return_value.create_from_ai_result.assert_called_once()
+        callback.assert_called_once()
+        # 归属透传：source 口径与创建人随回调传给 media 侧，ai 不感知媒体模型
+        self.assertEqual(callback.call_args.kwargs["source_type"], "ai_sync")
+        self.assertEqual(callback.call_args.kwargs["created_by"], user.id)
 
     def test_create_from_ai_result_base64_transfer_failure_marks_asset_failed(self):
         service = MediaAssetService(self.session)

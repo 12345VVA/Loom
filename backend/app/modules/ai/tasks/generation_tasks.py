@@ -23,9 +23,27 @@ from app.modules.ai.model.ai import (
 )
 from app.modules.ai.service.runtime_service import AiModelRuntimeService
 from app.modules.base.model.auth import User
-from app.modules.media.service.media_service import MediaAssetService
 
 logger = logging.getLogger(__name__)
+
+
+def _dispatch_media_ingest(task_id: int | None) -> None:
+    """派发 AI 产物媒体转存任务（字符串任务名解耦，ai 不 import media）。
+
+    派发失败仅 Warning：转存由 media.ingest.sweep_uningested beat 每小时补偿，
+    绝不影响 AI 任务的成功终态（修复原同步转存异常翻转任务状态的结构性隐患）。
+    """
+    if not task_id:
+        return
+    try:
+        celery_app.send_task("media.ingest_ai_task", args=[task_id], queue="default")
+        logger.info("AI 异步生成任务媒体转存已派发", extra={"task_id": task_id})
+    except Exception:
+        logger.warning(
+            "AI 异步生成任务媒体转存派发失败 task_id=%s（不影响任务状态，等待补偿扫描）",
+            task_id,
+            exc_info=True,
+        )
 
 
 @celery_app.task(name="ai.execute_generation_task")
@@ -99,10 +117,12 @@ def execute_ai_generation_task(task_id: int) -> dict:
             session.add(task)
             session.commit()
             logger.info("AI 异步生成任务结果已持久化", extra={"task_id": task.id, "task_type": task.task_type})
-            MediaAssetService(session).create_from_ai_task(task)
-            logger.info("AI 异步生成任务媒体转存完成", extra={"task_id": task.id, "task_type": task.task_type})
+            _dispatch_media_ingest(task.id)
             return {"success": True, "taskId": task.id}
         except Exception as exc:
+            # 先回滚再落失败态：PG 下事务已 aborted 时直接 add/commit 会抛 PendingRollbackError，
+            # 任务将永久卡在 running 且 retry() 只接受 failed/cancelled，只能人工改库（AI-006）
+            session.rollback()
             task.status = "failed"
             task.progress = 100
             task.error_message = str(exc)[:1000]
