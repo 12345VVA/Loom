@@ -812,6 +812,16 @@ declare namespace Eps {
 		missingMediaIds?: number;
 
 		/**
+		 * media_items
+		 */
+		mediaItems?: string;
+
+		/**
+		 * cover_url
+		 */
+		coverUrl?: string;
+
+		/**
 		 * created_by
 		 */
 		createdBy?: number;
@@ -841,6 +851,20 @@ declare namespace Eps {
 		 */
 		incompatibleTags?: string;
 
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
+	interface composer {
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
+	interface generate {
 		/**
 		 * 任意键值
 		 */
@@ -912,6 +936,16 @@ declare namespace Eps {
 		 * missing_media_ids
 		 */
 		missingMediaIds?: number;
+
+		/**
+		 * media_items
+		 */
+		mediaItems?: string;
+
+		/**
+		 * cover_url
+		 */
+		coverUrl?: string;
 
 		/**
 		 * created_by
@@ -999,6 +1033,16 @@ declare namespace Eps {
 		 * missing_media_ids
 		 */
 		missingMediaIds?: number;
+
+		/**
+		 * media_items
+		 */
+		mediaItems?: string;
+
+		/**
+		 * cover_url
+		 */
+		coverUrl?: string;
 
 		/**
 		 * created_by
@@ -3132,6 +3176,506 @@ declare namespace Eps {
 		list: task[];
 	}
 
+	interface AssetCharacterAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** attributes */ attributes?: string | null;
+		/** voicePrompt */ voicePrompt?: string | null;
+		/** incompatibleTags */ incompatibleTags?: string | null;
+	}
+
+	interface AssetCharacterAddReferenceResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetCharacterArchiveResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** attributes */ attributes?: string | null;
+		/** voicePrompt */ voicePrompt?: string | null;
+		/** incompatibleTags */ incompatibleTags?: string | null;
+	}
+
+	interface AssetCharacterForkResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** attributes */ attributes?: string | null;
+		/** voicePrompt */ voicePrompt?: string | null;
+		/** incompatibleTags */ incompatibleTags?: string | null;
+	}
+
+	interface AssetCharacterPageResponse {
+		pagination: PagePagination;
+		list: character[];
+	}
+
+	interface AssetCharacterPublishResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** attributes */ attributes?: string | null;
+		/** voicePrompt */ voicePrompt?: string | null;
+		/** incompatibleTags */ incompatibleTags?: string | null;
+	}
+
+	interface AssetCharacterReferenceStatsResponse {
+		/** successCount */ successCount?: number;
+		/** lastProducedAt */ lastProducedAt?: string | null;
+	}
+
+	interface AssetCharacterRemoveReferenceResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetCharacterReorderReferencesResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetCharacterRestoreResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** attributes */ attributes?: string | null;
+		/** voicePrompt */ voicePrompt?: string | null;
+		/** incompatibleTags */ incompatibleTags?: string | null;
+	}
+
+	interface AssetCharacterUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** attributes */ attributes?: string | null;
+		/** voicePrompt */ voicePrompt?: string | null;
+		/** incompatibleTags */ incompatibleTags?: string | null;
+	}
+
+	interface AssetComposerPreviewResponse {
+		/** prompt */ prompt: string;
+		/** negativePrompt */ negativePrompt: string;
+		/** referenceImages */ referenceImages?: string[];
+		/** effectiveSize */ effectiveSize?: string | null;
+		/** warnings */ warnings?: any[];
+		/** composedPromptHash */ composedPromptHash: string;
+		/** composerVersion */ composerVersion: string;
+		/** segments */ segments?: any[];
+		/** referenceSegments */ referenceSegments?: any[];
+		/** assetRefs */ assetRefs?: any;
+	}
+
+	interface AssetGenerateImageResponse {
+		/** success */ success?: boolean;
+		/** asset_refs */ asset_refs?: any;
+		/** composed_prompt_hash */ composed_prompt_hash?: string | null;
+		/** composer_version */ composer_version?: string | null;
+	}
+
+	interface AssetSceneAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetSceneAddReferenceResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetSceneArchiveResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetSceneForkResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetScenePageResponse {
+		pagination: PagePagination;
+		list: scene[];
+	}
+
+	interface AssetScenePublishResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetSceneReferenceStatsResponse {
+		/** successCount */ successCount?: number;
+		/** lastProducedAt */ lastProducedAt?: string | null;
+	}
+
+	interface AssetSceneRemoveReferenceResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetSceneReorderReferencesResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetSceneRestoreResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetSceneUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetStyleAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetStyleAddReferenceResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetStyleArchiveResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetStyleForkResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetStylePageResponse {
+		pagination: PagePagination;
+		list: style[];
+	}
+
+	interface AssetStylePublishResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetStyleReferenceStatsResponse {
+		/** successCount */ successCount?: number;
+		/** lastProducedAt */ lastProducedAt?: string | null;
+	}
+
+	interface AssetStyleRemoveReferenceResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetStyleReorderReferencesResponse {
+		/** id */ id: number;
+		/** referenceImages */ referenceImages?: any[];
+		/** missingMediaIds */ missingMediaIds?: number[];
+	}
+
+	interface AssetStyleRestoreResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetStyleUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** mediaItems */ mediaItems?: any[];
+		/** coverUrl */ coverUrl?: string | null;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface BaseCommPersonResponse {
 		/** id */ id: number;
 		/** createTime */ createTime: string;
@@ -3931,141 +4475,6 @@ declare namespace Eps {
 		/** updateTime */ updateTime: string;
 	}
 
-	interface AssetCharacterAddResponse {
-		/** id */ id: number;
-		/** code */ code: string;
-		/** name */ name: string;
-		/** status */ status: string;
-		/** category */ category?: string | null;
-		/** appearancePrompt */ appearancePrompt?: string | null;
-		/** negativePrompt */ negativePrompt?: string | null;
-		/** refImageIds */ refImageIds?: string | null;
-		/** preferredProfileCode */ preferredProfileCode?: string | null;
-		/** preferredSize */ preferredSize?: string | null;
-		/** tags */ tags?: string | null;
-		/** coverMediaId */ coverMediaId?: number | null;
-		/** missingMediaIds */ missingMediaIds?: number[];
-		/** createdBy */ createdBy?: number | null;
-		/** createTime */ createTime: string;
-		/** updateTime */ updateTime: string;
-		/** attributes */ attributes?: string | null;
-		/** voicePrompt */ voicePrompt?: string | null;
-		/** incompatibleTags */ incompatibleTags?: string | null;
-	}
-
-	interface AssetCharacterPageResponse {
-		pagination: PagePagination;
-		list: character[];
-	}
-
-	interface AssetCharacterUpdateResponse {
-		/** id */ id: number;
-		/** code */ code: string;
-		/** name */ name: string;
-		/** status */ status: string;
-		/** category */ category?: string | null;
-		/** appearancePrompt */ appearancePrompt?: string | null;
-		/** negativePrompt */ negativePrompt?: string | null;
-		/** refImageIds */ refImageIds?: string | null;
-		/** preferredProfileCode */ preferredProfileCode?: string | null;
-		/** preferredSize */ preferredSize?: string | null;
-		/** tags */ tags?: string | null;
-		/** coverMediaId */ coverMediaId?: number | null;
-		/** missingMediaIds */ missingMediaIds?: number[];
-		/** createdBy */ createdBy?: number | null;
-		/** createTime */ createTime: string;
-		/** updateTime */ updateTime: string;
-		/** attributes */ attributes?: string | null;
-		/** voicePrompt */ voicePrompt?: string | null;
-		/** incompatibleTags */ incompatibleTags?: string | null;
-	}
-
-	interface AssetSceneAddResponse {
-		/** id */ id: number;
-		/** code */ code: string;
-		/** name */ name: string;
-		/** status */ status: string;
-		/** category */ category?: string | null;
-		/** appearancePrompt */ appearancePrompt?: string | null;
-		/** negativePrompt */ negativePrompt?: string | null;
-		/** refImageIds */ refImageIds?: string | null;
-		/** preferredProfileCode */ preferredProfileCode?: string | null;
-		/** preferredSize */ preferredSize?: string | null;
-		/** tags */ tags?: string | null;
-		/** coverMediaId */ coverMediaId?: number | null;
-		/** missingMediaIds */ missingMediaIds?: number[];
-		/** createdBy */ createdBy?: number | null;
-		/** createTime */ createTime: string;
-		/** updateTime */ updateTime: string;
-	}
-
-	interface AssetScenePageResponse {
-		pagination: PagePagination;
-		list: scene[];
-	}
-
-	interface AssetSceneUpdateResponse {
-		/** id */ id: number;
-		/** code */ code: string;
-		/** name */ name: string;
-		/** status */ status: string;
-		/** category */ category?: string | null;
-		/** appearancePrompt */ appearancePrompt?: string | null;
-		/** negativePrompt */ negativePrompt?: string | null;
-		/** refImageIds */ refImageIds?: string | null;
-		/** preferredProfileCode */ preferredProfileCode?: string | null;
-		/** preferredSize */ preferredSize?: string | null;
-		/** tags */ tags?: string | null;
-		/** coverMediaId */ coverMediaId?: number | null;
-		/** missingMediaIds */ missingMediaIds?: number[];
-		/** createdBy */ createdBy?: number | null;
-		/** createTime */ createTime: string;
-		/** updateTime */ updateTime: string;
-	}
-
-	interface AssetStyleAddResponse {
-		/** id */ id: number;
-		/** code */ code: string;
-		/** name */ name: string;
-		/** status */ status: string;
-		/** category */ category?: string | null;
-		/** appearancePrompt */ appearancePrompt?: string | null;
-		/** negativePrompt */ negativePrompt?: string | null;
-		/** refImageIds */ refImageIds?: string | null;
-		/** preferredProfileCode */ preferredProfileCode?: string | null;
-		/** preferredSize */ preferredSize?: string | null;
-		/** tags */ tags?: string | null;
-		/** coverMediaId */ coverMediaId?: number | null;
-		/** missingMediaIds */ missingMediaIds?: number[];
-		/** createdBy */ createdBy?: number | null;
-		/** createTime */ createTime: string;
-		/** updateTime */ updateTime: string;
-	}
-
-	interface AssetStylePageResponse {
-		pagination: PagePagination;
-		list: style[];
-	}
-
-	interface AssetStyleUpdateResponse {
-		/** id */ id: number;
-		/** code */ code: string;
-		/** name */ name: string;
-		/** status */ status: string;
-		/** category */ category?: string | null;
-		/** appearancePrompt */ appearancePrompt?: string | null;
-		/** negativePrompt */ negativePrompt?: string | null;
-		/** refImageIds */ refImageIds?: string | null;
-		/** preferredProfileCode */ preferredProfileCode?: string | null;
-		/** preferredSize */ preferredSize?: string | null;
-		/** tags */ tags?: string | null;
-		/** coverMediaId */ coverMediaId?: number | null;
-		/** missingMediaIds */ missingMediaIds?: number[];
-		/** createdBy */ createdBy?: number | null;
-		/** createTime */ createTime: string;
-		/** updateTime */ updateTime: string;
-	}
-
 	interface AiDashboard {
 		/**
 		 * AI 成本看板统计
@@ -4501,6 +4910,386 @@ declare namespace Eps {
 			retry: boolean;
 			stats: boolean;
 			submit: boolean;
+		};
+
+		request: Request;
+	}
+
+	interface AssetCharacter {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<AssetCharacterAddResponse>;
+
+		/**
+		 * 新增参考图（MD5 防重、上限 20）
+		 */
+		addReference(data?: any): Promise<AssetCharacterAddReferenceResponse>;
+
+		/**
+		 * 归档（published→archived，禁新增引用、存量放行）
+		 */
+		archive(data?: any): Promise<AssetCharacterArchiveResponse>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 复制副本（published→本人 draft，code 随机后缀防冲突）
+		 */
+		fork(data?: any): Promise<AssetCharacterForkResponse>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<character>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<character[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AssetCharacterPageResponse>;
+
+		/**
+		 * 发布（draft→published）
+		 */
+		publish(data?: any): Promise<AssetCharacterPublishResponse>;
+
+		/**
+		 * 引用计数（第一阶段：成功产出数，按任务去重）
+		 */
+		referenceStats(data: { id: number }): Promise<AssetCharacterReferenceStatsResponse>;
+
+		/**
+		 * 移除参考图
+		 */
+		removeReference(data?: any): Promise<AssetCharacterRemoveReferenceResponse>;
+
+		/**
+		 * 参考图全量重排（拖拽排序提交形态）
+		 */
+		reorderReferences(data?: any): Promise<AssetCharacterReorderReferencesResponse>;
+
+		/**
+		 * 恢复（archived→published）
+		 */
+		restore(data?: any): Promise<AssetCharacterRestoreResponse>;
+
+		/**
+		 * 更新
+		 */
+		update(data?: any): Promise<AssetCharacterUpdateResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			add: string;
+			addReference: string;
+			archive: string;
+			delete: string;
+			fork: string;
+			info: string;
+			list: string;
+			page: string;
+			publish: string;
+			referenceStats: string;
+			removeReference: string;
+			reorderReferences: string;
+			restore: string;
+			update: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			add: boolean;
+			addReference: boolean;
+			archive: boolean;
+			delete: boolean;
+			fork: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			publish: boolean;
+			referenceStats: boolean;
+			removeReference: boolean;
+			reorderReferences: boolean;
+			restore: boolean;
+			update: boolean;
+		};
+
+		request: Request;
+	}
+
+	interface AssetComposer {
+		/**
+		 * 资产组装预览（prompt/负面/参考图/warnings/指纹）
+		 */
+		preview(data?: any): Promise<AssetComposerPreviewResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: { preview: string };
+
+		/**
+		 * 权限状态
+		 */
+		_permission: { preview: boolean };
+
+		request: Request;
+	}
+
+	interface AssetGenerate {
+		/**
+		 * 资产引用生图（组装→同步调用或异步任务，回链指纹统一落库）
+		 */
+		image(data?: any): Promise<AssetGenerateImageResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: { image: string };
+
+		/**
+		 * 权限状态
+		 */
+		_permission: { image: boolean };
+
+		request: Request;
+	}
+
+	interface AssetScene {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<AssetSceneAddResponse>;
+
+		/**
+		 * 新增参考图（MD5 防重、上限 20）
+		 */
+		addReference(data?: any): Promise<AssetSceneAddReferenceResponse>;
+
+		/**
+		 * 归档（published→archived，禁新增引用、存量放行）
+		 */
+		archive(data?: any): Promise<AssetSceneArchiveResponse>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 复制副本（published→本人 draft，code 随机后缀防冲突）
+		 */
+		fork(data?: any): Promise<AssetSceneForkResponse>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<scene>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<scene[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AssetScenePageResponse>;
+
+		/**
+		 * 发布（draft→published）
+		 */
+		publish(data?: any): Promise<AssetScenePublishResponse>;
+
+		/**
+		 * 引用计数（第一阶段：成功产出数，按任务去重）
+		 */
+		referenceStats(data: { id: number }): Promise<AssetSceneReferenceStatsResponse>;
+
+		/**
+		 * 移除参考图
+		 */
+		removeReference(data?: any): Promise<AssetSceneRemoveReferenceResponse>;
+
+		/**
+		 * 参考图全量重排（拖拽排序提交形态）
+		 */
+		reorderReferences(data?: any): Promise<AssetSceneReorderReferencesResponse>;
+
+		/**
+		 * 恢复（archived→published）
+		 */
+		restore(data?: any): Promise<AssetSceneRestoreResponse>;
+
+		/**
+		 * 更新
+		 */
+		update(data?: any): Promise<AssetSceneUpdateResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			add: string;
+			addReference: string;
+			archive: string;
+			delete: string;
+			fork: string;
+			info: string;
+			list: string;
+			page: string;
+			publish: string;
+			referenceStats: string;
+			removeReference: string;
+			reorderReferences: string;
+			restore: string;
+			update: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			add: boolean;
+			addReference: boolean;
+			archive: boolean;
+			delete: boolean;
+			fork: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			publish: boolean;
+			referenceStats: boolean;
+			removeReference: boolean;
+			reorderReferences: boolean;
+			restore: boolean;
+			update: boolean;
+		};
+
+		request: Request;
+	}
+
+	interface AssetStyle {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<AssetStyleAddResponse>;
+
+		/**
+		 * 新增参考图（MD5 防重、上限 20）
+		 */
+		addReference(data?: any): Promise<AssetStyleAddReferenceResponse>;
+
+		/**
+		 * 归档（published→archived，禁新增引用、存量放行）
+		 */
+		archive(data?: any): Promise<AssetStyleArchiveResponse>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 复制副本（published→本人 draft，code 随机后缀防冲突）
+		 */
+		fork(data?: any): Promise<AssetStyleForkResponse>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<style>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<style[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AssetStylePageResponse>;
+
+		/**
+		 * 发布（draft→published）
+		 */
+		publish(data?: any): Promise<AssetStylePublishResponse>;
+
+		/**
+		 * 引用计数（第一阶段：成功产出数，按任务去重）
+		 */
+		referenceStats(data: { id: number }): Promise<AssetStyleReferenceStatsResponse>;
+
+		/**
+		 * 移除参考图
+		 */
+		removeReference(data?: any): Promise<AssetStyleRemoveReferenceResponse>;
+
+		/**
+		 * 参考图全量重排（拖拽排序提交形态）
+		 */
+		reorderReferences(data?: any): Promise<AssetStyleReorderReferencesResponse>;
+
+		/**
+		 * 恢复（archived→published）
+		 */
+		restore(data?: any): Promise<AssetStyleRestoreResponse>;
+
+		/**
+		 * 更新
+		 */
+		update(data?: any): Promise<AssetStyleUpdateResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			add: string;
+			addReference: string;
+			archive: string;
+			delete: string;
+			fork: string;
+			info: string;
+			list: string;
+			page: string;
+			publish: string;
+			referenceStats: string;
+			removeReference: string;
+			reorderReferences: string;
+			restore: string;
+			update: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			add: boolean;
+			addReference: boolean;
+			archive: boolean;
+			delete: boolean;
+			fork: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			publish: boolean;
+			referenceStats: boolean;
+			removeReference: boolean;
+			reorderReferences: boolean;
+			restore: boolean;
+			update: boolean;
 		};
 
 		request: Request;
@@ -6476,180 +7265,6 @@ declare namespace Eps {
 		request: Request;
 	}
 
-	interface AssetCharacter {
-		/**
-		 * 新增
-		 */
-		add(data?: any): Promise<AssetCharacterAddResponse>;
-
-		/**
-		 * 删除
-		 */
-		delete(data?: any): Promise<any>;
-
-		/**
-		 * 获取详情
-		 */
-		info(data: { id: number }): Promise<character>;
-
-		/**
-		 * 获取列表
-		 */
-		list(data?: any): Promise<character[]>;
-
-		/**
-		 * 获取分页
-		 */
-		page(data?: any): Promise<AssetCharacterPageResponse>;
-
-		/**
-		 * 更新
-		 */
-		update(data?: any): Promise<AssetCharacterUpdateResponse>;
-
-		/**
-		 * 权限标识
-		 */
-		permission: {
-			add: string;
-			delete: string;
-			info: string;
-			list: string;
-			page: string;
-			update: string;
-		};
-
-		/**
-		 * 权限状态
-		 */
-		_permission: {
-			add: boolean;
-			delete: boolean;
-			info: boolean;
-			list: boolean;
-			page: boolean;
-			update: boolean;
-		};
-
-		request: Request;
-	}
-
-	interface AssetScene {
-		/**
-		 * 新增
-		 */
-		add(data?: any): Promise<AssetSceneAddResponse>;
-
-		/**
-		 * 删除
-		 */
-		delete(data?: any): Promise<any>;
-
-		/**
-		 * 获取详情
-		 */
-		info(data: { id: number }): Promise<scene>;
-
-		/**
-		 * 获取列表
-		 */
-		list(data?: any): Promise<scene[]>;
-
-		/**
-		 * 获取分页
-		 */
-		page(data?: any): Promise<AssetScenePageResponse>;
-
-		/**
-		 * 更新
-		 */
-		update(data?: any): Promise<AssetSceneUpdateResponse>;
-
-		/**
-		 * 权限标识
-		 */
-		permission: {
-			add: string;
-			delete: string;
-			info: string;
-			list: string;
-			page: string;
-			update: string;
-		};
-
-		/**
-		 * 权限状态
-		 */
-		_permission: {
-			add: boolean;
-			delete: boolean;
-			info: boolean;
-			list: boolean;
-			page: boolean;
-			update: boolean;
-		};
-
-		request: Request;
-	}
-
-	interface AssetStyle {
-		/**
-		 * 新增
-		 */
-		add(data?: any): Promise<AssetStyleAddResponse>;
-
-		/**
-		 * 删除
-		 */
-		delete(data?: any): Promise<any>;
-
-		/**
-		 * 获取详情
-		 */
-		info(data: { id: number }): Promise<style>;
-
-		/**
-		 * 获取列表
-		 */
-		list(data?: any): Promise<style[]>;
-
-		/**
-		 * 获取分页
-		 */
-		page(data?: any): Promise<AssetStylePageResponse>;
-
-		/**
-		 * 更新
-		 */
-		update(data?: any): Promise<AssetStyleUpdateResponse>;
-
-		/**
-		 * 权限标识
-		 */
-		permission: {
-			add: string;
-			delete: string;
-			info: string;
-			list: string;
-			page: string;
-			update: string;
-		};
-
-		/**
-		 * 权限状态
-		 */
-		_permission: {
-			add: boolean;
-			delete: boolean;
-			info: boolean;
-			list: boolean;
-			page: boolean;
-			update: boolean;
-		};
-
-		request: Request;
-	}
-
 	interface RequestOptions {
 		url: string;
 		method?: "OPTIONS" | "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "TRACE" | "CONNECT";
@@ -6674,6 +7289,13 @@ declare namespace Eps {
 			profile: AiProfile;
 			provider: AiProvider;
 			task: AiTask;
+		};
+		asset: {
+			character: AssetCharacter;
+			composer: AssetComposer;
+			generate: AssetGenerate;
+			scene: AssetScene;
+			style: AssetStyle;
 		};
 		base: {
 			comm: BaseComm;
@@ -6712,6 +7334,5 @@ declare namespace Eps {
 			test_case: Workflow_evalTest_case;
 			test_set: Workflow_evalTest_set;
 		};
-		asset: { character: AssetCharacter; scene: AssetScene; style: AssetStyle };
 	};
 }

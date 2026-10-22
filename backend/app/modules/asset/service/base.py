@@ -89,21 +89,24 @@ class AssetCrudServiceBase(BaseAdminCrudService):
             statement = statement.where(or_(model.status != ASSET_STATUS_DRAFT, model.created_by == current_user.id))
         return statement
 
-    # --- 出口增强：参考图悬空标注（missingMediaIds，详情页失效标注数据源）---
+    # --- 出口增强：参考图元信息 / 封面 URL / 悬空标注（前端渲染数据源，一次 IN 查询防页内 N+1）---
 
     def _finalize_data(self, data: Any) -> Any:
-        if isinstance(data, list):
-            missing_map = self._missing_map_for([item for item in data if isinstance(item, dict)])
-            for item in data:
-                if isinstance(item, dict):
-                    item["missing_media_ids"] = missing_map.get(item.get("id"), [])
-        elif isinstance(data, dict):
-            missing_map = self._missing_map_for([data])
-            data["missing_media_ids"] = missing_map.get(data.get("id"), [])
+        rows = data if isinstance(data, list) else [data]
+        dict_rows = [item for item in rows if isinstance(item, dict)]
+        media_map = self._media_map_for(dict_rows)
+        for item in dict_rows:
+            resolved = media_map.get(item.get("id"), {})
+            item["missing_media_ids"] = resolved.get("missing", [])
+            item["media_items"] = resolved.get("items", [])
+            cover_id = item.get("cover_media_id")
+            item["cover_url"] = next(
+                (m["url"] for m in resolved.get("items", []) if m["id"] == cover_id and m["url"]), None
+            )
         return super()._finalize_data(data)
 
-    def _missing_map_for(self, rows: list[dict]) -> dict[int, list[int]]:
-        """一次 IN 查询解析多行参考图的悬空 media id（避免页内 N+1）。"""
+    def _media_map_for(self, rows: list[dict]) -> dict[int, dict]:
+        """批量解析多行资产的参考图元信息（url/status/悬空）。"""
         from app.modules.media.model.media import MediaAsset
 
         row_ids: dict[int, list[int]] = {}
@@ -119,15 +122,26 @@ class AssetCrudServiceBase(BaseAdminCrudService):
         if not wanted:
             return {}
 
-        available = set(
-            self.session.exec(
-                select(MediaAsset.id).where(
-                    MediaAsset.id.in_(list(wanted)),
-                    MediaAsset.delete_time == None,  # noqa: E711
-                )
-            ).all()
-        )
-        return {asset_id: [mid for mid in ids if mid not in available] for asset_id, ids in row_ids.items() if ids}
+        media_rows = self.session.exec(
+            select(MediaAsset).where(
+                MediaAsset.id.in_(list(wanted)),
+                MediaAsset.delete_time == None,  # noqa: E711
+            )
+        ).all()
+        media_by_id = {
+            row.id: {"id": row.id, "url": row.remote_url or row.storage_url or "", "status": row.status}
+            for row in media_rows
+        }
+        result: dict[int, dict] = {}
+        for asset_id, ids in row_ids.items():
+            if not ids:
+                continue
+            items = [media_by_id[mid] for mid in ids if mid in media_by_id]
+            result[asset_id] = {
+                "items": items,
+                "missing": [mid for mid in ids if mid not in media_by_id],
+            }
+        return result
 
     # --- 状态机（设计 3.3：独立迁移方法，不经 _before_update 的状态剔除）---
 

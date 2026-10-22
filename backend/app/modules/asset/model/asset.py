@@ -150,8 +150,10 @@ class _AssetReadBase(BaseModel):
     preferred_size: str | None = None
     tags: str | None = None
     cover_media_id: int | None = None
-    # 服务端 _finalize_data 计算：ref_image_ids 中已悬空/状态异常的 media id（详情页失效标注）
+    # 服务端 _finalize_data 计算：悬空/状态异常的 media id（详情页失效标注）+ 参考图元信息 + 封面 URL
     missing_media_ids: list[int] = []
+    media_items: list[dict] = []
+    cover_url: str | None = None
     created_by: int | None = None
     created_at: datetime
     updated_at: datetime

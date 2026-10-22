@@ -96,7 +96,7 @@
   },
   "src/modules/ai/composables/use-image-workbench.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 13
+      "count": 14
     }
   },
   "src/modules/ai/config.ts": {

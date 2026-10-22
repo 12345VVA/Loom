@@ -3,6 +3,8 @@
  * 从 image.vue 抽出，视图只负责模板组合与结果区交互。
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useUserStore } from '/$/base/store/user';
+import type { ComposerPreviewPayload } from '/$/asset';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
@@ -25,6 +27,14 @@ import {
 	type ImageSizeOption
 } from '../utils/image-providers';
 import { aiRuntime } from '/$/ai';
+
+interface AssetCharacterOption {
+	id: number;
+	code: string;
+	name: string;
+	status: string;
+	createdBy?: number | null;
+}
 
 export interface ImageWorkbenchForm {
 	profileCode: string;
@@ -58,6 +68,94 @@ export function useImageWorkbench() {
 		generate: false,
 		submit: false
 	});
+	// ---- 资产引用（IP 资产库，方案 B：引用资产时生成统一走 /admin/asset/generate/image）----
+	const assetRefs = reactive<{ characterId?: number; sceneId?: number; styleId?: number }>({});
+	const assetVariables = ref<Record<string, string>>({});
+	const assetVariableKeys = ref<string[]>([]);
+	const composerPreview = ref<ComposerPreviewPayload | null>(null);
+	const assetCharacterOptions = ref<AssetCharacterOption[]>([]);
+	const assetSceneOptions = ref<AssetCharacterOption[]>([]);
+	const assetStyleOptions = ref<AssetCharacterOption[]>([]);
+	const hasAssetRefs = computed(() => !!(assetRefs.characterId || assetRefs.sceneId || assetRefs.styleId));
+
+	async function loadAssetOptions() {
+		try {
+			const [characters, scenes, styles] = await Promise.all([
+				service.asset.character.list({}),
+				service.asset.scene.list({}),
+				service.asset.style.list({})
+			]);
+			// 引用面矩阵：published 全员可见；draft 仅创建者本人；archived 不可引用（客户端过滤）
+			const uid = useUserStore().info?.id;
+			const pick = (rows: { id?: number; status?: string; createdBy?: number | null }[]) =>
+				(rows || []).filter(
+					r => r.id != null && (r.status === 'published' || (r.status === 'draft' && r.createdBy === uid))
+				) as unknown as AssetCharacterOption[];
+			assetCharacterOptions.value = pick(characters || []);
+			assetSceneOptions.value = pick(scenes || []);
+			assetStyleOptions.value = pick(styles || []);
+		} catch {
+			// 资产服务不可用：不阻塞测试页
+		}
+	}
+
+	async function onAssetRefChange() {
+		// 变量槽提取：角色 appearancePrompt 的 {{}} 键 → 填写框（缺失标红不阻断，决策 #20）
+		assetVariableKeys.value = [];
+		assetVariables.value = {};
+		composerPreview.value = null;
+		if (!assetRefs.characterId) return;
+		try {
+			const info = (await service.asset.character.info({
+				id: assetRefs.characterId
+			})) as unknown as { appearancePrompt?: string | null };
+			const raw = String(info?.appearancePrompt || '');
+			const keys: string[] = [];
+			const re = /\{\{\s*(\w+)\s*\}\}/g;
+			let m: RegExpExecArray | null;
+			while ((m = re.exec(raw))) {
+				if (!keys.includes(m[1])) keys.push(m[1]);
+			}
+			assetVariableKeys.value = keys;
+		} catch {
+			// info 失败：留空
+		}
+	}
+
+	async function previewComposer() {
+		if (!hasAssetRefs.value) return;
+		try {
+			composerPreview.value = await service.asset.composer.preview({
+				characterId: assetRefs.characterId || null,
+				sceneId: assetRefs.sceneId || null,
+				styleId: assetRefs.styleId || null,
+				prompt: form.prompt,
+				variables: assetVariables.value,
+				profileCode: form.profileCode || null,
+				size: form.size || null
+			});
+		} catch (err: any) {
+			composerPreview.value = null;
+			ElMessage.error(err?.response?.data?.message || err?.message || t('组装预览失败'));
+		}
+	}
+
+	function assetGeneratePayload(mode: 'sync' | 'task') {
+		const payload = buildPayload();
+		if (!payload) return null;
+		return {
+			characterId: assetRefs.characterId || null,
+			sceneId: assetRefs.sceneId || null,
+			styleId: assetRefs.styleId || null,
+			prompt: payload.prompt,
+			variables: assetVariables.value,
+			profileCode: payload.profileCode || null,
+			size: form.size || null,
+			scenario: payload.scenario || 'default',
+			mode
+		};
+	}
+
 	const form = reactive<ImageWorkbenchForm>({
 		profileCode: '',
 		scenario: 'default',
@@ -307,6 +405,7 @@ export function useImageWorkbench() {
 	});
 
 	onMounted(() => {
+		loadAssetOptions();
 		loadProfiles();
 	});
 
@@ -401,7 +500,12 @@ export function useImageWorkbench() {
 		loading.generate = true;
 		lastPayload.value = payload;
 		try {
-			result.value = await aiRuntime.image(payload);
+			if (hasAssetRefs.value) {
+				// 方案 B：资产引用生成走 asset 统一入口（组装产物与指纹由后端落库）
+				result.value = await service.asset.generate.image(assetGeneratePayload('sync'));
+			} else {
+				result.value = await aiRuntime.image(payload);
+			}
 			if (!extractImageItems(result.value).length) {
 				ElMessage.warning(t('调用成功，但未解析到图片'));
 			}
@@ -430,7 +534,14 @@ export function useImageWorkbench() {
 			}
 		};
 		try {
-			result.value = await service.ai.task.submit(lastPayload.value);
+			if (hasAssetRefs.value) {
+				const taskPayload = assetGeneratePayload('task');
+				if (!taskPayload) return;
+				lastPayload.value = { taskType: 'image', scenario: taskPayload.scenario, profileCode: taskPayload.profileCode, payload: taskPayload };
+				result.value = await service.asset.generate.image(taskPayload);
+			} else {
+				result.value = await service.ai.task.submit(lastPayload.value);
+			}
 			ElMessage.success(t('提交成功'));
 		} catch (err: any) {
 			ElMessage.error(err.message || t('提交失败'));
@@ -449,6 +560,18 @@ export function useImageWorkbench() {
 	}
 
 	return {
+		// 资产引用（IP 资产库）
+		assetRefs,
+		assetVariables,
+		assetVariableKeys,
+		composerPreview,
+		assetCharacterOptions,
+		assetSceneOptions,
+		assetStyleOptions,
+		hasAssetRefs,
+		loadAssetOptions,
+		onAssetRefChange,
+		previewComposer,
 		// 状态
 		profiles,
 		result,

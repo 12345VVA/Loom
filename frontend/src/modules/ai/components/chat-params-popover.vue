@@ -39,6 +39,36 @@
 
 			<div class="param-item">
 				<div class="param-header">
+					<span>{{ $t('引用角色') }}:</span>
+					<el-button
+						v-if="referencedCharacter?.refImageUrl"
+						link
+						size="small"
+						type="primary"
+						:disabled="!canAttachImages"
+						@click="rearmAssetRefImages"
+					>
+						{{ $t('重新携带参考图') }}
+					</el-button>
+				</div>
+				<el-select
+					:model-value="assetCharacterId ?? undefined"
+					clearable
+					filterable
+					:placeholder="$t('选择角色（人设注入 + 首轮参考图）')"
+					@update:model-value="(v: unknown) => onAssetCharacterChange(typeof v === 'number' ? v : null)"
+				>
+					<el-option
+						v-for="a in assetCharacterOptions"
+						:key="a.id"
+						:label="`${a.name} (${a.code})`"
+						:value="a.id"
+					/>
+				</el-select>
+			</div>
+
+			<div class="param-item">
+				<div class="param-header">
 					<span>{{ $t('系统提示词 (System Prompt)') }}:</span>
 				</div>
 				<el-input
@@ -82,8 +112,15 @@ defineOptions({
 import { Operation, QuestionFilled } from '@element-plus/icons-vue';
 import type { ChatFormState } from '../composables/use-chat-workbench';
 
-defineProps<{
+// 角色引用相关状态由 chat.vue 从 useChatWorkbench 解构后透传
+const props = defineProps<{
 	form: ChatFormState;
+	assetCharacterOptions: { id: number; code: string; name: string; status: string; createdBy?: number | null }[];
+	assetCharacterId: number | null;
+	referencedCharacter: { name: string; voicePrompt?: string | null; refImageUrl?: string | null } | null;
+	onAssetCharacterChange: (id: number | null) => void | Promise<void>;
+	rearmAssetRefImages: () => void;
+	canAttachImages: boolean;
 }>();
 </script>
 

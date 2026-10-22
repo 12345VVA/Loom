@@ -101,9 +101,9 @@ class ReferenceService:
         return self._payload(
             entity,
             entries,
-            self.service._missing_map_for([{"id": entity.id, "ref_image_ids": entity.ref_image_ids}]).get(
-                entity.id, []
-            ),
+            self.service._media_map_for([{"id": entity.id, "ref_image_ids": entity.ref_image_ids}])
+            .get(entity.id, {})
+            .get("missing", []),
         )
 
     def remove_reference(self, asset_id: int, media_id: int, current_user) -> dict:

@@ -29,6 +29,32 @@
 		</el-form-item>
 	</node-config-section>
 
+	<node-config-section :title="$t('资产引用')">
+		<el-alert
+			v-if="archivedRefName"
+			:title="$t('「{name}」已归档：存量引用仍可执行，新增引用请谨慎', { name: archivedRefName })"
+			type="warning"
+			:closable="false"
+			style="margin-bottom: 8px"
+		/>
+		<el-form-item :label="$t('角色')">
+			<el-select v-model="config.characterId" clearable filterable style="width: 100%">
+				<el-option v-for="a in characterOptions" :key="a.id" :label="`${a.name} (${a.code})`" :value="a.id" />
+			</el-select>
+		</el-form-item>
+		<el-form-item :label="$t('场景')">
+			<el-select v-model="config.sceneId" clearable filterable style="width: 100%">
+				<el-option v-for="a in sceneOptions" :key="a.id" :label="`${a.name} (${a.code})`" :value="a.id" />
+			</el-select>
+		</el-form-item>
+		<el-form-item :label="$t('风格')" style="margin-bottom: 0">
+			<el-select v-model="config.styleId" clearable filterable style="width: 100%">
+				<el-option v-for="a in styleOptions" :key="a.id" :label="`${a.name} (${a.code})`" :value="a.id" />
+			</el-select>
+		</el-form-item>
+		<div class="asset-hint">{{ $t('引用后自动拼接 prompt/参考图/负面词；配置的资产变量取自上游插值变量') }}</div>
+	</node-config-section>
+
 	<node-config-section :title="$t('参数设置')">
 		<el-form-item :label="$t('参考图片 (图生图)')">
 			<el-radio-group v-model="imageInputMode" size="small" style="margin-bottom: 6px">
@@ -107,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import NodeConfigSection from './node-config-section.vue';
 import {
 	detectProviderKind,
@@ -121,6 +147,15 @@ import {
 	VOLCENGINE_SEEDREAM4_SIZE_OPTIONS,
 	TOAPIS_RATIO_SIZE_OPTIONS
 } from '/$/ai/utils/image-providers';
+import { useCool } from '/@/cool';
+
+interface AssetOption {
+	id: number;
+	code: string;
+	name: string;
+	status: string;
+	createdBy?: number | null;
+}
 
 const props = defineProps<{
 	modelValue: Record<string, any>;
@@ -129,6 +164,54 @@ const props = defineProps<{
 }>();
 
 const config = props.modelValue;
+
+// ---- 资产引用（IP 资产库，设计 4.1）：仅列出 published（引用面矩阵）；archived 警示条 ----
+const { service } = useCool();
+
+const characterOptions = ref<AssetOption[]>([]);
+const sceneOptions = ref<AssetOption[]>([]);
+const styleOptions = ref<AssetOption[]>([]);
+const archivedRefName = ref('');
+
+async function loadAssetOptions() {
+	try {
+		const [characters, scenes, styles] = await Promise.all([
+			service.asset.character.list({ status: 'published' }),
+			service.asset.scene.list({ status: 'published' }),
+			service.asset.style.list({ status: 'published' })
+		]);
+		// EPS 实体 id 为 number | undefined；已发布行必有 id，此处收敛为展示模型
+		characterOptions.value = (characters || []).filter(a => a.id != null) as unknown as AssetOption[];
+		sceneOptions.value = (scenes || []).filter(a => a.id != null) as unknown as AssetOption[];
+		styleOptions.value = (styles || []).filter(a => a.id != null) as unknown as AssetOption[];
+		// archived 警示（验收 5 编辑器半边）：当前选中 id 不在 published 列表时查 info
+		for (const [key, options, serviceRef] of [
+			['characterId', characterOptions, service.asset.character],
+			['sceneId', sceneOptions, service.asset.scene],
+			['styleId', styleOptions, service.asset.style]
+		] as const) {
+			const id = config[key];
+			if (id && !options.value.some((a: AssetOption) => a.id === Number(id))) {
+				try {
+					const info = (await serviceRef.info({ id: Number(id) })) as unknown as {
+					name?: string;
+					status?: string;
+				};
+					if (info?.status === 'archived') {
+						archivedRefName.value = info.name || '';
+						return;
+					}
+				} catch {
+					// 已删除/查不到：执行期会 fail-fast，编辑器不阻塞
+				}
+			}
+		}
+	} catch {
+		// 资产服务不可用（EPS 未就绪等）：不阻塞节点配置
+	}
+}
+
+onMounted(loadAssetOptions);
 
 const imageInputMode = computed({
 	get: () => {
@@ -274,5 +357,10 @@ watch(selectedProfile, profile => {
 	margin-bottom: 6px;
 	color: var(--el-text-color-secondary);
 	font-size: 12px;
+}
+.asset-hint {
+	font-size: 12px;
+	color: var(--el-text-color-secondary);
+	margin-top: 6px;
 }
 </style>

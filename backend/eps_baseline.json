@@ -14063,6 +14063,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -14093,6 +14104,15 @@
                             }
                           ],
                           "title": "Incompatibletags"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -14448,6 +14468,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -14478,6 +14509,15 @@
                             }
                           ],
                           "title": "Incompatibletags"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -14818,6 +14858,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -14848,6 +14899,15 @@
                             }
                           ],
                           "title": "Incompatibletags"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -15097,6 +15157,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -15127,6 +15198,15 @@
                             }
                           ],
                           "title": "Incompatibletags"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -15415,6 +15495,17 @@
                             ],
                             "title": "Covermediaid"
                           },
+                          "coverUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Coverurl"
+                          },
                           "createTime": {
                             "format": "date-time",
                             "title": "Createtime",
@@ -15445,6 +15536,15 @@
                               }
                             ],
                             "title": "Incompatibletags"
+                          },
+                          "mediaItems": {
+                            "default": [],
+                            "items": {
+                              "additionalProperties": true,
+                              "type": "object"
+                            },
+                            "title": "Mediaitems",
+                            "type": "array"
                           },
                           "missingMediaIds": {
                             "default": [],
@@ -15762,6 +15862,17 @@
                                 ],
                                 "title": "Covermediaid"
                               },
+                              "coverUrl": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Coverurl"
+                              },
                               "createTime": {
                                 "format": "date-time",
                                 "title": "Createtime",
@@ -15792,6 +15903,15 @@
                                   }
                                 ],
                                 "title": "Incompatibletags"
+                              },
+                              "mediaItems": {
+                                "default": [],
+                                "items": {
+                                  "additionalProperties": true,
+                                  "type": "object"
+                                },
+                                "title": "Mediaitems",
+                                "type": "array"
                               },
                               "missingMediaIds": {
                                 "default": [],
@@ -16054,6 +16174,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -16084,6 +16215,15 @@
                             }
                           ],
                           "title": "Incompatibletags"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -16668,6 +16808,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -16698,6 +16849,15 @@
                             }
                           ],
                           "title": "Incompatibletags"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -16946,6 +17106,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -16976,6 +17147,15 @@
                             }
                           ],
                           "title": "Incompatibletags"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -17320,6 +17500,30 @@
           "validate": null
         },
         {
+          "comment": "media_items",
+          "dict": null,
+          "label": "mediaItems",
+          "nullable": true,
+          "prop": "mediaItems",
+          "propertyName": "mediaItems",
+          "required": false,
+          "source": "media_items",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "cover_url",
+          "dict": null,
+          "label": "coverUrl",
+          "nullable": true,
+          "prop": "coverUrl",
+          "propertyName": "coverUrl",
+          "required": false,
+          "source": "cover_url",
+          "type": "string",
+          "validate": null
+        },
+        {
           "comment": "created_by",
           "dict": null,
           "label": "createdBy",
@@ -17565,6 +17769,30 @@
           "required": false,
           "source": "missing_media_ids",
           "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "media_items",
+          "dict": null,
+          "label": "mediaItems",
+          "nullable": true,
+          "prop": "mediaItems",
+          "propertyName": "mediaItems",
+          "required": false,
+          "source": "media_items",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "cover_url",
+          "dict": null,
+          "label": "coverUrl",
+          "nullable": true,
+          "prop": "coverUrl",
+          "propertyName": "coverUrl",
+          "required": false,
+          "source": "cover_url",
+          "type": "string",
           "validate": null
         },
         {
@@ -18056,6 +18284,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -18075,6 +18314,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -18408,6 +18656,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -18427,6 +18686,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -18745,6 +19013,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -18764,6 +19043,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -18991,6 +19279,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -19010,6 +19309,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -19276,6 +19584,17 @@
                             ],
                             "title": "Covermediaid"
                           },
+                          "coverUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Coverurl"
+                          },
                           "createTime": {
                             "format": "date-time",
                             "title": "Createtime",
@@ -19295,6 +19614,15 @@
                           "id": {
                             "title": "Id",
                             "type": "number"
+                          },
+                          "mediaItems": {
+                            "default": [],
+                            "items": {
+                              "additionalProperties": true,
+                              "type": "object"
+                            },
+                            "title": "Mediaitems",
+                            "type": "array"
                           },
                           "missingMediaIds": {
                             "default": [],
@@ -19590,6 +19918,17 @@
                                 ],
                                 "title": "Covermediaid"
                               },
+                              "coverUrl": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Coverurl"
+                              },
                               "createTime": {
                                 "format": "date-time",
                                 "title": "Createtime",
@@ -19609,6 +19948,15 @@
                               "id": {
                                 "title": "Id",
                                 "type": "number"
+                              },
+                              "mediaItems": {
+                                "default": [],
+                                "items": {
+                                  "additionalProperties": true,
+                                  "type": "object"
+                                },
+                                "title": "Mediaitems",
+                                "type": "array"
                               },
                               "missingMediaIds": {
                                 "default": [],
@@ -19849,6 +20197,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -19868,6 +20227,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -20430,6 +20798,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -20449,6 +20828,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -20675,6 +21063,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -20694,6 +21093,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -21027,6 +21435,30 @@
           "validate": null
         },
         {
+          "comment": "media_items",
+          "dict": null,
+          "label": "mediaItems",
+          "nullable": true,
+          "prop": "mediaItems",
+          "propertyName": "mediaItems",
+          "required": false,
+          "source": "media_items",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "cover_url",
+          "dict": null,
+          "label": "coverUrl",
+          "nullable": true,
+          "prop": "coverUrl",
+          "propertyName": "coverUrl",
+          "required": false,
+          "source": "cover_url",
+          "type": "string",
+          "validate": null
+        },
+        {
           "comment": "created_by",
           "dict": null,
           "label": "createdBy",
@@ -21239,6 +21671,30 @@
           "validate": null
         },
         {
+          "comment": "media_items",
+          "dict": null,
+          "label": "mediaItems",
+          "nullable": true,
+          "prop": "mediaItems",
+          "propertyName": "mediaItems",
+          "required": false,
+          "source": "media_items",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "cover_url",
+          "dict": null,
+          "label": "coverUrl",
+          "nullable": true,
+          "prop": "coverUrl",
+          "propertyName": "coverUrl",
+          "required": false,
+          "source": "cover_url",
+          "type": "string",
+          "validate": null
+        },
+        {
           "comment": "created_by",
           "dict": null,
           "label": "createdBy",
@@ -21359,6 +21815,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -21378,6 +21845,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -21711,6 +22187,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -21730,6 +22217,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -22048,6 +22544,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -22067,6 +22574,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -22294,6 +22810,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -22313,6 +22840,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -22579,6 +23115,17 @@
                             ],
                             "title": "Covermediaid"
                           },
+                          "coverUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Coverurl"
+                          },
                           "createTime": {
                             "format": "date-time",
                             "title": "Createtime",
@@ -22598,6 +23145,15 @@
                           "id": {
                             "title": "Id",
                             "type": "number"
+                          },
+                          "mediaItems": {
+                            "default": [],
+                            "items": {
+                              "additionalProperties": true,
+                              "type": "object"
+                            },
+                            "title": "Mediaitems",
+                            "type": "array"
                           },
                           "missingMediaIds": {
                             "default": [],
@@ -22893,6 +23449,17 @@
                                 ],
                                 "title": "Covermediaid"
                               },
+                              "coverUrl": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Coverurl"
+                              },
                               "createTime": {
                                 "format": "date-time",
                                 "title": "Createtime",
@@ -22912,6 +23479,15 @@
                               "id": {
                                 "title": "Id",
                                 "type": "number"
+                              },
+                              "mediaItems": {
+                                "default": [],
+                                "items": {
+                                  "additionalProperties": true,
+                                  "type": "object"
+                                },
+                                "title": "Mediaitems",
+                                "type": "array"
                               },
                               "missingMediaIds": {
                                 "default": [],
@@ -23152,6 +23728,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -23171,6 +23758,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -23733,6 +24329,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -23752,6 +24359,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -23978,6 +24594,17 @@
                           ],
                           "title": "Covermediaid"
                         },
+                        "coverUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Coverurl"
+                        },
                         "createTime": {
                           "format": "date-time",
                           "title": "Createtime",
@@ -23997,6 +24624,15 @@
                         "id": {
                           "title": "Id",
                           "type": "number"
+                        },
+                        "mediaItems": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Mediaitems",
+                          "type": "array"
                         },
                         "missingMediaIds": {
                           "default": [],
@@ -24330,6 +24966,30 @@
           "validate": null
         },
         {
+          "comment": "media_items",
+          "dict": null,
+          "label": "mediaItems",
+          "nullable": true,
+          "prop": "mediaItems",
+          "propertyName": "mediaItems",
+          "required": false,
+          "source": "media_items",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "cover_url",
+          "dict": null,
+          "label": "coverUrl",
+          "nullable": true,
+          "prop": "coverUrl",
+          "propertyName": "coverUrl",
+          "required": false,
+          "source": "cover_url",
+          "type": "string",
+          "validate": null
+        },
+        {
           "comment": "created_by",
           "dict": null,
           "label": "createdBy",
@@ -24539,6 +25199,30 @@
           "required": false,
           "source": "missing_media_ids",
           "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "media_items",
+          "dict": null,
+          "label": "mediaItems",
+          "nullable": true,
+          "prop": "mediaItems",
+          "propertyName": "mediaItems",
+          "required": false,
+          "source": "media_items",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "cover_url",
+          "dict": null,
+          "label": "coverUrl",
+          "nullable": true,
+          "prop": "coverUrl",
+          "propertyName": "coverUrl",
+          "required": false,
+          "source": "cover_url",
+          "type": "string",
           "validate": null
         },
         {

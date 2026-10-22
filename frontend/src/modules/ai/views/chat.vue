@@ -21,7 +21,15 @@
 
 				<div class="header-right">
 					<!-- 高级推理参数 Popover 抽离组件 -->
-					<chat-params-popover :form="form" />
+					<chat-params-popover
+						:form="form"
+						:asset-character-options="assetCharacterOptions"
+						:asset-character-id="assetCharacterId"
+						:referenced-character="referencedCharacter"
+						:on-asset-character-change="onAssetCharacterChange"
+						:rearm-asset-ref-images="rearmAssetRefImages"
+						:can-attach-images="canAttachImages"
+					/>
 
 					<el-button
 						:type="showStreamDrawer ? 'primary' : 'default'"
@@ -143,6 +151,11 @@ const {
 	streamStatusType,
 	showStreamDrawer,
 	loading,
+	assetCharacterOptions,
+	assetCharacterId,
+	referencedCharacter,
+	onAssetCharacterChange,
+	rearmAssetRefImages,
 	isBusy,
 	form,
 	canAttachImages,

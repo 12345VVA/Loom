@@ -1,16 +1,33 @@
 import { computed, nextTick, reactive, ref } from 'vue';
+import { useUserStore } from '/$/base/store/user';
 import { ElMessage } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useStream } from '/@/cool/service/stream';
 import { aiRuntime } from '/$/ai';
 import {
+
 	CHAT_IMAGE_MAX_COUNT,
 	buildMessageContent,
 	readFileAsDataUri,
 	supportsVision,
 	validateImageFile
 } from '../utils/chat-images';
+interface AssetCharacterOption {
+	id: number;
+	code: string;
+	name: string;
+	status: string;
+	createdBy?: number | null;
+}
+
+interface AssetCharacterInfo {
+	name?: string;
+	voicePrompt?: string | null;
+	appearancePrompt?: string | null;
+	mediaItems?: { id: number; url: string; status: string }[];
+}
+
 
 export interface ChatMessageItem {
 	id: number;
@@ -45,6 +62,51 @@ export function useChatWorkbench() {
 	const profileOptions = ref<ChatProfileOption[]>([]);
 	const prompt = ref('');
 	const pendingImages = ref<string[]>([]);
+
+	// ---- 角色引用（IP 资产库，设计 3.6）：voice_prompt 独立 system 段 + 参考图仅首轮携带 ----
+	const assetCharacterOptions = ref<AssetCharacterOption[]>([]);
+	const assetCharacterId = ref<number | null>(null);
+	const referencedCharacter = ref<{ name: string; voicePrompt?: string | null; refImageUrl?: string | null } | null>(null);
+	const assetRefArmed = ref(false);
+
+	async function loadAssetOptions() {
+		try {
+			const rows = await service.asset.character.list({});
+			const uid = useUserStore().info?.id;
+			assetCharacterOptions.value = (rows || []).filter(
+				(r: { id?: number; status?: string; createdBy?: number | null }) =>
+					r.id != null && (r.status === 'published' || (r.status === 'draft' && r.createdBy === uid))
+			) as unknown as AssetCharacterOption[];
+		} catch {
+			// 资产服务不可用：不阻塞对话页
+		}
+	}
+
+	async function onAssetCharacterChange(id: number | null) {
+		referencedCharacter.value = null;
+		assetRefArmed.value = false;
+		if (!id) return;
+		try {
+			const info = (await service.asset.character.info({ id })) as unknown as AssetCharacterInfo;
+			const mediaItems: AssetCharacterInfo["mediaItems"] = info?.mediaItems || [];
+			referencedCharacter.value = {
+				name: info?.name || '',
+				voicePrompt: info?.voicePrompt || null,
+				refImageUrl: mediaItems[0]?.url || null
+			};
+			// 首轮携带参考图（vision 成本控制，决策 #15）；无图或无 vision 能力时不武装
+			assetRefArmed.value = !!(referencedCharacter.value.refImageUrl && canAttachImages.value);
+		} catch {
+			ElMessage.warning(t('角色信息加载失败'));
+		}
+	}
+
+	function rearmAssetRefImages() {
+		if (referencedCharacter.value?.refImageUrl && canAttachImages.value) {
+			assetRefArmed.value = true;
+			ElMessage.success(t('下一轮将重新携带参考图'));
+		}
+	}
 	const messagesContainer = ref<HTMLElement | null>(null);
 
 	const messages = ref<ChatMessageItem[]>([]);
@@ -100,6 +162,7 @@ export function useChatWorkbench() {
 	}
 
 	async function initProfiles() {
+		loadAssetOptions();
 		try {
 			const res = await service.ai.profile.list({
 				modelType: 'chat',
@@ -157,6 +220,12 @@ export function useChatWorkbench() {
 
 	function buildContextMessages(currentPromptText: string, currentImages?: string[]): any[] {
 		const contextList: any[] = [];
+		if (referencedCharacter.value?.voicePrompt?.trim()) {
+			contextList.push({
+				role: 'system',
+				content: referencedCharacter.value.voicePrompt.trim()
+			});
+		}
 		if (form.systemPrompt && form.systemPrompt.trim()) {
 			contextList.push({
 				role: 'system',
@@ -188,6 +257,11 @@ export function useChatWorkbench() {
 	async function sendChat() {
 		const text = prompt.value.trim();
 		const images = [...pendingImages.value];
+		// 角色参考图仅首轮携带（决策 #15）：武装态附加并发送后解除
+		if (assetRefArmed.value && referencedCharacter.value?.refImageUrl) {
+			images.push(referencedCharacter.value.refImageUrl);
+			assetRefArmed.value = false;
+		}
 		if (!text && !images.length) {
 			ElMessage.warning(t('请输入提问内容'));
 			return;
@@ -245,6 +319,11 @@ export function useChatWorkbench() {
 	async function sendStream() {
 		const text = prompt.value.trim();
 		const images = [...pendingImages.value];
+		// 角色参考图仅首轮携带（决策 #15）：武装态附加并发送后解除
+		if (assetRefArmed.value && referencedCharacter.value?.refImageUrl) {
+			images.push(referencedCharacter.value.refImageUrl);
+			assetRefArmed.value = false;
+		}
 		if (!text && !images.length) {
 			ElMessage.warning(t('请输入提问内容'));
 			return;
@@ -404,6 +483,12 @@ export function useChatWorkbench() {
 	}
 
 	return {
+		// 角色引用（IP 资产库）
+		assetCharacterOptions,
+		assetCharacterId,
+		referencedCharacter,
+		onAssetCharacterChange,
+		rearmAssetRefImages,
 		profileOptions,
 		prompt,
 		pendingImages,

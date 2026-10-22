@@ -120,6 +120,13 @@
 						>{{ $t('复制') }}</el-button
 					>
 					<el-button
+						v-if="scope.row.assetType === 'image' && scope.row.status === 'success'"
+						text
+						type="success"
+						@click="openSetReference(scope.row)"
+						>{{ $t('设为角色参考图') }}</el-button
+					>
+					<el-button
 						v-if="scope.row.storageUrl"
 						text
 						type="primary"
@@ -272,6 +279,24 @@
 			</div>
 		</div>
 	</el-dialog>
+
+	<!-- 设为角色参考图（需求 4.3） -->
+	<el-dialog v-model="setRefDialog.visible" :title="$t('设为角色参考图')" width="420px" append-to-body>
+		<el-form label-width="90px">
+			<el-form-item :label="$t('角色')">
+				<el-select v-model="setRefDialog.characterId" filterable :placeholder="$t('仅列出可编辑资产')">
+					<el-option v-for="a in setRefOptions" :key="a.id" :label="`${a.name} (${a.code})`" :value="a.id" />
+				</el-select>
+			</el-form-item>
+			<el-form-item :label="$t('首选')">
+				<el-switch v-model="setRefDialog.role" active-value="primary" :active-text="$t('设为首选')" />
+			</el-form-item>
+		</el-form>
+		<template #footer>
+			<el-button @click="setRefDialog.visible = false">{{ $t('取消') }}</el-button>
+			<el-button type="primary" @click="confirmSetReference">{{ $t('确定') }}</el-button>
+		</template>
+	</el-dialog>
 </template>
 
 <script lang="ts" setup>
@@ -298,6 +323,15 @@ import {
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 import { useAssetUrl } from '../composables/use-asset-url';
+import { useUserStore } from '/$/base/store/user';
+
+interface AssetCharacterOption {
+	id: number;
+	code: string;
+	name: string;
+	status: string;
+	createdBy?: number | null;
+}
 
 /** request 拦截器 reject 的错误形态（Promise.reject({ message })，非 Error 实例） */
 interface ApiError {
@@ -328,6 +362,42 @@ interface MirrorProbeResult {
 const { service } = useCool();
 const { t } = useI18n();
 const mediaService = service.media.asset;
+
+// ---- 设为角色参考图（IP 资产库，需求 4.3 产物回流）----
+const setRefDialog = reactive({ visible: false, mediaId: 0, characterId: undefined as number | undefined, role: undefined as string | undefined });
+const setRefOptions = ref<AssetCharacterOption[]>([]);
+
+async function openSetReference(row: { id: number }) {
+	setRefDialog.mediaId = row.id;
+	setRefDialog.characterId = undefined;
+	setRefDialog.role = undefined;
+	setRefDialog.visible = true;
+	try {
+		const rows = await service.asset.character.list({});
+		const uid = useUserStore().info?.id;
+		// 仅本人可编辑行（draft 本人 + published；archived 锁死）
+		setRefOptions.value = (rows || []).filter(
+			(r: { id?: number; status?: string; createdBy?: number | null }) =>
+				r.id != null && (r.status === 'published' || (r.status === 'draft' && r.createdBy === uid))
+		) as unknown as AssetCharacterOption[];
+	} catch {
+		setRefOptions.value = [];
+	}
+}
+
+async function confirmSetReference() {
+	if (!setRefDialog.characterId) {
+		ElMessage.warning(t('请选择角色'));
+		return;
+	}
+	await service.asset.character.addReference({
+		id: setRefDialog.characterId,
+		mediaId: setRefDialog.mediaId,
+		role: setRefDialog.role || undefined
+	});
+	ElMessage.success(t('已设为角色参考图'));
+	setRefDialog.visible = false;
+}
 
 const retryingIds = reactive(new Set<number>());
 const retryingAll = ref(false);

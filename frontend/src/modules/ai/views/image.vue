@@ -24,6 +24,66 @@
 			@clear-result="clearResult"
 		/>
 
+		<!-- 引用资产（IP 资产库）：选中即组装预览；draft 仅本人可试生成（接口按矩阵过滤） -->
+		<section class="asset-ref-card">
+			<header class="asset-ref-head">
+				<span class="asset-ref-title">{{ $t('引用资产') }}</span>
+				<el-button
+					v-if="hasAssetRefs"
+					link
+					size="small"
+					type="primary"
+					:loading="loading.generate"
+					@click="previewComposer"
+				>
+					{{ $t('预览组装') }}
+				</el-button>
+			</header>
+			<div class="asset-ref-grid">
+				<el-select
+					v-model="assetRefs.characterId"
+					:placeholder="$t('角色（可空）')"
+					clearable
+					filterable
+					size="small"
+					@change="onAssetRefChange"
+				>
+					<el-option v-for="a in assetCharacterOptions" :key="a.id" :label="assetLabel(a)" :value="a.id" />
+				</el-select>
+				<el-select
+					v-model="assetRefs.sceneId"
+					:placeholder="$t('场景（可空）')"
+					clearable
+					filterable
+					size="small"
+					@change="previewComposer"
+				>
+					<el-option v-for="a in assetSceneOptions" :key="a.id" :label="assetLabel(a)" :value="a.id" />
+				</el-select>
+				<el-select
+					v-model="assetRefs.styleId"
+					:placeholder="$t('风格（可空）')"
+					clearable
+					filterable
+					size="small"
+					@change="previewComposer"
+				>
+					<el-option v-for="a in assetStyleOptions" :key="a.id" :label="assetLabel(a)" :value="a.id" />
+				</el-select>
+			</div>
+			<div v-if="assetVariableKeys.length" class="asset-vars">
+				<el-input
+					v-for="key in assetVariableKeys"
+					:key="key"
+					v-model="assetVariables[key]"
+					:placeholder="key"
+					size="small"
+					class="var-input"
+				/>
+			</div>
+			<composer-preview v-if="composerPreview" :result="composerPreview" class="asset-preview" />
+		</section>
+
 		<!-- 右侧：生成结果画廊与调试区 -->
 		<aside class="result">
 			<!-- 顶部状态与统计条 -->
@@ -89,6 +149,7 @@ defineOptions({
 	name: 'ai-image'
 });
 
+import { onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import { Picture as PictureIcon, DocumentCopy } from '@element-plus/icons-vue';
@@ -96,6 +157,7 @@ import { useImageWorkbench } from '../composables/use-image-workbench';
 import ImageGeneratorPanel from '../components/image-generator-panel.vue';
 import ImageGallery from '../components/image-gallery.vue';
 import AiPayloadInspector from '../components/ai-payload-inspector.vue';
+import { ComposerPreview } from '/$/asset';
 
 const { t } = useI18n();
 
@@ -125,8 +187,26 @@ const {
 	generate,
 	submitTask,
 	resetOptions,
-	clearResult
+	clearResult,
+	// 资产引用（IP 资产库）
+	assetRefs,
+	assetVariables,
+	assetVariableKeys,
+	composerPreview,
+	assetCharacterOptions,
+	assetSceneOptions,
+	assetStyleOptions,
+	hasAssetRefs,
+	loadAssetOptions,
+	onAssetRefChange,
+	previewComposer
 } = useImageWorkbench();
+
+onMounted(() => {
+	loadAssetOptions();
+});
+
+const assetLabel = (a: { name: string; code: string }) => `${a.name} (${a.code})`;
 
 function useAsReference(src: string) {
 	form.image = src;
@@ -227,5 +307,41 @@ function fillSamplePrompt() {
 		grid-template-columns: 1fr;
 		height: auto;
 	}
+}
+
+.asset-ref-card {
+	margin-top: 12px;
+	padding: 12px;
+	border: 1px solid var(--el-border-color-lighter);
+	border-radius: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.asset-ref-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+.asset-ref-title {
+	font-size: 13px;
+	font-weight: 500;
+}
+.asset-ref-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 8px;
+}
+.asset-vars {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.var-input {
+	width: 140px;
+}
+.asset-preview {
+	max-height: 320px;
+	overflow: auto;
 }
 </style>
