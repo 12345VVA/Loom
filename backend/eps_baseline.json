@@ -16126,6 +16126,193 @@
       "api": [
         {
           "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ComposerPreviewRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "组装预览响应（契约 = ComposeResult.to_payload，设计附录 B）。",
+                      "properties": {
+                        "assetRefs": {
+                          "additionalProperties": {
+                            "type": "number"
+                          },
+                          "default": {},
+                          "title": "Assetrefs",
+                          "type": "object"
+                        },
+                        "composedPromptHash": {
+                          "title": "Composedprompthash",
+                          "type": "string"
+                        },
+                        "composerVersion": {
+                          "title": "Composerversion",
+                          "type": "string"
+                        },
+                        "effectiveSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Effectivesize"
+                        },
+                        "negativePrompt": {
+                          "title": "Negativeprompt",
+                          "type": "string"
+                        },
+                        "prompt": {
+                          "title": "Prompt",
+                          "type": "string"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "type": "string"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        },
+                        "referenceSegments": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referencesegments",
+                          "type": "array"
+                        },
+                        "segments": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Segments",
+                          "type": "array"
+                        },
+                        "warnings": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          "title": "Warnings",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "prompt",
+                        "negativePrompt",
+                        "composedPromptHash",
+                        "composerVersion"
+                      ],
+                      "title": "ComposerPreviewResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "preview",
+          "path": "/preview",
+          "prefix": "/admin/asset/composer",
+          "summary": "资产组装预览（prompt/负面/参考图/warnings/指纹）",
+          "tag": "composer"
+        }
+      ],
+      "columns": [],
+      "module": "asset",
+      "name": "composer",
+      "namespace": "admin/asset/composer",
+      "pageColumns": [],
+      "pageQueryOp": {
+        "fieldEq": [],
+        "fieldLike": [],
+        "keyWordLikeFields": []
+      },
+      "prefix": "/admin/asset/composer"
+    },
+    {
+      "api": [
+        {
+          "dts": {
             "parameters": [
               {
                 "in": "query",
