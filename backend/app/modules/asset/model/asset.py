@@ -176,7 +176,8 @@ class AssetStyleRead(_AssetReadBase):
 class _AssetCreateBase(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
-    code: str
+    # code 留空由服务端自动生成（{类型前缀}-{8位base36}，见 AssetCrudServiceBase.add）
+    code: str = ""
     name: str
     category: str | None = None
     appearance_prompt: str | None = None

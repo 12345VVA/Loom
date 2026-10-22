@@ -7,6 +7,7 @@ import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useDict } from '/$/dict';
 import DictSelect from '/$/dict/components/dict-select.vue';
 import RefImageManager from '../components/ref-image-manager.vue';
+import AssetCardWall from '../components/asset-card-wall.vue';
 import {
 	buildSubmitPayload,
 	initRefImageForm,
@@ -98,7 +99,7 @@ const Upsert = useUpsert({
 				]
 			}
 		},
-		{ label: t('标识'), prop: 'code', group: 'base', required: true, component: { name: 'el-input' } },
+		{ label: t('标识'), prop: 'code', group: 'base', component: { name: 'el-input', props: { placeholder: t('留空自动生成') } } },
 		{ label: t('名称'), prop: 'name', group: 'base', required: true, component: { name: 'el-input' } },
 		{
 			label: t('画风大类'),
@@ -168,26 +169,13 @@ const Upsert = useUpsert({
 
 		<!-- 封面墙（默认形态） -->
 		<cl-row v-if="viewMode === 'wall'">
-			<div v-loading="wallLoading" class="wall">
-				<div v-for="row in wallList" :key="row.id" class="card" @click="openDetail(row)">
-					<el-image :src="row.coverUrl || row.mediaItems?.[0]?.url" fit="cover" class="cover">
-						<template #error>
-							<div class="cover-empty">{{ $t('无封面') }}</div>
-						</template>
-					</el-image>
-					<div class="info">
-						<span class="name">{{ row.name }}</span>
-						<el-tag size="small" :type="statusColors[row.status] || 'info'">
-							{{ statusOptions.find((o) => o.value === row.status)?.label || row.status }}
-						</el-tag>
-					</div>
-					<div class="sub">
-						<span>{{ row.code }}</span>
-						<span v-if="!isMine(row)">{{ $t('他人') }}</span>
-					</div>
-				</div>
-				<el-empty v-if="!wallLoading && !wallList.length" :description="$t('暂无风格')" />
-			</div>
+			<asset-card-wall
+				:list="wallList"
+				:loading="wallLoading"
+				:dict-type="dictType"
+				empty-text="暂无风格"
+				@open="openDetail"
+			/>
 		</cl-row>
 
 		<!-- 表格形态 -->
@@ -319,56 +307,6 @@ const Upsert = useUpsert({
 <style scoped>
 .view-switch {
 	margin-left: 12px;
-}
-.wall {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-	gap: 14px;
-	width: 100%;
-	padding: 4px;
-	min-height: 200px;
-}
-.card {
-	border: 1px solid var(--el-border-color-lighter);
-	border-radius: 8px;
-	overflow: hidden;
-	cursor: pointer;
-	transition: box-shadow 0.2s;
-}
-.card:hover {
-	box-shadow: var(--el-box-shadow-light);
-}
-.cover {
-	width: 100%;
-	height: 130px;
-	display: block;
-}
-.cover-empty {
-	height: 130px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	color: var(--el-text-color-secondary);
-	background: var(--el-fill-color-light);
-}
-.info {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 8px 10px 2px;
-}
-.name {
-	font-weight: 500;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-.sub {
-	display: flex;
-	justify-content: space-between;
-	padding: 0 10px 8px;
-	font-size: 12px;
-	color: var(--el-text-color-secondary);
 }
 .detail-refs,
 .detail-prompt {

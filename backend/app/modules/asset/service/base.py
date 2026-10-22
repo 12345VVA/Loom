@@ -42,16 +42,35 @@ class AssetCrudServiceBase(BaseAdminCrudService):
 
     # --- CRUD 生命周期（标准动作由框架注入 current_user）---
 
+    # 编号自动生成前缀（按资源类型）；fork 的 -f 后缀与随机字母表见 _FORK_ALPHABET
+    _CODE_PREFIXES = {"character": "ch", "scene": "sc", "style": "st"}
+
     def add(self, payload: Any, current_user: User | None = None) -> Any:
-        """新增：强制 draft + 创建者；Create DTO 本就不含 status/created_by，此处为服务端兜底。"""
+        """新增：强制 draft + 创建者；code 留空自动生成（显式传入则沿用并校验唯一）。"""
         data = payload.model_dump() if hasattr(payload, "model_dump") else dict(payload)
         data.pop("status", None)
         data.pop("created_by", None)
         data["status"] = ASSET_STATUS_DRAFT
         if current_user is not None:
             data["created_by"] = current_user.id
-        self._assert_code_available(data.get("code"))
+        if not str(data.get("code") or "").strip():
+            data["code"] = self._generate_code()
+        else:
+            data["code"] = str(data["code"]).strip()
+            self._assert_code_available(data["code"])
         return super().add(data)
+
+    def _generate_code(self) -> str:
+        """编号自动生成：{类型前缀}-{8位随机base36}（同 fork 字母表；冲突重试 3 次，
+        partial unique 索引兜底并发）。"""
+        import secrets
+
+        prefix = self._CODE_PREFIXES.get(self.resource_name, "as")
+        for _ in range(3):
+            candidate = prefix + "-" + "".join(secrets.choice(self._FORK_ALPHABET) for _ in range(8))
+            if self._code_free(candidate):
+                return candidate
+        raise HTTPException(status_code=500, detail="标识生成冲突，请重试")
 
     def update(self, payload: Any, current_user: User | None = None) -> Any:
         """更新：编辑权限 + archived 锁 + 状态字段剔除 + code 唯一性。"""

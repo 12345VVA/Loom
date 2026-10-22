@@ -77,6 +77,18 @@ class AssetCrudTestCase(unittest.TestCase):
         self.assertEqual(entity.status, ASSET_STATUS_DRAFT)
         self.assertEqual(entity.created_by, 1)
 
+    def test_add_generates_code_when_blank(self):
+        """code 留空自动生成：{类型前缀}-{8位base36}；显式传入（含空白）则沿用。"""
+        entity = self._create(code="", name="自动编号")
+        self.assertRegex(entity.code, r"^ch-[a-z0-9]{8}$")
+        explicit = self._create(code=" hero-x ", name="显式编号")
+        self.assertEqual(explicit.code, "hero-x")
+
+    def test_add_generated_code_unique(self):
+        """自动生成码在同一库内连建不冲突（partial unique 兜底）。"""
+        codes = {self._create(code="", name=f"n{i}").code for i in range(5)}
+        self.assertEqual(len(codes), 5)
+
     def test_update_archived_locked(self):
         """archived 锁死编辑（验收 6）：创建者与管理员均 403。"""
         entity = self._create()

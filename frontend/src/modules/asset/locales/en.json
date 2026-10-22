@@ -64,5 +64,6 @@
  "风格": "Style",
  "首选": "Primary",
  "草稿": "Draft",
- "（空）": "(empty)"
+ "（空）": "(empty)",
+ "留空自动生成": "Leave blank to auto-generate"
 }
