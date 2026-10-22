@@ -9,5 +9,7 @@ from app.modules.asset.service.base import AssetCrudServiceBase
 
 
 class AssetStyleService(AssetCrudServiceBase):
+    resource_name = "style"
+
     def __init__(self, session: Session):
         super().__init__(session, AssetStyle)

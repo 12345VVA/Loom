@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import string
 from typing import Any
 
 from fastapi import HTTPException
@@ -32,7 +33,9 @@ def _is_super_admin(current_user: User | None) -> bool:
 
 
 class AssetCrudServiceBase(BaseAdminCrudService):
-    """asset 三表共享逻辑；子类只需注入模型类。"""
+    """asset 三表共享逻辑；子类注入模型类与 resource_name。"""
+
+    resource_name: str = "character"  # 子类覆盖：character / scene / style
 
     def __init__(self, session: Session, model: type):
         super().__init__(session, model)
@@ -178,3 +181,66 @@ class AssetCrudServiceBase(BaseAdminCrudService):
             statement = statement.where(self.model.id != exclude_id)
         if self.session.exec(statement).first() is not None:
             raise HTTPException(status_code=400, detail=f"标识「{code}」已存在")
+
+    # --- fork 复制副本（决策 #22：published 全员可复制为本人 draft）---
+
+    _FORK_ALPHABET = string.ascii_lowercase + string.digits
+
+    def fork(self, asset_id: int, current_user: User | None = None) -> Any:
+        """复制 published 资产为复制者的 draft：code 加 6 位随机后缀（冲突重试 3 次），
+        ref_image_ids 等引用关系原样保留（逻辑关联，不复制媒体行）。"""
+        import secrets
+
+        source = self.session.get(self.model, asset_id)
+        if source is None or source.delete_time is not None:
+            raise HTTPException(status_code=404, detail="资产不存在")
+        if source.status != ASSET_STATUS_PUBLISHED:
+            raise HTTPException(status_code=400, detail="仅已发布资产可复制副本")
+
+        data = source.model_dump(exclude={"id", "created_at", "updated_at", "delete_time"})
+        data["status"] = ASSET_STATUS_DRAFT
+        if current_user is not None:
+            data["created_by"] = current_user.id
+        for _ in range(3):
+            suffix = "".join(secrets.choice(self._FORK_ALPHABET) for _ in range(6))
+            candidate = f"{source.code}-f{suffix}"
+            if self._code_free(candidate):
+                data["code"] = candidate
+                break
+        else:
+            raise HTTPException(status_code=500, detail="副本标识生成冲突，请重试")
+        return self.add(data, current_user=current_user)
+
+    def _code_free(self, code: str) -> bool:
+        statement = select(self.model).where(
+            self.model.code == code,
+            self.model.delete_time == None,  # noqa: E711
+        )
+        return self.session.exec(statement).first() is None
+
+    # --- 引用计数第一阶段口径（决策 #23：成功产出数，按任务去重、失败不计）---
+
+    def reference_stats(self, asset_id: int) -> dict:
+        """成功产出数：生成成功且回链入库计 1；按 source_task_id 去重（异步重试不重复计），
+        无任务归属（同步/workflow 产物）按资产行计。"""
+        from app.modules.media.model.media import MediaAsset
+
+        entity = self.session.get(self.model, asset_id)
+        if entity is None or entity.delete_time is not None:
+            raise HTTPException(status_code=404, detail="资产不存在")
+
+        column = getattr(MediaAsset, f"source_{self.resource_name}_id")
+        rows = self.session.exec(
+            select(MediaAsset.source_task_id, MediaAsset.created_at).where(
+                column == asset_id,
+                MediaAsset.status == "success",
+                MediaAsset.delete_time == None,  # noqa: E711
+            )
+        ).all()
+        task_ids = {task_id for task_id, _created in rows if task_id is not None}
+        success_count = len(task_ids) if task_ids else len(rows)
+        last_produced = max((created for _task_id, created in rows), default=None)
+        return {
+            "successCount": success_count,
+            "lastProducedAt": last_produced.isoformat() if last_produced else None,
+        }

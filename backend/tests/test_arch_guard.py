@@ -35,11 +35,13 @@ CORE_LAZY_MODULES_IMPORTS_WHITELIST = frozenset()
 # workflow 源码出现任何指向两个下游质量域的 import（含函数体内延迟 import）即失败。
 # ai 为被消费的基础设施叶子域（2026-10-18 批次1/2）：ai→media（异步 Celery 字符串
 # 派发 + 同步 registry 回调）、ai→notification（治理告警 registry 回调）均已解耦，
-# 守卫固化防回潮。
+# 守卫固化防回潮。asset（2026-10-22，IP 资产库）：asset 不得 import workflow
+# （设计文档 2.1 依赖边界，workflow→asset 才是合法消费方向）；ai 不感知 asset。
 # 需要新增方向规则时在此字典扩条目即可。
 MODULE_DIRECTION_FORBIDDEN = {
     "app.modules.workflow": ("app.modules.workflow_eval", "app.modules.workflow_annotation"),
-    "app.modules.ai": ("app.modules.media", "app.modules.notification"),
+    "app.modules.ai": ("app.modules.media", "app.modules.notification", "app.modules.asset"),
+    "app.modules.asset": ("app.modules.workflow",),
 }
 
 

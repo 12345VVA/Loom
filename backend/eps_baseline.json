@@ -14265,6 +14265,391 @@
         },
         {
           "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceAddRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "addReference",
+          "path": "/addReference",
+          "prefix": "/admin/asset/character",
+          "summary": "新增参考图（MD5 防重、上限 20）",
+          "tag": "character"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "attributes": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Attributes"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "incompatibleTags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Incompatibletags"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        },
+                        "voicePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Voiceprompt"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetCharacterRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "archive",
+          "path": "/archive",
+          "prefix": "/admin/asset/character",
+          "summary": "归档（published→archived，禁新增引用、存量放行）",
+          "tag": "character"
+        },
+        {
+          "dts": {
             "parameters": [
               {
                 "in": "query",
@@ -14364,6 +14749,273 @@
           "path": "/delete",
           "prefix": "/admin/asset/character",
           "summary": "删除",
+          "tag": "character"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetForkRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "attributes": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Attributes"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "incompatibleTags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Incompatibletags"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        },
+                        "voicePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Voiceprompt"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetCharacterRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "fork",
+          "path": "/fork",
+          "prefix": "/admin/asset/character",
+          "summary": "复制副本（published→本人 draft，code 随机后缀防冲突）",
           "tag": "character"
         },
         {
@@ -15333,6 +15985,887 @@
           "path": "/page",
           "prefix": "/admin/asset/character",
           "summary": "获取分页",
+          "tag": "character"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "attributes": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Attributes"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "incompatibleTags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Incompatibletags"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        },
+                        "voicePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Voiceprompt"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetCharacterRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "publish",
+          "path": "/publish",
+          "prefix": "/admin/asset/character",
+          "summary": "发布（draft→published）",
+          "tag": "character"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "title": "Id",
+                  "type": "number"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "引用计数第一阶段口径（决策 #23：成功产出数，按任务去重）。",
+                      "properties": {
+                        "lastProducedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Lastproducedat"
+                        },
+                        "successCount": {
+                          "default": 0,
+                          "title": "Successcount",
+                          "type": "number"
+                        }
+                      },
+                      "title": "ReferenceStatsResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "referenceStats",
+          "path": "/referenceStats",
+          "prefix": "/admin/asset/character",
+          "summary": "引用计数（第一阶段：成功产出数，按任务去重）",
+          "tag": "character"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceRemoveRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "removeReference",
+          "path": "/removeReference",
+          "prefix": "/admin/asset/character",
+          "summary": "移除参考图",
+          "tag": "character"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceReorderRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "reorderReferences",
+          "path": "/reorderReferences",
+          "prefix": "/admin/asset/character",
+          "summary": "参考图全量重排（拖拽排序提交形态）",
+          "tag": "character"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "attributes": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Attributes"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "incompatibleTags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Incompatibletags"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        },
+                        "voicePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Voiceprompt"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetCharacterRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "restore",
+          "path": "/restore",
+          "prefix": "/admin/asset/character",
+          "summary": "恢复（archived→published）",
           "tag": "character"
         },
         {
@@ -16558,6 +18091,358 @@
         },
         {
           "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceAddRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "addReference",
+          "path": "/addReference",
+          "prefix": "/admin/asset/scene",
+          "summary": "新增参考图（MD5 防重、上限 20）",
+          "tag": "scene"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetSceneRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "archive",
+          "path": "/archive",
+          "prefix": "/admin/asset/scene",
+          "summary": "归档（published→archived，禁新增引用、存量放行）",
+          "tag": "scene"
+        },
+        {
+          "dts": {
             "parameters": [
               {
                 "in": "query",
@@ -16657,6 +18542,240 @@
           "path": "/delete",
           "prefix": "/admin/asset/scene",
           "summary": "删除",
+          "tag": "scene"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetForkRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetSceneRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "fork",
+          "path": "/fork",
+          "prefix": "/admin/asset/scene",
+          "summary": "复制副本（published→本人 draft，code 随机后缀防冲突）",
           "tag": "scene"
         },
         {
@@ -17527,6 +19646,821 @@
           "path": "/page",
           "prefix": "/admin/asset/scene",
           "summary": "获取分页",
+          "tag": "scene"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetSceneRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "publish",
+          "path": "/publish",
+          "prefix": "/admin/asset/scene",
+          "summary": "发布（draft→published）",
+          "tag": "scene"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "title": "Id",
+                  "type": "number"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "引用计数第一阶段口径（决策 #23：成功产出数，按任务去重）。",
+                      "properties": {
+                        "lastProducedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Lastproducedat"
+                        },
+                        "successCount": {
+                          "default": 0,
+                          "title": "Successcount",
+                          "type": "number"
+                        }
+                      },
+                      "title": "ReferenceStatsResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "referenceStats",
+          "path": "/referenceStats",
+          "prefix": "/admin/asset/scene",
+          "summary": "引用计数（第一阶段：成功产出数，按任务去重）",
+          "tag": "scene"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceRemoveRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "removeReference",
+          "path": "/removeReference",
+          "prefix": "/admin/asset/scene",
+          "summary": "移除参考图",
+          "tag": "scene"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceReorderRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "reorderReferences",
+          "path": "/reorderReferences",
+          "prefix": "/admin/asset/scene",
+          "summary": "参考图全量重排（拖拽排序提交形态）",
+          "tag": "scene"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetSceneRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "restore",
+          "path": "/restore",
+          "prefix": "/admin/asset/scene",
+          "summary": "恢复（archived→published）",
           "tag": "scene"
         },
         {
@@ -18460,6 +21394,358 @@
         },
         {
           "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceAddRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "addReference",
+          "path": "/addReference",
+          "prefix": "/admin/asset/style",
+          "summary": "新增参考图（MD5 防重、上限 20）",
+          "tag": "style"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetStyleRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "archive",
+          "path": "/archive",
+          "prefix": "/admin/asset/style",
+          "summary": "归档（published→archived，禁新增引用、存量放行）",
+          "tag": "style"
+        },
+        {
+          "dts": {
             "parameters": [
               {
                 "in": "query",
@@ -18559,6 +21845,240 @@
           "path": "/delete",
           "prefix": "/admin/asset/style",
           "summary": "删除",
+          "tag": "style"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetForkRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetStyleRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "fork",
+          "path": "/fork",
+          "prefix": "/admin/asset/style",
+          "summary": "复制副本（published→本人 draft，code 随机后缀防冲突）",
           "tag": "style"
         },
         {
@@ -19429,6 +22949,821 @@
           "path": "/page",
           "prefix": "/admin/asset/style",
           "summary": "获取分页",
+          "tag": "style"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetStyleRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "publish",
+          "path": "/publish",
+          "prefix": "/admin/asset/style",
+          "summary": "发布（draft→published）",
+          "tag": "style"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "title": "Id",
+                  "type": "number"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "引用计数第一阶段口径（决策 #23：成功产出数，按任务去重）。",
+                      "properties": {
+                        "lastProducedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Lastproducedat"
+                        },
+                        "successCount": {
+                          "default": 0,
+                          "title": "Successcount",
+                          "type": "number"
+                        }
+                      },
+                      "title": "ReferenceStatsResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "referenceStats",
+          "path": "/referenceStats",
+          "prefix": "/admin/asset/style",
+          "summary": "引用计数（第一阶段：成功产出数，按任务去重）",
+          "tag": "style"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceRemoveRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "removeReference",
+          "path": "/removeReference",
+          "prefix": "/admin/asset/style",
+          "summary": "移除参考图",
+          "tag": "style"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReferenceReorderRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "参考图集写操作回执：全量条目 + 悬空标注。",
+                      "properties": {
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "referenceImages": {
+                          "default": [],
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "title": "Referenceimages",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "title": "ReferenceStateResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "reorderReferences",
+          "path": "/reorderReferences",
+          "prefix": "/admin/asset/style",
+          "summary": "参考图全量重排（拖拽排序提交形态）",
+          "tag": "style"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AssetTransitionRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "appearancePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Appearanceprompt"
+                        },
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "coverMediaId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Covermediaid"
+                        },
+                        "createTime": {
+                          "format": "date-time",
+                          "title": "Createtime",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "missingMediaIds": {
+                          "default": [],
+                          "items": {
+                            "type": "number"
+                          },
+                          "title": "Missingmediaids",
+                          "type": "array"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "negativePrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Negativeprompt"
+                        },
+                        "preferredProfileCode": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredprofilecode"
+                        },
+                        "preferredSize": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Preferredsize"
+                        },
+                        "refImageIds": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Refimageids"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "tags": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Tags"
+                        },
+                        "updateTime": {
+                          "format": "date-time",
+                          "title": "Updatetime",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "status",
+                        "createTime",
+                        "updateTime"
+                      ],
+                      "title": "AssetStyleRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "restore",
+          "path": "/restore",
+          "prefix": "/admin/asset/style",
+          "summary": "恢复（archived→published）",
           "tag": "style"
         },
         {

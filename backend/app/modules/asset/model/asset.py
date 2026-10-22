@@ -210,3 +210,59 @@ class AssetSceneUpdateRequest(AssetSceneCreateRequest):
 
 class AssetStyleUpdateRequest(AssetStyleCreateRequest):
     id: int
+
+
+# --- 生命周期 / 参考图集 DTO（P4 端点契约）---
+
+
+class AssetTransitionRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+
+
+class AssetForkRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+
+
+class ReferenceAddRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    media_id: int
+    role: str | None = None  # 核心仅 primary（决策 #28）
+
+
+class ReferenceRemoveRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    media_id: int
+
+
+class ReferenceReorderRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    media_ids: list[int]
+
+
+class ReferenceStateResponse(BaseModel):
+    """参考图集写操作回执：全量条目 + 悬空标注。"""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    reference_images: list[dict] = []
+    missing_media_ids: list[int] = []
+
+
+class ReferenceStatsResponse(BaseModel):
+    """引用计数第一阶段口径（决策 #23：成功产出数，按任务去重）。"""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    success_count: int = 0
+    last_produced_at: str | None = None

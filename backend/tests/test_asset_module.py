@@ -307,6 +307,96 @@ class ReferenceWriteTestCase(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
 
 
+class ForkAndStatsTestCase(unittest.TestCase):
+    """fork 复制副本（验收 15）+ 引用计数第一阶段口径（验收 13）。"""
+
+    def setUp(self):
+        self.engine = make_test_engine(
+            tables=[
+                AssetCharacter.__table__,
+                MediaAsset.__table__,
+                Role.__table__,
+                UserRoleLink.__table__,
+                SysLog.__table__,
+            ]
+        )
+        self.session = Session(self.engine)
+        self.service = AssetCharacterService(self.session)
+        self.owner = _FakeUser(1)
+        self.other = _FakeUser(2)
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def test_fork_published_only(self):
+        """仅 published 可复制；draft/archived 拒绝（决策 #22）。"""
+        from fastapi import HTTPException as _HE
+
+        draft = self.service.add(AssetCharacterCreateRequest(code="hero", name="小白"), current_user=self.owner)
+        with self.assertRaises(_HE) as ctx:
+            self.service.fork(draft.id, current_user=self.other)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_fork_creates_own_draft_with_refs(self):
+        """副本归属复制者、code 加后缀不冲突、参考图关系保留（验收 15）。"""
+        media = MediaAsset(asset_type="image", status="success", storage_url="/uploads/test/a.png")
+        self.session.add(media)
+        self.session.commit()
+        entity = self.service.add(AssetCharacterCreateRequest(code="hero", name="小白"), current_user=self.owner)
+        entity.status = ASSET_STATUS_PUBLISHED
+        entity.ref_image_ids = f'[{{"id": {media.id}, "role": "primary"}}]'
+        self.session.add(entity)
+        self.session.commit()
+
+        copy = self.service.fork(entity.id, current_user=self.other)
+        self.assertEqual(copy.status, ASSET_STATUS_DRAFT)
+        self.assertEqual(copy.created_by, 2)
+        self.assertNotEqual(copy.code, "hero")
+        self.assertTrue(copy.code.startswith("hero-f"))
+        self.assertEqual(parse_ref_entries(copy.ref_image_ids), [{"id": media.id, "role": "primary"}])
+
+    def test_reference_stats_task_dedup(self):
+        """成功产出数按任务去重：同任务多产物计 1；failed 不计（验收 13）。"""
+        media = MediaAsset(asset_type="image", status="success", storage_url="/uploads/test/a.png")
+        self.session.add(media)
+        self.session.commit()
+        entity = self.service.add(AssetCharacterCreateRequest(code="hero", name="小白"), current_user=self.owner)
+        entity.status = ASSET_STATUS_PUBLISHED
+        self.session.add(entity)
+        self.session.commit()
+
+        for task_id in (101, 101, 202):
+            self.session.add(
+                MediaAsset(
+                    asset_type="image",
+                    status="success",
+                    source_character_id=entity.id,
+                    source_task_id=task_id,
+                    storage_url=f"/uploads/test/{task_id}.png",
+                )
+            )
+        self.session.add(
+            MediaAsset(
+                asset_type="image",
+                status="failed",
+                source_character_id=entity.id,
+                source_task_id=303,
+            )
+        )
+        self.session.commit()
+
+        stats = self.service.reference_stats(entity.id)
+        self.assertEqual(stats["successCount"], 2)  # 任务 101/202 各计 1，failed 不计
+
+    def test_reference_stats_empty(self):
+        stats = self.service.reference_stats(
+            self.service.add(AssetCharacterCreateRequest(code="empty", name="x"), current_user=self.owner).id
+        )
+        self.assertEqual(stats["successCount"], 0)
+        self.assertIsNone(stats["lastProducedAt"])
+
+
 class ModuleRegistrationTestCase(unittest.TestCase):
     """模块注册断言：EPS 出现 asset controllers；菜单清单含 asset 三菜单。"""
 

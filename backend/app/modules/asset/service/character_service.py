@@ -9,5 +9,7 @@ from app.modules.asset.service.base import AssetCrudServiceBase
 
 
 class AssetCharacterService(AssetCrudServiceBase):
+    resource_name = "character"
+
     def __init__(self, session: Session):
         super().__init__(session, AssetCharacter)
