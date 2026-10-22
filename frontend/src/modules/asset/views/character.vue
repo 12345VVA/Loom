@@ -1,89 +1,60 @@
 <script setup lang="ts">
-// 角色库管理页（设计 5.2）：封面墙（默认）+ 表格双形态；upsert tabs 分组；
-// 状态操作按权限矩阵；published 保存前引用计数确认（验收 13）。
-import { computed, markRaw, reactive, ref } from 'vue';
+// 角色库管理页（设计 5.2）：封面墙（默认）+ 表格双形态；共享逻辑在 use-asset-library，
+// 本页只保留角色差异项（dictType、变量槽预览、attributes/voicePrompt 表单项）。
+import { computed, markRaw } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { ElMessage, ElMessageBox } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useDict } from '/$/dict';
 import DictSelect from '/$/dict/components/dict-select.vue';
-import RefImageManager, { type RefImageEntry } from '../components/ref-image-manager.vue';
-import { useUserStore } from '/$/base/store/user';
+import RefImageManager from '../components/ref-image-manager.vue';
+import {
+	buildSubmitPayload,
+	initRefImageForm,
+	refImageChange,
+	refImageModel,
+	useAssetLibrary,
+	type AssetRow,
+	type AssetUpsertForm
+} from '../composables/use-asset-library';
 
 defineOptions({ name: 'asset-character' });
 
 const { service } = useCool();
 const { t } = useI18n();
-const userStore = useUserStore();
 const { dict } = useDict();
 
 const serviceAsset = service.asset.character;
 const dictType = 'asset_character_type';
 const categoryOptions = computed(() => dict.get(dictType).value ?? []);
 
-interface AssetRow {
-	id: number;
-	code: string;
-	name: string;
-	status: string;
-	category?: string | null;
-	coverUrl?: string | null;
-	coverMediaId?: number | null;
-	mediaItems?: { id: number; url: string; status: string }[];
-	missingMediaIds?: number[];
-	createdBy?: number | null;
-	createTime?: string;
-	appearancePrompt?: string | null;
-	negativePrompt?: string | null;
-	refImageIds?: string | null;
-	tags?: string | null;
-	attributes?: string | null;
-	voicePrompt?: string | null;
-	preferredProfileCode?: string | null;
-	preferredSize?: string | null;
-}
+const {
+	viewMode,
+	wallList,
+	wallLoading,
+	wallPage,
+	refreshWall,
+	switchView,
+	statusOptions,
+	statusColors,
+	isMine,
+	isAdmin,
+	canEdit,
+	canDelete,
+	transition,
+	fork,
+	drawer,
+	detailStats,
+	openDetail,
+	onUpsertOpened
+} = useAssetLibrary(serviceAsset, {
+	onChanged: () => Crud.value?.refresh()
+});
 
-type AssetUpsertForm = Omit<Partial<AssetRow>, 'refImageIds'> & { refImageIds?: unknown; _mediaItems?: { id: number; url: string }[] };
-
-type AssetPageResult = { list: AssetRow[]; pagination: { page: number; size: number; total: number } };
-
-
-// ---- 视图形态 ----
-const viewMode = ref<'wall' | 'table'>('wall');
-const wallList = ref<AssetRow[]>([]);
-const wallLoading = ref(false);
-const wallPage = reactive({ page: 1, size: 24, total: 0 });
-
-async function refreshWall() {
-	wallLoading.value = true;
-	try {
-		const res = (await serviceAsset.page({ page: wallPage.page, size: wallPage.size })) as unknown as AssetPageResult;
-		wallPage.total = res.pagination.total;
-		wallList.value = res.list || [];
-	} finally {
-		wallLoading.value = false;
-	}
-}
-
-// ---- 状态枚举（代码枚举，组件内常量）----
-const statusOptions = [
-	{ label: t('草稿'), value: 'draft' },
-	{ label: t('已发布'), value: 'published' },
-	{ label: t('已归档'), value: 'archived' }
-];
-const statusColors: Record<string, string> = { draft: 'info', published: 'success', archived: 'warning' };
-
-function isMine(row: AssetRow) {
-	return row.createdBy && row.createdBy === userStore.info?.id;
-}
-const isAdmin = computed(() => !!userStore.info?.isSuperAdmin);
-
-function canEdit(row: AssetRow) {
-	if (row.status === 'archived') return false;
-	if (isMine(row)) return true;
-	return row.status === 'published' && isAdmin.value;
-}
+const Crud = useCrud({ service: serviceAsset }, (app) => {
+	app.refresh();
+	if (viewMode.value === 'wall') refreshWall();
+});
 
 // ---- 表格形态 ----
 const Table = useTable({
@@ -102,38 +73,13 @@ const Table = useTable({
 		{ label: t('创建时间'), prop: 'createTime', minWidth: 160, sortable: 'desc' },
 		{
 			type: 'op',
-			width: 220,
-			buttons: ['edit', 'delete', 'slot-op']
+			width: 300,
+			// 编辑/删除的行级权限在 slot 内判断（permission.mdc：操作列都要权限控制）
+			buttons: ['slot-op']
 		}
 	],
 	contextMenu: ['refresh']
 });
-
-const Crud = useCrud({ service: serviceAsset }, (app) => {
-	app.refresh();
-	if (viewMode.value === 'wall') refreshWall();
-});
-
-function switchView(mode: 'wall' | 'table') {
-	viewMode.value = mode;
-	if (mode === 'wall') refreshWall();
-	else Crud.value?.refresh();
-}
-
-// ---- 状态迁移 / fork ----
-async function transition(row: AssetRow, action: 'publish' | 'archive' | 'restore') {
-	await (serviceAsset as unknown as Record<string, (args: { id: number }) => Promise<unknown>>)[action]({ id: row.id });
-	ElMessage.success(t('操作成功'));
-	Crud.value?.refresh();
-	if (viewMode.value === 'wall') refreshWall();
-}
-
-async function fork(row: AssetRow) {
-	const res = (await serviceAsset.fork({ id: row.id })) as unknown as { code: string };
-	ElMessage.success(t('已复制为草稿：{code}', { code: res.code }));
-	Crud.value?.refresh();
-	if (viewMode.value === 'wall') refreshWall();
-}
 
 // ---- upsert ----
 const Upsert = useUpsert({
@@ -159,20 +105,15 @@ const Upsert = useUpsert({
 			label: t('角色类型'),
 			prop: 'category',
 			group: 'base',
-			component: { vm: markRaw(DictSelect), props: { dictType } }
+			component: { name: 'dict-select', vm: markRaw(DictSelect), props: { dictType } }
 		},
 		{ label: t('封面'), prop: 'coverMediaId', group: 'base', component: { name: 'el-input', props: { placeholder: t('媒体资产 ID') } } },
 		{
 			label: t('外观正向 Prompt'),
 			prop: 'appearancePrompt',
 			group: 'prompt',
-			component: { name: 'el-input', props: { type: 'textarea', rows: 6, placeholder: t('唯一拼接源，支持双花括号变量占位') } }
-		},
-		{
-			label: t('变量槽'),
-			prop: '_varSlots',
-			group: 'prompt',
-			component: { name: 'slot-varSlots' }
+			// slot 内渲染输入框 + 变量槽只读预览（prop 必须是真实字段，cool-crud-conventions.mdc）
+			component: { name: 'slot-appearancePrompt' }
 		},
 		{
 			label: t('角色负面词'),
@@ -198,50 +139,15 @@ const Upsert = useUpsert({
 		{ label: t('对话人设'), prop: 'voicePrompt', group: 'extra', component: { name: 'el-input', props: { type: 'textarea', rows: 3 } } }
 	],
 	onOpen() {
-		// 旧数据/空值初始化（cool-crud-conventions.mdc）：后端 JSON Text 可能是字符串或 null
-		const form = Upsert.value?.form as AssetUpsertForm;
-		if (!form) return;
-		if (typeof form.refImageIds === 'string') {
-			try {
-				form.refImageIds = JSON.parse(form.refImageIds || '[]');
-			} catch {
-				form.refImageIds = [];
-			}
-		}
-		if (!Array.isArray(form.refImageIds)) form.refImageIds = [];
+		initRefImageForm(Upsert.value?.form as AssetUpsertForm | undefined);
 	},
 	onSubmit(data: AssetUpsertForm, { next }: { next: (payload: AssetUpsertForm) => void }) {
-		// 提交转换：entries → JSON 字符串（upload.mdc：结构不一致在提交前显式转换）
-		const payload: AssetUpsertForm = { ...data };
-		payload.refImageIds = JSON.stringify(
-			((data.refImageIds as RefImageEntry[]) || []).map((e: RefImageEntry) => {
-				const entry: RefImageEntry = { id: e.id };
-				if (e.role) entry.role = e.role;
-				return entry;
-			})
-		);
-		payload.tags = data.tags || null;
+		const payload = buildSubmitPayload(data);
 		payload.attributes = data.attributes || null;
 		next(payload);
 	},
 	onOpened(data: AssetRow) {
-		// 参考图元信息回填（info 接口 mediaItems）+ published 编辑确认（验收 13）
-		const form = Upsert.value?.form as AssetUpsertForm;
-		if (form) form._mediaItems = data?.mediaItems || [];
-		if (data?.status === 'published') {
-			serviceAsset
-				.referenceStats({ id: data.id })
-				.then((stats: { successCount?: number; lastProducedAt?: string | null }) => {
-					const message =
-						(stats.successCount ?? 0) > 0
-							? t('该角色累计成功产出 {n} 次，修改将影响后续所有生成', { n: stats.successCount })
-							: t('该资产可能被工作流引用，修改将影响后续执行');
-					ElMessageBox.confirm(message, t('编辑已发布资产'), { type: 'warning' }).catch(() => {
-						Upsert.value?.close();
-					});
-				})
-				.catch(() => undefined);
-		}
+		onUpsertOpened(data, Upsert.value?.form as AssetUpsertForm | undefined, () => Upsert.value?.close());
 	}
 });
 
@@ -256,20 +162,6 @@ const varSlots = computed(() => {
 	}
 	return found;
 });
-
-// ---- 详情抽屉 ----
-const drawer = reactive({ visible: false, row: null as AssetRow | null });
-const detailStats = ref<{ successCount: number; lastProducedAt: string | null } | null>(null);
-
-function openDetail(row: AssetRow) {
-	drawer.row = row;
-	drawer.visible = true;
-	detailStats.value = null;
-	serviceAsset
-		.referenceStats({ id: row.id })
-		.then((s: { successCount?: number; lastProducedAt?: string | null }) => (detailStats.value = { successCount: s.successCount ?? 0, lastProducedAt: s.lastProducedAt ?? null }))
-		.catch(() => undefined);
-}
 </script>
 
 <template>
@@ -303,8 +195,8 @@ function openDetail(row: AssetRow) {
 					</el-image>
 					<div class="info">
 						<span class="name">{{ row.name }}</span>
-						<el-tag size="small" :type="(statusColors[row.status] as any) || 'info'">
-							{{ $t(row.status === 'draft' ? '草稿' : row.status === 'published' ? '已发布' : '已归档') }}
+						<el-tag size="small" :type="statusColors[row.status] || 'info'">
+							{{ statusOptions.find((o) => o.value === row.status)?.label || row.status }}
 						</el-tag>
 					</div>
 					<div class="sub">
@@ -322,6 +214,26 @@ function openDetail(row: AssetRow) {
 				<template #slot-op="{ scope }">
 					<el-button v-if="canEdit(scope.row)" link type="primary" size="small" @click="openDetail(scope.row)">
 						{{ $t('详情') }}
+					</el-button>
+					<el-button
+						v-if="canEdit(scope.row)"
+						v-permission="serviceAsset.permission.update"
+						link
+						type="primary"
+						size="small"
+						@click="Crud?.rowEdit(scope.row)"
+					>
+						{{ $t('编辑') }}
+					</el-button>
+					<el-button
+						v-if="canDelete(scope.row)"
+						v-permission="serviceAsset.permission.delete"
+						link
+						type="danger"
+						size="small"
+						@click="Crud?.rowDelete(scope.row)"
+					>
+						{{ $t('删除') }}
 					</el-button>
 					<el-button
 						v-if="scope.row.status === 'draft' && (isMine(scope.row) || isAdmin)"
@@ -381,7 +293,13 @@ function openDetail(row: AssetRow) {
 		</cl-row>
 
 		<cl-upsert ref="Upsert">
-			<template #slot-varSlots>
+			<template #slot-appearancePrompt="{ scope }">
+				<el-input
+					v-model="scope.appearancePrompt"
+					type="textarea"
+					:rows="6"
+					:placeholder="$t('唯一拼接源，支持双花括号变量占位')"
+				/>
 				<div class="var-slots">
 					<el-tag v-for="name in varSlots" :key="name" size="small" class="slot">{{ name }}</el-tag>
 					<span v-if="!varSlots.length" class="none">{{ $t('无变量占位') }}</span>
@@ -389,12 +307,8 @@ function openDetail(row: AssetRow) {
 			</template>
 			<template #slot-refImages="{ scope }">
 				<ref-image-manager
-					:model-value="(scope.refImageIds || []).map((e: any) => ({
-						id: e.id,
-						role: e.role,
-						_url: (scope._mediaItems || []).find((m: any) => m.id === e.id)?.url
-					}))"
-					@update:model-value="(v: any) => (scope.refImageIds = v)"
+					:model-value="refImageModel(scope)"
+					@update:model-value="refImageChange(scope, $event)"
 				/>
 			</template>
 		</cl-upsert>
@@ -490,6 +404,7 @@ function openDetail(row: AssetRow) {
 	display: flex;
 	gap: 6px;
 	flex-wrap: wrap;
+	margin-top: 6px;
 }
 .var-slots .none {
 	color: var(--el-text-color-secondary);

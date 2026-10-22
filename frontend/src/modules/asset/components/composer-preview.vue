@@ -80,7 +80,7 @@ const sourceLabels: Record<string, string> = {
 		<div class="meta">
 			<span v-if="result.effectiveSize">size: {{ result.effectiveSize }}</span>
 			<el-tag v-for="seg in includedSegments" :key="seg.source" size="small" class="seg">
-				{{ sourceLabels[seg.source] || seg.source }}
+				{{ $t(sourceLabels[seg.source] || seg.source) }}
 			</el-tag>
 			<span v-if="result.composedPromptHash" class="hash">
 				{{ $t('指纹') }} {{ result.composedPromptHash }} (v{{ result.composerVersion }})

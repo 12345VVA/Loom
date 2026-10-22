@@ -64,5 +64,11 @@
 	"镜像失败": "Mirror failed",
 	"批量派发失败": "Batch dispatch failed",
 	"自检请求失败": "Probe request failed",
-	"确定为存量资产派发镜像任务（成功转存且未镜像的资源，异步执行）？": "Dispatch mirror tasks for existing assets (successfully stored but not mirrored, runs async)?"
+	"确定为存量资产派发镜像任务（成功转存且未镜像的资源，异步执行）？": "Dispatch mirror tasks for existing assets (successfully stored but not mirrored, runs async)?",
+	"从媒体库选择图片": "Pick images from media library",
+	"搜索文件名": "Search filename",
+	"已选 {n} 项": "{n} selected",
+	"暂无图片": "No images",
+	"取消": "Cancel",
+	"确定": "OK"
 }
