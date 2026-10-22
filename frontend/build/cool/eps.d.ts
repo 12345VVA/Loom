@@ -745,6 +745,282 @@ declare namespace Eps {
 		[key: string]: any;
 	}
 
+	interface character {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * code
+		 */
+		code?: string;
+
+		/**
+		 * name
+		 */
+		name?: string;
+
+		/**
+		 * status
+		 */
+		status?: string;
+
+		/**
+		 * category
+		 */
+		category?: string;
+
+		/**
+		 * appearance_prompt
+		 */
+		appearancePrompt?: string;
+
+		/**
+		 * negative_prompt
+		 */
+		negativePrompt?: string;
+
+		/**
+		 * ref_image_ids
+		 */
+		refImageIds?: string;
+
+		/**
+		 * preferred_profile_code
+		 */
+		preferredProfileCode?: string;
+
+		/**
+		 * preferred_size
+		 */
+		preferredSize?: string;
+
+		/**
+		 * tags
+		 */
+		tags?: string;
+
+		/**
+		 * cover_media_id
+		 */
+		coverMediaId?: number;
+
+		/**
+		 * missing_media_ids
+		 */
+		missingMediaIds?: number;
+
+		/**
+		 * created_by
+		 */
+		createdBy?: number;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * updated_at
+		 */
+		updateTime?: Date;
+
+		/**
+		 * attributes
+		 */
+		attributes?: string;
+
+		/**
+		 * voice_prompt
+		 */
+		voicePrompt?: string;
+
+		/**
+		 * incompatible_tags
+		 */
+		incompatibleTags?: string;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
+	interface scene {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * code
+		 */
+		code?: string;
+
+		/**
+		 * name
+		 */
+		name?: string;
+
+		/**
+		 * status
+		 */
+		status?: string;
+
+		/**
+		 * category
+		 */
+		category?: string;
+
+		/**
+		 * appearance_prompt
+		 */
+		appearancePrompt?: string;
+
+		/**
+		 * negative_prompt
+		 */
+		negativePrompt?: string;
+
+		/**
+		 * ref_image_ids
+		 */
+		refImageIds?: string;
+
+		/**
+		 * preferred_profile_code
+		 */
+		preferredProfileCode?: string;
+
+		/**
+		 * preferred_size
+		 */
+		preferredSize?: string;
+
+		/**
+		 * tags
+		 */
+		tags?: string;
+
+		/**
+		 * cover_media_id
+		 */
+		coverMediaId?: number;
+
+		/**
+		 * missing_media_ids
+		 */
+		missingMediaIds?: number;
+
+		/**
+		 * created_by
+		 */
+		createdBy?: number;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * updated_at
+		 */
+		updateTime?: Date;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
+	interface style {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * code
+		 */
+		code?: string;
+
+		/**
+		 * name
+		 */
+		name?: string;
+
+		/**
+		 * status
+		 */
+		status?: string;
+
+		/**
+		 * category
+		 */
+		category?: string;
+
+		/**
+		 * appearance_prompt
+		 */
+		appearancePrompt?: string;
+
+		/**
+		 * negative_prompt
+		 */
+		negativePrompt?: string;
+
+		/**
+		 * ref_image_ids
+		 */
+		refImageIds?: string;
+
+		/**
+		 * preferred_profile_code
+		 */
+		preferredProfileCode?: string;
+
+		/**
+		 * preferred_size
+		 */
+		preferredSize?: string;
+
+		/**
+		 * tags
+		 */
+		tags?: string;
+
+		/**
+		 * cover_media_id
+		 */
+		coverMediaId?: number;
+
+		/**
+		 * missing_media_ids
+		 */
+		missingMediaIds?: number;
+
+		/**
+		 * created_by
+		 */
+		createdBy?: number;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * updated_at
+		 */
+		updateTime?: Date;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
 	interface comm {
 		/**
 		 * 任意键值
@@ -3655,6 +3931,141 @@ declare namespace Eps {
 		/** updateTime */ updateTime: string;
 	}
 
+	interface AssetCharacterAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** attributes */ attributes?: string | null;
+		/** voicePrompt */ voicePrompt?: string | null;
+		/** incompatibleTags */ incompatibleTags?: string | null;
+	}
+
+	interface AssetCharacterPageResponse {
+		pagination: PagePagination;
+		list: character[];
+	}
+
+	interface AssetCharacterUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+		/** attributes */ attributes?: string | null;
+		/** voicePrompt */ voicePrompt?: string | null;
+		/** incompatibleTags */ incompatibleTags?: string | null;
+	}
+
+	interface AssetSceneAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetScenePageResponse {
+		pagination: PagePagination;
+		list: scene[];
+	}
+
+	interface AssetSceneUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetStyleAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
+	interface AssetStylePageResponse {
+		pagination: PagePagination;
+		list: style[];
+	}
+
+	interface AssetStyleUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** status */ status: string;
+		/** category */ category?: string | null;
+		/** appearancePrompt */ appearancePrompt?: string | null;
+		/** negativePrompt */ negativePrompt?: string | null;
+		/** refImageIds */ refImageIds?: string | null;
+		/** preferredProfileCode */ preferredProfileCode?: string | null;
+		/** preferredSize */ preferredSize?: string | null;
+		/** tags */ tags?: string | null;
+		/** coverMediaId */ coverMediaId?: number | null;
+		/** missingMediaIds */ missingMediaIds?: number[];
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime: string;
+		/** updateTime */ updateTime: string;
+	}
+
 	interface AiDashboard {
 		/**
 		 * AI 成本看板统计
@@ -6065,6 +6476,180 @@ declare namespace Eps {
 		request: Request;
 	}
 
+	interface AssetCharacter {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<AssetCharacterAddResponse>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<character>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<character[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AssetCharacterPageResponse>;
+
+		/**
+		 * 更新
+		 */
+		update(data?: any): Promise<AssetCharacterUpdateResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			add: string;
+			delete: string;
+			info: string;
+			list: string;
+			page: string;
+			update: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			add: boolean;
+			delete: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			update: boolean;
+		};
+
+		request: Request;
+	}
+
+	interface AssetScene {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<AssetSceneAddResponse>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<scene>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<scene[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AssetScenePageResponse>;
+
+		/**
+		 * 更新
+		 */
+		update(data?: any): Promise<AssetSceneUpdateResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			add: string;
+			delete: string;
+			info: string;
+			list: string;
+			page: string;
+			update: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			add: boolean;
+			delete: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			update: boolean;
+		};
+
+		request: Request;
+	}
+
+	interface AssetStyle {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<AssetStyleAddResponse>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<style>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<style[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AssetStylePageResponse>;
+
+		/**
+		 * 更新
+		 */
+		update(data?: any): Promise<AssetStyleUpdateResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			add: string;
+			delete: string;
+			info: string;
+			list: string;
+			page: string;
+			update: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			add: boolean;
+			delete: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			update: boolean;
+		};
+
+		request: Request;
+	}
+
 	interface RequestOptions {
 		url: string;
 		method?: "OPTIONS" | "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "TRACE" | "CONNECT";
@@ -6127,5 +6712,6 @@ declare namespace Eps {
 			test_case: Workflow_evalTest_case;
 			test_set: Workflow_evalTest_set;
 		};
+		asset: { character: AssetCharacter; scene: AssetScene; style: AssetStyle };
 	};
 }

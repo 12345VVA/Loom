@@ -51,6 +51,17 @@ class MediaAsset(BaseEntity, table=True):
     workflow_instance_id: int | None = Field(default=None, index=True)
     workflow_definition_id: int | None = Field(default=None)
     workflow_node_id: str | None = Field(default=None, max_length=100)
+    # IP 资产库产物回链（asset 模块，决策 #23/#29）：当次生成引用的资产 id（JSON，
+    # 仅非空项，camelCase 权威键）与组装指纹——一致性归因"资产变了 vs 组装逻辑变了"的数据前提
+    asset_refs: str | None = Field(default=None, sa_column=Column(Text))
+    # 派生冗余查询列（单选约束下各至多一值）：计数/筛选走普通索引，规避 SQLite/PG JSON 方言分裂
+    source_character_id: int | None = Field(default=None, index=True)
+    source_scene_id: int | None = Field(default=None, index=True)
+    source_style_id: int | None = Field(default=None, index=True)
+    composed_prompt_hash: str | None = Field(default=None, index=True, max_length=64)
+    composer_version: str | None = Field(default=None, max_length=16)
+    # 扩展级预埋（P2-5 纪律）：媒体侧粗分组；核心期任何 DTO/接口不读写本列
+    tags: str | None = Field(default=None, sa_column=Column(Text))
 
 
 class MediaAssetRead(BaseModel):
