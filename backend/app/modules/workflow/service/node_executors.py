@@ -544,6 +544,35 @@ async def execute_image_generator_node(variables: dict[str, Any], config: dict[s
         except json.JSONDecodeError:
             logger.warning(f"生图节点 optionsJson 解析失败: {options_json}")
 
+    # 3.5 资产组装（IP 资产库，设计文档 4.2）：config 携带任一资产 id 时经 Composer。
+    # AssetError 中文文案直出（验收 4/7），不经 friendly_error_message 二次包装；
+    # 其余异常（网络/渠道）仍走统一兜底。回链三键并入 custom_options，
+    # 随 request_payload.options 落 AiModelCallLog.request_options 与 media 回链。
+    if any(config.get(k) for k in ("characterId", "sceneId", "styleId")):
+        from app.modules.asset.service.composer import AssetError, compose_for_node
+
+        try:
+            composed = await asyncio.to_thread(compose_for_node, config, variables, profile_code, image_val, prompt)
+        except AssetError as e:
+            raise ValueError(str(e)) from e
+        prompt = composed.prompt
+        # 参考图合并（P1-1：先归一化再拼接，image_val 可能是 str | list[str] | None）：
+        # 资产参考图在前（role 排序、张数规则内），节点显式变量图追加在后（D6，超限先裁节点图）
+        node_images = [image_val] if isinstance(image_val, str) else (image_val or [])
+        image_val = composed.reference_images + node_images
+        # 调度幂等：composed.reference_images 已过 URL 消费调度（公网直传短路），
+        # 下方第 4 步对合并列表整体 resolve 不构成二次搬运
+        custom_options.update(
+            {
+                "asset_refs": composed.asset_refs,
+                "composed_prompt_hash": composed.composed_prompt_hash,
+                "composer_version": composed.composer_version,
+            }
+        )
+        if composed.negative_prompt:
+            # 负面词经 options 透传（渠道不支持时由适配器白名单拦截并留告警日志）
+            custom_options["negative_prompt"] = composed.negative_prompt
+
     # 4. 调用 AI 生图
     try:
         # WFI-4a：参考图走消费调度决策表（公网 URL/__src 直传短路不查库；本地

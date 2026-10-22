@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from app.modules.asset.model.asset import (
     ASSET_STATUS_ARCHIVED,
@@ -538,6 +538,47 @@ def _resolve_size(input: ComposeInput) -> tuple[str | None, list[ComposerWarning
             f"{label}「{source.name}」的推荐尺寸 {source.preferred_size} 仅在推荐渠道生效，已忽略",
         )
     return None, warnings
+
+
+def compose_for_node(
+    config: dict,
+    variables: dict,
+    profile_code: str | None,
+    node_image: str | list[str] | None = None,
+    user_prompt: str = "",
+    *,
+    session: Session | None = None,
+) -> ComposeResult:
+    """工作流生图节点专用入口（设计 4.3）：读 config 三键 → 短会话加载资产 → compose()。
+
+    短会话纪律（流式 SSE 专项教训）：生产路径（session 未传）用全局 engine 建独立
+    短会话，勿复用请求级 session；测试可注入局部会话。执行期无用户语境
+    （current_user_id=0）：draft 引用因归属不匹配 fail-fast（权限矩阵
+    「工作流执行期」行，验收 4）。
+    """
+    from app.modules.asset.model.asset import AssetCharacter, AssetScene, AssetStyle
+
+    node_images = [node_image] if isinstance(node_image, str) else list(node_image or [])
+    own_session = session is None
+    if own_session:
+        from app.core.database import engine
+
+        session = Session(engine)
+    try:
+        input_ = ComposeInput(
+            character=session.get(AssetCharacter, config["characterId"]) if config.get("characterId") else None,
+            scene=session.get(AssetScene, config["sceneId"]) if config.get("sceneId") else None,
+            style=session.get(AssetStyle, config["styleId"]) if config.get("styleId") else None,
+            user_prompt=user_prompt,
+            variables=variables or {},
+            current_user_id=0,
+            profile_code=profile_code,
+            extra_reference_images=node_images,
+        )
+        return compose(session, input_)
+    finally:
+        if own_session:
+            session.close()
 
 
 def fetch_validated(session, model, asset_id: int) -> Any:

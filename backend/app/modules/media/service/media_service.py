@@ -442,6 +442,26 @@ class MediaAssetService(BaseAdminCrudService):
     ) -> list[MediaAsset]:
         artifacts = _extract_artifacts(result, task_type)
         assets: list[MediaAsset] = []
+        # IP 资产库产物回链（asset 模块，决策 #23/#29）：从请求 options 提取当次引用的
+        # 资产与组装指纹，落 asset_refs + 派生冗余列（计数走普通索引，D3 双库兼容）。
+        # options 经 JSON round-trip 全量保真（audit 侧 sanitize 只作用于日志）。
+        asset_refs_payload = (request_payload.get("options") or {}).get("asset_refs")
+        asset_refs_json: str | None = None
+        ref_character_id = ref_scene_id = ref_style_id = None
+        if isinstance(asset_refs_payload, dict) and asset_refs_payload:
+            clean_refs: dict[str, int] = {}
+            for key in ("characterId", "sceneId", "styleId"):
+                value = asset_refs_payload.get(key)
+                if isinstance(value, int) and value > 0:
+                    clean_refs[key] = value
+            asset_refs_json = json.dumps(clean_refs, ensure_ascii=False) if clean_refs else None
+            ref_character_id = clean_refs.get("characterId")
+            ref_scene_id = clean_refs.get("sceneId")
+            ref_style_id = clean_refs.get("styleId")
+        composed_hash = (request_payload.get("options") or {}).get("composed_prompt_hash")
+        composed_version = (request_payload.get("options") or {}).get("composer_version")
+        composed_hash = str(composed_hash)[:64] if composed_hash else None
+        composed_version = str(composed_version)[:16] if composed_version else None
         logger.info(
             "AI 结果开始转存媒体资产",
             extra={
@@ -476,6 +496,12 @@ class MediaAssetService(BaseAdminCrudService):
                 profile_code=result.get("profile") or profile_code,
                 status="transferring",
                 created_by=created_by,
+                asset_refs=asset_refs_json,
+                source_character_id=ref_character_id,
+                source_scene_id=ref_scene_id,
+                source_style_id=ref_style_id,
+                composed_prompt_hash=composed_hash,
+                composer_version=composed_version,
             )
             self.session.add(asset)
             self.session.commit()
