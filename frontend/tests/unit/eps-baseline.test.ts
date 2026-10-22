@@ -52,7 +52,9 @@ describe('eps-baseline 守卫', () => {
 
 	it('实体索引签名 / DictKey / 新字段在位', () => {
 		expect(dts).toContain('[key: string]: any');
-		expect(dts).toMatch(/type DictKey = /);
+		// 渲染形态为多行 union（type DictKey =\n\t| "a"\n\t| "b";），不锁单行
+		expect(dts).toMatch(/type DictKey =\s/);
+		expect(dts).toMatch(/type DictKey =\s*[\s\S]*?"/);
 		expect(dts).toContain('runType');
 	});
 
@@ -82,7 +84,10 @@ describe('eps.json 确定性缓存守卫', () => {
 	});
 
 	it('DictKey 未退化为裸 string（dictTypes 缓存在位并已渲染进 eps.d.ts）', () => {
-		expect(readFileSync(epsPath, 'utf-8')).toMatch(/type DictKey = "/);
+		const dts = readFileSync(epsPath, 'utf-8');
+		// 退化形态 = `type DictKey = string;`（单行字面量）；在位形态 = 引号枚举（多行 union 或单行）
+		expect(dts).not.toMatch(/type DictKey = string;/);
+		expect(dts).toMatch(/type DictKey =\s*[\s\S]*?"/);
 	});
 });
 

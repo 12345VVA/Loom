@@ -2948,7 +2948,12 @@ declare namespace Eps {
 
 	type json = any;
 
-	type DictKey = "ai_model_capability" | "status";
+	type DictKey =
+		| "asset_scene_type"
+		| "ai_model_capability"
+		| "status"
+		| "asset_style_category"
+		| "asset_character_type";
 
 	interface PagePagination {
 		size: number;
