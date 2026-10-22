@@ -35,7 +35,10 @@ ASSET_VAR_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 # 未知名 → 1（保守兜底）。
 ADAPTER_REFERENCE_LIMITS: dict[str, int | None] = {
     "poryf": 1,  # 适配器已核实：仅单张，多张截断告警
-    "openai-compatible": 1,  # ⚠ 待实测校准（P2-1）：普遍支持多图，上线前以真实渠道核实
+    # P7 校准（2026-10-23）：已核实适配器经 client.images.generate 无参考图入参
+    # （_OPENAI_IMAGE_ALLOWED_OPTION_KEYS 无 image），参考图会被拦截告警，故 1 为
+    # 语义占位——真正支持多图的兼容渠道应显式声明专属适配器后再放开。
+    "openai-compatible": 1,
     "toapis": None,  # None = 不限，取全局参数 N
 }
 

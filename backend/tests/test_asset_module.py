@@ -184,6 +184,54 @@ class AssetCrudTestCase(unittest.TestCase):
             self.service.info(entity.id, current_user=self.other)
         self.assertEqual(ctx.exception.status_code, 404)
 
+    def test_list_status_eq_filter_selector_gate(self):
+        """工作流选择器门槛（验收 3）：list({status: published}) 只回全员 published，
+        不混入任何人（含自己）的 draft。"""
+        self._create(code="my-draft")
+        pub_mine = self._create(code="pub-mine")
+        pub_mine.status = ASSET_STATUS_PUBLISHED
+        self.session.add(pub_mine)
+        pub_other = self._create(code="pub-other", current_user=self.other)
+        pub_other.status = ASSET_STATUS_PUBLISHED
+        self.session.add(pub_other)
+        self.session.commit()
+
+        from app.framework.controller_meta import CrudQuery
+
+        query = CrudQuery(raw_params={"status": ASSET_STATUS_PUBLISHED}, eq_filters={"status": ASSET_STATUS_PUBLISHED})
+        rows = self.service.list(query, current_user=self.other)
+        self.assertEqual({row["code"] for row in rows}, {"pub-mine", "pub-other"})
+
+    def test_fork_code_conflict_retry(self):
+        """fork code 冲突重试（补充用例）：候选码占用时重生成后缀，至多 3 次。"""
+        from unittest.mock import patch
+
+        entity = self._create(code="hero", name="小白")
+        entity.status = ASSET_STATUS_PUBLISHED
+        self.session.add(entity)
+        self.session.commit()
+
+        with patch.object(self.service, "_code_free", side_effect=[False, False, True]):
+            copy = self.service.fork(entity.id, current_user=self.other)
+        self.assertNotEqual(copy.code, "hero")
+        self.assertRegex(copy.code, r"^hero-f[a-z0-9]{6}$")
+
+    def test_fork_archived_rejected(self):
+        """archived 不可复制（决策 #22：仅 published）。"""
+        entity = self._create(code="hero", name="小白")
+        entity.status = ASSET_STATUS_ARCHIVED
+        self.session.add(entity)
+        self.session.commit()
+        with self.assertRaises(HTTPException) as ctx:
+            self.service.fork(entity.id, current_user=self.owner)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_media_asset_read_has_no_tags(self):
+        """守卫（P2-5）：核心期 MediaAssetRead 不暴露 tags 预埋列（写了不读）。"""
+        from app.modules.media.model.media import MediaAssetRead
+
+        self.assertNotIn("tags", MediaAssetRead.model_fields)
+
     def test_transition_validation(self):
         """状态机迁移边：draft→published→archived→published；非法边 400（P0-4）。"""
         entity = self._create()
