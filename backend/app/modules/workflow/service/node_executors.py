@@ -26,6 +26,7 @@ from sqlmodel import select
 
 from app.modules.ai.model.ai import AiChatRequest, AiRuntimeMessage
 from app.modules.ai.service.runtime_service import AiModelRuntimeService
+from app.modules.media.service.image_ingress import resolve_image_input_value
 from app.modules.workflow.model.workflow import WorkflowInstance
 from app.modules.workflow.service.compiler import (
     _deep_get,
@@ -36,7 +37,6 @@ from app.modules.workflow.service.compiler import (
 )
 from app.modules.workflow.service.error_format import friendly_error_message
 from app.modules.workflow.service.graph_validate import MOCK_TOOL_CODES
-from app.modules.workflow.service.image_ingress import resolve_image_input_value
 from app.modules.workflow.service.llm_io import (
     _build_llm_response_format,
     _parse_llm_output,

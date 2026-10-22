@@ -1,6 +1,6 @@
-"""工作流图片 URL 消费调度（WFI-4a，多模态一期阶段四）。
+"""图片 URL 消费调度（媒体域公共能力；原 WFI-4a，自 workflow 模块整体下沉）。
 
-把工作流内流转的图片引用解析为「当前消费场景最优 URL」，统一决策表：
+把业务内流转的图片引用解析为「当前消费场景最优 URL」，统一决策表：
 
 1. 公网 http(s) URL / data URI → 原样返回（显式引用 ``__src`` 厂商临时 URL 的
    既有工作流天然短路，零影响）；
@@ -15,7 +15,8 @@
    d. 全部不可用 → 抛 ``ValueError``（情景 C：节点执行期友好报错，替代此前
       「拼出 127.0.0.1 发给厂商、上游报错才暴露」的晚失败）。
 
-调用点：execute_image_generator_node（参考图）与 execute_llm_node（IR parts）。
+调用点：workflow execute_image_generator_node（参考图）/ execute_llm_node（IR parts）；
+asset 模块（IP 资产库）参考图注入复用同款调度（决策 #19，设计文档 3.5）。
 含 DB 查询与潜在网络 IO，调用方应经 ``asyncio.to_thread`` 包裹。
 """
 
