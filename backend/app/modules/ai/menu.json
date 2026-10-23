@@ -46,7 +46,7 @@
           },
           {
             "code": "nav_ai_image",
-            "name": "图片测试",
+            "name": "生图测试",
             "type": "menu",
             "module": "ai",
             "resource": "image",

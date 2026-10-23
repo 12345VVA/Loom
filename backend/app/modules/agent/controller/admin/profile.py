@@ -1,4 +1,4 @@
-"""智能体定义管理 API：CRUD + 发布/回滚/启停 + 调试台（draft SSE）。"""
+"""智能体定义管理 API：CRUD + 发布/回滚/启停 + 版本列表 + 调试台（draft SSE）。"""
 
 from typing import Any
 
@@ -15,7 +15,7 @@ from app.framework.controller_meta import (
     QueryConfig,
     QueryFieldConfig,
 )
-from app.framework.router.route_meta import Post
+from app.framework.router.route_meta import Get, Post
 from app.modules.agent.model.agent import (
     AgentProfileCreateRequest,
     AgentProfileRead,
@@ -59,6 +59,15 @@ class ProfileToggleResponse(BaseModel):
 
     id: int
     enabled: bool
+
+
+class SnapshotVersionResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int
+    version: int
+    snapshot_hash: str
+    created_at: Any = None
 
 
 @CoolController(
@@ -121,6 +130,19 @@ class AgentProfileController(BaseController):
     ) -> ProfileToggleResponse:
         entity = AgentProfileService(session).toggle_enabled(payload.id, payload.enabled, current_user=current_user)
         return ProfileToggleResponse(id=entity.id, enabled=bool(entity.enabled))
+
+    @Get("/versions", summary="快照版本列表（新→旧；前端回滚选择器数据源）", permission=f"{_PERM}:info")
+    def versions(
+        self,
+        id: int,
+        _current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> list[SnapshotVersionResponse]:
+        rows = AgentProfileService(session).list_snapshots(id)
+        return [
+            SnapshotVersionResponse(id=s.id, version=s.version, snapshot_hash=s.snapshot_hash, created_at=s.created_at)
+            for s in rows
+        ]
 
     @Post("/debugChat", summary="调试台（draft 草稿试聊，SSE 受控事件流）", permission=f"{_PERM}:debugChat")
     def debug_chat(

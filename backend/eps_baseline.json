@@ -1989,6 +1989,124 @@
           "prefix": "/admin/agent/profile",
           "summary": "更新",
           "tag": "profile"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "title": "Id",
+                  "type": "number"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "items": {
+                        "properties": {
+                          "created_at": {
+                            "title": "Created At"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "number"
+                          },
+                          "snapshot_hash": {
+                            "title": "Snapshot Hash",
+                            "type": "string"
+                          },
+                          "version": {
+                            "title": "Version",
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "version",
+                          "snapshot_hash"
+                        ],
+                        "title": "SnapshotVersionResponse",
+                        "type": "object"
+                      },
+                      "title": "Response Versions Admin Agent Profile Versions Get",
+                      "type": "array"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "versions",
+          "path": "/versions",
+          "prefix": "/admin/agent/profile",
+          "summary": "快照版本列表（新→旧；前端回滚选择器数据源）",
+          "tag": "profile"
         }
       ],
       "columns": [
