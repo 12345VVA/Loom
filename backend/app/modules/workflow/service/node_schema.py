@@ -96,6 +96,11 @@ NODE_CONFIG_SCHEMA: dict[str, tuple[FieldSpec, ...]] = {
     "image_generator": (
         FieldSpec("promptTemplate", label="提示词模板", required=True, types=(str,)),
         FieldSpec("modelProfileCode", label="AI 模型", required=True, types=(str,)),
+        # IP 资产库（设计 1.2）：可选资产引用说明，不进必填校验（存量图安全）；
+        # 运行期语义见 node_executors.execute_image_generator_node 的 Composer 插桩
+        FieldSpec("characterId", label="引用角色资产", required=False, types=(int,)),
+        FieldSpec("sceneId", label="引用场景资产", required=False, types=(int,)),
+        FieldSpec("styleId", label="引用风格资产", required=False, types=(int,)),
     ),
     # intent_classifier 整条不进 schema：其 modelProfileCode 是「intents 非空时才必填」
     # 的条件语义（空 intents 直落 default_route 不调模型），静态 FieldSpec 装不下——

@@ -286,7 +286,7 @@ const varSlots = computed(() => {
 					v-model="scope.appearancePrompt"
 					type="textarea"
 					:rows="6"
-					:placeholder="$t('唯一拼接源，支持双花括号变量占位')"
+					:placeholder="$t('唯一拼接源，支持双花括号变量占位（仅在资产片段内生效）')"
 				/>
 				<div class="var-slots">
 					<el-tag v-for="name in varSlots" :key="name" size="small" class="slot">{{ name }}</el-tag>

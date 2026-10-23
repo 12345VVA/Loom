@@ -29,7 +29,6 @@
  "操作成功": "Done",
  "无封面": "No cover",
  "无变量占位": "No variable slots",
- "唯一拼接源，支持双花括号变量占位": "Sole composition source; double-brace variable placeholders supported",
  "名称": "Name",
  "基础信息": "Basics",
  "媒体资产 ID": "Media asset ID",
@@ -65,5 +64,6 @@
  "首选": "Primary",
  "草稿": "Draft",
  "（空）": "(empty)",
- "留空自动生成": "Leave blank to auto-generate"
+ "留空自动生成": "Leave blank to auto-generate",
+ "唯一拼接源，支持双花括号变量占位（仅在资产片段内生效）": "Sole composition source; double-brace placeholders (asset variables apply within asset segments only)"
 }

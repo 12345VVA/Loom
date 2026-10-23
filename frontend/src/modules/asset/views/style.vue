@@ -112,7 +112,7 @@ const Upsert = useUpsert({
 			label: t('外观正向 Prompt'),
 			prop: 'appearancePrompt',
 			group: 'prompt',
-			component: { name: 'el-input', props: { type: 'textarea', rows: 6, placeholder: t('唯一拼接源，支持双花括号变量占位') } }
+			component: { name: 'el-input', props: { type: 'textarea', rows: 6, placeholder: t('唯一拼接源，支持双花括号变量占位（仅在资产片段内生效）') } }
 		},
 		{
 			label: t('负面词'),
