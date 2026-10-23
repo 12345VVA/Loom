@@ -229,7 +229,19 @@ class PublishProfileTestCase(unittest.TestCase):
 
 
 class ConcurrentPublishTestCase(unittest.TestCase):
-    """并发发布不变量（验收 22）：is_current 至多一条、版本线无重复（R3：真锁竞态 CI/PG 验证）。"""
+    """并发发布不变量（验收 22）：is_current 至多一条、版本线无重复。
+
+    R3（设计风险表）：FOR UPDATE 行锁与并发竞态的真验证在 CI/PG（TEST_DATABASE_URL 在位时
+    运行）；本地内存 SQLite 的 StaticPool 单连接不支持双线程并发写（testing.mdc 基建约束），
+    串行等价行为由 PublishProfileTestCase 的版本递增/幂等用例覆盖。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+
+        if not os.environ.get("TEST_DATABASE_URL"):
+            raise unittest.SkipTest("并发发布竞态需 PG（TEST_DATABASE_URL），本地 SQLite 单连接不支持并发写（R3）")
 
     def setUp(self):
         self.engine = make_test_engine(

@@ -61,6 +61,7 @@ class ToolExecutor:
         middlewares: list | None = None,
         should_cancel: Callable[[], bool] | None = None,
         log_tool_call: Callable[..., None] | None = None,  # trace_service 写 tool_call_log
+        on_event: Callable[[str, dict], None] | None = None,  # 工具开始事件（结束事件由图层统一发）
     ):
         self.snapshot_tools = snapshot_tools
         self.bound_names = bound_names
@@ -68,6 +69,7 @@ class ToolExecutor:
         self.middlewares = middlewares or []
         self.should_cancel = should_cancel or (lambda: False)
         self.log_tool_call = log_tool_call
+        self.on_event = on_event
 
     def execute_round(self, ai_message: AIMessage) -> list[ToolCallOutcome]:
         """执行一轮全部 tool_calls（顺序）；返回逐个结果（含被拒/未执行项）。"""
@@ -79,6 +81,8 @@ class ToolExecutor:
             if self.should_cancel():
                 outcomes.append(self._refuse(call_id, name, "已取消，未执行", "cancelled"))
                 continue
+            if self.on_event is not None:
+                self.on_event("tool_started", {"toolCallId": call_id, "toolName": name})
             outcomes.append(self._execute_single(call_id, name, args))
         return outcomes
 

@@ -58,7 +58,8 @@ class GraphDeps:
         max_tool_rounds: int,
         pre_model_hooks: list | None = None,  # 产出型中间件（MemoryInjection 等，返回 state delta）
         apply_hooks: Callable | None = None,  # apply_pre_model_hooks
-        guardrails_validator: Callable[[list], None] | None = None,  # 校验型（护栏完整性，对组装后 messages）
+        guardrails_validator: Callable[[list], None] = None,  # type: ignore[assignment] —— 校验型（护栏完整性，对组装后 messages）
+        on_event: Callable[[str, dict], None] | None = None,  # 受控事件队列出口（SSE，P5）
         should_cancel: Callable[[], bool] | None = None,
         should_stop_scheduling: Callable[[], bool] | None = None,  # 锁所有权校验（P5 注入）
         on_final: Callable[[AgentState], None] | None = None,
@@ -72,6 +73,7 @@ class GraphDeps:
         self.pre_model_hooks = pre_model_hooks or []
         self.apply_hooks = apply_hooks
         self.guardrails_validator = guardrails_validator
+        self.on_event = on_event
         self.should_cancel = should_cancel or (lambda: False)
         self.should_stop_scheduling = should_stop_scheduling or (lambda: False)
         self.on_final = on_final
@@ -105,9 +107,17 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
     # ③ 校验型钩子：护栏完整性对「提交给模型的 messages」验证（fail-close）
     if deps.guardrails_validator is not None:
         deps.guardrails_validator(assembled)
+    if deps.on_event is not None:
+        deps.on_event("model_started", {"modelCalls": int(state.get("model_calls") or 0) + 1})
     llm_result = deps.model.generate([assembled])  # LLMResult：message + llm_output.usage（预算 token 计数）
     response = llm_result.generations[0][0].message
-    deps.budget.on_model_call((llm_result.llm_output or {}).get("usage"))
+    usage = (llm_result.llm_output or {}).get("usage") or {}
+    deps.budget.on_model_call(usage)
+    if deps.on_event is not None:
+        deps.on_event(
+            "model_finished",
+            {"hasToolCalls": bool(getattr(response, "tool_calls", None)), "usage": usage},
+        )
     # 无 reducer 通道为覆盖语义：返回全量（当前值 +1），不返回增量
     return {"messages": [response], "model_calls": int(state.get("model_calls") or 0) + 1}
 
@@ -121,6 +131,12 @@ def _execute_tools(state: AgentState, deps: GraphDeps) -> dict:
 
     outcomes = deps.tool_executor.execute_round(last)
     tool_messages = ToolExecutor.to_tool_messages(outcomes)
+    for outcome in outcomes:
+        if deps.on_event is not None:
+            deps.on_event(
+                "tool_finished" if outcome.skipped_reason is None else "tool_skipped",
+                {"toolCallId": outcome.call_id, "toolName": outcome.name, "success": outcome.success},
+            )
 
     # ⑥ 超限同构处置：预算触顶后同轮剩余调用未执行——补齐配对（execute_round 已含取消/
     # 预算内拒绝路径，此处兜底处理未产出结果的 call_id，保证结构完整）
