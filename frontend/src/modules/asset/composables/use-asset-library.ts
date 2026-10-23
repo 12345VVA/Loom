@@ -3,6 +3,7 @@
 import { computed, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { useClipboard } from '@vueuse/core';
 import { useUserStore } from '/$/base/store/user';
 import type { RefImageEntry } from '../components/ref-image-manager.vue';
 
@@ -154,6 +155,29 @@ export function useAssetLibrary(service: AssetLibService, options: { onChanged?:
 			.catch(() => undefined);
 	}
 
+	// ---- 详情抽屉辅助 ----
+	const { copy } = useClipboard();
+
+	async function copyDetailPrompt() {
+		// 需求 4.4：详情抽屉 prompt 全文一键复制
+		const text = drawer.row?.appearancePrompt;
+		if (!text) return;
+		await copy(text);
+		ElMessage.success(t('已复制'));
+	}
+
+	function primaryRefId(row: AssetRow | null): number | null {
+		// 需求 4.4：详情抽屉 role 标记——refImageIds 首项即 primary（兼容纯 id 旧数组）
+		if (!row?.refImageIds) return null;
+		try {
+			const first = JSON.parse(row.refImageIds)[0];
+			if (first == null) return null;
+			return typeof first === 'object' ? (first.id ?? null) : first;
+		} catch {
+			return null;
+		}
+	}
+
 	// ---- upsert onOpened：参考图元信息回填（info 接口 mediaItems）+ published 编辑确认（验收 13）----
 	function onUpsertOpened(data: AssetRow | undefined, form: AssetUpsertForm | undefined, close: () => void) {
 		if (form) form._mediaItems = data?.mediaItems || [];
@@ -191,6 +215,8 @@ export function useAssetLibrary(service: AssetLibService, options: { onChanged?:
 		drawer,
 		detailStats,
 		openDetail,
+		copyDetailPrompt,
+		primaryRefId,
 		onUpsertOpened
 	};
 }

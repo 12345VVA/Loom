@@ -79,6 +79,7 @@
 					:placeholder="key"
 					size="small"
 					class="var-input"
+					:class="{ 'var-missing': missingVariableKeys.includes(key) }"
 				/>
 			</div>
 			<composer-preview v-if="composerPreview" :result="composerPreview" class="asset-preview" />
@@ -192,6 +193,7 @@ const {
 	assetRefs,
 	assetVariables,
 	assetVariableKeys,
+	missingVariableKeys,
 	composerPreview,
 	assetCharacterOptions,
 	assetSceneOptions,
@@ -336,6 +338,9 @@ function fillSamplePrompt() {
 	display: flex;
 	gap: 8px;
 	flex-wrap: wrap;
+}
+.var-input.var-missing :deep(.el-input__wrapper) {
+	box-shadow: 0 0 0 1px var(--el-color-danger) inset;
 }
 .var-input {
 	width: 140px;

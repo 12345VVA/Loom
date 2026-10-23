@@ -46,6 +46,8 @@ const {
 	drawer,
 	detailStats,
 	openDetail,
+	copyDetailPrompt,
+	primaryRefId,
 	onUpsertOpened
 } = useAssetLibrary(serviceAsset, {
 	onChanged: () => Crud.value?.refresh()
@@ -283,20 +285,21 @@ const Upsert = useUpsert({
 				</el-descriptions>
 				<div class="detail-refs">
 					<div class="head">{{ $t('参考图') }}</div>
-					<el-image
-						v-for="m in drawer.row.mediaItems || []"
-						:key="m.id"
-						:src="m.url"
-						:preview-src-list="[m.url]"
-						fit="cover"
-						class="ref"
-					/>
+					<div v-for="m in drawer.row.mediaItems || []" :key="m.id" class="ref-item">
+						<el-image :src="m.url" :preview-src-list="[m.url]" fit="cover" class="ref" />
+						<el-tag v-if="m.id === primaryRefId(drawer.row)" class="ref-primary" size="small" type="success">
+							{{ $t('首选') }}
+						</el-tag>
+					</div>
 					<span v-for="mid in drawer.row.missingMediaIds || []" :key="mid" class="missing">
 						{{ $t('#{id} 已失效', { id: mid }) }}
 					</span>
 				</div>
 				<div class="detail-prompt">
-					<div class="head">{{ $t('外观 Prompt') }}</div>
+					<div class="head">
+						<span>{{ $t('外观 Prompt') }}</span>
+						<el-button link size="small" @click="copyDetailPrompt">{{ $t('复制') }}</el-button>
+					</div>
 					<pre>{{ drawer.row.appearancePrompt || '—' }}</pre>
 				</div>
 			</template>
@@ -317,11 +320,26 @@ const Upsert = useUpsert({
 	color: var(--el-text-color-secondary);
 	margin-bottom: 6px;
 }
+.ref-item {
+	position: relative;
+	display: inline-block;
+	margin-right: 8px;
+}
 .detail-refs .ref {
 	width: 80px;
 	height: 80px;
 	border-radius: 6px;
-	margin-right: 8px;
+	display: block;
+}
+.ref-primary {
+	position: absolute;
+	left: 4px;
+	top: 4px;
+}
+.detail-prompt .head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
 }
 .missing {
 	color: var(--el-color-danger);

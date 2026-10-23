@@ -72,6 +72,8 @@ export function useImageWorkbench() {
 	const assetRefs = reactive<{ characterId?: number; sceneId?: number; styleId?: number }>({});
 	const assetVariables = ref<Record<string, string>>({});
 	const assetVariableKeys = ref<string[]>([]);
+	// 预览失败时未填值的变量键（输入框标红不阻断，决策 #20）
+	const missingVariableKeys = ref<string[]>([]);
 	const composerPreview = ref<ComposerPreviewPayload | null>(null);
 	const assetCharacterOptions = ref<AssetCharacterOption[]>([]);
 	const assetSceneOptions = ref<AssetCharacterOption[]>([]);
@@ -103,6 +105,7 @@ export function useImageWorkbench() {
 		// 变量槽提取：角色 appearancePrompt 的 {{}} 键 → 填写框（缺失标红不阻断，决策 #20）
 		assetVariableKeys.value = [];
 		assetVariables.value = {};
+		missingVariableKeys.value = [];
 		composerPreview.value = null;
 		if (!assetRefs.characterId) return;
 		try {
@@ -134,8 +137,11 @@ export function useImageWorkbench() {
 				profileCode: form.profileCode || null,
 				size: form.size || null
 			});
+			missingVariableKeys.value = [];
 		} catch (err: any) {
 			composerPreview.value = null;
+			// 决策 #20：缺失变量输入框标红提示，不阻断提交
+			missingVariableKeys.value = assetVariableKeys.value.filter((k) => !String(assetVariables.value[k] || '').trim());
 			ElMessage.error(err?.response?.data?.message || err?.message || t('组装预览失败'));
 		}
 	}
@@ -564,6 +570,7 @@ export function useImageWorkbench() {
 		assetRefs,
 		assetVariables,
 		assetVariableKeys,
+		missingVariableKeys,
 		composerPreview,
 		assetCharacterOptions,
 		assetSceneOptions,

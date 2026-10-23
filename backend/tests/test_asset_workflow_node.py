@@ -72,6 +72,14 @@ class ComposeForNodeTestCase(unittest.TestCase):
         self.assertEqual(result.prompt, "silver hair girl\na knight on horseback")
         self.assertEqual(result.asset_refs, {"characterId": asset_id})
 
+    def test_snake_case_config_keys_compatible(self):
+        """手写存量图 snake_case 键兼容（需求 4.2 工程要点：get_config_value 双风格）。"""
+        asset_id = self._character()
+        config = {"character_id": asset_id}
+        result = compose_for_node(config, {}, "profile-1", None, "a knight", session=self.session)
+        self.assertEqual(result.prompt, "silver hair girl\na knight")
+        self.assertEqual(result.asset_refs, {"characterId": asset_id})
+
     def test_soft_deleted_fail_fast_with_name(self):
         """软删角色 → ValueError 中文文案含资产名（验收 4）；AssetError 不再二次包装。"""
         asset_id = self._character()

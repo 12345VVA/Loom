@@ -65,5 +65,6 @@
  "草稿": "Draft",
  "（空）": "(empty)",
  "留空自动生成": "Leave blank to auto-generate",
- "唯一拼接源，支持双花括号变量占位（仅在资产片段内生效）": "Sole composition source; double-brace placeholders (asset variables apply within asset segments only)"
+ "唯一拼接源，支持双花括号变量占位（仅在资产片段内生效）": "Sole composition source; double-brace placeholders (asset variables apply within asset segments only)",
+ "已复制": "Copied"
 }

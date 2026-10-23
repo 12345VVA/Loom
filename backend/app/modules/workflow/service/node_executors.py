@@ -548,13 +548,20 @@ async def execute_image_generator_node(variables: dict[str, Any], config: dict[s
     # AssetError 中文文案直出（验收 4/7），不经 friendly_error_message 二次包装；
     # 其余异常（网络/渠道）仍走统一兜底。回链三键并入 custom_options，
     # 随 request_payload.options 落 AiModelCallLog.request_options 与 media 回链。
-    if any(config.get(k) for k in ("characterId", "sceneId", "styleId")):
+    if any(config.get(k) for k in ("characterId", "sceneId", "styleId", "character_id", "scene_id", "style_id")):
         from app.modules.asset.service.composer import AssetError, compose_for_node
 
         try:
             composed = await asyncio.to_thread(compose_for_node, config, variables, profile_code, image_val, prompt)
         except AssetError as e:
             raise ValueError(str(e)) from e
+        # 验收 11：一致性 warnings 记执行日志、不阻断（profile 不一致/size 忽略/参考图跳过等）
+        if composed.warnings:
+            logger.warning(
+                "资产组装一致性警告: %s",
+                "; ".join(f"[{w.code}] {w.message}" for w in composed.warnings),
+                extra={"asset_refs": composed.asset_refs, "composed_prompt_hash": composed.composed_prompt_hash},
+            )
         prompt = composed.prompt
         # 参考图合并（P1-1：先归一化再拼接，image_val 可能是 str | list[str] | None）：
         # 资产参考图在前（role 排序、张数规则内），节点显式变量图追加在后（D6，超限先裁节点图）

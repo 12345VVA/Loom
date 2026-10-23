@@ -93,6 +93,15 @@ class AssetAnchorError(AssetError):
 # --- 输入 / 输出契约 ---
 
 
+def _config_get(config: dict[str, Any], key: str) -> Any:
+    """双风格取值（对齐 workflow.node_schema.get_config_value，需求 4.2 工程要点）：
+    camelCase 权威键优先，miss 回落 snake_case（手写存量图兼容）。
+    asset 不得 import workflow（依赖守卫），故本地实现同款语义。"""
+    if key in config:
+        return config[key]
+    return config.get(re.sub(r"(?<!^)(?=[A-Z])", "_", key).lower())
+
+
 @dataclass
 class ComposerWarning:
     code: str
@@ -569,9 +578,9 @@ def compose_for_node(
         session = Session(engine)
     try:
         input_ = ComposeInput(
-            character=session.get(AssetCharacter, config["characterId"]) if config.get("characterId") else None,
-            scene=session.get(AssetScene, config["sceneId"]) if config.get("sceneId") else None,
-            style=session.get(AssetStyle, config["styleId"]) if config.get("styleId") else None,
+            character=session.get(AssetCharacter, cid) if (cid := _config_get(config, "characterId")) else None,
+            scene=session.get(AssetScene, sid) if (sid := _config_get(config, "sceneId")) else None,
+            style=session.get(AssetStyle, stid) if (stid := _config_get(config, "styleId")) else None,
             user_prompt=user_prompt,
             variables=variables or {},
             current_user_id=0,
