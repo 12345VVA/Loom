@@ -3453,6 +3453,306 @@
           "prefix": "/admin/agent/tool",
           "summary": "获取分页",
           "tag": "tool"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "count": {
+                          "default": 0,
+                          "title": "Count",
+                          "type": "number"
+                        },
+                        "message": {
+                          "default": "ok",
+                          "title": "Message",
+                          "type": "string"
+                        },
+                        "ok": {
+                          "title": "Ok",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "title": "ToolSyncResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "refresh",
+          "path": "/refresh",
+          "prefix": "/admin/agent/tool",
+          "summary": "资源层同步（仅 DB sync，不重建执行注册表）",
+          "tag": "tool"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "degraded": {
+                          "title": "Degraded",
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Error"
+                        },
+                        "toolCount": {
+                          "title": "Toolcount",
+                          "type": "number"
+                        },
+                        "tools": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "title": "Tools",
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "degraded",
+                        "toolCount",
+                        "tools"
+                      ],
+                      "title": "RegistryStatusResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "registryStatus",
+          "path": "/registryStatus",
+          "prefix": "/admin/agent/tool",
+          "summary": "执行注册表状态（degraded 可见性）",
+          "tag": "tool"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ToolToggleRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "createTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createtime"
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Description"
+                        },
+                        "displayName": {
+                          "title": "Displayname",
+                          "type": "string"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "level": {
+                          "title": "Level",
+                          "type": "string"
+                        },
+                        "metadataHash": {
+                          "title": "Metadatahash",
+                          "type": "string"
+                        },
+                        "promptMetadataJson": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Promptmetadatajson"
+                        },
+                        "schemaSummary": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Schemasummary"
+                        },
+                        "sourceType": {
+                          "title": "Sourcetype",
+                          "type": "string"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "boolean"
+                        },
+                        "toolName": {
+                          "title": "Toolname",
+                          "type": "string"
+                        },
+                        "updateTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Updatetime"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "toolName",
+                        "displayName",
+                        "sourceType",
+                        "level",
+                        "status",
+                        "metadataHash"
+                      ],
+                      "title": "AgentToolResourceRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "toggleEnabled",
+          "path": "/toggleEnabled",
+          "prefix": "/admin/agent/tool",
+          "summary": "工具启停（实时运行控制，D14 紧急禁用立即生效）",
+          "tag": "tool"
         }
       ],
       "columns": [

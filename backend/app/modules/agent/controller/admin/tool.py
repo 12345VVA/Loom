@@ -1,5 +1,14 @@
-"""工具资源层 API：list 含 degraded 状态（P2 接 tool_registry）；启停/刷新端点 P2 收口。"""
+"""工具资源层 API：清单/启停/刷新/注册表状态。
 
+- refresh 仅做资源层 DB sync（不重建执行注册表，评审 v1.4 语义消歧）；
+- registryStatus 暴露 degraded 状态（启动收集失败时管理面可见）。
+"""
+
+from fastapi import Depends
+from pydantic import BaseModel
+from sqlmodel import Session
+
+from app.core.database import get_session
 from app.framework.controller_meta import (
     BaseController,
     CoolController,
@@ -8,8 +17,25 @@ from app.framework.controller_meta import (
     QueryConfig,
     QueryFieldConfig,
 )
-from app.modules.agent.model.agent import AgentToolResourceRead
+from app.framework.router.route_meta import Get, Post
+from app.modules.agent.model.agent import AgentToolResourceRead, ToolToggleRequest
+from app.modules.agent.service.tool_registry import registry_status, sync_resources
 from app.modules.agent.service.tool_service import AgentToolResourceService
+from app.modules.base.model.auth import User
+from app.modules.base.service.security_service import get_current_user
+
+
+class RegistryStatusResponse(BaseModel):
+    degraded: bool
+    error: str | None = None
+    toolCount: int
+    tools: list[str]
+
+
+class ToolSyncResponse(BaseModel):
+    ok: bool
+    count: int = 0
+    message: str = "ok"
 
 
 @CoolController(
@@ -37,7 +63,40 @@ from app.modules.agent.service.tool_service import AgentToolResourceService
     )
 )
 class AgentToolController(BaseController):
-    pass
+    @Post("/toggleEnabled", summary="工具启停（实时运行控制，D14 紧急禁用立即生效）", permission="agent:tool:toggle")
+    def toggle_enabled(
+        self,
+        payload: ToolToggleRequest,
+        _current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> AgentToolResourceRead:
+        service = AgentToolResourceService(session)
+        entity = session.get(service.model, payload.id)
+        if entity is None or entity.delete_time is not None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="工具不存在")
+        entity.status = payload.status
+        session.add(entity)
+        session.commit()
+        session.refresh(entity)
+        return AgentToolResourceRead.model_validate(entity)
+
+    @Post("/refresh", summary="资源层同步（仅 DB sync，不重建执行注册表）", permission="agent:tool:refresh")
+    def refresh(
+        self,
+        _current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> ToolSyncResponse:
+        result = sync_resources(session, operator_id=_current_user.id)
+        return ToolSyncResponse(ok=True, count=result["count"], message="资源层同步完成")
+
+    @Get("/registryStatus", summary="执行注册表状态（degraded 可见性）", permission="agent:tool:list")
+    def registry_status(
+        self,
+        _current_user: User = Depends(get_current_user),
+    ) -> RegistryStatusResponse:
+        return RegistryStatusResponse(**registry_status())
 
 
 router = AgentToolController.router

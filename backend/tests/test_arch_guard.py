@@ -37,11 +37,15 @@ CORE_LAZY_MODULES_IMPORTS_WHITELIST = frozenset()
 # 派发 + 同步 registry 回调）、ai→notification（治理告警 registry 回调）均已解耦，
 # 守卫固化防回潮。asset（2026-10-22，IP 资产库）：asset 不得 import workflow
 # （设计文档 2.1 依赖边界，workflow→asset 才是合法消费方向）；ai 不感知 asset。
+# agent（2026-10-23，智能体）：业务模块（asset/media/workflow）不得 import agent——
+# 工具 SPI 是纯结构契约（service/agent_tools.py 暴露 get_agent_tools()），由 agent 侧
+# importlib 动态收集（设计 3.3）；方向单向：agent → 业务模块（收集与运行消费）。
 # 需要新增方向规则时在此字典扩条目即可。
 MODULE_DIRECTION_FORBIDDEN = {
-    "app.modules.workflow": ("app.modules.workflow_eval", "app.modules.workflow_annotation"),
-    "app.modules.ai": ("app.modules.media", "app.modules.notification", "app.modules.asset"),
-    "app.modules.asset": ("app.modules.workflow",),
+    "app.modules.workflow": ("app.modules.workflow_eval", "app.modules.workflow_annotation", "app.modules.agent"),
+    "app.modules.ai": ("app.modules.media", "app.modules.notification", "app.modules.asset", "app.modules.agent"),
+    "app.modules.asset": ("app.modules.workflow", "app.modules.agent"),
+    "app.modules.media": ("app.modules.agent",),
 }
 
 

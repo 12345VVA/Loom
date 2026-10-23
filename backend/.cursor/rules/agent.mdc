@@ -1,0 +1,63 @@
+---
+description: 智能体（Agent）模块编码规范——工具 SPI 契约 / 身份注入 / 运行时纪律
+globs: app/modules/agent/**/*.py,app/modules/*/service/agent_tools.py,tests/test_agent_*.py
+---
+
+# 智能体模块编码规范
+
+工具 SPI 是**纯结构契约**（设计 3.3）：业务模块零 import agent，由 agent 侧启动时收集。
+本规范固化契约与运行时纪律；设计基线见 `docs/02-业务模块/智能体模块设计-2026-10-23.md`。
+
+## 工具声明契约（service/agent_tools.py）
+
+```python
+# app/modules/{module}/service/agent_tools.py
+class QueryAssetArgs(BaseModel):
+    """参数即契约：description/enum/required 会进 LLM schema 与发布快照，变更须审慎。"""
+    asset_type: Literal["character", "scene", "style"]
+
+def query_asset(args: QueryAssetArgs, ctx) -> str:  # ctx 为鸭子类型（db/user_id/is_super_admin）
+    ...
+
+def get_agent_tools() -> list[dict]:
+    return [{
+        "name": "query_asset",        # 全局唯一，对外契约不可改名（改名=新工具）
+        "description": "一句话说明用途（进 LLM schema）",
+        "level": "readonly",          # 必填：readonly / reversible_write / dangerous_write
+        "args_model": QueryAssetArgs, # pydantic BaseModel（生成 JSON schema + 服务端校验）
+        "func": query_asset,          # def func(args, ctx) -> str
+    }]
+```
+
+- **身份经 ctx 注入，不进参数**：工具需要身份时从 `ctx`（ToolContext）取，禁止在
+  args_model 里加 user_id 类身份字段——参数是模型可填的，身份不可由模型决定；
+- **新工具必须先加 `RUNTIME_ALLOWED_TOOLS` 允许列表**（tool_registry.py 代码常量），
+  否则启动收集时被静默跳过（记 info 日志）——首版封闭清单的代码级强制（D11）；
+- `ctx.db` 仅可在工具执行流内同步使用，**禁止把 Session 带出执行流**（线程/异步任务）；
+- 工具返回值是给 LLM 的 JSON 字符串（`json.dumps(..., ensure_ascii=False)`），
+  不套响应信封；错误信息直接写在返回值里由模型决定后续（D12 错误归一）。
+
+## 运行时纪律
+
+- **TypedDict 一律 `typing_extensions`**（py3.11 + langgraph 实证；stdlib typing 的
+  TypedDict 在 Annotated reducer 场景有坑）；
+- **事件形态判别**：langgraph `stream_mode` 为 list 时事件恒为 `(mode, payload)` 元组，
+  消费端必须 isinstance 判别（同 langgraph.mdc，禁裸解包）；
+- 计数模型唯一权威（设计 3.4.1 表）：`model_calls` 统计模型请求、`tool_rounds` 判工具轮
+  （进工具节点时 +1）、RunBudget 判预算耗尽；
+- 护栏唯一注入点在 prompt 渲染（3.7）；pre_model_hook / middleware 只做完整性验证，
+  **禁止重复追加**（多轮重入不叠加）；
+- `LoomChatModel` 每 run 独立实例（bind_tools 可变绑定状态不跨 run 共享）；
+- run 工作线程自建独立 Session（`Session(engine.get_bind())`），请求线程 Session
+  绝不传入；残留工具不得触达 run 级 Session。
+
+## 发布快照与两套判定
+
+- 快照冻结工具**调用契约**（schema）而非执行实现；运行时逐工具过两套独立判定：
+  1. 契约兼容性（`is_contract_compatible`，fail-close）：required 未扩大/类型一致/
+     枚举不缩减/约束不收紧/未识别键不兼容——不兼容回填 ToolMessage 明示需重新发布；
+  2. 执行安全性（`assert_execution_allowed`，实时）：注册在案 + 允许列表 + 绑定 +
+     资源层启停（D14 紧急禁用立即生效）+ level 未升级；
+- 资源层 sync（`sync_resources`）只更新系统维护字段，**绝不触碰 status**——
+  管理员禁用不因代码刷新恢复；
+- 发布/回滚全程持 profile 行锁（SELECT FOR UPDATE），先 UPDATE is_current=0 再 INSERT。
