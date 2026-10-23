@@ -436,6 +436,12 @@ class AiRuntimeMessage(BaseModel):
     # 纯文本调用方零影响（str 优先匹配）；安全层 check_input_safety 已扫描 list 中的 text part。
     # system 消息恒为纯文本（Claude 适配器的 join 对 list 会 TypeError）——由调用方约定保证。
     content: str | list[Any]
+    # 工具循环消息字段（agent 模块，2026-10-23）：openai 协议下 assistant.tool_calls 与
+    # tool 角色结果的 tool_call_id 是回传模型的硬性要求。可选、默认 None、dump 时剔除——
+    # 存量调用方（对话测试页/工作流 LLM 节点）行为零变化。安全扫描只读 content，天然兼容。
+    tool_calls: list[Any] | None = None
+    tool_call_id: str | None = None
+    name: str | None = None
 
 
 class AiResponseJsonSchema(BaseModel):

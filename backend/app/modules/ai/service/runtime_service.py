@@ -124,7 +124,11 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
             response_format_overridden=response_format_overridden,
             # AI-014：客户端传 skipMasking 不得自行关闭 PII 脱敏，仅在全局开关闭合时生效
             skip_masking=settings.AI_ALLOW_SKIP_MASKING and payload.skip_masking,
-            messages=[item.model_dump() if hasattr(item, "model_dump") else item for item in payload.messages],
+            # exclude_none：工具循环可选字段（tool_calls/tool_call_id/name）为 None 时不得进协议 dict
+            # （openai 对消息内未知 null 键 400）；存量字段恒有值，行为零变化
+            messages=[
+                item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item for item in payload.messages
+            ],
             options=options,
         )
 
