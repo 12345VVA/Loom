@@ -1,4 +1,4819 @@
 {
+  "agent": [
+    {
+      "api": [
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "add",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AgentProfileCreateRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "createTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createtime"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Description"
+                        },
+                        "enableMemory": {
+                          "title": "Enablememory",
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "title": "Enabled",
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "maxTokens": {
+                          "title": "Maxtokens",
+                          "type": "number"
+                        },
+                        "maxToolRounds": {
+                          "title": "Maxtoolrounds",
+                          "type": "number"
+                        },
+                        "modelProfileCode": {
+                          "title": "Modelprofilecode",
+                          "type": "string"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "systemPrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Systemprompt"
+                        },
+                        "temperature": {
+                          "title": "Temperature",
+                          "type": "number"
+                        },
+                        "timeoutSeconds": {
+                          "title": "Timeoutseconds",
+                          "type": "number"
+                        },
+                        "tools": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "title": "Tools",
+                          "type": "array"
+                        },
+                        "updateTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Updatetime"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "modelProfileCode",
+                        "temperature",
+                        "maxTokens",
+                        "maxToolRounds",
+                        "timeoutSeconds",
+                        "enableMemory",
+                        "enabled",
+                        "status"
+                      ],
+                      "title": "AgentProfileRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "add",
+          "path": "/add",
+          "prefix": "/admin/agent/profile",
+          "summary": "新增",
+          "tag": "profile"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "delete",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/DeleteRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "additionalProperties": true,
+                      "title": "Response Endpoint Agent Profile Delete Admin Agent Profile Delete Post",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "delete",
+          "path": "/delete",
+          "prefix": "/admin/agent/profile",
+          "summary": "删除",
+          "tag": "profile"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "minimum": 1,
+                  "title": "Id",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "info",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "createTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createtime"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Description"
+                        },
+                        "enableMemory": {
+                          "title": "Enablememory",
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "title": "Enabled",
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "maxTokens": {
+                          "title": "Maxtokens",
+                          "type": "number"
+                        },
+                        "maxToolRounds": {
+                          "title": "Maxtoolrounds",
+                          "type": "number"
+                        },
+                        "modelProfileCode": {
+                          "title": "Modelprofilecode",
+                          "type": "string"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "systemPrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Systemprompt"
+                        },
+                        "temperature": {
+                          "title": "Temperature",
+                          "type": "number"
+                        },
+                        "timeoutSeconds": {
+                          "title": "Timeoutseconds",
+                          "type": "number"
+                        },
+                        "tools": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "title": "Tools",
+                          "type": "array"
+                        },
+                        "updateTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Updatetime"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "modelProfileCode",
+                        "temperature",
+                        "maxTokens",
+                        "maxToolRounds",
+                        "timeoutSeconds",
+                        "enableMemory",
+                        "enabled",
+                        "status"
+                      ],
+                      "title": "AgentProfileRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "info",
+          "path": "/info",
+          "prefix": "/admin/agent/profile",
+          "summary": "获取详情",
+          "tag": "profile"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "list",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "items": {
+                        "properties": {
+                          "code": {
+                            "title": "Code",
+                            "type": "string"
+                          },
+                          "createTime": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Createtime"
+                          },
+                          "createdBy": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Createdby"
+                          },
+                          "description": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Description"
+                          },
+                          "enableMemory": {
+                            "title": "Enablememory",
+                            "type": "boolean"
+                          },
+                          "enabled": {
+                            "title": "Enabled",
+                            "type": "boolean"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "number"
+                          },
+                          "maxTokens": {
+                            "title": "Maxtokens",
+                            "type": "number"
+                          },
+                          "maxToolRounds": {
+                            "title": "Maxtoolrounds",
+                            "type": "number"
+                          },
+                          "modelProfileCode": {
+                            "title": "Modelprofilecode",
+                            "type": "string"
+                          },
+                          "name": {
+                            "title": "Name",
+                            "type": "string"
+                          },
+                          "status": {
+                            "title": "Status",
+                            "type": "string"
+                          },
+                          "systemPrompt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Systemprompt"
+                          },
+                          "temperature": {
+                            "title": "Temperature",
+                            "type": "number"
+                          },
+                          "timeoutSeconds": {
+                            "title": "Timeoutseconds",
+                            "type": "number"
+                          },
+                          "tools": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Tools",
+                            "type": "array"
+                          },
+                          "updateTime": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Updatetime"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "code",
+                          "name",
+                          "modelProfileCode",
+                          "temperature",
+                          "maxTokens",
+                          "maxToolRounds",
+                          "timeoutSeconds",
+                          "enableMemory",
+                          "enabled",
+                          "status"
+                        ],
+                        "title": "AgentProfileRead",
+                        "type": "object"
+                      },
+                      "title": "Response Endpoint Agent Profile List Admin Agent Profile List Post",
+                      "type": "array"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "list",
+          "path": "/list",
+          "prefix": "/admin/agent/profile",
+          "summary": "获取列表",
+          "tag": "profile"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "page",
+                "required": false,
+                "schema": {
+                  "default": 1,
+                  "maximum": 100000,
+                  "minimum": 1,
+                  "title": "Page",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "size",
+                "required": false,
+                "schema": {
+                  "default": 10,
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Size",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "page",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "properties": {
+                              "code": {
+                                "title": "Code",
+                                "type": "string"
+                              },
+                              "createTime": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Createtime"
+                              },
+                              "createdBy": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Createdby"
+                              },
+                              "description": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Description"
+                              },
+                              "enableMemory": {
+                                "title": "Enablememory",
+                                "type": "boolean"
+                              },
+                              "enabled": {
+                                "title": "Enabled",
+                                "type": "boolean"
+                              },
+                              "id": {
+                                "title": "Id",
+                                "type": "number"
+                              },
+                              "maxTokens": {
+                                "title": "Maxtokens",
+                                "type": "number"
+                              },
+                              "maxToolRounds": {
+                                "title": "Maxtoolrounds",
+                                "type": "number"
+                              },
+                              "modelProfileCode": {
+                                "title": "Modelprofilecode",
+                                "type": "string"
+                              },
+                              "name": {
+                                "title": "Name",
+                                "type": "string"
+                              },
+                              "status": {
+                                "title": "Status",
+                                "type": "string"
+                              },
+                              "systemPrompt": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Systemprompt"
+                              },
+                              "temperature": {
+                                "title": "Temperature",
+                                "type": "number"
+                              },
+                              "timeoutSeconds": {
+                                "title": "Timeoutseconds",
+                                "type": "number"
+                              },
+                              "tools": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Tools",
+                                "type": "array"
+                              },
+                              "updateTime": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Updatetime"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "code",
+                              "name",
+                              "modelProfileCode",
+                              "temperature",
+                              "maxTokens",
+                              "maxToolRounds",
+                              "timeoutSeconds",
+                              "enableMemory",
+                              "enabled",
+                              "status"
+                            ],
+                            "title": "AgentProfileRead",
+                            "type": "object"
+                          },
+                          "title": "Items",
+                          "type": "array"
+                        },
+                        "page": {
+                          "title": "Page",
+                          "type": "number"
+                        },
+                        "page_size": {
+                          "title": "Page Size",
+                          "type": "number"
+                        },
+                        "total": {
+                          "title": "Total",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "page_size"
+                      ],
+                      "title": "PageResult[AgentProfileRead]",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "page",
+          "path": "/page",
+          "prefix": "/admin/agent/profile",
+          "summary": "获取分页",
+          "tag": "profile"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "update",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AgentProfileUpdateRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "code": {
+                          "title": "Code",
+                          "type": "string"
+                        },
+                        "createTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createtime"
+                        },
+                        "createdBy": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createdby"
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Description"
+                        },
+                        "enableMemory": {
+                          "title": "Enablememory",
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "title": "Enabled",
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "maxTokens": {
+                          "title": "Maxtokens",
+                          "type": "number"
+                        },
+                        "maxToolRounds": {
+                          "title": "Maxtoolrounds",
+                          "type": "number"
+                        },
+                        "modelProfileCode": {
+                          "title": "Modelprofilecode",
+                          "type": "string"
+                        },
+                        "name": {
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "systemPrompt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Systemprompt"
+                        },
+                        "temperature": {
+                          "title": "Temperature",
+                          "type": "number"
+                        },
+                        "timeoutSeconds": {
+                          "title": "Timeoutseconds",
+                          "type": "number"
+                        },
+                        "tools": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "title": "Tools",
+                          "type": "array"
+                        },
+                        "updateTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Updatetime"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "name",
+                        "modelProfileCode",
+                        "temperature",
+                        "maxTokens",
+                        "maxToolRounds",
+                        "timeoutSeconds",
+                        "enableMemory",
+                        "enabled",
+                        "status"
+                      ],
+                      "title": "AgentProfileRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "update",
+          "path": "/update",
+          "prefix": "/admin/agent/profile",
+          "summary": "更新",
+          "tag": "profile"
+        }
+      ],
+      "columns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "code",
+          "dict": null,
+          "label": "code",
+          "nullable": false,
+          "prop": "code",
+          "propertyName": "code",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "code",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "name",
+          "dict": null,
+          "label": "name",
+          "nullable": false,
+          "prop": "name",
+          "propertyName": "name",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "description",
+          "dict": null,
+          "label": "description",
+          "nullable": true,
+          "prop": "description",
+          "propertyName": "description",
+          "required": false,
+          "source": "description",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "model_profile_code",
+          "dict": null,
+          "label": "modelProfileCode",
+          "nullable": false,
+          "prop": "modelProfileCode",
+          "propertyName": "modelProfileCode",
+          "required": true,
+          "source": "model_profile_code",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "system_prompt",
+          "dict": null,
+          "label": "systemPrompt",
+          "nullable": true,
+          "prop": "systemPrompt",
+          "propertyName": "systemPrompt",
+          "required": false,
+          "source": "system_prompt",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "tools",
+          "dict": null,
+          "label": "tools",
+          "nullable": true,
+          "prop": "tools",
+          "propertyName": "tools",
+          "required": false,
+          "source": "tools",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "temperature",
+          "dict": null,
+          "label": "temperature",
+          "nullable": false,
+          "prop": "temperature",
+          "propertyName": "temperature",
+          "required": true,
+          "source": "temperature",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "max_tokens",
+          "dict": null,
+          "label": "maxTokens",
+          "nullable": false,
+          "prop": "maxTokens",
+          "propertyName": "maxTokens",
+          "required": true,
+          "source": "max_tokens",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "max_tool_rounds",
+          "dict": null,
+          "label": "maxToolRounds",
+          "nullable": false,
+          "prop": "maxToolRounds",
+          "propertyName": "maxToolRounds",
+          "required": true,
+          "source": "max_tool_rounds",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "timeout_seconds",
+          "dict": null,
+          "label": "timeoutSeconds",
+          "nullable": false,
+          "prop": "timeoutSeconds",
+          "propertyName": "timeoutSeconds",
+          "required": true,
+          "source": "timeout_seconds",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "enable_memory",
+          "dict": null,
+          "label": "enableMemory",
+          "nullable": false,
+          "prop": "enableMemory",
+          "propertyName": "enableMemory",
+          "required": true,
+          "source": "enable_memory",
+          "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "enabled",
+          "dict": null,
+          "label": "enabled",
+          "nullable": false,
+          "prop": "enabled",
+          "propertyName": "enabled",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "enabled",
+          "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "status",
+          "dict": null,
+          "label": "status",
+          "nullable": false,
+          "prop": "status",
+          "propertyName": "status",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "status",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_by",
+          "dict": null,
+          "label": "createdBy",
+          "nullable": true,
+          "prop": "createdBy",
+          "propertyName": "createdBy",
+          "required": false,
+          "source": "created_by",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "updated_at",
+          "dict": null,
+          "label": "updateTime",
+          "nullable": true,
+          "prop": "updateTime",
+          "propertyName": "updateTime",
+          "required": false,
+          "source": "updated_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "module": "agent",
+      "name": "profile",
+      "namespace": "admin/agent/profile",
+      "pageColumns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "code",
+          "dict": null,
+          "label": "code",
+          "nullable": false,
+          "prop": "code",
+          "propertyName": "code",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "code",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "name",
+          "dict": null,
+          "label": "name",
+          "nullable": false,
+          "prop": "name",
+          "propertyName": "name",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "description",
+          "dict": null,
+          "label": "description",
+          "nullable": true,
+          "prop": "description",
+          "propertyName": "description",
+          "required": false,
+          "source": "description",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "model_profile_code",
+          "dict": null,
+          "label": "modelProfileCode",
+          "nullable": false,
+          "prop": "modelProfileCode",
+          "propertyName": "modelProfileCode",
+          "required": true,
+          "source": "model_profile_code",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "system_prompt",
+          "dict": null,
+          "label": "systemPrompt",
+          "nullable": true,
+          "prop": "systemPrompt",
+          "propertyName": "systemPrompt",
+          "required": false,
+          "source": "system_prompt",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "tools",
+          "dict": null,
+          "label": "tools",
+          "nullable": true,
+          "prop": "tools",
+          "propertyName": "tools",
+          "required": false,
+          "source": "tools",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "temperature",
+          "dict": null,
+          "label": "temperature",
+          "nullable": false,
+          "prop": "temperature",
+          "propertyName": "temperature",
+          "required": true,
+          "source": "temperature",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "max_tokens",
+          "dict": null,
+          "label": "maxTokens",
+          "nullable": false,
+          "prop": "maxTokens",
+          "propertyName": "maxTokens",
+          "required": true,
+          "source": "max_tokens",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "max_tool_rounds",
+          "dict": null,
+          "label": "maxToolRounds",
+          "nullable": false,
+          "prop": "maxToolRounds",
+          "propertyName": "maxToolRounds",
+          "required": true,
+          "source": "max_tool_rounds",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "timeout_seconds",
+          "dict": null,
+          "label": "timeoutSeconds",
+          "nullable": false,
+          "prop": "timeoutSeconds",
+          "propertyName": "timeoutSeconds",
+          "required": true,
+          "source": "timeout_seconds",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "enable_memory",
+          "dict": null,
+          "label": "enableMemory",
+          "nullable": false,
+          "prop": "enableMemory",
+          "propertyName": "enableMemory",
+          "required": true,
+          "source": "enable_memory",
+          "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "enabled",
+          "dict": null,
+          "label": "enabled",
+          "nullable": false,
+          "prop": "enabled",
+          "propertyName": "enabled",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "enabled",
+          "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "status",
+          "dict": null,
+          "label": "status",
+          "nullable": false,
+          "prop": "status",
+          "propertyName": "status",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "status",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_by",
+          "dict": null,
+          "label": "createdBy",
+          "nullable": true,
+          "prop": "createdBy",
+          "propertyName": "createdBy",
+          "required": false,
+          "source": "created_by",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "updated_at",
+          "dict": null,
+          "label": "updateTime",
+          "nullable": true,
+          "prop": "updateTime",
+          "propertyName": "updateTime",
+          "required": false,
+          "source": "updated_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "pageQueryOp": {
+        "fieldEq": [
+          "status",
+          "enabled"
+        ],
+        "fieldLike": [],
+        "keyWordLikeFields": [
+          "name",
+          "code"
+        ]
+      },
+      "prefix": "/admin/agent/profile"
+    },
+    {
+      "api": [
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "minimum": 1,
+                  "title": "Id",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "info",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "createTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createtime"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "lastMessageAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Lastmessageat"
+                        },
+                        "profileId": {
+                          "title": "Profileid",
+                          "type": "number"
+                        },
+                        "runMode": {
+                          "title": "Runmode",
+                          "type": "string"
+                        },
+                        "sessionCode": {
+                          "title": "Sessioncode",
+                          "type": "string"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Title"
+                        },
+                        "userId": {
+                          "title": "Userid",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionCode",
+                        "profileId",
+                        "userId",
+                        "runMode"
+                      ],
+                      "title": "AgentSessionRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "info",
+          "path": "/info",
+          "prefix": "/admin/agent/session",
+          "summary": "获取详情",
+          "tag": "session"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "list",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "items": {
+                        "properties": {
+                          "createTime": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Createtime"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "number"
+                          },
+                          "lastMessageAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Lastmessageat"
+                          },
+                          "profileId": {
+                            "title": "Profileid",
+                            "type": "number"
+                          },
+                          "runMode": {
+                            "title": "Runmode",
+                            "type": "string"
+                          },
+                          "sessionCode": {
+                            "title": "Sessioncode",
+                            "type": "string"
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Title"
+                          },
+                          "userId": {
+                            "title": "Userid",
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sessionCode",
+                          "profileId",
+                          "userId",
+                          "runMode"
+                        ],
+                        "title": "AgentSessionRead",
+                        "type": "object"
+                      },
+                      "title": "Response Endpoint Agent Session List Admin Agent Session List Post",
+                      "type": "array"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "list",
+          "path": "/list",
+          "prefix": "/admin/agent/session",
+          "summary": "获取列表",
+          "tag": "session"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "page",
+                "required": false,
+                "schema": {
+                  "default": 1,
+                  "maximum": 100000,
+                  "minimum": 1,
+                  "title": "Page",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "size",
+                "required": false,
+                "schema": {
+                  "default": 10,
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Size",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "page",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "properties": {
+                              "createTime": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Createtime"
+                              },
+                              "id": {
+                                "title": "Id",
+                                "type": "number"
+                              },
+                              "lastMessageAt": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Lastmessageat"
+                              },
+                              "profileId": {
+                                "title": "Profileid",
+                                "type": "number"
+                              },
+                              "runMode": {
+                                "title": "Runmode",
+                                "type": "string"
+                              },
+                              "sessionCode": {
+                                "title": "Sessioncode",
+                                "type": "string"
+                              },
+                              "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Title"
+                              },
+                              "userId": {
+                                "title": "Userid",
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "sessionCode",
+                              "profileId",
+                              "userId",
+                              "runMode"
+                            ],
+                            "title": "AgentSessionRead",
+                            "type": "object"
+                          },
+                          "title": "Items",
+                          "type": "array"
+                        },
+                        "page": {
+                          "title": "Page",
+                          "type": "number"
+                        },
+                        "page_size": {
+                          "title": "Page Size",
+                          "type": "number"
+                        },
+                        "total": {
+                          "title": "Total",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "page_size"
+                      ],
+                      "title": "PageResult[AgentSessionRead]",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "page",
+          "path": "/page",
+          "prefix": "/admin/agent/session",
+          "summary": "获取分页",
+          "tag": "session"
+        }
+      ],
+      "columns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "session_code",
+          "dict": null,
+          "label": "sessionCode",
+          "nullable": false,
+          "prop": "sessionCode",
+          "propertyName": "sessionCode",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "session_code",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "profile_id",
+          "dict": null,
+          "label": "profileId",
+          "nullable": false,
+          "prop": "profileId",
+          "propertyName": "profileId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "profile_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "user_id",
+          "dict": null,
+          "label": "userId",
+          "nullable": false,
+          "prop": "userId",
+          "propertyName": "userId",
+          "required": true,
+          "source": "user_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "title",
+          "dict": null,
+          "label": "title",
+          "nullable": true,
+          "prop": "title",
+          "propertyName": "title",
+          "required": false,
+          "search": {
+            "value": true
+          },
+          "source": "title",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "run_mode",
+          "dict": null,
+          "label": "runMode",
+          "nullable": false,
+          "prop": "runMode",
+          "propertyName": "runMode",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "run_mode",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "last_message_at",
+          "dict": null,
+          "label": "lastMessageAt",
+          "nullable": true,
+          "prop": "lastMessageAt",
+          "propertyName": "lastMessageAt",
+          "required": false,
+          "source": "last_message_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "module": "agent",
+      "name": "session",
+      "namespace": "admin/agent/session",
+      "pageColumns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "session_code",
+          "dict": null,
+          "label": "sessionCode",
+          "nullable": false,
+          "prop": "sessionCode",
+          "propertyName": "sessionCode",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "session_code",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "profile_id",
+          "dict": null,
+          "label": "profileId",
+          "nullable": false,
+          "prop": "profileId",
+          "propertyName": "profileId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "profile_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "user_id",
+          "dict": null,
+          "label": "userId",
+          "nullable": false,
+          "prop": "userId",
+          "propertyName": "userId",
+          "required": true,
+          "source": "user_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "title",
+          "dict": null,
+          "label": "title",
+          "nullable": true,
+          "prop": "title",
+          "propertyName": "title",
+          "required": false,
+          "search": {
+            "value": true
+          },
+          "source": "title",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "run_mode",
+          "dict": null,
+          "label": "runMode",
+          "nullable": false,
+          "prop": "runMode",
+          "propertyName": "runMode",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "run_mode",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "last_message_at",
+          "dict": null,
+          "label": "lastMessageAt",
+          "nullable": true,
+          "prop": "lastMessageAt",
+          "propertyName": "lastMessageAt",
+          "required": false,
+          "source": "last_message_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "pageQueryOp": {
+        "fieldEq": [
+          "profileId",
+          "runMode"
+        ],
+        "fieldLike": [],
+        "keyWordLikeFields": [
+          "title",
+          "session_code"
+        ]
+      },
+      "prefix": "/admin/agent/session"
+    },
+    {
+      "api": [
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "minimum": 1,
+                  "title": "Id",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "info",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "category": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Category"
+                        },
+                        "createTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createtime"
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Description"
+                        },
+                        "displayName": {
+                          "title": "Displayname",
+                          "type": "string"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "level": {
+                          "title": "Level",
+                          "type": "string"
+                        },
+                        "metadataHash": {
+                          "title": "Metadatahash",
+                          "type": "string"
+                        },
+                        "promptMetadataJson": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Promptmetadatajson"
+                        },
+                        "schemaSummary": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Schemasummary"
+                        },
+                        "sourceType": {
+                          "title": "Sourcetype",
+                          "type": "string"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "boolean"
+                        },
+                        "toolName": {
+                          "title": "Toolname",
+                          "type": "string"
+                        },
+                        "updateTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Updatetime"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "toolName",
+                        "displayName",
+                        "sourceType",
+                        "level",
+                        "status",
+                        "metadataHash"
+                      ],
+                      "title": "AgentToolResourceRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "info",
+          "path": "/info",
+          "prefix": "/admin/agent/tool",
+          "summary": "获取详情",
+          "tag": "tool"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "list",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "items": {
+                        "properties": {
+                          "category": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Category"
+                          },
+                          "createTime": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Createtime"
+                          },
+                          "description": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Description"
+                          },
+                          "displayName": {
+                            "title": "Displayname",
+                            "type": "string"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "number"
+                          },
+                          "level": {
+                            "title": "Level",
+                            "type": "string"
+                          },
+                          "metadataHash": {
+                            "title": "Metadatahash",
+                            "type": "string"
+                          },
+                          "promptMetadataJson": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Promptmetadatajson"
+                          },
+                          "schemaSummary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Schemasummary"
+                          },
+                          "sourceType": {
+                            "title": "Sourcetype",
+                            "type": "string"
+                          },
+                          "status": {
+                            "title": "Status",
+                            "type": "boolean"
+                          },
+                          "toolName": {
+                            "title": "Toolname",
+                            "type": "string"
+                          },
+                          "updateTime": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Updatetime"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "toolName",
+                          "displayName",
+                          "sourceType",
+                          "level",
+                          "status",
+                          "metadataHash"
+                        ],
+                        "title": "AgentToolResourceRead",
+                        "type": "object"
+                      },
+                      "title": "Response Endpoint Agent Tool List Admin Agent Tool List Post",
+                      "type": "array"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "list",
+          "path": "/list",
+          "prefix": "/admin/agent/tool",
+          "summary": "获取列表",
+          "tag": "tool"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "page",
+                "required": false,
+                "schema": {
+                  "default": 1,
+                  "maximum": 100000,
+                  "minimum": 1,
+                  "title": "Page",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "size",
+                "required": false,
+                "schema": {
+                  "default": 10,
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Size",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "page",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "properties": {
+                              "category": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Category"
+                              },
+                              "createTime": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Createtime"
+                              },
+                              "description": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Description"
+                              },
+                              "displayName": {
+                                "title": "Displayname",
+                                "type": "string"
+                              },
+                              "id": {
+                                "title": "Id",
+                                "type": "number"
+                              },
+                              "level": {
+                                "title": "Level",
+                                "type": "string"
+                              },
+                              "metadataHash": {
+                                "title": "Metadatahash",
+                                "type": "string"
+                              },
+                              "promptMetadataJson": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Promptmetadatajson"
+                              },
+                              "schemaSummary": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Schemasummary"
+                              },
+                              "sourceType": {
+                                "title": "Sourcetype",
+                                "type": "string"
+                              },
+                              "status": {
+                                "title": "Status",
+                                "type": "boolean"
+                              },
+                              "toolName": {
+                                "title": "Toolname",
+                                "type": "string"
+                              },
+                              "updateTime": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Updatetime"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "toolName",
+                              "displayName",
+                              "sourceType",
+                              "level",
+                              "status",
+                              "metadataHash"
+                            ],
+                            "title": "AgentToolResourceRead",
+                            "type": "object"
+                          },
+                          "title": "Items",
+                          "type": "array"
+                        },
+                        "page": {
+                          "title": "Page",
+                          "type": "number"
+                        },
+                        "page_size": {
+                          "title": "Page Size",
+                          "type": "number"
+                        },
+                        "total": {
+                          "title": "Total",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "page_size"
+                      ],
+                      "title": "PageResult[AgentToolResourceRead]",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "page",
+          "path": "/page",
+          "prefix": "/admin/agent/tool",
+          "summary": "获取分页",
+          "tag": "tool"
+        }
+      ],
+      "columns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_name",
+          "dict": null,
+          "label": "toolName",
+          "nullable": false,
+          "prop": "toolName",
+          "propertyName": "toolName",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "tool_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "display_name",
+          "dict": null,
+          "label": "displayName",
+          "nullable": false,
+          "prop": "displayName",
+          "propertyName": "displayName",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "display_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "description",
+          "dict": null,
+          "label": "description",
+          "nullable": true,
+          "prop": "description",
+          "propertyName": "description",
+          "required": false,
+          "source": "description",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "category",
+          "dict": null,
+          "label": "category",
+          "nullable": true,
+          "prop": "category",
+          "propertyName": "category",
+          "required": false,
+          "source": "category",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "source_type",
+          "dict": null,
+          "label": "sourceType",
+          "nullable": false,
+          "prop": "sourceType",
+          "propertyName": "sourceType",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "source_type",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "level",
+          "dict": null,
+          "label": "level",
+          "nullable": false,
+          "prop": "level",
+          "propertyName": "level",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "level",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "status",
+          "dict": null,
+          "label": "status",
+          "nullable": false,
+          "prop": "status",
+          "propertyName": "status",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "status",
+          "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "schema_summary",
+          "dict": null,
+          "label": "schemaSummary",
+          "nullable": true,
+          "prop": "schemaSummary",
+          "propertyName": "schemaSummary",
+          "required": false,
+          "source": "schema_summary",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "prompt_metadata_json",
+          "dict": null,
+          "label": "promptMetadataJson",
+          "nullable": true,
+          "prop": "promptMetadataJson",
+          "propertyName": "promptMetadataJson",
+          "required": false,
+          "source": "prompt_metadata_json",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "metadata_hash",
+          "dict": null,
+          "label": "metadataHash",
+          "nullable": false,
+          "prop": "metadataHash",
+          "propertyName": "metadataHash",
+          "required": true,
+          "source": "metadata_hash",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "updated_at",
+          "dict": null,
+          "label": "updateTime",
+          "nullable": true,
+          "prop": "updateTime",
+          "propertyName": "updateTime",
+          "required": false,
+          "source": "updated_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "module": "agent",
+      "name": "tool",
+      "namespace": "admin/agent/tool",
+      "pageColumns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_name",
+          "dict": null,
+          "label": "toolName",
+          "nullable": false,
+          "prop": "toolName",
+          "propertyName": "toolName",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "tool_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "display_name",
+          "dict": null,
+          "label": "displayName",
+          "nullable": false,
+          "prop": "displayName",
+          "propertyName": "displayName",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "display_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "description",
+          "dict": null,
+          "label": "description",
+          "nullable": true,
+          "prop": "description",
+          "propertyName": "description",
+          "required": false,
+          "source": "description",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "category",
+          "dict": null,
+          "label": "category",
+          "nullable": true,
+          "prop": "category",
+          "propertyName": "category",
+          "required": false,
+          "source": "category",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "source_type",
+          "dict": null,
+          "label": "sourceType",
+          "nullable": false,
+          "prop": "sourceType",
+          "propertyName": "sourceType",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "source_type",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "level",
+          "dict": null,
+          "label": "level",
+          "nullable": false,
+          "prop": "level",
+          "propertyName": "level",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "level",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "status",
+          "dict": null,
+          "label": "status",
+          "nullable": false,
+          "prop": "status",
+          "propertyName": "status",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "status",
+          "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "schema_summary",
+          "dict": null,
+          "label": "schemaSummary",
+          "nullable": true,
+          "prop": "schemaSummary",
+          "propertyName": "schemaSummary",
+          "required": false,
+          "source": "schema_summary",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "prompt_metadata_json",
+          "dict": null,
+          "label": "promptMetadataJson",
+          "nullable": true,
+          "prop": "promptMetadataJson",
+          "propertyName": "promptMetadataJson",
+          "required": false,
+          "source": "prompt_metadata_json",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "metadata_hash",
+          "dict": null,
+          "label": "metadataHash",
+          "nullable": false,
+          "prop": "metadataHash",
+          "propertyName": "metadataHash",
+          "required": true,
+          "source": "metadata_hash",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "updated_at",
+          "dict": null,
+          "label": "updateTime",
+          "nullable": true,
+          "prop": "updateTime",
+          "propertyName": "updateTime",
+          "required": false,
+          "source": "updated_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "pageQueryOp": {
+        "fieldEq": [
+          "level",
+          "status",
+          "sourceType"
+        ],
+        "fieldLike": [],
+        "keyWordLikeFields": [
+          "tool_name",
+          "display_name"
+        ]
+      },
+      "prefix": "/admin/agent/tool"
+    },
+    {
+      "api": [
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "minimum": 1,
+                  "title": "Id",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "info",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "agentCode": {
+                          "title": "Agentcode",
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "title": "Agentname",
+                          "type": "string"
+                        },
+                        "completionTokens": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Completiontokens"
+                        },
+                        "createTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createtime"
+                        },
+                        "durationMs": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Durationms"
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Error"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "modelCalls": {
+                          "title": "Modelcalls",
+                          "type": "number"
+                        },
+                        "profileId": {
+                          "title": "Profileid",
+                          "type": "number"
+                        },
+                        "promptTokens": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Prompttokens"
+                        },
+                        "runMode": {
+                          "title": "Runmode",
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "title": "Sessionid",
+                          "type": "number"
+                        },
+                        "snapshotId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Snapshotid"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "toolCalls": {
+                          "title": "Toolcalls",
+                          "type": "number"
+                        },
+                        "toolRounds": {
+                          "title": "Toolrounds",
+                          "type": "number"
+                        },
+                        "userId": {
+                          "title": "Userid",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "profileId",
+                        "runMode",
+                        "agentCode",
+                        "agentName",
+                        "sessionId",
+                        "userId",
+                        "modelCalls",
+                        "toolRounds",
+                        "toolCalls",
+                        "status"
+                      ],
+                      "title": "AgentRunTraceRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "info",
+          "path": "/info",
+          "prefix": "/admin/agent/trace",
+          "summary": "获取详情",
+          "tag": "trace"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "page",
+                "required": false,
+                "schema": {
+                  "default": 1,
+                  "maximum": 100000,
+                  "minimum": 1,
+                  "title": "Page",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "size",
+                "required": false,
+                "schema": {
+                  "default": 10,
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Size",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "page",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "properties": {
+                              "agentCode": {
+                                "title": "Agentcode",
+                                "type": "string"
+                              },
+                              "agentName": {
+                                "title": "Agentname",
+                                "type": "string"
+                              },
+                              "completionTokens": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Completiontokens"
+                              },
+                              "createTime": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Createtime"
+                              },
+                              "durationMs": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Durationms"
+                              },
+                              "error": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Error"
+                              },
+                              "id": {
+                                "title": "Id",
+                                "type": "number"
+                              },
+                              "modelCalls": {
+                                "title": "Modelcalls",
+                                "type": "number"
+                              },
+                              "profileId": {
+                                "title": "Profileid",
+                                "type": "number"
+                              },
+                              "promptTokens": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Prompttokens"
+                              },
+                              "runMode": {
+                                "title": "Runmode",
+                                "type": "string"
+                              },
+                              "sessionId": {
+                                "title": "Sessionid",
+                                "type": "number"
+                              },
+                              "snapshotId": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Snapshotid"
+                              },
+                              "status": {
+                                "title": "Status",
+                                "type": "string"
+                              },
+                              "toolCalls": {
+                                "title": "Toolcalls",
+                                "type": "number"
+                              },
+                              "toolRounds": {
+                                "title": "Toolrounds",
+                                "type": "number"
+                              },
+                              "userId": {
+                                "title": "Userid",
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "profileId",
+                              "runMode",
+                              "agentCode",
+                              "agentName",
+                              "sessionId",
+                              "userId",
+                              "modelCalls",
+                              "toolRounds",
+                              "toolCalls",
+                              "status"
+                            ],
+                            "title": "AgentRunTraceRead",
+                            "type": "object"
+                          },
+                          "title": "Items",
+                          "type": "array"
+                        },
+                        "page": {
+                          "title": "Page",
+                          "type": "number"
+                        },
+                        "page_size": {
+                          "title": "Page Size",
+                          "type": "number"
+                        },
+                        "total": {
+                          "title": "Total",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "page_size"
+                      ],
+                      "title": "PageResult[AgentRunTraceRead]",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "page",
+          "path": "/page",
+          "prefix": "/admin/agent/trace",
+          "summary": "获取分页",
+          "tag": "trace"
+        }
+      ],
+      "columns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "profile_id",
+          "dict": null,
+          "label": "profileId",
+          "nullable": false,
+          "prop": "profileId",
+          "propertyName": "profileId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "profile_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "run_mode",
+          "dict": null,
+          "label": "runMode",
+          "nullable": false,
+          "prop": "runMode",
+          "propertyName": "runMode",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "run_mode",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "snapshot_id",
+          "dict": null,
+          "label": "snapshotId",
+          "nullable": true,
+          "prop": "snapshotId",
+          "propertyName": "snapshotId",
+          "required": false,
+          "source": "snapshot_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "agent_code",
+          "dict": null,
+          "label": "agentCode",
+          "nullable": false,
+          "prop": "agentCode",
+          "propertyName": "agentCode",
+          "required": true,
+          "source": "agent_code",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "agent_name",
+          "dict": null,
+          "label": "agentName",
+          "nullable": false,
+          "prop": "agentName",
+          "propertyName": "agentName",
+          "required": true,
+          "source": "agent_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "session_id",
+          "dict": null,
+          "label": "sessionId",
+          "nullable": false,
+          "prop": "sessionId",
+          "propertyName": "sessionId",
+          "required": true,
+          "source": "session_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "user_id",
+          "dict": null,
+          "label": "userId",
+          "nullable": false,
+          "prop": "userId",
+          "propertyName": "userId",
+          "required": true,
+          "source": "user_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "model_calls",
+          "dict": null,
+          "label": "modelCalls",
+          "nullable": false,
+          "prop": "modelCalls",
+          "propertyName": "modelCalls",
+          "required": true,
+          "source": "model_calls",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_rounds",
+          "dict": null,
+          "label": "toolRounds",
+          "nullable": false,
+          "prop": "toolRounds",
+          "propertyName": "toolRounds",
+          "required": true,
+          "source": "tool_rounds",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_calls",
+          "dict": null,
+          "label": "toolCalls",
+          "nullable": false,
+          "prop": "toolCalls",
+          "propertyName": "toolCalls",
+          "required": true,
+          "source": "tool_calls",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "prompt_tokens",
+          "dict": null,
+          "label": "promptTokens",
+          "nullable": true,
+          "prop": "promptTokens",
+          "propertyName": "promptTokens",
+          "required": false,
+          "source": "prompt_tokens",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "completion_tokens",
+          "dict": null,
+          "label": "completionTokens",
+          "nullable": true,
+          "prop": "completionTokens",
+          "propertyName": "completionTokens",
+          "required": false,
+          "source": "completion_tokens",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "duration_ms",
+          "dict": null,
+          "label": "durationMs",
+          "nullable": true,
+          "prop": "durationMs",
+          "propertyName": "durationMs",
+          "required": false,
+          "source": "duration_ms",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "status",
+          "dict": null,
+          "label": "status",
+          "nullable": false,
+          "prop": "status",
+          "propertyName": "status",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "status",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "error",
+          "dict": null,
+          "label": "error",
+          "nullable": true,
+          "prop": "error",
+          "propertyName": "error",
+          "required": false,
+          "source": "error",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "module": "agent",
+      "name": "trace",
+      "namespace": "admin/agent/trace",
+      "pageColumns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "profile_id",
+          "dict": null,
+          "label": "profileId",
+          "nullable": false,
+          "prop": "profileId",
+          "propertyName": "profileId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "profile_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "run_mode",
+          "dict": null,
+          "label": "runMode",
+          "nullable": false,
+          "prop": "runMode",
+          "propertyName": "runMode",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "run_mode",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "snapshot_id",
+          "dict": null,
+          "label": "snapshotId",
+          "nullable": true,
+          "prop": "snapshotId",
+          "propertyName": "snapshotId",
+          "required": false,
+          "source": "snapshot_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "agent_code",
+          "dict": null,
+          "label": "agentCode",
+          "nullable": false,
+          "prop": "agentCode",
+          "propertyName": "agentCode",
+          "required": true,
+          "source": "agent_code",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "agent_name",
+          "dict": null,
+          "label": "agentName",
+          "nullable": false,
+          "prop": "agentName",
+          "propertyName": "agentName",
+          "required": true,
+          "source": "agent_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "session_id",
+          "dict": null,
+          "label": "sessionId",
+          "nullable": false,
+          "prop": "sessionId",
+          "propertyName": "sessionId",
+          "required": true,
+          "source": "session_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "user_id",
+          "dict": null,
+          "label": "userId",
+          "nullable": false,
+          "prop": "userId",
+          "propertyName": "userId",
+          "required": true,
+          "source": "user_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "model_calls",
+          "dict": null,
+          "label": "modelCalls",
+          "nullable": false,
+          "prop": "modelCalls",
+          "propertyName": "modelCalls",
+          "required": true,
+          "source": "model_calls",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_rounds",
+          "dict": null,
+          "label": "toolRounds",
+          "nullable": false,
+          "prop": "toolRounds",
+          "propertyName": "toolRounds",
+          "required": true,
+          "source": "tool_rounds",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_calls",
+          "dict": null,
+          "label": "toolCalls",
+          "nullable": false,
+          "prop": "toolCalls",
+          "propertyName": "toolCalls",
+          "required": true,
+          "source": "tool_calls",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "prompt_tokens",
+          "dict": null,
+          "label": "promptTokens",
+          "nullable": true,
+          "prop": "promptTokens",
+          "propertyName": "promptTokens",
+          "required": false,
+          "source": "prompt_tokens",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "completion_tokens",
+          "dict": null,
+          "label": "completionTokens",
+          "nullable": true,
+          "prop": "completionTokens",
+          "propertyName": "completionTokens",
+          "required": false,
+          "source": "completion_tokens",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "duration_ms",
+          "dict": null,
+          "label": "durationMs",
+          "nullable": true,
+          "prop": "durationMs",
+          "propertyName": "durationMs",
+          "required": false,
+          "source": "duration_ms",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "status",
+          "dict": null,
+          "label": "status",
+          "nullable": false,
+          "prop": "status",
+          "propertyName": "status",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "status",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "error",
+          "dict": null,
+          "label": "error",
+          "nullable": true,
+          "prop": "error",
+          "propertyName": "error",
+          "required": false,
+          "source": "error",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "pageQueryOp": {
+        "fieldEq": [
+          "profileId",
+          "runMode",
+          "status"
+        ],
+        "fieldLike": [],
+        "keyWordLikeFields": []
+      },
+      "prefix": "/admin/agent/trace"
+    }
+  ],
   "ai": [
     {
       "api": [
