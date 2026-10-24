@@ -8,7 +8,8 @@
     "path": "/asset/character",
     "component": "modules/asset/views/character.vue",
     "icon": "icon-asset-character",
-    "sort_order": 55,
+    "parent_code": "nav_media",
+    "sort_order": 2,
     "role_codes": ["admin"],
     "children": [
       { "code": "asset_character_add", "name": "新增", "type": "button", "permission": "asset:character:add", "role_codes": ["admin"] },
@@ -33,7 +34,8 @@
     "path": "/asset/scene",
     "component": "modules/asset/views/scene.vue",
     "icon": "icon-asset-scene",
-    "sort_order": 56,
+    "parent_code": "nav_media",
+    "sort_order": 3,
     "role_codes": ["admin"],
     "children": [
       { "code": "asset_scene_add", "name": "新增", "type": "button", "permission": "asset:scene:add", "role_codes": ["admin"] },
@@ -57,7 +59,8 @@
     "path": "/asset/style",
     "component": "modules/asset/views/style.vue",
     "icon": "icon-asset-style",
-    "sort_order": 57,
+    "parent_code": "nav_media",
+    "sort_order": 4,
     "role_codes": ["admin"],
     "children": [
       { "code": "asset_style_add", "name": "新增", "type": "button", "permission": "asset:style:add", "role_codes": ["admin"] },
