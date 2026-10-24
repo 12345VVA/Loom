@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
 from app.core.database import get_session
+from app.framework.api.naming import resolve_alias
 from app.framework.controller_meta import (
     BaseController,
     CoolController,
@@ -39,7 +40,8 @@ _SSE_HEADERS = {
 
 
 class DebugChatRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    # alias_generator 对齐项目 DTO 惯例（EPS camelCase 入参，走查实测缺它 422）
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     profile_id: int
     session_id: int | None = None

@@ -68,6 +68,16 @@ declare namespace Eps {
 		enableMemory?: boolean;
 
 		/**
+		 * execution_mode
+		 */
+		executionMode?: string;
+
+		/**
+		 * workflow_definition_id
+		 */
+		workflowDefinitionId?: number;
+
+		/**
 		 * enabled
 		 */
 		enabled?: boolean;
@@ -287,6 +297,11 @@ declare namespace Eps {
 		 * duration_ms
 		 */
 		durationMs?: number;
+
+		/**
+		 * workflow_instance_id
+		 */
+		workflowInstanceId?: number;
 
 		/**
 		 * status
@@ -3142,6 +3157,8 @@ declare namespace Eps {
 		/** maxToolRounds */ maxToolRounds: number;
 		/** timeoutSeconds */ timeoutSeconds: number;
 		/** enableMemory */ enableMemory: boolean;
+		/** executionMode */ executionMode?: string;
+		/** workflowDefinitionId */ workflowDefinitionId?: number | null;
 		/** enabled */ enabled: boolean;
 		/** status */ status: string;
 		/** createdBy */ createdBy?: number | null;
@@ -3184,6 +3201,8 @@ declare namespace Eps {
 		/** maxToolRounds */ maxToolRounds: number;
 		/** timeoutSeconds */ timeoutSeconds: number;
 		/** enableMemory */ enableMemory: boolean;
+		/** executionMode */ executionMode?: string;
+		/** workflowDefinitionId */ workflowDefinitionId?: number | null;
 		/** enabled */ enabled: boolean;
 		/** status */ status: string;
 		/** createdBy */ createdBy?: number | null;

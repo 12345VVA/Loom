@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
 from app.core.database import get_session
+from app.framework.api.naming import resolve_alias
 from app.framework.controller_meta import BaseController, CoolController, CoolControllerMeta
 from app.framework.router.route_meta import Post
 from app.modules.agent.service.runtime.run_service import AgentRunService
@@ -20,7 +21,9 @@ _PERM = "agent:chat"
 
 
 class ChatStreamRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    # alias_generator 对齐项目 DTO 惯例（EPS camelCase 入参）——仅 populate_by_name 无 alias
+    # 时前端 camelCase 全线 422（走查实测）
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     profile_id: int
     session_id: int | None = None
@@ -28,7 +31,7 @@ class ChatStreamRequest(BaseModel):
 
 
 class ChatStopRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     trace_token: str
 

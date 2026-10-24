@@ -284,7 +284,9 @@ const agentName = computed(
 		t('agent.workspace.title')
 );
 const streamingRendered = computed(() => renderMarkdown(streamingText.value));
-const showAnalysis = computed(() => running || toolSteps.value.length > 0 || modelCallsCount.value > 0);
+// 注意 running 是 ref：computed 内必须 .value（裸引用是恒 truthy 的 RefImpl 对象，
+// 曾致空会话也渲染「Agent 分析」面板）
+const showAnalysis = computed(() => running.value || toolSteps.value.length > 0 || modelCallsCount.value > 0);
 // 模型调用/工具轮次：流中用本地计数，final 后以服务端权威口径为准
 const toolRounds = computed(() => toolRoundsFinal.value ?? toolSteps.value.length);
 
@@ -364,6 +366,10 @@ watch(
 );
 
 onMounted(refresh);
+
+// 悬浮球每次展开时重拉 profiles/sessions（面板常驻 DOM，登录态可能在挂载后才建立——
+// 未登录期 401 会留下空列表且不会自愈）
+defineExpose({ refresh });
 </script>
 
 <style lang="scss" scoped>

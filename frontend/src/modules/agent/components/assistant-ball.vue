@@ -2,6 +2,7 @@
 	<template v-if="!isMobileView">
 		<div
 			v-if="!isOpen"
+			ref="ballEl"
 			class="assistant-ball"
 			:class="{
 				'is-hovering': isHovering,
@@ -22,7 +23,7 @@
 		</div>
 
 		<div class="assistant-panel" :class="{ 'is-open': isOpen }">
-			<chat-workspace v-if="everOpened" mode="widget" closable @close="isOpen = false" />
+			<chat-workspace v-if="everOpened" ref="workspaceRef" mode="widget" closable @close="isOpen = false" />
 		</div>
 	</template>
 
@@ -37,11 +38,11 @@
 /**
  * 全局悬浮 AI 助手（智能体管理目录的常驻入口）。
  *
- * 交互：默认贴右缘半隐藏，悬停展开；可拖拽换位，静止 10s 后收纳进所在侧缘；
- * 点击展开右下角工作台侧栏（ChatWorkspace widget 模式）。移动端全屏接管。
- * 侧栏常驻 DOM，首次展开才挂载工作台，避免应用启动即发请求。
+ * 交互：默认右下完整可见（hover 仅缩放反馈）；可拖拽换位，静止 10s 后收纳进所在
+ * 侧缘（hover 伸出）；点击展开右下角工作台侧栏（ChatWorkspace widget 模式）。
+ * 移动端全屏接管。侧栏常驻 DOM，首次展开才挂载工作台，避免应用启动即发请求。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ChatWorkspace from './chat-workspace.vue';
 import ballIcon from '../static/img/ai-ball.png';
@@ -68,6 +69,7 @@ const isPointerDown = ref(false);
 const pointerId = ref<number | null>(null);
 
 const ballEl = ref<HTMLElement | null>(null);
+const workspaceRef = ref<{ refresh: () => Promise<void> } | null>(null);
 const ballLeft = ref(0);
 const ballTop = ref(0);
 
@@ -245,6 +247,8 @@ watch(isOpen, open => {
 	if (open) {
 		everOpened.value = true;
 		clearCollapseTimer();
+		// 登录态可能在面板挂载后才建立（401 留下空列表不自愈）——每次展开重拉
+		nextTick(() => workspaceRef.value?.refresh());
 	} else {
 		scheduleCollapse();
 	}
@@ -269,9 +273,12 @@ onBeforeUnmount(() => {
 
 <style lang="scss" scoped>
 .assistant-ball {
+	/* 默认态完整可见且不随 hover 位移——位移量大于露出宽度会让球在悬停时
+	「逃走」，指针落空导致点击无反应（真机踩坑）；hover 仅缩放反馈。
+	默认位置抬高避开右下角返回顶部按钮。 */
 	position: fixed;
-	bottom: 24px;
-	right: -60px;
+	bottom: 120px;
+	right: 20px;
 	width: 96px;
 	height: 96px;
 	cursor: pointer;
@@ -282,10 +289,6 @@ onBeforeUnmount(() => {
 
 	&.is-hovering {
 		transform: scale(1.12) rotate(5deg);
-	}
-
-	&.is-extended:not(.has-position) {
-		right: 24px;
 	}
 
 	&.has-position {

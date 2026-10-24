@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 from app.modules.agent.model.agent import (
     AGENT_PUBLISH_ACTION_ROLLBACK,
+    AGENT_STATUS_PUBLISHED,
     AgentProfile,
     AgentProfileCreateRequest,
     AgentProfileDraft,
@@ -122,6 +123,10 @@ class PublishProfileTestCase(unittest.TestCase):
         # 绑定之外的工具在资源层也存在（sync 同步了全部），但不得进入快照
         snapshot = self.service.publish(self.profile.id, current_user=self.owner)
         self.assertEqual(snapshot.version, 1)
+        # 状态迁移：发布后 profile.status 必须为 published（走查实测缺陷——此前漏迁，
+        # 前端 publishedProfiles 过滤恒空；单测盲区补断言）。self.profile 已被 add
+        # 出口 expunge（tools 还原数组），按 id 重查取最新行
+        self.assertEqual(self.session.get(AgentProfile, self.profile.id).status, AGENT_STATUS_PUBLISHED)
         self.assertIn("current_time", snapshot.snapshot_json)
         self.assertNotIn("query_asset", snapshot.snapshot_json)  # 未绑定不入快照
         import json

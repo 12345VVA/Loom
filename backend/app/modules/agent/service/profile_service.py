@@ -21,6 +21,7 @@ from app.modules.agent.model.agent import (
     AGENT_PUBLISH_ACTION_PUBLISH,
     AGENT_PUBLISH_ACTION_ROLLBACK,
     AGENT_STATUS_DRAFT,
+    AGENT_STATUS_PUBLISHED,
     AGENT_TOOL_LEVEL_READONLY,
     AgentProfileDraft,
     AgentProfilePublishRecord,
@@ -146,7 +147,8 @@ class AgentProfileService(BaseAdminCrudService):
         if current_user is not None:
             data["created_by"] = current_user.id
         tools = data.get("tools")
-        data["tools"] = json.dumps(tools, ensure_ascii=False) if tools else None
+        # 空列表存 '[]' 而非 NULL：出口 Read 契约 tools: list[str] 不接受 None（走查实测空工具新增 500）
+        data["tools"] = json.dumps(tools, ensure_ascii=False) if tools is not None else None
         if not str(data.get("code") or "").strip():
             data["code"] = self._generate_code()
         else:
@@ -154,6 +156,11 @@ class AgentProfileService(BaseAdminCrudService):
             self._assert_code_available(data["code"])
         entity = super().add(data)
         upsert_draft(self.session, entity)  # 同步建草稿：调试台永远最新（评审 P1-1）
+        # add 出口与 page/info 同构：tools 还原数组（Read 契约 list[str]，ORM 内是 JSON 文本——
+        # 走查实测响应序列化 500，一期被「P6 后暂停走查」掩盖）。先脱管再改属性，
+        # 防脏对象 autoflush 把 list 写回 TEXT 列。
+        self.session.expunge(entity)
+        entity.tools = json.loads(entity.tools) if (entity.tools or "").strip() else []
         return entity
 
     def update(self, payload: Any, current_user: User | None = None) -> Any:
@@ -166,12 +173,15 @@ class AgentProfileService(BaseAdminCrudService):
             self._assert_code_available(data.get("code"), exclude_id=data.get("id"))
         if "tools" in data:
             tools = data.get("tools")
-            data["tools"] = json.dumps(tools, ensure_ascii=False) if tools else None
+            data["tools"] = json.dumps(tools, ensure_ascii=False) if tools is not None else None
         entity = super().update(data)
         if entity is not None:
             refreshed = self.session.get(self.model, entity.id)
             if refreshed is not None:
                 upsert_draft(self.session, refreshed)
+                self.session.expunge(refreshed)  # 脱管后改属性（同 add，防 autoflush 写回）
+                refreshed.tools = json.loads(refreshed.tools) if (refreshed.tools or "").strip() else []
+                entity = refreshed
         return entity
 
     def delete(
@@ -203,6 +213,9 @@ class AgentProfileService(BaseAdminCrudService):
         for item in rows:
             if isinstance(item, dict) and isinstance(item.get("tools"), str):
                 item["tools"] = json.loads(item["tools"]) if item["tools"].strip() else []
+            elif isinstance(item, dict) and item.get("tools") is None:
+                # 存量 NULL 行兜底（空工具历史写入形态），Read 契约 tools: list[str] 不接受 None
+                item["tools"] = []
         return super()._finalize_data(data)
 
     # --- code 唯一性 ---
@@ -370,7 +383,13 @@ class AgentProfileService(BaseAdminCrudService):
         if current_record is not None:
             current_snapshot = self.session.get(AgentProfileSnapshot, current_record.snapshot_id)
             if current_snapshot is not None and current_snapshot.snapshot_hash == snapshot_hash:
-                return current_snapshot  # 幂等：内容相同不新建版本（评审 v1.4 P1）
+                # 幂等：内容相同不新建版本（评审 v1.4 P1）；状态迁移照常生效
+                # （历史库可能存在「已发布但 status 残留 draft」的行——真机修复时踩中）
+                if profile.status != AGENT_STATUS_PUBLISHED:
+                    profile.status = AGENT_STATUS_PUBLISHED
+                    self.session.add(profile)
+                    self.session.commit()
+                return current_snapshot
 
         # ③ 写不可变快照 → 先清 is_current 再插入新 record（顺序不可颠倒，设计 3.5）
         snapshot = AgentProfileSnapshot(
@@ -397,7 +416,11 @@ class AgentProfileService(BaseAdminCrudService):
             published_at=datetime.now(UTC),
         )
         self.session.add(record)
-        # ④ 单事务提交；提交后事务外失效运行时快照缓存
+        # ④ 状态迁移 + 单事务提交；提交后事务外失效运行时快照缓存
+        # （走查实测缺陷修复：此前漏迁 status，前端 publishedProfiles 过滤恒空——
+        #   单测只断言快照/记录未断言状态字段，盲区由真机暴露）
+        profile.status = AGENT_STATUS_PUBLISHED
+        self.session.add(profile)
         self.session.commit()
         self._invalidate_snapshot_cache()
         self.session.refresh(snapshot)
