@@ -123,6 +123,7 @@ def build_model_messages(
 
     ① 必需项（护栏/system + 工具 schema）→ ② 当前输入必须完整 → ③ 注入上下文按优先级截断
     → ④ 历史拿剩余预算按完整原子单元裁剪（保底最近 2 个单元超长单条截断）。
+    工具结果注入历史前截 200 字（3.4.5；完整结果仅存 agent_message 与 tool_call_log）。
     system+schema 超预算属配置错误直接报错；当前输入超限显式报错（不静默截断）。
     """
     from langchain_core.messages import SystemMessage
@@ -153,7 +154,21 @@ def build_model_messages(
             remaining -= estimate_tokens(injection)
 
     # ④ 历史按原子单元从新到旧装填，保底 MIN_KEEP_UNITS
-    units = _atomic_units(history)
+    # 工具结果先截 200 字（设计 3.4.5：完整结果仅存 agent_message 与 tool_call_log，
+    # 不修改原对象——新建截断版 ToolMessage 保持 tool_call_id 配对）
+    trimmed_history: list[BaseMessage] = []
+    for message in history:
+        if isinstance(message, ToolMessage) and len(str(message.content)) > TOOL_RESULT_INJECT_LIMIT:
+            trimmed_history.append(
+                ToolMessage(
+                    content=truncate_tool_result(str(message.content)),
+                    tool_call_id=message.tool_call_id or "",
+                    name=message.name,
+                )
+            )
+        else:
+            trimmed_history.append(message)
+    units = _atomic_units(trimmed_history)
     kept: list[list[BaseMessage]] = []
     for unit in reversed(units):
         unit_tokens = sum(_message_tokens(m) for m in unit)

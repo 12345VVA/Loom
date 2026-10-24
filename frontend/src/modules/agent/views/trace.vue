@@ -115,14 +115,18 @@ async function openDetail(row: any) {
 	} catch {
 		detailMessages.value = []; // 他人会话（管理员查看 trace）消息不可见——仅展示计数面
 	}
-	// 工具明细：trace 消息里的 tool 行转为时间线块
-	toolBlocks.value = ((detailMessages.value || []) as any[])
-		.filter((m: any) => m.role === 'tool')
-		.map((m: any) => ({
-			toolCallId: m.toolCallId,
-			toolName: m.name || '-',
-			status: 'done' as const
+	// 工具明细走 tool_call_log（观测二级：参数摘要/结果摘要/耗时/成败——非消息拼凑）
+	try {
+		const logs = await service.agent.trace.toolLogs({ trace_id: row.id });
+		toolBlocks.value = ((logs || []) as any[]).map((log: any) => ({
+			toolCallId: String(log.id),
+			toolName: log.toolName,
+			status: log.success === false ? ('failed' as const) : ('done' as const),
+			duration: log.durationMs ?? undefined
 		}));
+	} catch {
+		toolBlocks.value = []; // 越权/无明细时留空（消息轨迹仍在）
+	}
 	detailVisible.value = true;
 }
 

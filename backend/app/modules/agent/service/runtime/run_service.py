@@ -625,8 +625,17 @@ class AgentRunService:
                 state = graph.invoke(
                     {"messages": [_HumanMessage(content=job["question"])], "model_calls": 0, "tool_rounds": 0}
                 )
-                self._finish_run(db, job, state, AGENT_RUN_COMPLETED, started, None)
-                handle.close("final", self._final_payload(state, AGENT_RUN_COMPLETED))
+                # 终态判定（正常完成路径同样检查取消/超时——should_cancel 使图软停止自然走完，
+                # 终态不得误标 completed，验收 19/取消语义）
+                if is_cancel_requested(handle.trace_token, handle):
+                    self._finish_run(db, job, state, AGENT_RUN_CANCELLED, started, "已请求取消")
+                    handle.close("cancelled", {"message": "运行已取消"})
+                elif handle.deadline.expired():
+                    self._finish_run(db, job, state, AGENT_RUN_TIMED_OUT, started, "运行超时")
+                    handle.close("timed_out", {"message": "运行超时"})
+                else:
+                    self._finish_run(db, job, state, AGENT_RUN_COMPLETED, started, None)
+                    handle.close("final", self._final_payload(state, AGENT_RUN_COMPLETED))
             except ContextBudgetError as exc:
                 self._finish_run(db, job, None, AGENT_RUN_FAILED, started, f"上下文预算：{exc}")
                 handle.close("error", {"message": str(exc)})

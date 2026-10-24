@@ -1,4 +1,314 @@
 declare namespace Eps {
+	interface chat {
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
+	interface profile {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * code
+		 */
+		code?: string;
+
+		/**
+		 * name
+		 */
+		name?: string;
+
+		/**
+		 * description
+		 */
+		description?: string;
+
+		/**
+		 * model_profile_code
+		 */
+		modelProfileCode?: string;
+
+		/**
+		 * system_prompt
+		 */
+		systemPrompt?: string;
+
+		/**
+		 * tools
+		 */
+		tools?: string;
+
+		/**
+		 * temperature
+		 */
+		temperature?: number;
+
+		/**
+		 * max_tokens
+		 */
+		maxTokens?: number;
+
+		/**
+		 * max_tool_rounds
+		 */
+		maxToolRounds?: number;
+
+		/**
+		 * timeout_seconds
+		 */
+		timeoutSeconds?: number;
+
+		/**
+		 * enable_memory
+		 */
+		enableMemory?: boolean;
+
+		/**
+		 * enabled
+		 */
+		enabled?: boolean;
+
+		/**
+		 * status
+		 */
+		status?: string;
+
+		/**
+		 * created_by
+		 */
+		createdBy?: number;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * updated_at
+		 */
+		updateTime?: Date;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
+	interface session {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * session_code
+		 */
+		sessionCode?: string;
+
+		/**
+		 * profile_id
+		 */
+		profileId?: number;
+
+		/**
+		 * user_id
+		 */
+		userId?: number;
+
+		/**
+		 * title
+		 */
+		title?: string;
+
+		/**
+		 * run_mode
+		 */
+		runMode?: string;
+
+		/**
+		 * last_message_at
+		 */
+		lastMessageAt?: Date;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
+	interface tool {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * tool_name
+		 */
+		toolName?: string;
+
+		/**
+		 * display_name
+		 */
+		displayName?: string;
+
+		/**
+		 * description
+		 */
+		description?: string;
+
+		/**
+		 * category
+		 */
+		category?: string;
+
+		/**
+		 * source_type
+		 */
+		sourceType?: string;
+
+		/**
+		 * level
+		 */
+		level?: string;
+
+		/**
+		 * status
+		 */
+		status?: boolean;
+
+		/**
+		 * schema_summary
+		 */
+		schemaSummary?: string;
+
+		/**
+		 * prompt_metadata_json
+		 */
+		promptMetadataJson?: string;
+
+		/**
+		 * metadata_hash
+		 */
+		metadataHash?: string;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * updated_at
+		 */
+		updateTime?: Date;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
+	interface trace {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * profile_id
+		 */
+		profileId?: number;
+
+		/**
+		 * run_mode
+		 */
+		runMode?: string;
+
+		/**
+		 * snapshot_id
+		 */
+		snapshotId?: number;
+
+		/**
+		 * agent_code
+		 */
+		agentCode?: string;
+
+		/**
+		 * agent_name
+		 */
+		agentName?: string;
+
+		/**
+		 * session_id
+		 */
+		sessionId?: number;
+
+		/**
+		 * user_id
+		 */
+		userId?: number;
+
+		/**
+		 * model_calls
+		 */
+		modelCalls?: number;
+
+		/**
+		 * tool_rounds
+		 */
+		toolRounds?: number;
+
+		/**
+		 * tool_calls
+		 */
+		toolCalls?: number;
+
+		/**
+		 * prompt_tokens
+		 */
+		promptTokens?: number;
+
+		/**
+		 * completion_tokens
+		 */
+		completionTokens?: number;
+
+		/**
+		 * duration_ms
+		 */
+		durationMs?: number;
+
+		/**
+		 * status
+		 */
+		status?: string;
+
+		/**
+		 * error
+		 */
+		error?: string;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
 	interface dashboard {
 		/**
 		 * 任意键值
@@ -402,153 +712,6 @@ declare namespace Eps {
 		 * default_config
 		 */
 		defaultConfig?: string;
-
-		/**
-		 * is_active
-		 */
-		status?: boolean;
-
-		/**
-		 * sort_order
-		 */
-		orderNum?: number;
-
-		/**
-		 * created_at
-		 */
-		createTime?: Date;
-
-		/**
-		 * updated_at
-		 */
-		updateTime?: Date;
-
-		/**
-		 * 任意键值
-		 */
-		[key: string]: any;
-	}
-
-	interface profile {
-		/**
-		 * id
-		 */
-		id?: number;
-
-		/**
-		 * code
-		 */
-		code?: string;
-
-		/**
-		 * name
-		 */
-		name?: string;
-
-		/**
-		 * model_id
-		 */
-		modelId?: number;
-
-		/**
-		 * model_name
-		 */
-		modelName?: string;
-
-		/**
-		 * model_type
-		 */
-		modelType?: string;
-
-		/**
-		 * model_code
-		 */
-		modelCode?: string;
-
-		/**
-		 * model_capabilities
-		 */
-		modelCapabilities?: string;
-
-		/**
-		 * provider_name
-		 */
-		providerName?: string;
-
-		/**
-		 * provider_code
-		 */
-		providerCode?: string;
-
-		/**
-		 * provider_adapter
-		 */
-		providerAdapter?: string;
-
-		/**
-		 * model_default_config
-		 */
-		modelDefaultConfig?: string;
-
-		/**
-		 * scenario
-		 */
-		scenario?: string;
-
-		/**
-		 * temperature
-		 */
-		temperature?: number;
-
-		/**
-		 * top_p
-		 */
-		topP?: number;
-
-		/**
-		 * max_tokens
-		 */
-		maxTokens?: number;
-
-		/**
-		 * response_format
-		 */
-		responseFormat?: string;
-
-		/**
-		 * tools_config
-		 */
-		toolsConfig?: string;
-
-		/**
-		 * custom_config
-		 */
-		customConfig?: string;
-
-		/**
-		 * timeout
-		 */
-		timeout?: number;
-
-		/**
-		 * retry_count
-		 */
-		retryCount?: number;
-
-		/**
-		 * retry_delay_seconds
-		 */
-		retryDelaySeconds?: number;
-
-		/**
-		 * fallback_profile_id
-		 */
-		fallbackProfileId?: number;
-
-		/**
-		 * is_default
-		 */
-		isDefault?: boolean;
 
 		/**
 		 * is_active
@@ -1080,13 +1243,6 @@ declare namespace Eps {
 	}
 
 	interface open {
-		/**
-		 * 任意键值
-		 */
-		[key: string]: any;
-	}
-
-	interface session {
 		/**
 		 * 任意键值
 		 */
@@ -2968,6 +3124,117 @@ declare namespace Eps {
 		[key: string]: any;
 	}
 
+	interface AgentChatStopStreamResponse {
+		/** stopped */ stopped: boolean;
+		/** message */ message: string;
+	}
+
+	interface AgentProfileAddResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** description */ description?: string | null;
+		/** modelProfileCode */ modelProfileCode: string;
+		/** systemPrompt */ systemPrompt?: string | null;
+		/** tools */ tools?: string[];
+		/** temperature */ temperature: number;
+		/** maxTokens */ maxTokens: number;
+		/** maxToolRounds */ maxToolRounds: number;
+		/** timeoutSeconds */ timeoutSeconds: number;
+		/** enableMemory */ enableMemory: boolean;
+		/** enabled */ enabled: boolean;
+		/** status */ status: string;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime?: string | null;
+		/** updateTime */ updateTime?: string | null;
+	}
+
+	interface AgentProfilePageResponse {
+		pagination: PagePagination;
+		list: profile[];
+	}
+
+	interface AgentProfilePublishResponse {
+		/** snapshot_id */ snapshot_id: number;
+		/** version */ version: number;
+		/** snapshot_hash */ snapshot_hash: string;
+	}
+
+	interface AgentProfileRollbackResponse {
+		/** snapshot_id */ snapshot_id: number;
+		/** version */ version: number;
+		/** snapshot_hash */ snapshot_hash: string;
+	}
+
+	interface AgentProfileToggleEnabledResponse {
+		/** id */ id: number;
+		/** enabled */ enabled: boolean;
+	}
+
+	interface AgentProfileUpdateResponse {
+		/** id */ id: number;
+		/** code */ code: string;
+		/** name */ name: string;
+		/** description */ description?: string | null;
+		/** modelProfileCode */ modelProfileCode: string;
+		/** systemPrompt */ systemPrompt?: string | null;
+		/** tools */ tools?: string[];
+		/** temperature */ temperature: number;
+		/** maxTokens */ maxTokens: number;
+		/** maxToolRounds */ maxToolRounds: number;
+		/** timeoutSeconds */ timeoutSeconds: number;
+		/** enableMemory */ enableMemory: boolean;
+		/** enabled */ enabled: boolean;
+		/** status */ status: string;
+		/** createdBy */ createdBy?: number | null;
+		/** createTime */ createTime?: string | null;
+		/** updateTime */ updateTime?: string | null;
+	}
+
+	interface AgentSessionPageResponse {
+		pagination: PagePagination;
+		list: session[];
+	}
+
+	interface AgentToolPageResponse {
+		pagination: PagePagination;
+		list: tool[];
+	}
+
+	interface AgentToolRefreshResponse {
+		/** ok */ ok: boolean;
+		/** count */ count?: number;
+		/** message */ message?: string;
+	}
+
+	interface AgentToolRegistryStatusResponse {
+		/** degraded */ degraded: boolean;
+		/** error */ error?: string | null;
+		/** toolCount */ toolCount: number;
+		/** tools */ tools: string[];
+	}
+
+	interface AgentToolToggleEnabledResponse {
+		/** id */ id: number;
+		/** toolName */ toolName: string;
+		/** displayName */ displayName: string;
+		/** description */ description?: string | null;
+		/** category */ category?: string | null;
+		/** sourceType */ sourceType: string;
+		/** level */ level: string;
+		/** status */ status: boolean;
+		/** schemaSummary */ schemaSummary?: string | null;
+		/** promptMetadataJson */ promptMetadataJson?: string | null;
+		/** metadataHash */ metadataHash: string;
+		/** createTime */ createTime?: string | null;
+		/** updateTime */ updateTime?: string | null;
+	}
+
+	interface AgentTracePageResponse {
+		pagination: PagePagination;
+		list: trace[];
+	}
+
 	interface AiGovernance_eventPageResponse {
 		pagination: PagePagination;
 		list: governance_event[];
@@ -4478,6 +4745,281 @@ declare namespace Eps {
 		/** userId */ userId?: number | null;
 		/** createTime */ createTime: string;
 		/** updateTime */ updateTime: string;
+	}
+
+	interface AgentChat {
+		/**
+		 * 正式对话流式运行（published 快照；受控事件队列）
+		 */
+		chatStream(data?: any): Promise<any>;
+
+		/**
+		 * 停止运行（取消令牌置位；仅本人）
+		 */
+		stopStream(data?: any): Promise<AgentChatStopStreamResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: { chatStream: string; stopStream: string };
+
+		/**
+		 * 权限状态
+		 */
+		_permission: { chatStream: boolean; stopStream: boolean };
+
+		request: Request;
+	}
+
+	interface AgentProfile {
+		/**
+		 * 新增
+		 */
+		add(data?: any): Promise<AgentProfileAddResponse>;
+
+		/**
+		 * 调试台（draft 草稿试聊，SSE 受控事件流）
+		 */
+		debugChat(data?: any): Promise<any>;
+
+		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<profile>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<profile[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AgentProfilePageResponse>;
+
+		/**
+		 * 发布（锁前移四步：读草稿/组装/校验/切换 isCurrent）
+		 */
+		publish(data?: any): Promise<AgentProfilePublishResponse>;
+
+		/**
+		 * 回滚到指定快照（不新建快照，切换 isCurrent 指针）
+		 */
+		rollback(data?: any): Promise<AgentProfileRollbackResponse>;
+
+		/**
+		 * 启停（实时运行控制，不被发布快照冻结）
+		 */
+		toggleEnabled(data?: any): Promise<AgentProfileToggleEnabledResponse>;
+
+		/**
+		 * 更新
+		 */
+		update(data?: any): Promise<AgentProfileUpdateResponse>;
+
+		/**
+		 * 快照版本列表（新→旧；前端回滚选择器数据源）
+		 */
+		versions(data: {
+			id: number;
+		}): Promise<
+			{
+				/** id */ id: number;
+				/** version */ version: number;
+				/** snapshot_hash */ snapshot_hash: string;
+				/** created_at */ created_at?: any;
+			}[]
+		>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			add: string;
+			debugChat: string;
+			delete: string;
+			info: string;
+			list: string;
+			page: string;
+			publish: string;
+			rollback: string;
+			toggleEnabled: string;
+			update: string;
+			versions: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			add: boolean;
+			debugChat: boolean;
+			delete: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			publish: boolean;
+			rollback: boolean;
+			toggleEnabled: boolean;
+			update: boolean;
+			versions: boolean;
+		};
+
+		request: Request;
+	}
+
+	interface AgentSession {
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<session>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<session[]>;
+
+		/**
+		 * 会话消息轨迹（仅属主；含工具调用配对）
+		 */
+		messages(data: {
+			session_id: number;
+		}): Promise<
+			{
+				/** id */ id: number;
+				/** sessionId */ sessionId: number;
+				/** role */ role: string;
+				/** content */ content?: string | null;
+				/** name */ name?: string | null;
+				/** toolCallId */ toolCallId?: string | null;
+				/** tokenCount */ tokenCount?: number | null;
+				/** meta */ meta?: string | null;
+				/** createTime */ createTime?: string | null;
+			}[]
+		>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AgentSessionPageResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: { info: string; list: string; messages: string; page: string };
+
+		/**
+		 * 权限状态
+		 */
+		_permission: { info: boolean; list: boolean; messages: boolean; page: boolean };
+
+		request: Request;
+	}
+
+	interface AgentTool {
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<tool>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<tool[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AgentToolPageResponse>;
+
+		/**
+		 * 资源层同步（仅 DB sync，不重建执行注册表）
+		 */
+		refresh(data?: any): Promise<AgentToolRefreshResponse>;
+
+		/**
+		 * 执行注册表状态（degraded 可见性）
+		 */
+		registryStatus(data?: any): Promise<AgentToolRegistryStatusResponse>;
+
+		/**
+		 * 工具启停（实时运行控制，D14 紧急禁用立即生效）
+		 */
+		toggleEnabled(data?: any): Promise<AgentToolToggleEnabledResponse>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			info: string;
+			list: string;
+			page: string;
+			refresh: string;
+			registryStatus: string;
+			toggleEnabled: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			refresh: boolean;
+			registryStatus: boolean;
+			toggleEnabled: boolean;
+		};
+
+		request: Request;
+	}
+
+	interface AgentTrace {
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<trace>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AgentTracePageResponse>;
+
+		/**
+		 * run 的工具调用明细（仅本人 trace；观测二级）
+		 */
+		toolLogs(data: {
+			trace_id: number;
+		}): Promise<
+			{
+				/** id */ id: number;
+				/** traceId */ traceId: number;
+				/** toolName */ toolName: string;
+				/** argsSummary */ argsSummary?: string | null;
+				/** resultSummary */ resultSummary?: string | null;
+				/** durationMs */ durationMs?: number | null;
+				/** success */ success?: boolean | null;
+				/** error */ error?: string | null;
+				/** createTime */ createTime?: string | null;
+			}[]
+		>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: { info: string; page: string; toolLogs: string };
+
+		/**
+		 * 权限状态
+		 */
+		_permission: { info: boolean; page: boolean; toolLogs: boolean };
+
+		request: Request;
 	}
 
 	interface AiDashboard {
@@ -7285,6 +7827,13 @@ declare namespace Eps {
 	type Service = {
 		request: Request;
 
+		agent: {
+			chat: AgentChat;
+			profile: AgentProfile;
+			session: AgentSession;
+			tool: AgentTool;
+			trace: AgentTrace;
+		};
 		ai: {
 			dashboard: AiDashboard;
 			governance_event: AiGovernance_event;

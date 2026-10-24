@@ -5592,6 +5592,188 @@
           "prefix": "/admin/agent/trace",
           "summary": "获取分页",
           "tag": "trace"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "trace_id",
+                "required": true,
+                "schema": {
+                  "title": "Trace Id",
+                  "type": "number"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "items": {
+                        "properties": {
+                          "argsSummary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Argssummary"
+                          },
+                          "createTime": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Createtime"
+                          },
+                          "durationMs": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Durationms"
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Error"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "number"
+                          },
+                          "resultSummary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Resultsummary"
+                          },
+                          "success": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Success"
+                          },
+                          "toolName": {
+                            "title": "Toolname",
+                            "type": "string"
+                          },
+                          "traceId": {
+                            "title": "Traceid",
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "traceId",
+                          "toolName"
+                        ],
+                        "title": "AgentToolCallLogRead",
+                        "type": "object"
+                      },
+                      "title": "Response Tool Logs Admin Agent Trace Toollogs Get",
+                      "type": "array"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "toolLogs",
+          "path": "/toolLogs",
+          "prefix": "/admin/agent/trace",
+          "summary": "run 的工具调用明细（仅本人 trace；观测二级）",
+          "tag": "trace"
         }
       ],
       "columns": [

@@ -306,6 +306,20 @@ class AgentMessageRead(BaseModel):
     created_at: datetime | None = None
 
 
+class AgentToolCallLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    trace_id: int
+    tool_name: str
+    args_summary: str | None = None
+    result_summary: str | None = None
+    duration_ms: int | None = None
+    success: bool | None = None
+    error: str | None = None
+    created_at: datetime | None = None
+
+
 class AgentRunTraceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
 
