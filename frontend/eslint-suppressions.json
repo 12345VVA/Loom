@@ -77,9 +77,6 @@
   "src/modules/agent/views/profile.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 19
-    },
-    "vue/component-name-in-template-casing": {
-      "count": 2
     }
   },
   "src/modules/agent/views/session.vue": {

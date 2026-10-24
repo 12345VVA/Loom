@@ -2,6 +2,9 @@
 	<cl-crud ref="Crud">
 		<cl-row>
 			<cl-add-btn :label="t('agent.profile.add')" />
+			<cl-refresh-btn />
+			<cl-flex1 />
+			<cl-search-key :placeholder="t('agent.profile.searchPlaceholder')" />
 		</cl-row>
 
 		<cl-row>
@@ -15,39 +18,16 @@
 
 		<cl-upsert ref="Upsert" />
 
-		<!-- 调试台 drawer（draft 试聊，SSE） -->
+		<!-- 调试台 drawer（draft 试聊，复用会话工作台 embedded 模式） -->
 		<cl-drawer v-model="debugVisible" :title="t('agent.debug.title')" size="55%">
-			<div class="debug-panel">
-				<div class="debug-messages">
-					<div v-if="!debugMessages.length && !debugRunning" class="debug-empty">
-						{{ t('agent.debug.empty') }}
-					</div>
-					<ChatMessage v-for="(m, i) in debugMessages" :key="m.id || i" :message="m" />
-					<div v-if="debugRunningTool" class="live-tool">
-						<el-icon class="is-loading"><Loading /></el-icon>
-						{{ t('agent.session.toolRunning') }}：{{ debugRunningTool.toolName }}
-					</div>
-					<div v-if="debugRunning && debugStreamingText" class="streaming">{{ debugStreamingText }}</div>
-					<el-alert v-if="debugStopHint" :title="debugStopHint" type="warning" :closable="false" />
-				</div>
-				<div class="debug-input">
-					<el-input
-						v-model="debugInput"
-						type="textarea"
-						:rows="2"
-						:disabled="debugRunning"
-						:placeholder="t('agent.debug.inputPlaceholder')"
-					/>
-					<div class="debug-actions">
-						<el-button v-if="debugRunning" type="danger" size="small" @click="debugStop()">
-							{{ t('agent.session.stop') }}
-						</el-button>
-						<el-button v-else type="primary" size="small" :disabled="!debugInput.trim()" @click="sendDebug">
-							{{ t('agent.debug.send') }}
-						</el-button>
-					</div>
-				</div>
-			</div>
+			<chat-workspace
+				v-if="debugVisible"
+				mode="embedded"
+				closable
+				:draft-profile-id="debugProfileId"
+				class="debug-workspace"
+				@close="debugVisible = false"
+			/>
 		</cl-drawer>
 
 		<!-- 版本列表 drawer -->
@@ -77,10 +57,8 @@ import { onMounted, ref } from 'vue';
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Loading } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
-import ChatMessage from '../components/chat-message.vue';
-import { useAgentSession } from '../composables/use-agent-session';
+import ChatWorkspace from '../components/chat-workspace.vue';
 
 const { service } = useCool();
 const { t } = useI18n();
@@ -107,30 +85,9 @@ onMounted(async () => {
 	}
 });
 
-// 调试台（draft 模式共享 useAgentSession；解构后模板顶层自动解包）
-const debug = useAgentSession({ mode: 'draft' });
-const {
-	messages: debugMessages,
-	running: debugRunning,
-	runningTool: debugRunningTool,
-	streamingText: debugStreamingText,
-	stopHint: debugStopHint,
-	currentProfileId: debugProfileIdRef,
-	send: debugSend,
-	stop: debugStop
-} = debug;
-
+// 调试台：draft 模式工作台（profileId 由 drawer 打开时注入）
 const debugVisible = ref(false);
-const debugInput = ref('');
 const debugProfileId = ref<number | null>(null);
-
-async function sendDebug() {
-	const question = debugInput.value.trim();
-	if (!question || debugRunning.value) return;
-	debugInput.value = '';
-	debugProfileIdRef.value = debugProfileId.value ?? undefined;
-	await debugSend(question);
-}
 
 // 版本列表
 const versionVisible = ref(false);
@@ -153,12 +110,13 @@ async function onRollback(row: any) {
 	versions.value = ((await serviceAgent.versions({ id: versionProfileId.value })) || []) as any[];
 }
 
-// ---- 表格形态 ----
+// ---- 表格形态（列布局对齐参考实现：名称/编码/描述/渠道/工具/状态/启停/时间） ----
 const Table = useTable({
 	columns: [
 		{ type: 'index', label: '#', width: 50 },
-		{ label: t('agent.profile.code'), prop: 'code', minWidth: 130 },
-		{ label: t('agent.profile.name'), prop: 'name', minWidth: 130 },
+		{ label: t('agent.profile.name'), prop: 'name', minWidth: 140 },
+		{ label: t('agent.profile.code'), prop: 'code', minWidth: 130, showOverflowTooltip: true },
+		{ label: t('agent.profile.description'), prop: 'description', minWidth: 180, showOverflowTooltip: true },
 		{ label: t('agent.profile.modelProfile'), prop: 'modelProfileCode', minWidth: 120 },
 		{
 			label: t('agent.profile.tools'),
@@ -178,6 +136,7 @@ const Table = useTable({
 		{
 			type: 'op',
 			width: 300,
+			fixed: 'right',
 			buttons: [
 				({ row }: any) => ({
 					label: t('agent.profile.debug'),
@@ -303,8 +262,6 @@ const Crud = useCrud({ service: serviceAgent }, (app) => {
 
 async function openDebug(row: any) {
 	debugProfileId.value = row.id;
-	debugProfileIdRef.value = row.id;
-	debug.newSession();
 	debugVisible.value = true;
 }
 
@@ -325,53 +282,8 @@ async function onToggle(row: any) {
 </script>
 
 <style lang="scss" scoped>
-.debug-panel {
-	display: flex;
-	flex-direction: column;
+.debug-workspace {
 	height: 100%;
-	padding: 12px;
-	box-sizing: border-box;
-}
-
-.debug-messages {
-	flex: 1;
-	overflow-y: auto;
-
-	.debug-empty {
-		color: var(--el-text-color-secondary);
-		text-align: center;
-		margin-top: 40px;
-		font-size: 13px;
-	}
-
-	.live-tool {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		color: var(--el-color-primary);
-		font-size: 13px;
-		margin: 8px 0;
-	}
-
-	.streaming {
-		background-color: var(--el-fill-color-light);
-		padding: 8px 12px;
-		border-radius: 8px;
-		white-space: pre-wrap;
-		margin: 8px 0;
-	}
-}
-
-.debug-input {
-	border-top: 1px solid var(--el-border-color-lighter);
-	padding-top: 8px;
-	margin-top: 8px;
-
-	.debug-actions {
-		display: flex;
-		justify-content: flex-end;
-		margin-top: 6px;
-	}
 }
 
 .hash-text {

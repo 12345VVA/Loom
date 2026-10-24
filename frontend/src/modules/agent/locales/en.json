@@ -25,6 +25,7 @@
   "agent.profile.publishSuccess": "Published",
   "agent.profile.rollback": "Rollback",
   "agent.profile.rollbackSuccess": "Rolled back",
+  "agent.profile.searchPlaceholder": "Search name, code, description",
   "agent.profile.status": "Status",
   "agent.profile.systemPrompt": "System Prompt",
   "agent.profile.systemPromptPlaceholder": "Supports {'{{'}USER_NAME{'}'} and {'{{'}TIME{'}'} variables; a safety guardrail is prepended server-side",

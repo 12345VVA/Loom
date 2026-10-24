@@ -54,8 +54,6 @@ export interface TokenStats {
 	totalTokens: number;
 }
 
-const TERMINAL_EVENTS: RunEventType[] = ['final', 'error', 'cancelled', 'timed_out'];
-
 /**
  * 智能体会话共享逻辑：SSE 流式对话（published 会话页 / draft 调试台共用）。
  *

@@ -1,7 +1,7 @@
 <template>
-	<div class="agent-workspace" :class="[`is-${mode}`, { 'sidebar-open': isSidebarOpen }]">
-		<!-- 左侧会话栏（standalone 独占；widget/embedded 收进顶栏下拉选择） -->
-		<aside v-if="mode === 'standalone'" class="ws-side" :class="{ collapsed: !isSidebarOpen }">
+	<div class="agent-workspace" :class="[`is-${effectiveMode}`, { 'sidebar-open': isSidebarOpen }]">
+		<!-- 左侧会话栏（standalone 独占；widget/embedded 收进顶栏下拉选择；draft 调试无会话语义） -->
+		<aside v-if="effectiveMode === 'standalone'" class="ws-side" :class="{ collapsed: !isSidebarOpen }">
 			<template v-if="isSidebarOpen">
 				<div class="ws-side__section">
 					<div class="ws-side__title">{{ t('agent.session.selectProfile') }}</div>
@@ -67,7 +67,7 @@
 					</el-tag>
 				</div>
 				<div class="ws-topbar__right">
-					<template v-if="mode !== 'standalone'">
+					<template v-if="effectiveMode !== 'standalone' && !isDraft">
 						<el-select
 							:model-value="currentProfileId"
 							:placeholder="t('agent.workspace.selectAgent')"
@@ -104,7 +104,9 @@
 				<template v-if="messages.length">
 					<chat-message v-for="(m, i) in messages" :key="m.id || `m-${i}`" :message="m" />
 				</template>
-				<div v-else-if="!running" class="ws-messages__empty">{{ t('agent.session.placeholder') }}</div>
+				<div v-else-if="!running" class="ws-messages__empty">
+					{{ isDraft ? t('agent.debug.empty') : t('agent.session.placeholder') }}
+				</div>
 
 				<!-- 本轮 run 分析面板：工具步骤时间线 + 统计（有内容才出现） -->
 				<div v-if="showAnalysis" class="ws-analysis">
@@ -168,7 +170,7 @@
 					type="textarea"
 					:autosize="{ minRows: 1, maxRows: 6 }"
 					:disabled="running || !currentProfileId"
-					:placeholder="t('agent.session.inputPlaceholder')"
+					:placeholder="isDraft ? t('agent.debug.inputPlaceholder') : t('agent.session.inputPlaceholder')"
 					@keydown.ctrl.enter="onSend"
 					@keydown.meta.enter="onSend"
 				/>
@@ -217,18 +219,25 @@ import { useAgentSession, type AgentSessionRow } from '../composables/use-agent-
 
 type WorkspaceMode = 'standalone' | 'embedded' | 'widget';
 
-withDefaults(
+const props = withDefaults(
 	defineProps<{
 		mode?: WorkspaceMode;
 		/** 显示右上角关闭按钮（widget 悬浮球 / 嵌入容器时） */
 		closable?: boolean;
+		/** 草稿调试模式（draft 调试台）：外部指定 profileId，隐藏会话/智能体选择 */
+		draftProfileId?: number | null;
 	}>(),
-	{ mode: 'standalone', closable: false }
+	{ mode: 'standalone', closable: false, draftProfileId: null }
 );
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const { t } = useI18n();
+
+// draft 调试台按组件实例静态确定（随 drawer v-if 重建），不随 props 动态切换
+const isDraft = props.draftProfileId != null;
+const effectiveMode = computed(() => (isDraft ? 'embedded' : props.mode));
+
 const {
 	publishedProfiles,
 	sessions,
@@ -251,7 +260,16 @@ const {
 	removeSession,
 	send,
 	stop
-} = useAgentSession({ mode: 'published' });
+} = useAgentSession({ mode: isDraft ? 'draft' : 'published' });
+
+// draft 模式：外部指定的 profileId 同步进会话状态（唯一 profileId 入口）
+watch(
+	() => props.draftProfileId,
+	v => {
+		if (v != null) currentProfileId.value = v;
+	},
+	{ immediate: true }
+);
 
 const isSidebarOpen = ref(true);
 const analysisOpen = ref(true);
@@ -260,7 +278,10 @@ const messageListRef = ref<HTMLDivElement>();
 const loadingHistory = ref(false);
 
 const agentName = computed(
-	() => publishedProfiles.value.find(p => p.id === currentProfileId.value)?.name || t('agent.workspace.title')
+	() =>
+		(isDraft && t('agent.debug.title')) ||
+		publishedProfiles.value.find(p => p.id === currentProfileId.value)?.name ||
+		t('agent.workspace.title')
 );
 const streamingRendered = computed(() => renderMarkdown(streamingText.value));
 const showAnalysis = computed(() => running || toolSteps.value.length > 0 || modelCallsCount.value > 0);
@@ -273,6 +294,7 @@ function onAgentChange(id: number) {
 }
 
 async function refresh() {
+	if (isDraft) return; // draft 调试台无会话列表（profileId 由外部注入）
 	loadingHistory.value = true;
 	try {
 		await Promise.all([loadProfiles(), loadSessions()]);
