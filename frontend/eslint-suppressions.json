@@ -76,7 +76,7 @@
   },
   "src/modules/agent/views/profile.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 19
+      "count": 22
     }
   },
   "src/modules/agent/views/session.vue": {

@@ -53,7 +53,7 @@
 </template>
 
 <script lang="ts" setup name="agent-profile">
-import { onMounted, ref } from 'vue';
+import { h, onMounted, ref } from 'vue';
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -64,9 +64,19 @@ const { service } = useCool();
 const { t } = useI18n();
 const serviceAgent = service.agent.profile;
 
+function renderWorkflowHint() {
+	return () =>
+		h(
+			'div',
+			{ style: 'font-size:12px;color:var(--el-text-color-secondary);line-height:1.6' },
+			t('agent.profile.workflowBindingHint')
+		);
+}
+
 // 表单选项（EPS options 仅支持响应式数组——挂载时预载，workflow_eval case.vue 先例）
 const channelOptions = ref<any[]>([]);
 const toolOptions = ref<any[]>([]);
+const workflowOptions = ref<any[]>([]);
 onMounted(async () => {
 	try {
 		const channels = await service.ai.profile.list();
@@ -82,6 +92,16 @@ onMounted(async () => {
 		}));
 	} catch {
 		toolOptions.value = [];
+	}
+	try {
+		// E17：编排绑定候选 = 已启用且已发布的工作流定义（执行走现行发布版）
+		type DefinitionRow = { id: number; name?: string; code?: string; isActive?: boolean; currentVersionId?: number };
+		const defs = (await service.workflow.definition.list()) as unknown as DefinitionRow[];
+		workflowOptions.value = (defs || [])
+			.filter(d => d.isActive && d.currentVersionId)
+			.map(d => ({ label: `${d.name || d.id}（${d.code || '-'}）`, value: d.id }));
+	} catch {
+		workflowOptions.value = [];
 	}
 });
 
@@ -249,6 +269,40 @@ const Upsert = useUpsert({
 			value: true,
 			flex: false,
 			component: { name: 'el-switch' }
+		},
+		{
+			label: t('agent.profile.executionMode'),
+			prop: 'executionMode',
+			span: 12,
+			value: 'chat',
+			component: {
+				name: 'el-select',
+				options: [
+					{ label: t('agent.profile.executionModeChat'), value: 'chat' },
+					{ label: t('agent.profile.executionModeWorkflow'), value: 'workflow' }
+				]
+			}
+		},
+		{
+			label: t('agent.profile.workflowBinding'),
+			prop: 'workflowDefinitionId',
+			span: 12,
+			hidden: ({ scope }: any) => scope?.executionMode !== 'workflow',
+			component: {
+				name: 'el-select',
+				options: workflowOptions,
+				props: {
+					filterable: true,
+					clearable: true,
+					placeholder: t('agent.profile.workflowBindingPlaceholder')
+				}
+			}
+		},
+		{
+			prop: '_e17_hint',
+			span: 24,
+			hidden: ({ scope }: any) => scope?.executionMode !== 'workflow',
+			component: { vm: renderWorkflowHint() }
 		}
 	],
 	onOpened(data: any) {
