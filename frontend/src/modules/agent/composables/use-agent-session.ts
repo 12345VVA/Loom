@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue';
 import { useCool, useStream } from '/@/cool';
+import { AnswerDraftBuffer } from '/$/agent/utils/answer-draft';
 
 export type RunEventType =
 	| 'run_started'
@@ -8,6 +9,9 @@ export type RunEventType =
 	| 'tool_started'
 	| 'tool_finished'
 	| 'tool_skipped'
+	| 'answer_delta'
+	| 'answer_reset'
+	| 'answer_done'
 	| 'final'
 	| 'error'
 	| 'cancelled'
@@ -65,6 +69,8 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 
 	// 流式过程中累积的 assistant 文本（final 后由服务端消息刷新替代）
 	const streamingText = ref('');
+	// E1 token 流式草稿：generation_id 分桶（跨响应不混淆；seq 单调去重，断线重复帧不污染）
+	const draft = new AnswerDraftBuffer();
 
 	async function loadProfiles() {
 		profiles.value = await service.agent.profile.list();
@@ -98,6 +104,7 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		running.value = true;
 		stopHint.value = '';
 		streamingText.value = '';
+		draft.clear();
 		messages.value.push({ role: 'user', content: question });
 
 		try {
@@ -149,7 +156,22 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 				}
 				break;
 			case 'model_finished':
-				// 轮次粒度（一期不做 token 级流式）：文本在终态后整体刷新
+				// 轮次粒度事件；token 级增量由 answer_* 事件承载
+				break;
+			case 'answer_delta': {
+				// E1：生成中草稿区增量（generation 分桶 + seq 单调去重）
+				const { generationId, delta, seq } = event.payload || {};
+				draft.applyDelta(generationId, delta, seq);
+				streamingText.value = draft.text;
+				break;
+			}
+			case 'answer_reset':
+				// 服务端同步撤销：该响应实为工具决策，草稿区清空（被撤销文本不入服务端消息）
+				draft.reset(event.payload?.generationId ?? '');
+				streamingText.value = draft.text;
+				break;
+			case 'answer_done':
+				// 草稿定稿：保留至 final / 终态刷新以服务端消息替代
 				break;
 			case 'final':
 				streamingText.value = event.payload?.answer || '';
@@ -176,6 +198,7 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 			// draft 会话 messages 走同一端点；失败时保留流式文本兜底
 		}
 		streamingText.value = '';
+		draft.clear();
 	}
 
 	/** 停止运行（取消令牌置位；三层语义之一）。 */
