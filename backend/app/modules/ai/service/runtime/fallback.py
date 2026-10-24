@@ -17,6 +17,16 @@ from app.modules.base.model.auth import User
 logger = logging.getLogger(__name__)
 
 
+def _fallback_window_ok(model: AiModel | None, min_context_window: int | None) -> bool:
+    """E15 运行时回退路径校验：调用方声明最小窗口约束时，回退候选窗口未知或不满足
+    即拒绝该回退路径（错误归一——放弃降级让主调用错误冒泡，不静默换小窗口模型）。
+    未声明约束（min_context_window=None）时行为零变化（ai 存量调用方不受影响）。"""
+    if min_context_window is None:
+        return True
+    window = getattr(model, "context_window", None)
+    return window is not None and int(window) >= min_context_window
+
+
 class FallbackMixin:
     def _fallback_chain_has_cycle(self, profile: AiModelProfile, session: Session) -> bool:
         """运行期同步检测 fallback 链是否存在环或超过最大深度。
@@ -48,6 +58,7 @@ class FallbackMixin:
         current_user: User | None = None,
         *,
         session: Session,
+        min_context_window: int | None = None,
     ) -> Iterable[str] | None:
         if not profile.fallback_profile_id:
             return None
@@ -69,6 +80,14 @@ class FallbackMixin:
             provider = live_record(session.get(AiProvider, model.provider_id)) if model else None
             if not model or not provider or not model.is_active or not provider.is_active:
                 return None
+            # E15：候选窗口未知/不足 → 拒绝该回退路径（放弃降级，主调用错误归一冒泡）
+            if not _fallback_window_ok(model, min_context_window):
+                logger.warning(
+                    "AI 流式 fallback 候选窗口未知或不满足调用方约束，拒绝该回退路径（%s → %s）",
+                    profile.code,
+                    fallback.code,
+                )
+                return None
             options = {**AiModelRegistryService(session)._merge_options(model, fallback), **request_options}
             if structured_response:
                 options["response_format"] = structured_response
@@ -82,6 +101,7 @@ class FallbackMixin:
                 request_options=request_options,
                 structured_response=structured_response or options.get("response_format"),
                 response_format_overridden=response_format_overridden,
+                min_context_window=min_context_window,
             )
         finally:
             _fallback_depth.reset(token)
@@ -96,6 +116,7 @@ class FallbackMixin:
         response_format_overridden: bool = False,
         current_user: User | None = None,
         task_id: int | None = None,
+        min_context_window: int | None = None,
     ) -> dict | None:
         if not profile.fallback_profile_id:
             return None
@@ -116,6 +137,14 @@ class FallbackMixin:
             model = live_record(self.session.get(AiModel, fallback.model_id))
             provider = live_record(self.session.get(AiProvider, model.provider_id)) if model else None
             if not model or not provider or not model.is_active or not provider.is_active:
+                return None
+            # E15：候选窗口未知/不足 → 拒绝该回退路径（放弃降级，主调用错误归一冒泡）
+            if not _fallback_window_ok(model, min_context_window):
+                logger.warning(
+                    "AI fallback 候选窗口未知或不满足调用方约束，拒绝该回退路径（%s → %s）",
+                    profile.code,
+                    fallback.code,
+                )
                 return None
             options = {**AiModelRegistryService(self.session)._merge_options(model, fallback), **request_options}
             if structured_response:
@@ -143,6 +172,7 @@ class FallbackMixin:
                 request_options=request_options,
                 structured_response=structured_response or options.get("response_format"),
                 response_format_overridden=response_format_overridden,
+                min_context_window=min_context_window,
                 **fallback_kwargs,
             )
         finally:

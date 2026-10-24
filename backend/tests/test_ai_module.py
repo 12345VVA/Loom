@@ -584,6 +584,121 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(late_events[-1]["event"], "error")
         self.assertIn("late failed", late_events[-1]["message"])
 
+    def _seed_fallback_chain(self, *, fallback_context_window: int | None, suffix: str = ""):
+        """E15 用例夹具：primary（主，32000）→ fallback-profile（回退，窗口可配）。
+        suffix 供同一用例内多轮建链去重（ai_provider.code 唯一）。"""
+        primary_provider = AiProvider(
+            code=f"primary{suffix}", name="Primary", adapter="openai-compatible", is_active=True
+        )
+        fallback_provider = AiProvider(
+            code=f"fallback{suffix}", name="Fallback", adapter="openai-compatible", is_active=True
+        )
+        self.session.add(primary_provider)
+        self.session.add(fallback_provider)
+        self.session.commit()
+        self.session.refresh(primary_provider)
+        self.session.refresh(fallback_provider)
+        primary_model = AiModel(
+            provider_id=primary_provider.id,
+            code=f"primary-model{suffix}",
+            name="Primary",
+            model_type="chat",
+            context_window=32000,
+            is_active=True,
+        )
+        fallback_model = AiModel(
+            provider_id=fallback_provider.id,
+            code=f"fallback-model{suffix}",
+            name="Fallback",
+            model_type="chat",
+            context_window=fallback_context_window,
+            is_active=True,
+        )
+        self.session.add(primary_model)
+        self.session.add(fallback_model)
+        self.session.commit()
+        self.session.refresh(primary_model)
+        self.session.refresh(fallback_model)
+        fallback_profile = AiModelProfile(
+            code=f"fallback-profile{suffix}",
+            name="Fallback",
+            model_id=fallback_model.id,
+            scenario="default",
+            is_active=True,
+        )
+        self.session.add(fallback_profile)
+        self.session.commit()
+        self.session.refresh(fallback_profile)
+        primary_profile = AiModelProfile(
+            code=f"primary-profile{suffix}",
+            name="Primary",
+            model_id=primary_model.id,
+            scenario="default",
+            fallback_profile_id=fallback_profile.id,
+            is_default=True,
+            is_active=True,
+        )
+        self.session.add(primary_profile)
+        self.session.commit()
+
+    def test_stream_fallback_rejects_path_when_window_unknown_or_small(self):
+        """E15（A27 运行时面）：min_context_window 声明后，回退候选窗口未知/不足 → 拒绝该
+        回退路径（不静默换小窗口模型），主调用错误归一冒泡为 error 事件。"""
+        for i, fb_window in enumerate((None, 4000)):  # 未知 / 不足 8000 两种形态同判
+            with self.subTest(fb_window=fb_window):
+                self._seed_fallback_chain(fallback_context_window=fb_window, suffix=f"-{i}")
+
+                class FailPrimaryAdapter:
+                    def __init__(self, provider):
+                        self.provider = provider
+
+                    def stream_chat(self, *, model, messages, options):
+                        if self.provider.code.startswith("primary"):
+                            raise RuntimeError("primary failed")
+                        yield {"event": "delta", "content": "should not happen"}
+
+                with patch(
+                    "app.modules.ai.service.runtime_service.build_adapter",
+                    side_effect=lambda provider: FailPrimaryAdapter(provider),
+                ):
+                    events = _parse_sse_chunks(
+                        list(
+                            AiModelRuntimeService(self.session).stream_chat(
+                                AiChatRequest(messages=[{"role": "user", "content": "hi"}]),
+                                min_context_window=8000,
+                            )
+                        )
+                    )
+                self.assertEqual(events[-1]["event"], "error")
+                self.assertIn("primary failed", events[-1]["message"])
+
+    def test_chat_fallback_respects_min_context_window(self):
+        """E15 sync 路径：回退候选窗口不足 → 放弃降级，AiInvocationError 归一冒泡；
+        未声明约束（None）时回退照常（ai 存量调用方零变化）。"""
+        self._seed_fallback_chain(fallback_context_window=4000)
+
+        class FailPrimaryOkFallbackAdapter:
+            def __init__(self, provider):
+                self.provider = provider
+
+            def chat(self, *, model, messages, options):
+                if self.provider.code == "primary":
+                    raise RuntimeError("primary failed")
+                return {"content": "fallback ok", "raw": {}, "usage": {}}
+
+        adapter = FailPrimaryOkFallbackAdapter
+        with patch("app.modules.ai.service.runtime_service.build_adapter", side_effect=lambda p: adapter(p)):
+            with self.assertRaises(AiInvocationError):
+                AiModelRuntimeService(self.session).chat(
+                    AiChatRequest(messages=[{"role": "user", "content": "hi"}]),
+                    min_context_window=8000,
+                )
+            # 未声明约束：同链同故障 → 回退成功（行为零变化）
+            result = AiModelRuntimeService(self.session).chat(
+                AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+            )
+        self.assertEqual(result["content"], "fallback ok")
+
     def test_call_log_read_service_decorates_related_names_and_aliases_request_id(self):
         provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)
         self.session.add(provider)

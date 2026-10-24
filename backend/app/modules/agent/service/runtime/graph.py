@@ -22,6 +22,7 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from app.modules.agent.service.runtime.memory_service import (
+    AGENT_CONTEXT_TOKEN_BUDGET,
     build_model_messages,
 )
 from app.modules.agent.service.runtime.model_wrapper import LoomChatModel
@@ -56,6 +57,7 @@ class GraphDeps:
         system_message: str,
         tool_schema_tokens: int,
         max_tool_rounds: int,
+        context_token_budget: int | None = None,  # E15 动态输入预算（None = 常数下限）
         pre_model_hooks: list | None = None,  # 产出型中间件（MemoryInjection 等，返回 state delta）
         apply_hooks: Callable | None = None,  # apply_pre_model_hooks
         guardrails_validator: Callable[[list], None] = None,  # type: ignore[assignment] —— 校验型（护栏完整性，对组装后 messages）
@@ -70,6 +72,7 @@ class GraphDeps:
         self.system_message = system_message
         self.tool_schema_tokens = tool_schema_tokens
         self.max_tool_rounds = max_tool_rounds
+        self.context_token_budget = context_token_budget or AGENT_CONTEXT_TOKEN_BUDGET
         self.pre_model_hooks = pre_model_hooks or []
         self.apply_hooks = apply_hooks
         self.guardrails_validator = guardrails_validator
@@ -103,6 +106,7 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
         injected_context=injected,
         history=messages[:-1] if messages else [],
         current_input=str(messages[-1].content) if messages else "",
+        token_budget=deps.context_token_budget,  # E15：动态输入预算（链最小窗口 − 输出上限，下限兜底）
     )
     # ③ 校验型钩子：护栏完整性对「提交给模型的 messages」验证（fail-close）
     if deps.guardrails_validator is not None:

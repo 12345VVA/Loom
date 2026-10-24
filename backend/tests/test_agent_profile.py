@@ -10,7 +10,7 @@ from __future__ import annotations
 import unittest
 
 from fastapi import HTTPException
-from helpers import make_test_engine
+from helpers import make_test_engine, seed_chat_channel
 from sqlmodel import Session, select
 
 from app.modules.agent.model.agent import (
@@ -27,8 +27,12 @@ from app.modules.agent.service.profile_service import (
     AgentProfileService,
 )
 from app.modules.agent.service.tool_registry import bootstrap_registry, sync_resources
+from app.modules.ai.model.ai import AiModel, AiModelProfile, AiProvider
 from app.modules.base.model.auth import Role, UserRoleLink
 from app.modules.base.model.sys import SysLog
+
+# E15：publish/run 校验依赖渠道窗口元数据，测试统一建最小渠道数据
+_AI_CHANNEL_TABLES = [AiProvider.__table__, AiModel.__table__, AiModelProfile.__table__]
 
 
 class _FakeUser:
@@ -48,6 +52,7 @@ class PublishProfileTestCase(unittest.TestCase):
                 AgentProfilePublishRecord.__table__,
                 AgentProfileSnapshot.__table__,
                 AgentToolResource.__table__,
+                *_AI_CHANNEL_TABLES,
                 Role.__table__,
                 UserRoleLink.__table__,
                 SysLog.__table__,
@@ -56,6 +61,7 @@ class PublishProfileTestCase(unittest.TestCase):
         self.session = Session(self.engine)
         self.service = AgentProfileService(self.session)
         bootstrap_registry()
+        seed_chat_channel(self.engine)  # E15：deepseek-chat 窗口 32000
         sync_resources(self.session)  # 资源层记录（发布校验前置）
         self.owner = _FakeUser(1)
         self.other = _FakeUser(2)
@@ -228,6 +234,109 @@ class PublishProfileTestCase(unittest.TestCase):
         self.assertFalse(entity.enabled)  # 未被变更
 
 
+class ContextWindowPolicyTestCase(unittest.TestCase):
+    """E15 渠道窗口动态化（A27）：齐备取最小 / 缺失拒绝 / 覆盖值生效 / 回退超预算拒绝。"""
+
+    def setUp(self):
+        self.engine = make_test_engine(
+            tables=[
+                AgentProfile.__table__,
+                AgentProfileDraft.__table__,
+                AgentProfilePublishRecord.__table__,
+                AgentProfileSnapshot.__table__,
+                AgentToolResource.__table__,
+                *_AI_CHANNEL_TABLES,
+                Role.__table__,
+                UserRoleLink.__table__,
+                SysLog.__table__,
+            ]
+        )
+        self.session = Session(self.engine)
+        self.service = AgentProfileService(self.session)
+        bootstrap_registry()
+        sync_resources(self.session)
+        self.owner = _FakeUser(1)
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+        bootstrap_registry()
+
+    def _create_profile(self, max_tokens: int = 4000) -> AgentProfile:
+        return self.service.add(
+            AgentProfileCreateRequest(
+                name="窗口策略",
+                model_profile_code="deepseek-chat",
+                tools=["current_time"],
+                max_tokens=max_tokens,
+            ),
+            current_user=self.owner,
+        )
+
+    def _model_row(self) -> AiModel:
+        return self.session.exec(select(AiModel)).first()
+
+    def test_chain_min_window_used(self):
+        """齐备取最小：主 64000 + fallback 28000 → 链最小 28000，预算超它即拒绝。"""
+        seed_chat_channel(
+            self.engine,
+            context_window=64000,
+            fallback_code="deepseek-lite",
+            fallback_context_window=28000,
+        )
+        profile = self._create_profile(max_tokens=26000)  # 6000+26000=32000 > 28000
+        with self.assertRaises(HTTPException) as ctx:
+            self.service.publish(profile.id, current_user=self.owner)
+        self.assertIn("28000", ctx.exception.detail)
+
+    def test_unknown_window_rejects_publish(self):
+        """缺失拒绝：任一候选 context_window=None → 未知不放行（不假设 ≥32k）。"""
+        seed_chat_channel(self.engine, context_window=None)
+        profile = self._create_profile()
+        with self.assertRaises(HTTPException) as ctx:
+            self.service.publish(profile.id, current_user=self.owner)
+        self.assertIn("未知窗口", ctx.exception.detail)
+
+    def test_unknown_fallback_rejects_even_if_main_known(self):
+        """主模型已知 + 回退未知 → 整链不可信，拒绝发布（E15 规则 2）。"""
+        seed_chat_channel(
+            self.engine,
+            context_window=64000,
+            fallback_code="deepseek-lite",
+            fallback_context_window=None,
+        )
+        profile = self._create_profile()
+        with self.assertRaises(HTTPException) as ctx:
+            self.service.publish(profile.id, current_user=self.owner)
+        self.assertIn("未知窗口", ctx.exception.detail)
+
+    def test_admin_override_value_takes_effect(self):
+        """覆盖值生效：录入经验证窗口后同一绑定可发布（先拒后过）。"""
+        seed_chat_channel(self.engine, context_window=None)
+        profile = self._create_profile()
+        with self.assertRaises(HTTPException):
+            self.service.publish(profile.id, current_user=self.owner)
+        row = self._model_row()
+        row.context_window = 32000  # 管理员录入经验证覆盖值
+        self.session.add(row)
+        self.session.commit()
+        snapshot = self.service.publish(profile.id, current_user=self.owner)
+        self.assertIsNotNone(snapshot.id)
+
+    def test_fallback_below_budget_rejects(self):
+        """回退超预算拒绝：链最小窗口 < 预算 → 拒绝（A27 场景 4 的发起侧等价）。"""
+        seed_chat_channel(
+            self.engine,
+            context_window=32000,
+            fallback_code="deepseek-lite",
+            fallback_context_window=9000,
+        )
+        profile = self._create_profile(max_tokens=8000)  # 6000+8000=14000 > 9000
+        with self.assertRaises(HTTPException) as ctx:
+            self.service.publish(profile.id, current_user=self.owner)
+        self.assertIn("9000", ctx.exception.detail)
+
+
 class ConcurrentPublishTestCase(unittest.TestCase):
     """并发发布不变量（验收 22）：is_current 至多一条、版本线无重复。
 
@@ -251,12 +360,14 @@ class ConcurrentPublishTestCase(unittest.TestCase):
                 AgentProfilePublishRecord.__table__,
                 AgentProfileSnapshot.__table__,
                 AgentToolResource.__table__,
+                *_AI_CHANNEL_TABLES,
                 Role.__table__,
                 UserRoleLink.__table__,
                 SysLog.__table__,
             ]
         )
         bootstrap_registry()
+        seed_chat_channel(self.engine)
         # 预置数据（主线程 session）
         session = Session(self.engine)
         sync_resources(session)

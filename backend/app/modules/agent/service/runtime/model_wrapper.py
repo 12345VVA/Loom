@@ -64,6 +64,7 @@ class LoomChatModel(BaseChatModel):
     max_tokens: int = 4000
     profile_source: str = "published"  # draft/published（载荷来源，观测用）
     timeout_seconds: int | None = None  # 本轮请求超时（min(run 剩余, profile.timeout)）
+    min_context_window: int | None = None  # E15：解析链最小窗口（ai 回退路径校验约束）
 
     # 非序列化运行时依赖（ai 服务与调用者身份；不参与 pydantic 校验）
     _runtime_service: Any = PrivateAttr(default=None)
@@ -104,6 +105,7 @@ class LoomChatModel(BaseChatModel):
             payload,
             current_user=self._caller,
             task_id=self._task_id,
+            min_context_window=self.min_context_window,  # E15：窗口不足的回退路径在 ai 侧拒绝
         )
         if not result.get("success"):
             raise RuntimeError(f"模型调用失败：{result.get('error') or result}")

@@ -46,6 +46,16 @@ _BUDGET_FALLBACKS = {
 }
 
 
+def _context_token_budget(chain_window_min: int | None, max_tokens: int) -> int:
+    """单次输入上下文预算（E15 动态化）：min(解析链最小窗口 − 输出上限, 常数下限)，
+    下限保护防止异常小窗口把预算挤成负数/极小值（常数下限兜底，仍是「上界收紧」方向）。"""
+    from app.modules.agent.service.runtime.memory_service import AGENT_CONTEXT_TOKEN_BUDGET
+
+    if chain_window_min is None:  # 理论不可达（assert_window_for_budget 已拒绝 None）
+        return AGENT_CONTEXT_TOKEN_BUDGET
+    return max(1000, min(AGENT_CONTEXT_TOKEN_BUDGET, chain_window_min - int(max_tokens or 0)))
+
+
 class RunBudget:
     """整次运行预算（第三层）：model_calls / tool_rounds / tool_calls / 累计 token。"""
 
@@ -280,10 +290,7 @@ class AgentRunService:
         from app.modules.agent.service.tool_registry import get_tool
 
         if run_mode == AGENT_RUN_MODE_PUBLISHED:
-            from app.modules.agent.service.profile_service import (
-                _INPUT_TOKEN_BUDGET,
-                _MODEL_CONTEXT_WINDOW_FLOOR,
-            )
+            from app.modules.agent.service.profile_service import assert_window_for_budget
 
             service = AgentProfileService(self.session)
             payload = service.get_current_snapshot(profile.id)
@@ -292,17 +299,18 @@ class AgentRunService:
             tools = payload.get("toolResourceSnapshots") or []
             snapshot_tools = {t["toolName"]: {"level": t["level"], "parameters": t["parameters"]} for t in tools}
             max_tokens = int((payload.get("profile") or {}).get("maxTokens") or 4000)
-            if _INPUT_TOKEN_BUDGET + max_tokens > _MODEL_CONTEXT_WINDOW_FLOOR:
-                raise HTTPException(
-                    status_code=400, detail="渠道模型窗口不满足本智能体预算，run 拒绝执行（P1-2 重校验）"
-                )
+            # E15 动态重校验：解析链最小窗口未知或不足预算 → run 拒绝（渠道档案可能发布后被修改）
+            model_profile_code = payload.get("modelProfileCode") or profile.model_profile_code
+            chain_min = assert_window_for_budget(self.session, model_profile_code, max_tokens)
             system_prompt = (payload.get("profile") or {}).get("systemPrompt")
             return {
-                "model_profile_code": payload.get("modelProfileCode") or profile.model_profile_code,
+                "model_profile_code": model_profile_code,
                 "system_prompt": system_prompt,
                 "snapshot_tools": snapshot_tools,
                 "bound_names": set(payload.get("tools") or []),
                 "max_tokens": max_tokens,
+                "context_window_min": chain_min,
+                "context_token_budget": _context_token_budget(chain_min, max_tokens),
                 "temperature": (payload.get("profile") or {}).get("temperature", 0.5),
                 "max_tool_rounds": (payload.get("profile") or {}).get("maxToolRounds", 12),
                 "timeout_seconds": (payload.get("profile") or {}).get("timeoutSeconds", 60),
@@ -311,13 +319,11 @@ class AgentRunService:
         # draft：最新草稿（评审 P1-1——调试台永远最新）；工具面现场构建并逐个校验
         draft_json = json.loads(build_draft_json(profile))
         profile_fields = draft_json["profile"]
-        from app.modules.agent.service.profile_service import (
-            _INPUT_TOKEN_BUDGET,
-            _MODEL_CONTEXT_WINDOW_FLOOR,
-        )
+        from app.modules.agent.service.profile_service import assert_window_for_budget
 
-        if _INPUT_TOKEN_BUDGET + int(profile_fields.get("maxTokens") or 0) > _MODEL_CONTEXT_WINDOW_FLOOR:
-            raise HTTPException(status_code=400, detail="渠道模型窗口不满足本智能体预算，run 拒绝执行（P1-2 重校验）")
+        chain_min = assert_window_for_budget(
+            self.session, profile.model_profile_code, int(profile_fields.get("maxTokens") or 0)
+        )
         snapshot_tools: dict[str, dict] = {}
         for name in draft_json["tools"]:
             tool = get_tool(name)
@@ -330,6 +336,8 @@ class AgentRunService:
             "snapshot_tools": snapshot_tools,
             "bound_names": set(draft_json["tools"]),
             "max_tokens": profile_fields.get("maxTokens", 4000),
+            "context_window_min": chain_min,
+            "context_token_budget": _context_token_budget(chain_min, int(profile_fields.get("maxTokens") or 0)),
             "temperature": profile_fields.get("temperature", 0.5),
             "max_tool_rounds": profile_fields.get("maxToolRounds", 12),
             "timeout_seconds": profile_fields.get("timeoutSeconds", 60),
@@ -384,14 +392,21 @@ class AgentRunService:
         handle = RunHandle(trace_id=0, trace_token=trace_token, session_id=session_row.id, deadline=deadline)
         _register_handle(handle)
 
-        job = self._build_job(
-            profile=profile,
-            session_row=session_row,
-            question=question,
-            run_mode=run_mode,
-            current_user=current_user,
-            handle=handle,
-        )
+        try:
+            job = self._build_job(
+                profile=profile,
+                session_row=session_row,
+                question=question,
+                run_mode=run_mode,
+                current_user=current_user,
+                handle=handle,
+            )
+        except Exception:
+            # 发起段校验失败（未发布/窗口不足/degraded 等）：锁必须随失败释放，
+            # 否则会话被 TTL 残留锁死（E15 动态窗口拒绝路径会常态踩中）
+            release_run_lock(session_row.id, trace_token)
+            _unregister_handle(handle)
+            raise
         worker = threading.Thread(
             target=self._execute_run, args=(job,), name=f"agent-run-{trace_token[:8]}", daemon=True
         )
@@ -440,6 +455,12 @@ class AgentRunService:
                 current_user=current_user,
                 handle=handle,
             )
+        except Exception:
+            # 发起段校验失败（未发布/窗口不足/degraded 等）：锁必须随失败释放（同 stream_run）
+            release_run_lock(session_row.id, trace_token)
+            _unregister_handle(handle)
+            raise
+        try:
             self._execute_run(job)  # 同步执行（请求线程；Session 纪律同工作线程——self.session 不传入）
             final_event = None
             while True:
@@ -570,6 +591,7 @@ class AgentRunService:
                     max_tokens=payload["max_tokens"],
                     profile_source=job["run_mode"],
                     timeout_seconds=handle.deadline.per_request_timeout(payload["timeout_seconds"]),
+                    min_context_window=payload.get("context_window_min"),  # E15：回退路径窗口约束
                 )
                 model._runtime_service = runtime  # noqa: SLF001 —— 单 run 装配（实例纪律）
                 model._caller = _SimpleUser(job["user"])  # noqa: SLF001
@@ -617,6 +639,8 @@ class AgentRunService:
                         json.dumps(list(payload["snapshot_tools"].values()), ensure_ascii=False)
                     ),
                     max_tool_rounds=int(payload["max_tool_rounds"]),
+                    context_token_budget=int(payload.get("context_token_budget") or 0)
+                    or None,  # E15 动态输入预算（None 走常数下限）
                     guardrails_validator=validate_guardrails,
                     on_event=handle.emit,
                     should_cancel=should_cancel,

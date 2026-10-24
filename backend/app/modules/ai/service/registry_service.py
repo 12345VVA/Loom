@@ -70,6 +70,40 @@ class AiModelRegistryService:
             "options": self._merge_options(model, profile),
         }
 
+    def resolve_context_window(self, profile_code: str) -> int | None:
+        """渠道能力元数据（E15，公共查询接口）：解析链（profile + fallback 链）所有候选
+        模型的 context_window 齐备可信时返回**最小值**；任一候选缺失/不可信（软删、禁用、
+        未知窗口）返回 None——调用方不得假设 ≥32k 下界（未知窗口不放行）。
+
+        供 agent 发布校验与 run 发起重校验消费；ai 其他调用方不感知。
+        """
+        profile = self.session.exec(
+            select(AiModelProfile).where(
+                AiModelProfile.code == profile_code,
+                AiModelProfile.is_active == True,  # noqa: E712
+                AiModelProfile.delete_time == None,  # noqa: E711
+            )
+        ).first()
+        if profile is None:
+            return None
+        from app.modules.ai.service.runtime.common import MAX_FALLBACK_DEPTH
+
+        windows: list[int] = []
+        cursor: AiModelProfile | None = profile
+        visited: set[int] = set()
+        while cursor is not None and cursor.id not in visited and len(visited) <= MAX_FALLBACK_DEPTH:
+            visited.add(cursor.id)
+            model = live_record(self.session.get(AiModel, cursor.model_id))
+            if model is None or not model.is_active or model.context_window is None:
+                return None  # 任一候选未知 → 整链不可信（E15 规则 2）
+            windows.append(int(model.context_window))
+            if not cursor.fallback_profile_id:
+                break
+            cursor = live_record(self.session.get(AiModelProfile, cursor.fallback_profile_id))
+            if cursor is not None and not cursor.is_active:
+                return None
+        return min(windows) if windows else None
+
     def _merge_options(self, model: AiModel, profile: AiModelProfile) -> dict:
         options = _loads(model.default_config)
         if profile.custom_config:

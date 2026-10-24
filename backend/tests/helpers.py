@@ -48,3 +48,45 @@ def make_test_engine(tables: list | None = None):
     if tables:
         SQLModel.metadata.create_all(engine, tables=tables)
     return engine
+
+
+def seed_chat_channel(
+    engine,
+    *,
+    code: str = "deepseek-chat",
+    context_window: int | None = 32000,
+    fallback_code: str | None = None,
+    fallback_context_window: int | None = None,
+):
+    """建最小 ai 渠道数据（AiProvider/AiModel/AiModelProfile，E15 起 publish/run 校验依赖）。
+
+    context_window=None 可构造「未知窗口」用例；fallback_* 构造带降级链的解析链用例。
+    调用方须已把三张表建入 engine 并自行管理 Session 生命周期（本函数自管 Session）。
+    """
+    from sqlmodel import Session
+
+    from app.modules.ai.model.ai import AiModel, AiModelProfile, AiProvider
+
+    with Session(engine) as session:
+        provider = AiProvider(code="test-provider", name="测试厂商")
+        session.add(provider)
+        session.flush()
+
+        def _model(model_code: str, window: int | None) -> AiModel:
+            row = AiModel(provider_id=provider.id, code=model_code, name=model_code, context_window=window)
+            session.add(row)
+            session.flush()
+            return row
+
+        main_model = _model(f"{code}-model", context_window)
+        profile = AiModelProfile(code=code, name=code, model_id=main_model.id)
+        session.add(profile)
+        session.flush()
+        if fallback_code is not None:
+            fb_model = _model(f"{fallback_code}-model", fallback_context_window)
+            fb_profile = AiModelProfile(code=fallback_code, name=fallback_code, model_id=fb_model.id)
+            session.add(fb_profile)
+            session.flush()
+            profile.fallback_profile_id = fb_profile.id
+            session.add(profile)
+        session.commit()

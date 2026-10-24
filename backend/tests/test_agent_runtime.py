@@ -50,8 +50,10 @@ class _FakeRuntimeService:
         self.content = content
         self.calls: list[dict] = []
 
-    def chat(self, payload, current_user=None, task_id=None):
-        self.calls.append({"payload": payload, "caller": current_user, "task_id": task_id})
+    def chat(self, payload, current_user=None, task_id=None, min_context_window=None):
+        self.calls.append(
+            {"payload": payload, "caller": current_user, "task_id": task_id, "min_context_window": min_context_window}
+        )
         return {
             "success": True,
             "content": self.content,
@@ -335,10 +337,20 @@ class LoomChatModelShapeTestCase(unittest.TestCase):
         self.assertEqual(len(runtime.calls), 1)
         call = runtime.calls[0]
         self.assertEqual(call["task_id"], 9527)
+        self.assertIsNone(call["min_context_window"])  # 未配置时默认 None（E15）
         options = call["payload"].options
         self.assertEqual(set(options.keys()), {"temperature", "max_tokens", "tools"})  # 无自定义键（P0 评审）
         self.assertEqual(options["tools"][0]["function"]["name"], "t")
         self.assertEqual(result.generations[0][0].message.content, "ok")  # LLMResult 两层结构
+
+        # E15：配置了窗口约束时经 chat 透传到 ai（回退路径校验用）
+        runtime2 = _FakeRuntimeService()
+        model2 = LoomChatModel(
+            model_profile_code="deepseek-chat", temperature=0.3, max_tokens=100, min_context_window=26000
+        )
+        model2._runtime_service = runtime2  # noqa: SLF001
+        model2.generate([[HumanMessage("hi")]])
+        self.assertEqual(runtime2.calls[0]["min_context_window"], 26000)
 
 
 class AgentStateShapeTestCase(unittest.TestCase):

@@ -35,8 +35,8 @@ logger = logging.getLogger("agent.profile_service")
 SNAPSHOT_CACHE_TTL_SECONDS = 60
 SNAPSHOT_CACHE_PREFIX = "agent:snap:"
 
-# 模型窗口严格模式（评审 P1-2 / D15）：输入预算 + 输出预算 ≤ 一期常数窗口下限
-_MODEL_CONTEXT_WINDOW_FLOOR = 32000  # 一期适配主流 ≥32k 窗口模型，二期接元数据动态化
+# 模型窗口严格模式（评审 P1-2 / D15；E15 动态化）：输入预算 + 输出预算 ≤ 解析链最小窗口。
+# 一期常数 32000 下限已废弃（非未知模型推导下界）；存量渠道窗口由迁移 0028 数据兜底。
 _INPUT_TOKEN_BUDGET = 6000  # 与 memory_service.AGENT_CONTEXT_TOKEN_BUDGET 同源常量（避免循环导入）
 
 
@@ -96,6 +96,33 @@ def upsert_draft(session: Session, profile: Any) -> AgentProfileDraft:
 def _is_super_admin(current_user: User | None) -> bool:
     """与 asset/workflow_eval 同款防御取值。"""
     return bool(current_user is not None and getattr(current_user, "is_super_admin", False))
+
+
+def resolve_context_window_min(session: Session, model_profile_code: str) -> int | None:
+    """解析链最小窗口（E15）：透传 ai 公共查询接口；None = 链上存在未知/不可信候选。"""
+    from app.modules.ai.service.registry_service import AiModelRegistryService
+
+    return AiModelRegistryService(session).resolve_context_window(model_profile_code)
+
+
+def assert_window_for_budget(session: Session, model_profile_code: str, max_tokens: int) -> int:
+    """窗口严格校验（发布与 run 发起共用，E15 规则 1/2）：
+    解析链最小窗口未知 → 拒绝（不假设 ≥32k）；输入+输出预算超链最小窗口 → 拒绝。
+    通过时返回链最小窗口（供动态上下文预算与运行时回退约束复用）。"""
+    chain_min = resolve_context_window_min(session, model_profile_code)
+    if chain_min is None:
+        raise HTTPException(
+            status_code=400,
+            detail="渠道解析链存在未知窗口的模型（请在 ai 模型管理录入经验证的上下文窗口），未知窗口不放行（E15）",
+        )
+    needed = _INPUT_TOKEN_BUDGET + int(max_tokens or 0)
+    if needed > chain_min:
+        raise HTTPException(
+            status_code=400,
+            detail=f"输入预算 {_INPUT_TOKEN_BUDGET} + 输出上限 {max_tokens} = {needed} tokens，"
+            f"超过解析链最小窗口 {chain_min}，请调低输出上限或更换渠道",
+        )
+    return chain_min
 
 
 class AgentProfileService(BaseAdminCrudService):
@@ -277,15 +304,9 @@ class AgentProfileService(BaseAdminCrudService):
         }
 
     def _validate_window(self, profile: Any) -> None:
-        """窗口严格模式（评审 P1-2 / D15）：输入预算 + 输出预算 ≤ 一期常数窗口下限；
-        每次 run 发起时还会对实际渠道重校验（渠道档案可能发布后被修改）。"""
-        needed = _INPUT_TOKEN_BUDGET + int(profile.max_tokens or 0)
-        if needed > _MODEL_CONTEXT_WINDOW_FLOOR:
-            raise HTTPException(
-                status_code=400,
-                detail=f"发布校验失败：输入预算 {_INPUT_TOKEN_BUDGET} + 输出上限 {profile.max_tokens} "
-                f"= {needed} tokens，超过一期适配的模型窗口下限 {_MODEL_CONTEXT_WINDOW_FLOOR}，请调低输出上限",
-            )
+        """窗口严格模式（评审 P1-2 / D15；E15 动态化）：输入+输出预算 ≤ 解析链最小窗口；
+        未知窗口不放行；每次 run 发起时还会对实际渠道重校验（渠道档案可能发布后被修改）。"""
+        assert_window_for_budget(self.session, profile.model_profile_code, int(profile.max_tokens or 0))
 
     def publish(self, profile_id: int, current_user: User | None = None) -> AgentProfileSnapshot:
         """发布（设计 3.5 四步）：锁前移——读取/组装/校验/写入/切换全程持 profile 行锁。"""

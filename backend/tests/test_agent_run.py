@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
-from helpers import make_test_engine
+from helpers import make_test_engine, seed_chat_channel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from sqlmodel import Session, select
@@ -33,8 +33,12 @@ from app.modules.agent.service.runtime import run_service as run_service_module
 from app.modules.agent.service.runtime.run_lock import acquire_run_lock
 from app.modules.agent.service.runtime.run_service import AgentRunService
 from app.modules.agent.service.tool_registry import bootstrap_registry, sync_resources
+from app.modules.ai.model.ai import AiModel, AiModelProfile, AiProvider
 from app.modules.base.model.auth import Role, UserRoleLink
 from app.modules.base.model.sys import SysLog
+
+# E15：run 发起校验依赖渠道窗口元数据
+_AI_CHANNEL_TABLES = [AiProvider.__table__, AiModel.__table__, AiModelProfile.__table__]
 
 
 class _FakeUser:
@@ -73,6 +77,7 @@ class RunFlowTestCase(unittest.TestCase):
                 AgentRunTrace.__table__,
                 AgentToolCallLog.__table__,
                 AgentToolResource.__table__,
+                *_AI_CHANNEL_TABLES,
                 Role.__table__,
                 UserRoleLink.__table__,
                 SysLog.__table__,
@@ -80,6 +85,7 @@ class RunFlowTestCase(unittest.TestCase):
         )
         self.session = Session(self.engine)
         bootstrap_registry()
+        seed_chat_channel(self.engine)  # E15：run 发起窗口校验依赖
         sync_resources(self.session)
         self.service = AgentProfileService(self.session)
         self.owner = _FakeUser(1)

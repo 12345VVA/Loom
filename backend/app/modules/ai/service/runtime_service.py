@@ -106,7 +106,13 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
             user=user, provider=st.provider, model=st.model, profile=st.profile, task_id=task_id
         )
 
-    def chat(self, payload: AiChatRequest, current_user: User | None = None, task_id: int | None = None) -> dict:
+    def chat(
+        self,
+        payload: AiChatRequest,
+        current_user: User | None = None,
+        task_id: int | None = None,
+        min_context_window: int | None = None,
+    ) -> dict:
         AiSecurityService.check_input_safety(payload.messages)
         resolved, options, response_format_overridden = self._resolve_chat(payload)
         # WFI-2c：多模态输入的 vision 能力前置校验（非视觉模型绑图显式失败，
@@ -124,6 +130,8 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
             response_format_overridden=response_format_overridden,
             # AI-014：客户端传 skipMasking 不得自行关闭 PII 脱敏，仅在全局开关闭合时生效
             skip_masking=settings.AI_ALLOW_SKIP_MASKING and payload.skip_masking,
+            # E15：调用方声明的最小窗口约束（回退路径校验用；None 时行为零变化）
+            min_context_window=min_context_window,
             # exclude_none：工具循环可选字段（tool_calls/tool_call_id/name）为 None 时不得进协议 dict
             # （openai 对消息内未知 null 键 400）；存量字段恒有值，行为零变化
             messages=[
@@ -132,7 +140,12 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
             options=options,
         )
 
-    def stream_chat(self, payload: AiChatRequest, current_user: User | None = None) -> Iterable[str]:
+    def stream_chat(
+        self,
+        payload: AiChatRequest,
+        current_user: User | None = None,
+        min_context_window: int | None = None,
+    ) -> Iterable[str]:
         AiSecurityService.check_input_safety(payload.messages)
         resolved, options, response_format_overridden = self._resolve_chat(payload)
         messages = [item.model_dump() if hasattr(item, "model_dump") else item for item in payload.messages]
@@ -146,6 +159,8 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
             response_format_overridden=response_format_overridden,
             # 与 sync 路径同口径（AI-013 漂移症状之一）：全局开关闭合时方可跳过脱敏
             skip_masking=settings.AI_ALLOW_SKIP_MASKING and payload.skip_masking,
+            # E15：调用方声明的最小窗口约束（回退路径校验用；None 时行为零变化）
+            min_context_window=min_context_window,
         )
 
     def embedding(
@@ -258,6 +273,7 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
         structured_response: dict[str, Any] | None = None,
         response_format_overridden: bool = False,
         skip_masking: bool = False,
+        min_context_window: int | None = None,
         **kwargs: Any,
     ) -> dict:
         start = time.perf_counter()
@@ -377,6 +393,7 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
                 response_format_overridden,
                 current_user=current_user,
                 task_id=task_id,
+                min_context_window=min_context_window,
             )
             if fallback is not None:
                 return fallback
@@ -393,6 +410,7 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
         structured_response: dict[str, Any] | None = None,
         response_format_overridden: bool = False,
         skip_masking: bool = False,
+        min_context_window: int | None = None,
     ) -> Iterable[str]:
         start = time.perf_counter()
         # 流式生成器由 Starlette 在 AnyIO 线程池中迭代，与创建请求会话的事件循环线程不同，
@@ -561,6 +579,7 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
                     response_format_overridden,
                     current_user=current_user,
                     session=session,
+                    min_context_window=min_context_window,
                 )
                 if fallback is not None:
                     self._audit_failure(
