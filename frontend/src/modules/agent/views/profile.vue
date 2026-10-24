@@ -1,14 +1,55 @@
 <template>
 	<cl-crud ref="Crud">
 		<cl-row>
-			<cl-add-btn :label="t('agent.profile.add')" />
 			<cl-refresh-btn />
+			<cl-add-btn :label="t('agent.profile.add')" />
+			<cl-multi-delete-btn />
+			<cl-filter :label="t('agent.profile.status')">
+				<cl-select :options="statusOptions" prop="status" :width="120" clearable />
+			</cl-filter>
 			<cl-flex1 />
 			<cl-search-key :placeholder="t('agent.profile.searchPlaceholder')" />
 		</cl-row>
 
 		<cl-row>
-			<cl-table ref="Table" />
+			<cl-table ref="Table">
+				<template #slot-op="{ scope }">
+					<el-button
+						v-permission="serviceAgent.permission?.debugChat"
+						text
+						type="primary"
+						@click="openDebug(scope.row)"
+					>
+						{{ t('agent.profile.debug') }}
+					</el-button>
+					<el-button
+						v-if="scope.row.status === 'draft'"
+						v-permission="serviceAgent.permission?.publish"
+						text
+						type="success"
+						@click="onPublish(scope.row)"
+					>
+						{{ t('agent.profile.publish') }}
+					</el-button>
+					<el-button
+						v-if="scope.row.status === 'published'"
+						v-permission="serviceAgent.permission?.rollback"
+						text
+						type="info"
+						@click="openVersions(scope.row)"
+					>
+						{{ t('agent.profile.versions') }}
+					</el-button>
+					<el-button
+						v-permission="serviceAgent.permission?.update"
+						text
+						:type="scope.row.enabled ? 'danger' : 'primary'"
+						@click="onToggle(scope.row)"
+					>
+						{{ scope.row.enabled ? t('agent.profile.disable') : t('agent.profile.enable') }}
+					</el-button>
+				</template>
+			</cl-table>
 		</cl-row>
 
 		<cl-row>
@@ -19,7 +60,7 @@
 		<cl-upsert ref="Upsert" />
 
 		<!-- 调试台 drawer（draft 试聊，复用会话工作台 embedded 模式） -->
-		<cl-drawer v-model="debugVisible" :title="t('agent.debug.title')" size="55%">
+		<el-drawer v-model="debugVisible" :title="t('agent.debug.title')" size="55%" destroy-on-close>
 			<chat-workspace
 				v-if="debugVisible"
 				mode="embedded"
@@ -28,10 +69,10 @@
 				class="debug-workspace"
 				@close="debugVisible = false"
 			/>
-		</cl-drawer>
+		</el-drawer>
 
 		<!-- 版本列表 drawer -->
-		<cl-drawer v-model="versionVisible" :title="t('agent.version.title')" size="45%">
+		<el-drawer v-model="versionVisible" :title="t('agent.version.title')" size="45%" destroy-on-close>
 			<el-table :data="versions" size="small">
 				<el-table-column prop="version" :label="t('agent.version.no')" width="70" />
 				<el-table-column prop="createTime" :label="t('agent.version.time')" width="170" />
@@ -42,13 +83,19 @@
 				</el-table-column>
 				<el-table-column :label="t('agent.version.ops')" width="90">
 					<template #default="{ row }">
-						<el-button link type="primary" size="small" @click="onRollback(row)">
+						<el-button
+							v-permission="serviceAgent.permission?.rollback"
+							link
+							type="primary"
+							size="small"
+							@click="onRollback(row)"
+						>
 							{{ t('agent.profile.rollback') }}
 						</el-button>
 					</template>
 				</el-table-column>
 			</el-table>
-		</cl-drawer>
+		</el-drawer>
 	</cl-crud>
 </template>
 
@@ -56,7 +103,8 @@
 import { h, onMounted, ref } from 'vue';
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useI18n } from 'vue-i18n';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElIcon, ElMessage, ElMessageBox, ElTooltip } from 'element-plus';
+import { InfoFilled } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
 import ChatWorkspace from '../components/chat-workspace.vue';
 
@@ -64,19 +112,22 @@ const { service } = useCool();
 const { t } = useI18n();
 const serviceAgent = service.agent.profile;
 
-function renderWorkflowHint() {
-	return () =>
-		h(
-			'div',
-			{ style: 'font-size:12px;color:var(--el-text-color-secondary);line-height:1.6' },
-			t('agent.profile.workflowBindingHint')
-		);
-}
+// 状态字典选项（cool-crud-conventions.mdc：简单枚举使用 dict 与 dictColor）
+const statusOptions = [
+	{ label: t('agent.profile.statusDraft'), value: 'draft', type: 'info' },
+	{ label: t('agent.profile.statusPublished'), value: 'published', type: 'success' }
+];
 
-// 表单选项（EPS options 仅支持响应式数组——挂载时预载，workflow_eval case.vue 先例）
+const enabledOptions = [
+	{ label: t('agent.profile.enabledOn'), value: true, type: 'success' },
+	{ label: t('agent.profile.enabledOff'), value: false, type: 'danger' }
+];
+
+// 表单选项（挂载时预载）
 const channelOptions = ref<any[]>([]);
 const toolOptions = ref<any[]>([]);
 const workflowOptions = ref<any[]>([]);
+
 onMounted(async () => {
 	try {
 		const channels = await service.ai.profile.list();
@@ -94,18 +145,18 @@ onMounted(async () => {
 		toolOptions.value = [];
 	}
 	try {
-		// E17：编排绑定候选 = 已启用且已发布的工作流定义（执行走现行发布版）
+		// 编排绑定候选 = 已启用且已发布的工作流定义（执行走现行发布版）
 		type DefinitionRow = { id: number; name?: string; code?: string; isActive?: boolean; currentVersionId?: number };
 		const defs = (await service.workflow.definition.list()) as unknown as DefinitionRow[];
 		workflowOptions.value = (defs || [])
-			.filter(d => d.isActive && d.currentVersionId)
-			.map(d => ({ label: `${d.name || d.id}（${d.code || '-'}）`, value: d.id }));
+			.filter((d) => d.isActive && d.currentVersionId)
+			.map((d) => ({ label: `${d.name || d.id}（${d.code || '-'}）`, value: d.id }));
 	} catch {
 		workflowOptions.value = [];
 	}
 });
 
-// 调试台：draft 模式工作台（profileId 由 drawer 打开时注入）
+// 调试台：draft 模式工作台
 const debugVisible = ref(false);
 const debugProfileId = ref<number | null>(null);
 
@@ -114,25 +165,15 @@ const versionVisible = ref(false);
 const versions = ref<any[]>([]);
 const versionProfileId = ref<number | null>(null);
 
-async function openVersions(row: any) {
-	versionProfileId.value = row.id;
-	versions.value = ((await serviceAgent.versions({ id: row.id })) || []) as any[];
-	versionVisible.value = true;
-}
+// ---- CRUD 实例 ----
+const Crud = useCrud({ service: serviceAgent }, (app) => {
+	app.refresh();
+});
 
-async function onRollback(row: any) {
-	await ElMessageBox.confirm(t('agent.version.rollbackConfirm'), t('agent.version.title'), {
-		type: 'warning'
-	});
-	if (!versionProfileId.value) return;
-	await serviceAgent.rollback({ id: versionProfileId.value, snapshotId: row.id });
-	ElMessage.success(t('agent.profile.rollbackSuccess'));
-	versions.value = ((await serviceAgent.versions({ id: versionProfileId.value })) || []) as any[];
-}
-
-// ---- 表格形态（列布局对齐参考实现：名称/编码/描述/渠道/工具/状态/启停/时间） ----
+// ---- 表格（标准列布局 + permission 权限规范） ----
 const Table = useTable({
 	columns: [
+		{ type: 'selection', width: 60 },
 		{ type: 'index', label: '#', width: 50 },
 		{ label: t('agent.profile.name'), prop: 'name', minWidth: 140 },
 		{ label: t('agent.profile.code'), prop: 'code', minWidth: 130, showOverflowTooltip: true },
@@ -144,47 +185,34 @@ const Table = useTable({
 			minWidth: 150,
 			formatter: (row: any) => (Array.isArray(row.tools) ? row.tools.join('、') : row.tools || '-')
 		},
-		{ label: t('agent.profile.status'), prop: 'status', width: 90, tag: true, flex: false },
+		{
+			label: t('agent.profile.status'),
+			prop: 'status',
+			width: 100,
+			dict: statusOptions,
+			dictColor: true,
+			flex: false
+		},
 		{
 			label: t('agent.profile.enabled'),
 			prop: 'enabled',
-			width: 80,
-			flex: false,
-			formatter: (row: any) => (row.enabled ? t('agent.profile.enabledOn') : t('agent.profile.enabledOff'))
+			width: 90,
+			dict: enabledOptions,
+			dictColor: true,
+			flex: false
 		},
 		{ label: t('agent.profile.createTime'), prop: 'createTime', width: 160, flex: false },
 		{
 			type: 'op',
-			width: 300,
+			width: 320,
 			fixed: 'right',
-			buttons: [
-				({ row }: any) => ({
-					label: t('agent.profile.debug'),
-					onClick: () => openDebug(row)
-				}),
-				({ row }: any) => ({
-					label: t('agent.profile.publish'),
-					hidden: row.status !== 'draft',
-					onClick: () => onPublish(row)
-				}),
-				({ row }: any) => ({
-					label: t('agent.profile.versions'),
-					hidden: row.status !== 'published',
-					onClick: () => openVersions(row)
-				}),
-				({ row }: any) => ({
-					label: row.enabled ? t('agent.profile.disable') : t('agent.profile.enable'),
-					onClick: () => onToggle(row)
-				}),
-				'edit',
-				'delete'
-			]
+			buttons: ['slot-op', 'edit', 'delete']
 		}
 	],
-	contextMenu: ['refresh']
+	contextMenu: ['refresh', 'check', 'edit', 'delete']
 });
 
-// ---- upsert ----
+// ---- Upsert（真实 prop 字段 + UI 规范图标化提示 + 数据初始化） ----
 const Upsert = useUpsert({
 	dialog: { width: '860px' },
 	items: [
@@ -288,6 +316,25 @@ const Upsert = useUpsert({
 			prop: 'workflowDefinitionId',
 			span: 12,
 			hidden: ({ scope }: any) => scope?.executionMode !== 'workflow',
+			// UI 规范：小字提示图标化，不平铺占用额外空间，消除虚假 prop
+			renderLabel: () =>
+				h('span', { style: 'display: inline-flex; align-items: center;' }, [
+					h('span', t('agent.profile.workflowBinding')),
+					h(
+						ElTooltip,
+						{
+							placement: 'top',
+							effect: 'dark',
+							content: t('agent.profile.workflowBindingHint')
+						},
+						() =>
+							h(
+								ElIcon,
+								{ style: 'margin-left: 4px; cursor: pointer; color: var(--el-text-color-secondary);' },
+								() => h(InfoFilled)
+							)
+					)
+				]),
 			component: {
 				name: 'el-select',
 				options: workflowOptions,
@@ -297,26 +344,40 @@ const Upsert = useUpsert({
 					placeholder: t('agent.profile.workflowBindingPlaceholder')
 				}
 			}
-		},
-		{
-			prop: '_e17_hint',
-			span: 24,
-			hidden: ({ scope }: any) => scope?.executionMode !== 'workflow',
-			component: { vm: renderWorkflowHint() }
 		}
 	],
+	onOpen() {
+		// 数据防御性初始化（cool-crud-conventions.mdc：多选字段确保为数组）
+		const data = Upsert.value?.form;
+		if (!data) return;
+		if (!Array.isArray(data.tools)) {
+			data.tools = [];
+		}
+	},
 	onOpened(data: any) {
-		debugProfileId.value = data.id ?? null;
+		debugProfileId.value = data?.id ?? null;
 	}
-});
-
-const Crud = useCrud({ service: serviceAgent }, (app) => {
-	app.service.refresh();
 });
 
 async function openDebug(row: any) {
 	debugProfileId.value = row.id;
 	debugVisible.value = true;
+}
+
+async function openVersions(row: any) {
+	versionProfileId.value = row.id;
+	versions.value = ((await serviceAgent.versions({ id: row.id })) || []) as any[];
+	versionVisible.value = true;
+}
+
+async function onRollback(row: any) {
+	await ElMessageBox.confirm(t('agent.version.rollbackConfirm'), t('agent.version.title'), {
+		type: 'warning'
+	});
+	if (!versionProfileId.value) return;
+	await serviceAgent.rollback({ id: versionProfileId.value, snapshotId: row.id });
+	ElMessage.success(t('agent.profile.rollbackSuccess'));
+	versions.value = ((await serviceAgent.versions({ id: versionProfileId.value })) || []) as any[];
 }
 
 async function onPublish(row: any) {

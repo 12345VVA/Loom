@@ -25,7 +25,7 @@ from app.modules.base.service.security_service import get_current_user
         list_response_model=AiGenerationTaskRead,
         page_item_model=AiGenerationTaskRead,
         info_response_model=AiGenerationTaskRead,
-        actions=("page", "info", "list"),
+        actions=("page", "info", "list", "delete"),
         page_query=QueryConfig(
             keyword_like_fields=("task_type", "scenario", "profile_code", "status", "error_message"),
             field_eq=("task_type", "scenario", "profile_code", "status", "created_by"),

@@ -71,12 +71,12 @@
   },
   "src/modules/agent/composables/use-agent-session.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 6
+      "count": 5
     }
   },
   "src/modules/agent/views/profile.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 22
+      "count": 16
     }
   },
   "src/modules/agent/views/session.vue": {
@@ -86,7 +86,7 @@
   },
   "src/modules/agent/views/trace.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 9
+      "count": 6
     },
     "vue/component-name-in-template-casing": {
       "count": 2
@@ -169,7 +169,12 @@
   },
   "src/modules/ai/views/task.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 6
+      "count": 9
+    }
+  },
+  "src/modules/asset/composables/use-asset-library.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
     }
   },
   "src/modules/base/components/dept/check.vue": {
@@ -342,11 +347,6 @@
       "count": 3
     }
   },
-  "src/modules/media/composables/use-asset-url.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "src/modules/notification/components/audience-editor.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -379,7 +379,7 @@
   },
   "src/modules/workflow/components/artifact-drawer.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 3
+      "count": 4
     }
   },
   "src/modules/workflow/components/cl-json-tree-editor.vue": {
@@ -614,7 +614,7 @@
   },
   "src/modules/workflow/composables/useWorkflowTest.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 17
+      "count": 14
     }
   },
   "src/modules/workflow/types/editor.ts": {
@@ -659,22 +659,22 @@
   },
   "src/modules/workflow/views/definition.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 8
+      "count": 6
     }
   },
   "src/modules/workflow/views/editor.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 11
+      "count": 10
     }
   },
   "src/modules/workflow/views/instance.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 24
+      "count": 17
     }
   },
   "src/modules/workflow/views/version.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 13
+      "count": 12
     }
   },
   "src/modules/workflow_annotation/utils/format.ts": {
@@ -684,12 +684,7 @@
   },
   "src/modules/workflow_annotation/views/annotation-drawer.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    }
-  },
-  "src/modules/workflow_annotation/views/annotation.vue": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
+      "count": 3
     }
   },
   "src/modules/workflow_eval/utils/format.ts": {
@@ -699,27 +694,27 @@
   },
   "src/modules/workflow_eval/views/case.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 12
+      "count": 11
     }
   },
   "src/modules/workflow_eval/views/compare.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 3
+      "count": 2
     }
   },
   "src/modules/workflow_eval/views/run.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 31
+      "count": 27
     }
   },
   "src/modules/workflow_eval/views/suite.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 5
+      "count": 3
     }
   },
   "src/modules/workflow_eval/views/trend.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 4
+      "count": 3
     }
   },
   "src/plugins/crud/components/column-custom/index.vue": {

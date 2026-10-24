@@ -35,6 +35,9 @@ export interface AgentSessionRow {
 }
 
 /** 本地进行中的工具调用块（SSE 事件驱动渲染） */
+/** 终态事件集（一次 run 恰一个；send 等它抵达后再收尾刷新） */
+const TERMINAL_EVENT_TYPES: ReadonlySet<RunEventType> = new Set(['final', 'error', 'cancelled', 'timed_out']);
+
 export interface LiveToolBlock {
 	toolCallId: string;
 	toolName: string;
@@ -136,11 +139,26 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		elapsedMs.value = null;
 		modelCallsCount.value = 0;
 		toolRoundsFinal.value = null;
+		const sentMessages = messages.value.length;
 		runStartedAt = Date.now();
 		messages.value.push({ role: 'user', content: question });
 
 		try {
 			const url = mode === 'published' ? '/admin/agent/chat/chatStream' : '/admin/agent/profile/debugChat';
+			// 终态信号：handleEvent 收到终态事件时 resolve。invoke 的 await 只等响应头
+			// （流读取在其内部异步进行），若不等终态，refreshAfterRun 会在 run 完成前
+			// 执行——assistant 气泡永不渲染、error 提示丢失（走查实测）。
+			let resolveFinal!: () => void;
+			const finalPromise = new Promise<void>(resolve => {
+				resolveFinal = resolve;
+			});
+			let finalSettled = false;
+			const settleFinal = () => {
+				if (!finalSettled) {
+					finalSettled = true;
+					resolveFinal();
+				}
+			};
 			await stream.invoke({
 				url,
 				method: 'POST',
@@ -151,16 +169,57 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 				},
 				cb: (event: RunEvent) => {
 					handleEvent(event);
+					if (TERMINAL_EVENT_TYPES.has(event.type)) settleFinal();
 				}
 			});
-		} catch (err: any) {
-			stopHint.value = err?.message || '连接中断';
+			// 等终态事件（或服务端 run 超时上限 + 余量，防终态帧丢失时永久挂起）
+			const timeoutMs = (Number(profiles.value.find(p => p.id === currentProfileId.value)?.timeoutSeconds) || 60) * 1000 + 10_000;
+			await Promise.race([finalPromise, sleep(timeoutMs)]);
+			// 终态事件若因流断开丢失，cancel 断开本地读取
+			if (!finalSettled) stream.cancel();
+		} catch (err) {
+			stopHint.value = (err instanceof Error ? err.message : '') || '连接中断';
 		} finally {
 			elapsedMs.value = Date.now() - runStartedAt;
 			await refreshAfterRun();
+			// 兜底（走查反馈：任何情况下发送都不能完全没有响应）：SSE 中间帧可能丢失，
+			// error 事件未抵达时主动核对服务端 trace 终态，失败必显示错误
+			if (!stopHint.value) {
+				await ensureFailureHint(sentMessages);
+			}
 			running.value = false;
 			runningTool.value = null;
 			traceToken.value = null;
+		}
+	}
+
+	function sleep(ms: number) {
+		return new Promise<void>(resolve => setTimeout(resolve, ms));
+	}
+
+	/** SSE 终态事件丢失时的兜底：以服务端 trace 终态为准补显错误。 */
+	async function ensureFailureHint(sentMessages: number) {
+		const gotReply = messages.value.length > sentMessages + 1; // user 气泡之外还有内容（含工具块）
+		if (gotReply && stopHint.value) return; // 正常回复且已有提示
+		if (gotReply && !stopHint.value) return; // 正常回复，无需提示
+		if (!currentProfileId.value) return;
+		// EPS 行模型失真（asset 期坑⑩）——最小行类型收敛
+		type TraceRow = { status?: string; error?: string | null };
+		type TracePage = { list?: TraceRow[] };
+		try {
+			const page = (await service.agent.trace.page({
+				page: 1,
+				size: 1,
+				profileId: currentProfileId.value
+			})) as unknown as TracePage;
+			const trace = (page?.list || [])[0];
+			if (trace && trace.status && trace.status !== 'completed') {
+				stopHint.value = trace.error || `运行失败（${trace.status}），请稍后重试`;
+			} else if (!gotReply) {
+				stopHint.value = '本次运行没有产生回复，请稍后重试';
+			}
+		} catch {
+			// trace 查询失败保持静默——不覆盖已有提示
 		}
 	}
 

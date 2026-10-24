@@ -134,6 +134,15 @@
                 "role_codes": [
                   "admin"
                 ]
+              },
+              {
+                "code": "ai_task_delete",
+                "name": "删除",
+                "type": "button",
+                "permission": "ai:task:delete",
+                "role_codes": [
+                  "admin"
+                ]
               }
             ]
           }

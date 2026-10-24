@@ -5434,6 +5434,11 @@ declare namespace Eps {
 		cancel(data?: any): Promise<any>;
 
 		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
 		 * 获取详情
 		 */
 		info(data: { id: number }): Promise<task>;
@@ -5468,6 +5473,7 @@ declare namespace Eps {
 		 */
 		permission: {
 			cancel: string;
+			delete: string;
 			info: string;
 			list: string;
 			page: string;
@@ -5481,6 +5487,7 @@ declare namespace Eps {
 		 */
 		_permission: {
 			cancel: boolean;
+			delete: boolean;
 			info: boolean;
 			list: boolean;
 			page: boolean;

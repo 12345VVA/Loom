@@ -12,9 +12,8 @@ import ChatWorkspace from '../components/chat-workspace.vue';
 
 const { service } = useCool();
 
-const Crud = useCrud({ service: service.agent.session }, (app) => {
-	app.service.refresh();
-});
+// 无需调用 app.refresh()，避免无表格渲染时向后端发送无效的分页请求
+const Crud = useCrud({ service: service.agent.session });
 </script>
 
 <style lang="scss" scoped>

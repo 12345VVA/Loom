@@ -332,6 +332,20 @@ class AgentProfileService(BaseAdminCrudService):
         编排模式（E17）不参与模型执行，渠道仅作标识——跳过窗口断言，避免伪约束拦发布。"""
         if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW:
             return
+        # 渠道未设置/不存在先行给出明确提示（走查反馈：E15 的「未知窗口」文案
+        # 让「没选渠道/渠道被删」的用户无从下手）
+        code = str(getattr(profile, "model_profile_code", "") or "").strip()
+        if not code:
+            raise HTTPException(status_code=400, detail="发布校验失败：请先在表单中选择对话渠道（LLM）")
+        from app.modules.ai.model.ai import AiModelProfile
+
+        row = self.session.exec(
+            select(AiModelProfile).where(AiModelProfile.code == code, AiModelProfile.delete_time == None)  # noqa: E711
+        ).first()
+        if row is None:
+            raise HTTPException(status_code=400, detail=f"发布校验失败：对话渠道「{code}」不存在，请重新选择")
+        if not row.is_active:
+            raise HTTPException(status_code=400, detail=f"发布校验失败：对话渠道「{code}」已停用，请重新选择")
         assert_window_for_budget(self.session, profile.model_profile_code, int(profile.max_tokens or 0))
 
     def _validate_workflow_binding(self, profile: Any) -> dict:

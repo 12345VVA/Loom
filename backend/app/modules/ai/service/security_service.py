@@ -69,16 +69,21 @@ def detect_credential_patterns(text: str) -> list[str]:
 
 class AiSecurityService:
     @staticmethod
-    def check_input_safety(messages: list[AiRuntimeMessage | dict[str, Any]]) -> None:
+    def check_input_safety(messages: list[AiRuntimeMessage | dict[str, Any]], *, include_system: bool = True) -> None:
         """
         检查输入安全性。如果存在安全风险，抛出异常。
+
+        include_system=False 供服务端可信调用方使用（agent 的护栏 system 消息由
+        服务端拼装、内容固定，其对注入正则的「自证命中」会让全部对话被误拦——
+        走查实测；用户输入仍在 user/tool 消息中全量扫描）。对外接口默认 True，
+        aiapi 场景 role 可伪造、system 照扫，防御零变化。
         """
         total_length = 0
         for msg in messages:
-            # 注意：system 消息同样需要经过注入检测。
+            # 注意：system 消息默认同样需要经过注入检测。
             # 调用方 runtime_service 直接将用户提交的 payload.messages 传入此处，
             # role 字段无服务端约束，攻击者可通过构造 role="system" 的消息绕过校验，
-            # 因此不得对 system 角色做任何跳过处理。
+            # 因此默认不得对 system 角色做任何跳过处理（可信调用方显式 include_system=False）。
             content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
             # 多模态 content（list 形式，如 OpenAI [{type:'text', text:'...'}]）：提取文本部分检测，
             # 避免对非字符串 content 静默跳过导致注入检测被绕过
@@ -93,6 +98,10 @@ class AiSecurityService:
                         texts.append(item)
                 content = "\n".join(texts)
             if not isinstance(content, str):
+                continue
+
+            role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+            if role == "system" and not include_system:
                 continue
 
             total_length += len(content)

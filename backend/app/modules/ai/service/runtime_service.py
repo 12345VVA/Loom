@@ -112,8 +112,9 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
         current_user: User | None = None,
         task_id: int | None = None,
         min_context_window: int | None = None,
+        scan_system_messages: bool = True,
     ) -> dict:
-        AiSecurityService.check_input_safety(payload.messages)
+        AiSecurityService.check_input_safety(payload.messages, include_system=scan_system_messages)
         resolved, options, response_format_overridden = self._resolve_chat(payload)
         # WFI-2c：多模态输入的 vision 能力前置校验（非视觉模型绑图显式失败，
         # 不静默丢图也不把上游 400 生硬透传）
@@ -146,8 +147,9 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
         current_user: User | None = None,
         task_id: int | None = None,
         min_context_window: int | None = None,
+        scan_system_messages: bool = True,
     ) -> Iterable[str]:
-        AiSecurityService.check_input_safety(payload.messages)
+        AiSecurityService.check_input_safety(payload.messages, include_system=scan_system_messages)
         resolved, options, response_format_overridden = self._resolve_chat(payload)
         messages = [item.model_dump() if hasattr(item, "model_dump") else item for item in payload.messages]
         return self._stream_invoke(
@@ -172,12 +174,17 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
         current_user: User | None = None,
         task_id: int | None = None,
         min_context_window: int | None = None,
+        scan_system_messages: bool = True,
     ) -> Iterable[str]:
         """token 级流式公共能力（E1）：与 stream_chat 同管线；治理/审计口径与 chat 一致
         （task_id 通道 + min_context_window 回退约束）。agent 最终答案候选轮专用入口；
         done 事件携带 adapter 聚合的 toolCalls（工具决策响应判定依据）。"""
         return self.stream_chat(
-            payload, current_user=current_user, task_id=task_id, min_context_window=min_context_window
+            payload,
+            current_user=current_user,
+            task_id=task_id,
+            min_context_window=min_context_window,
+            scan_system_messages=scan_system_messages,
         )
 
     def embedding(

@@ -2,17 +2,26 @@
 	<cl-crud ref="Crud">
 		<cl-row>
 			<cl-refresh-btn />
-			<cl-search-key />
-			<cl-filter :label="t('agent.trace.status')" prop="status">
-				<el-select v-model="statusFilter" clearable :placeholder="t('agent.trace.all')" @change="onFilter">
-					<el-option v-for="s in statuses" :key="s" :label="s" :value="s" />
-				</el-select>
+			<cl-filter :label="t('agent.trace.status')">
+				<cl-select :options="statusOptions" prop="status" :width="130" clearable />
 			</cl-filter>
 			<cl-flex1 />
+			<cl-search-key :placeholder="t('agent.trace.searchPlaceholder')" />
 		</cl-row>
 
 		<cl-row>
-			<cl-table ref="Table" />
+			<cl-table ref="Table">
+				<template #slot-op="{ scope }">
+					<el-button
+						v-permission="serviceTrace.permission?.info"
+						text
+						type="primary"
+						@click="openDetail(scope.row)"
+					>
+						{{ t('agent.trace.detailBtn') }}
+					</el-button>
+				</template>
+			</cl-table>
 		</cl-row>
 
 		<cl-row>
@@ -21,7 +30,7 @@
 		</cl-row>
 
 		<!-- 详情 drawer：消息轨迹 + 工具明细 -->
-		<cl-drawer v-model="detailVisible" :title="t('agent.trace.detail')" size="60%">
+		<el-drawer v-model="detailVisible" :title="t('agent.trace.detail')" size="60%" destroy-on-close>
 			<div class="trace-detail">
 				<el-descriptions :column="2" size="small" border>
 					<el-descriptions-item :label="t('agent.trace.agent')">{{ detail.agentName }}</el-descriptions-item>
@@ -45,7 +54,7 @@
 				<div class="section-title">{{ t('agent.trace.messages') }}</div>
 				<ChatMessage v-for="(m, i) in detailMessages" :key="i" :message="m" />
 			</div>
-		</cl-drawer>
+		</el-drawer>
 	</cl-crud>
 </template>
 
@@ -61,18 +70,30 @@ const { service } = useCool();
 const { t } = useI18n();
 const serviceTrace = service.agent.trace;
 
-const statuses = ['completed', 'failed', 'cancelled', 'timed_out'];
-const statusFilter = ref<string>('');
+// 状态字典（cool-crud-conventions.mdc：简单枚举复用 dict 与 dictColor）
+const statusOptions = [
+	{ label: t('agent.trace.statusCompleted'), value: 'completed', type: 'success' },
+	{ label: t('agent.trace.statusFailed'), value: 'failed', type: 'danger' },
+	{ label: t('agent.trace.statusCancelled'), value: 'cancelled', type: 'info' },
+	{ label: t('agent.trace.statusTimedOut'), value: 'timed_out', type: 'warning' }
+];
 
 const detailVisible = ref(false);
 const detail = ref<any>({});
 const toolBlocks = ref<TraceBlock[]>([]);
 const detailMessages = ref<any[]>([]);
 
-function onFilter() {
-	Crud.value?.refresh();
-}
+// 标准 CRUD 实例（crud.mdc：标准启动刷新统一为 app.refresh()）
+const Crud = useCrud(
+	{
+		service: serviceTrace
+	},
+	(app) => {
+		app.refresh();
+	}
+);
 
+// 表格配置
 const Table = useTable({
 	columns: [
 		{ type: 'index', label: '#', width: 50 },
@@ -88,7 +109,8 @@ const Table = useTable({
 			label: t('agent.trace.status'),
 			width: 110,
 			flex: false,
-			tag: true
+			dict: statusOptions,
+			dictColor: true
 		},
 		{ prop: 'modelCalls', label: t('agent.trace.modelCalls'), width: 90, flex: false },
 		{ prop: 'toolRounds', label: t('agent.trace.toolRounds'), width: 90, flex: false },
@@ -96,19 +118,18 @@ const Table = useTable({
 		{ prop: 'createTime', label: t('agent.profile.createTime'), width: 165, flex: false },
 		{
 			type: 'op',
-			width: 80,
-			buttons: [
-				({ row }: any) => ({
-					label: t('agent.trace.detailBtn'),
-					onClick: () => openDetail(row)
-				})
-			]
+			width: 90,
+			fixed: 'right',
+			buttons: ['slot-op']
 		}
-	]
+	],
+	contextMenu: ['refresh']
 });
 
 async function openDetail(row: any) {
 	detail.value = row;
+	toolBlocks.value = [];
+	detailMessages.value = [];
 	try {
 		const messages = await service.agent.session.messages({ session_id: row.sessionId });
 		detailMessages.value = (messages || []) as any[];
@@ -129,18 +150,6 @@ async function openDetail(row: any) {
 	}
 	detailVisible.value = true;
 }
-
-const Crud = useCrud(
-	{
-		service: serviceTrace,
-		onRefresh(params: any, { next }: any) {
-			next({ ...params, status: statusFilter.value || undefined });
-		}
-	},
-	(app) => {
-		app.service.refresh();
-	}
-);
 </script>
 
 <style lang="scss" scoped>

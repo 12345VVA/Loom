@@ -106,6 +106,9 @@ class LoomChatModel(BaseChatModel):
             current_user=self._caller,
             task_id=self._task_id,
             min_context_window=self.min_context_window,  # E15：窗口不足的回退路径在 ai 侧拒绝
+            # 护栏 system 消息由服务端拼装（内容固定），对其做注入扫描会自证命中拦死全部对话
+            # （走查实测「hello」也 400）；用户输入仍在 user/tool 消息全量扫描
+            scan_system_messages=False,
         )
         if not result.get("success"):
             raise RuntimeError(f"模型调用失败：{result.get('error') or result}")
@@ -164,6 +167,7 @@ class LoomChatModel(BaseChatModel):
             current_user=self._caller,
             task_id=self._task_id,
             min_context_window=self.min_context_window,
+            scan_system_messages=False,  # 同 chat：护栏 system 可信，不参与注入扫描
         ):
             event = _parse_sse_frame(frame)
             if event is None:
