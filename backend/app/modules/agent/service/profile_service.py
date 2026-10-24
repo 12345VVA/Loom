@@ -17,6 +17,7 @@ from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from app.modules.agent.model.agent import (
+    AGENT_EXECUTION_MODE_WORKFLOW,
     AGENT_PUBLISH_ACTION_PUBLISH,
     AGENT_PUBLISH_ACTION_ROLLBACK,
     AGENT_STATUS_DRAFT,
@@ -245,9 +246,10 @@ class AgentProfileService(BaseAdminCrudService):
         if entity.created_by != current_user.id and not _is_super_admin(current_user):
             raise HTTPException(status_code=403, detail=f"仅创建者或管理员可{action}")
 
-    def _build_publish_payload(self, profile: Any) -> dict:
+    def _build_publish_payload(self, profile: Any, workflow_summary: dict | None = None) -> dict:
         """组装发布载荷（评审 P0-6 最小权限边界）：以草稿 tools 名单为起点，逐工具过
-        允许列表 + 已注册 + 资源层启用；toolResourceSnapshots 仅含绑定工具。"""
+        允许列表 + 已注册 + 资源层启用；toolResourceSnapshots 仅含绑定工具。
+        E17：execution 段承载编排模式与工作流绑定摘要（引用式绑定，D13 冻结边界）。"""
         from app.modules.agent.model.agent import AgentToolResource
         from app.modules.agent.service.runtime import prompt_render
         from app.modules.agent.service.tool_registry import RUNTIME_ALLOWED_TOOLS, get_tool
@@ -301,12 +303,43 @@ class AgentProfileService(BaseAdminCrudService):
             "tools": tool_names,
             "toolResourceSnapshots": resource_snapshots,
             "guardrailsVersion": prompt_render.guardrails_version(),
+            # E17 编排模式段：chat 型为常量缺省（快照兼容旧读法）；workflow 型附绑定摘要
+            "execution": {
+                "mode": getattr(profile, "execution_mode", "chat") or "chat",
+                "workflowDefinitionId": profile.workflow_definition_id
+                if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW
+                else None,
+                "workflowSummary": workflow_summary,
+            },
         }
 
     def _validate_window(self, profile: Any) -> None:
         """窗口严格模式（评审 P1-2 / D15；E15 动态化）：输入+输出预算 ≤ 解析链最小窗口；
-        未知窗口不放行；每次 run 发起时还会对实际渠道重校验（渠道档案可能发布后被修改）。"""
+        未知窗口不放行；每次 run 发起时还会对实际渠道重校验（渠道档案可能发布后被修改）。
+        编排模式（E17）不参与模型执行，渠道仅作标识——跳过窗口断言，避免伪约束拦发布。"""
+        if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW:
+            return
         assert_window_for_budget(self.session, profile.model_profile_code, int(profile.max_tokens or 0))
+
+    def _validate_workflow_binding(self, profile: Any) -> dict:
+        """编排模式发布校验（E17）：绑定 definition 存在 + 已启用 + 已发布；返回版本摘要入快照。
+        引用式绑定（D13 冻结边界同工具语义快照）：快照记引用与摘要，执行走现行发布版。"""
+        from app.modules.workflow.model.workflow import WorkflowDefinition
+
+        if not profile.workflow_definition_id:
+            raise HTTPException(status_code=400, detail="发布校验失败：编排型智能体必须绑定工作流")
+        definition = self.session.get(WorkflowDefinition, profile.workflow_definition_id)
+        if definition is None or definition.delete_time is not None:
+            raise HTTPException(status_code=400, detail="发布校验失败：绑定的工作流定义不存在")
+        if not definition.is_active:
+            raise HTTPException(status_code=400, detail="发布校验失败：绑定的工作流已停用，无法发布")
+        if definition.current_version_id is None:
+            raise HTTPException(status_code=400, detail="发布校验失败：绑定的工作流尚未发布任何版本")
+        return {
+            "code": definition.code,
+            "name": definition.name,
+            "versionId": definition.current_version_id,
+        }
 
     def publish(self, profile_id: int, current_user: User | None = None) -> AgentProfileSnapshot:
         """发布（设计 3.5 四步）：锁前移——读取/组装/校验/写入/切换全程持 profile 行锁。"""
@@ -319,7 +352,12 @@ class AgentProfileService(BaseAdminCrudService):
         profile = self.session.exec(select(self.model).where(self.model.id == profile_id).with_for_update()).one()
         # ② 锁内读取草稿、组装、校验、哈希
         draft = upsert_draft(self.session, profile)
-        payload = self._build_publish_payload(profile)
+        workflow_summary = (
+            self._validate_workflow_binding(profile)
+            if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW
+            else None
+        )
+        payload = self._build_publish_payload(profile, workflow_summary=workflow_summary)
         self._validate_window(profile)
         snapshot_hash = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 

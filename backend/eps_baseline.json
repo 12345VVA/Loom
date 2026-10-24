@@ -288,6 +288,11 @@
                           "title": "Enabled",
                           "type": "boolean"
                         },
+                        "executionMode": {
+                          "default": "chat",
+                          "title": "Executionmode",
+                          "type": "string"
+                        },
                         "id": {
                           "title": "Id",
                           "type": "number"
@@ -349,6 +354,17 @@
                             }
                           ],
                           "title": "Updatetime"
+                        },
+                        "workflowDefinitionId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Workflowdefinitionid"
                         }
                       },
                       "required": [
@@ -707,6 +723,11 @@
                           "title": "Enabled",
                           "type": "boolean"
                         },
+                        "executionMode": {
+                          "default": "chat",
+                          "title": "Executionmode",
+                          "type": "string"
+                        },
                         "id": {
                           "title": "Id",
                           "type": "number"
@@ -768,6 +789,17 @@
                             }
                           ],
                           "title": "Updatetime"
+                        },
+                        "workflowDefinitionId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Workflowdefinitionid"
                         }
                       },
                       "required": [
@@ -972,6 +1004,11 @@
                             "title": "Enabled",
                             "type": "boolean"
                           },
+                          "executionMode": {
+                            "default": "chat",
+                            "title": "Executionmode",
+                            "type": "string"
+                          },
                           "id": {
                             "title": "Id",
                             "type": "number"
@@ -1033,6 +1070,17 @@
                               }
                             ],
                             "title": "Updatetime"
+                          },
+                          "workflowDefinitionId": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Workflowdefinitionid"
                           }
                         },
                         "required": [
@@ -1266,6 +1314,11 @@
                                 "title": "Enabled",
                                 "type": "boolean"
                               },
+                              "executionMode": {
+                                "default": "chat",
+                                "title": "Executionmode",
+                                "type": "string"
+                              },
                               "id": {
                                 "title": "Id",
                                 "type": "number"
@@ -1327,6 +1380,17 @@
                                   }
                                 ],
                                 "title": "Updatetime"
+                              },
+                              "workflowDefinitionId": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Workflowdefinitionid"
                               }
                             },
                             "required": [
@@ -1841,6 +1905,11 @@
                           "title": "Enabled",
                           "type": "boolean"
                         },
+                        "executionMode": {
+                          "default": "chat",
+                          "title": "Executionmode",
+                          "type": "string"
+                        },
                         "id": {
                           "title": "Id",
                           "type": "number"
@@ -1902,6 +1971,17 @@
                             }
                           ],
                           "title": "Updatetime"
+                        },
+                        "workflowDefinitionId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Workflowdefinitionid"
                         }
                       },
                       "required": [
@@ -2261,6 +2341,30 @@
           "validate": null
         },
         {
+          "comment": "execution_mode",
+          "dict": null,
+          "label": "executionMode",
+          "nullable": true,
+          "prop": "executionMode",
+          "propertyName": "executionMode",
+          "required": false,
+          "source": "execution_mode",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "workflow_definition_id",
+          "dict": null,
+          "label": "workflowDefinitionId",
+          "nullable": true,
+          "prop": "workflowDefinitionId",
+          "propertyName": "workflowDefinitionId",
+          "required": false,
+          "source": "workflow_definition_id",
+          "type": "number",
+          "validate": null
+        },
+        {
           "comment": "enabled",
           "dict": null,
           "label": "enabled",
@@ -2479,6 +2583,30 @@
           "required": true,
           "source": "enable_memory",
           "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "execution_mode",
+          "dict": null,
+          "label": "executionMode",
+          "nullable": true,
+          "prop": "executionMode",
+          "propertyName": "executionMode",
+          "required": false,
+          "source": "execution_mode",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "workflow_definition_id",
+          "dict": null,
+          "label": "workflowDefinitionId",
+          "nullable": true,
+          "prop": "workflowDefinitionId",
+          "propertyName": "workflowDefinitionId",
+          "required": false,
+          "source": "workflow_definition_id",
+          "type": "number",
           "validate": null
         },
         {
@@ -5289,6 +5417,17 @@
                         "userId": {
                           "title": "Userid",
                           "type": "number"
+                        },
+                        "workflowInstanceId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Workflowinstanceid"
                         }
                       },
                       "required": [
@@ -5583,6 +5722,17 @@
                               "userId": {
                                 "title": "Userid",
                                 "type": "number"
+                              },
+                              "workflowInstanceId": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Workflowinstanceid"
                               }
                             },
                             "required": [
@@ -6055,6 +6205,18 @@
           "validate": null
         },
         {
+          "comment": "workflow_instance_id",
+          "dict": null,
+          "label": "workflowInstanceId",
+          "nullable": true,
+          "prop": "workflowInstanceId",
+          "propertyName": "workflowInstanceId",
+          "required": false,
+          "source": "workflow_instance_id",
+          "type": "number",
+          "validate": null
+        },
+        {
           "comment": "status",
           "dict": null,
           "label": "status",
@@ -6269,6 +6431,18 @@
           "propertyName": "durationMs",
           "required": false,
           "source": "duration_ms",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "workflow_instance_id",
+          "dict": null,
+          "label": "workflowInstanceId",
+          "nullable": true,
+          "prop": "workflowInstanceId",
+          "propertyName": "workflowInstanceId",
+          "required": false,
+          "source": "workflow_instance_id",
           "type": "number",
           "validate": null
         },

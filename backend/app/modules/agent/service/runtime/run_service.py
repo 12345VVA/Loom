@@ -175,6 +175,7 @@ from langchain_core.messages import HumanMessage as _HumanMessage
 from langchain_core.messages import ToolMessage as _ToolMessage
 
 from app.modules.agent.model.agent import (
+    AGENT_EXECUTION_MODE_WORKFLOW,
     AGENT_RUN_CANCELLED,
     AGENT_RUN_COMPLETED,
     AGENT_RUN_FAILED,
@@ -296,12 +297,18 @@ class AgentRunService:
             payload = service.get_current_snapshot(profile.id)
             if payload is None:
                 raise HTTPException(status_code=400, detail="该智能体尚未发布，请先发布或使用调试台")
+            # E17 编排模式段（chat 型旧快照缺省补齐）
+            execution = payload.get("execution") or {}
+            execution_mode = execution.get("mode") or "chat"
             tools = payload.get("toolResourceSnapshots") or []
             snapshot_tools = {t["toolName"]: {"level": t["level"], "parameters": t["parameters"]} for t in tools}
             max_tokens = int((payload.get("profile") or {}).get("maxTokens") or 4000)
-            # E15 动态重校验：解析链最小窗口未知或不足预算 → run 拒绝（渠道档案可能发布后被修改）
+            # E15 动态重校验：解析链最小窗口未知或不足预算 → run 拒绝（渠道档案可能发布后被修改）。
+            # 编排模式（E17）不参与模型执行——跳过窗口断言（渠道仅作标识，见 _validate_window）。
             model_profile_code = payload.get("modelProfileCode") or profile.model_profile_code
-            chain_min = assert_window_for_budget(self.session, model_profile_code, max_tokens)
+            chain_min: int | None = None
+            if execution_mode != AGENT_EXECUTION_MODE_WORKFLOW:
+                chain_min = assert_window_for_budget(self.session, model_profile_code, max_tokens)
             system_prompt = (payload.get("profile") or {}).get("systemPrompt")
             return {
                 "model_profile_code": model_profile_code,
@@ -310,13 +317,21 @@ class AgentRunService:
                 "bound_names": set(payload.get("tools") or []),
                 "max_tokens": max_tokens,
                 "context_window_min": chain_min,
-                "context_token_budget": _context_token_budget(chain_min, max_tokens),
+                "context_token_budget": _context_token_budget(chain_min, max_tokens) if chain_min else None,
                 "temperature": (payload.get("profile") or {}).get("temperature", 0.5),
                 "max_tool_rounds": (payload.get("profile") or {}).get("maxToolRounds", 12),
                 "timeout_seconds": (payload.get("profile") or {}).get("timeoutSeconds", 60),
                 "enable_memory": (payload.get("profile") or {}).get("enableMemory", True),
+                "execution_mode": execution_mode,
+                "workflow_definition_id": execution.get("workflowDefinitionId"),
             }
-        # draft：最新草稿（评审 P1-1——调试台永远最新）；工具面现场构建并逐个校验
+        # draft：最新草稿（评审 P1-1——调试台永远最新）；工具面现场构建并逐个校验。
+        # E17：编排型草稿不支持调试台试聊（draft 链路无 workflow 执行语义），引导走工作流试运行
+        if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW:
+            raise HTTPException(
+                status_code=400,
+                detail="编排型智能体不支持调试台试聊，请在工作流模块使用试运行验证",
+            )
         draft_json = json.loads(build_draft_json(profile))
         profile_fields = draft_json["profile"]
         from app.modules.agent.service.profile_service import assert_window_for_budget
@@ -584,6 +599,15 @@ class AgentRunService:
         with SqlSession(run_engine) as db:  # 工作线程自建独立 Session
             trace: AgentRunTrace = db.get(AgentRunTrace, job["trace_id"])
             session_row: AgentSession = db.get(AgentSession, job["session_id"])
+            # E17 编排模式分流：绑定工作流实例化执行（不经 graph/工具链；E1 流式/审批/预算不涉及）。
+            # 锁释放必须随行（graph 分支在 finally 释放，一期锁残留缺陷的同构教训）——
+            # 分支提前 return 前自行释放，防进程内降级锁 TTL 残留锁死同会话后续 run。
+            if payload.get("execution_mode") == AGENT_EXECUTION_MODE_WORKFLOW:
+                try:
+                    self._execute_workflow_run(db, job, trace, session_row, handle, payload, started)
+                finally:
+                    release_run_lock(job["session_id"], handle.trace_token)
+                return
             try:
                 runtime = AiModelRuntimeService(db)
                 budget = RunBudget(max_tool_rounds=int(payload["max_tool_rounds"]))
@@ -680,6 +704,153 @@ class AgentRunService:
                     handle.close("error", {"message": str(exc)[:300]})
             finally:
                 release_run_lock(job["session_id"], handle.trace_token)
+
+    def _execute_workflow_run(
+        self,
+        db: Any,
+        job: dict,
+        trace: AgentRunTrace,
+        session_row: AgentSession,
+        handle: RunHandle,
+        payload: dict,
+        started: float,
+    ) -> None:
+        """编排模式执行分支（E17）：快照绑定的工作流实例化执行，输出回写会话。
+
+        语义边界：
+        - 引用式绑定：执行走 definition 现行发布版（D13 冻结边界同工具语义快照），
+          但发起前实时校验 is_active/已发布（D14 实时安全约束高于快照）；
+        - 取消/超时传播到 workflow 实例（cancel_instance 以发起者身份——instance.user_id
+          即 run 发起者，属主校验天然对齐）；
+        - paused（工作流人工交互挂起）在智能体会话语义下不可恢复，按失败终态处置；
+        - E1 token 流式/E4 审批/预算分层不涉及（无模型调用、无工具执行器）。
+        """
+        from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
+        from app.modules.workflow.service.workflow_service import WorkflowInstanceService
+
+        caller = _SimpleUser(job["user"])
+        try:
+            definition = db.get(WorkflowDefinition, payload.get("workflow_definition_id") or 0)
+            if (
+                definition is None
+                or definition.delete_time is not None
+                or not definition.is_active
+                or definition.current_version_id is None
+            ):
+                raise RuntimeError("绑定的工作流不存在、已停用或未发布（实时校验，D14）")
+
+            service = WorkflowInstanceService(db)
+            instance = service.start_instance(definition.id, {"question": job["question"]}, current_user=caller)
+            trace.workflow_instance_id = instance.id
+            db.add(trace)
+            db.commit()
+
+            terminal = {"success", "failed", "cancelled"}
+            deadline_notified = False
+            while True:
+                if is_cancel_requested(handle.trace_token, handle):
+                    try:
+                        service.cancel_instance(instance.id, current_user=caller)
+                    except HTTPException:
+                        pass  # 实例已终态（竞态窗口）——以 DB 状态收尾
+                    self._finish_workflow_run(db, job, trace, session_row, started, AGENT_RUN_CANCELLED, "已请求取消")
+                    handle.close("cancelled", {"status": AGENT_RUN_CANCELLED, "message": "运行已取消"})
+                    return
+                if handle.deadline.expired():
+                    if not deadline_notified:  # 只取消一次；等实例落终态（revoke 强制后背）
+                        deadline_notified = True
+                        try:
+                            service.cancel_instance(instance.id, current_user=caller)
+                        except HTTPException:
+                            pass
+                    self._finish_workflow_run(db, job, trace, session_row, started, AGENT_RUN_TIMED_OUT, "运行超时")
+                    handle.close("timed_out", {"status": AGENT_RUN_TIMED_OUT, "message": "运行超时"})
+                    return
+                db.expire(instance)
+                current = db.get(WorkflowInstance, instance.id)
+                if current is None:
+                    raise RuntimeError("工作流实例丢失")
+                if current.status in terminal:
+                    instance = current
+                    break
+                time.sleep(0.5)
+
+            if instance.status == "success":
+                answer = self._workflow_output_answer(instance)
+                db.add(
+                    AgentMessage(
+                        session_id=session_row.id,
+                        role="assistant",
+                        content=answer,
+                    )
+                )
+                self._finish_workflow_run(db, job, trace, session_row, started, AGENT_RUN_COMPLETED, None)
+                handle.close(
+                    "final",
+                    {
+                        "status": AGENT_RUN_COMPLETED,
+                        "answer": answer,
+                        "modelCalls": 0,
+                        "toolRounds": 0,
+                        "workflowInstanceId": instance.id,
+                    },
+                )
+            elif instance.status == "cancelled":
+                self._finish_workflow_run(db, job, trace, session_row, started, AGENT_RUN_CANCELLED, "工作流已取消")
+                handle.close("cancelled", {"status": AGENT_RUN_CANCELLED, "message": "运行已取消"})
+            else:  # failed / paused 及其他未知非终态值一律按失败处置
+                error_text = instance.error_message or (
+                    "工作流进入人工交互挂起，智能体会话模式不支持（请直接在工作流模块恢复）"
+                    if instance.status == "paused"
+                    else "工作流执行失败"
+                )
+                self._finish_workflow_run(db, job, trace, session_row, started, AGENT_RUN_FAILED, error_text)
+                handle.close("error", {"status": AGENT_RUN_FAILED, "message": error_text[:300]})
+        except Exception as exc:  # noqa: BLE001 —— 终态机同构：致命错误 failed（对照 graph 分支）
+            logger.exception("agent 编排运行失败 trace=%s", trace.id)
+            if is_cancel_requested(handle.trace_token, handle):
+                self._finish_workflow_run(db, job, trace, session_row, started, AGENT_RUN_CANCELLED, "已请求取消")
+                handle.close("cancelled", {"status": AGENT_RUN_CANCELLED, "message": "运行已取消"})
+            else:
+                self._finish_workflow_run(db, job, trace, session_row, started, AGENT_RUN_FAILED, str(exc))
+                handle.close("error", {"status": AGENT_RUN_FAILED, "message": str(exc)[:300]})
+
+    @staticmethod
+    def _workflow_output_answer(instance: Any) -> str:
+        """从终态实例 state_data 提取 end 节点的 workflow_output 规整为回复文本。"""
+        import json as _json
+
+        try:
+            output = (_json.loads(instance.state_data or "{}") or {}).get("workflow_output")
+        except ValueError:
+            output = None
+        if output is None:
+            return "（工作流执行完成，但未产出输出——请检查结束节点的输出配置）"
+        if isinstance(output, str):
+            return output
+        return _json.dumps(output, ensure_ascii=False, indent=2)
+
+    def _finish_workflow_run(
+        self,
+        db: Any,
+        job: dict,
+        trace: AgentRunTrace,
+        session_row: AgentSession,
+        started: float,
+        status: str,
+        error: str | None,
+    ) -> None:
+        """编排模式终态落库：assistant 消息由调用方按需写（成功路径），此处只收口 trace/会话。"""
+        trace.status = status
+        trace.error = error
+        trace.model_calls = 0  # 无模型调用（工作流内部计费归 workflow 模块）
+        trace.tool_rounds = 0
+        trace.tool_calls = 0
+        trace.duration_ms = int((time.monotonic() - started) * 1000)
+        db.add(trace)
+        session_row.last_message_at = _dt.now(UTC)
+        db.add(session_row)
+        db.commit()
 
     def _finish_run(
         self, db: Any, job: dict, state: dict | None, status: str, started: float, error: str | None

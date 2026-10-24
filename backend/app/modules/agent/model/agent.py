@@ -31,6 +31,11 @@ AGENT_STATUSES = {AGENT_STATUS_DRAFT, AGENT_STATUS_PUBLISHED}
 AGENT_RUN_MODE_DRAFT = "draft"
 AGENT_RUN_MODE_PUBLISHED = "published"
 
+# 编排模式（E17）：chat=对话型（LangGraph 运行时）；workflow=编排型（绑定已发布工作流）
+AGENT_EXECUTION_MODE_CHAT = "chat"
+AGENT_EXECUTION_MODE_WORKFLOW = "workflow"
+AGENT_EXECUTION_MODES = {AGENT_EXECUTION_MODE_CHAT, AGENT_EXECUTION_MODE_WORKFLOW}
+
 # run 终态机（需求 4.2 ⑤）：running 为执行中非终态；预算耗尽收尾 → completed 非 failed
 AGENT_RUN_RUNNING = "running"
 AGENT_RUN_COMPLETED = "completed"
@@ -92,6 +97,10 @@ class AgentProfile(BaseEntity, table=True):
     max_tool_rounds: int = Field(default=12)  # 工具迭代轮次上限（评审 6 语义）
     timeout_seconds: int = Field(default=60)  # run 总时限
     enable_memory: bool = Field(default=True)  # 只控上下文注入（需求 4.4）
+    # 编排模式（E17）：chat=对话型（LangGraph 运行时）；workflow=编排型（绑定已发布工作流，
+    # run 分支走 workflow 实例执行——引用式绑定，执行走现行发布版，D13 冻结边界一致）
+    execution_mode: str = Field(default="chat", max_length=20)
+    workflow_definition_id: int | None = Field(default=None)
     enabled: bool = Field(default=True, index=True)  # 独立启停（实时运行控制，不被快照冻结）
     status: str = Field(default=AGENT_STATUS_DRAFT, index=True, max_length=50)
     created_by: int | None = Field(default=None, index=True)
@@ -190,6 +199,8 @@ class AgentRunTrace(BaseEntity, table=True):
     prompt_tokens: int | None = Field(default=None)
     completion_tokens: int | None = Field(default=None)
     duration_ms: int | None = Field(default=None)
+    # 编排模式（E17）：workflow 型 run 的实例回链（观测跳转 workflow 模块）
+    workflow_instance_id: int | None = Field(default=None)
     status: str = Field(default=AGENT_RUN_RUNNING, index=True, max_length=20)
     # 备注性错误信息（取消区分「已请求/确认终止」+ 残留清单 + 预算触发项等）
     error: str | None = Field(default=None, sa_column=Column(Text))
@@ -251,6 +262,8 @@ class AgentProfileCreateRequest(BaseModel):
     max_tool_rounds: int = 12
     timeout_seconds: int = 60
     enable_memory: bool = True
+    execution_mode: str = "chat"  # chat | workflow（E17 编排模式）
+    workflow_definition_id: int | None = None  # execution_mode=workflow 时必填（发布校验）
 
 
 class AgentProfileUpdateRequest(AgentProfileCreateRequest):
@@ -272,6 +285,8 @@ class AgentProfileRead(BaseModel):
     max_tool_rounds: int
     timeout_seconds: int
     enable_memory: bool
+    execution_mode: str = "chat"
+    workflow_definition_id: int | None = None
     enabled: bool
     status: str
     created_by: int | None = None
@@ -337,6 +352,7 @@ class AgentRunTraceRead(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     duration_ms: int | None = None
+    workflow_instance_id: int | None = None
     status: str
     error: str | None = None
     created_at: datetime | None = None
