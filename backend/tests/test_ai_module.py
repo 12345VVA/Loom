@@ -1389,6 +1389,74 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(result["usage"], {})
         self.assertEqual(result["data"][0]["b64_json"], "abc")
 
+    def test_openai_compatible_stream_aggregates_tool_call_deltas(self):
+        """E1：流式 tool_calls 增量按 index 聚合，随 done 事件下发（agent 判定工具决策响应）。"""
+        provider = AiProvider(
+            code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk")
+        )
+        adapter = OpenAICompatibleAdapter(provider)
+
+        def chunk(delta: dict, finish_reason=None, usage=None):
+            payload = {"choices": [{"delta": delta, "finish_reason": finish_reason}]}
+            if usage:
+                payload["usage"] = usage
+
+            class C:
+                def model_dump(self, mode="json"):
+                    return payload
+
+            return C()
+
+        chunks = iter(
+            [
+                chunk({"content": "让我查一下"}),
+                chunk(
+                    {
+                        "tool_calls": [
+                            {"index": 0, "id": "call_1", "function": {"name": "current_time", "arguments": ""}}
+                        ]
+                    }
+                ),
+                chunk({"tool_calls": [{"index": 0, "function": {"arguments": '{"tz":'}}]}),
+                chunk({"tool_calls": [{"index": 0, "function": {"arguments": '"Asia"}'}}]}),
+                chunk(
+                    {},
+                    finish_reason="tool_calls",
+                    usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+                ),
+            ]
+        )
+        with patch.object(adapter.client.chat.completions, "create", return_value=chunks):
+            events = list(adapter.stream_chat(model="m", messages=[{"role": "user", "content": "hi"}], options={}))
+        done = [e for e in events if e["event"] == "done"][-1]
+        self.assertEqual(
+            done["toolCalls"], [{"id": "call_1", "function": {"name": "current_time", "arguments": '{"tz":"Asia"}'}}]
+        )
+        self.assertEqual([e["event"] for e in events if e["event"] == "delta"], ["delta"])
+        self.assertEqual(events[0]["content"], "让我查一下")
+
+    def test_openai_compatible_stream_done_without_tool_calls_is_none(self):
+        """纯文本答案：done.toolCalls 为 None（agent 侧不触发 answer_reset）。"""
+        provider = AiProvider(
+            code="openai", name="OpenAI", adapter="openai-compatible", api_key_cipher=encrypt_secret("sk")
+        )
+        adapter = OpenAICompatibleAdapter(provider)
+
+        def chunk(delta: dict, finish_reason=None):
+            payload = {"choices": [{"delta": delta, "finish_reason": finish_reason}]}
+
+            class C:
+                def model_dump(self, mode="json"):
+                    return payload
+
+            return C()
+
+        chunks = iter([chunk({"content": "你好"}), chunk({}, finish_reason="stop")])
+        with patch.object(adapter.client.chat.completions, "create", return_value=chunks):
+            events = list(adapter.stream_chat(model="m", messages=[{"role": "user", "content": "hi"}], options={}))
+        done = [e for e in events if e["event"] == "done"][-1]
+        self.assertIsNone(done["toolCalls"])
+
     def test_openai_compatible_adapter_disables_sdk_retries_by_default(self):
         # OpenAI SDK 默认 max_retries=2 会在超时/5xx 静默重试；同步计费接口无幂等键，
         # 重试即重复扣费，默认必须关闭，仅 extra_config.max_retries 显式开启

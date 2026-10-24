@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import patch
 
@@ -230,6 +231,142 @@ class SseFrameTestCase(unittest.TestCase):
             events.append(event.type)
         self.assertEqual(events, ["final"])
         self.assertTrue(handle.closed)
+
+
+class _StreamingRunFakeChatModel:
+    """E1 SSE 会话模型桩：轮1 工具决策（流式草稿文本+tool_calls）→ 轮2 最终答案。
+
+    记录每轮收到的上下文 messages，供 A35 断言（被 reset 文本不进后续上下文）。
+    """
+
+    seen_contexts: list[list] = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self._runtime_service = None
+
+    def generate(self, messages, **kwargs):
+        raise AssertionError("stream 会话不应走 _generate")
+
+    def generate_streaming(self, messages, on_delta):
+        type(self).seen_contexts.append([str(m.content) for m in messages])  # 平铺 list[BaseMessage]
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        if not any(getattr(m, "tool_call_id", None) for m in messages):
+            # 轮1：先吐草稿文本再决定调工具（answer_reset 的触发形态）
+            on_delta("让我查查")
+            message = AIMessage(
+                content="让我查查",
+                tool_calls=[{"name": "current_time", "args": {}, "id": "call_1", "type": "tool_call"}],
+            )
+        else:
+            on_delta("现在是")
+            on_delta("白天")
+            message = AIMessage(content="现在是白天")
+        return ChatResult(generations=[ChatGeneration(message=message)], llm_output={"usage": {"totalTokens": 10}})
+
+
+class StreamingRunTestCase(unittest.TestCase):
+    """E1 SSE 会话闭环（A23/A26/A35）：answer_delta/reset 事件序列 + 服务端撤销不落库。"""
+
+    def setUp(self):
+        self.engine = make_test_engine(
+            tables=[
+                AgentProfile.__table__,
+                AgentProfileDraft.__table__,
+                AgentProfilePublishRecord.__table__,
+                AgentProfileSnapshot.__table__,
+                AgentSession.__table__,
+                AgentMessage.__table__,
+                AgentRunTrace.__table__,
+                AgentToolCallLog.__table__,
+                AgentToolResource.__table__,
+                *_AI_CHANNEL_TABLES,
+                Role.__table__,
+                UserRoleLink.__table__,
+                SysLog.__table__,
+            ]
+        )
+        self.session = Session(self.engine)
+        bootstrap_registry()
+        seed_chat_channel(self.engine)
+        sync_resources(self.session)
+        self.service = AgentProfileService(self.session)
+        self.owner = _FakeUser(1)
+        self.profile = self.service.add(
+            AgentProfileCreateRequest(name="流式运行", model_profile_code="deepseek-chat", tools=["current_time"]),
+            current_user=self.owner,
+        )
+        self.service.publish(self.profile.id, current_user=self.owner)
+        _StreamingRunFakeChatModel.seen_contexts = []
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+        bootstrap_registry()
+
+    def _stream(self, question="现在几点"):
+        import asyncio
+
+        svc = AgentRunService(self.session)
+        with patch.object(model_wrapper_module, "LoomChatModel", _StreamingRunFakeChatModel):
+            response = svc.stream_run(
+                profile_id=self.profile.id,
+                session_id=None,
+                question=question,
+                run_mode="published",
+                current_user=self.owner,
+            )
+
+            async def _consume():  # starlette 把同步 generator 包成 async iterator
+                return [chunk async for chunk in response.body_iterator]
+
+            frames = asyncio.run(_consume())  # 消费须在 patch 作用域内（worker 线程执行 run）
+        events = []
+        for frame in frames:
+            text = frame.strip() if isinstance(frame, str) else frame.decode().strip()
+            if text.startswith("data:"):
+                events.append(json.loads(text[5:].strip()))
+        return events
+
+    def test_answer_events_and_server_side_reset(self):
+        """delta/reset 事件序列正确；被 reset 文本不入消息库、不入后续上下文、final 一致。"""
+        events = self._stream()
+        types = [e["type"] for e in events]
+
+        # 事件序列：轮1 delta → reset；轮2 delta×2 → done；恰一 final
+        self.assertEqual(types.count("answer_reset"), 1)
+        self.assertEqual(types.count("answer_done"), 1)
+        self.assertEqual(types.count("final"), 1)
+        reset_idx = types.index("answer_reset")
+        self.assertEqual(types[reset_idx - 1], "answer_delta")  # reset 紧随其轮的 delta
+        gen1 = events[reset_idx - 1]["payload"]["generationId"]
+        reset = events[reset_idx]["payload"]
+        self.assertEqual(reset["generationId"], gen1)
+        self.assertEqual(reset["upToSeq"], 1)
+        final_event = events[-1]
+        self.assertEqual(final_event["payload"]["answer"], "现在是白天")
+        # 两轮 generationId 不同（分桶）
+        done_payload = events[types.index("answer_done")]["payload"]
+        self.assertNotEqual(done_payload["generationId"], gen1)
+
+        self.session.expire_all()
+        # A35/A26：被 reset 的「让我查查」不在任何持久化消息；assistant 权威答案唯一
+        contents = [m.content for m in self.session.exec(select(AgentMessage)).all()]
+        self.assertNotIn("让我查查", "".join(c or "" for c in contents))
+        self.assertIn("现在是白天", contents)
+        tool_rows = [m for m in self.session.exec(select(AgentMessage)).all() if m.role == "tool"]
+        self.assertEqual(len(tool_rows), 1)
+        self.assertEqual(tool_rows[0].tool_call_id, "call_1")
+
+        # A35 上下文面：轮2 模型输入不含被 reset 文本（服务端撤销在进入 state 前完成）；
+        # 且轮2 输入保持 openai 协议形态（AI(tool_calls) 后紧跟 tool 角色，不展平为 user）
+        self.assertEqual(len(_StreamingRunFakeChatModel.seen_contexts), 2)
+        self.assertNotIn("让我查查", "".join(_StreamingRunFakeChatModel.seen_contexts[1]))  # 轮2 已不见
+
+        # final 与持久化一致
+        trace = self.session.exec(select(AgentRunTrace)).first()
+        self.assertEqual(trace.status, "completed")
 
 
 if __name__ == "__main__":

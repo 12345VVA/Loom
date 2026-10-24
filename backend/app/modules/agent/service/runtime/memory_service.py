@@ -116,7 +116,7 @@ def build_model_messages(
     tool_schema_tokens: int,
     injected_context: str,
     history: list[BaseMessage],
-    current_input: str,
+    current_input: str | None,
     token_budget: int = AGENT_CONTEXT_TOKEN_BUDGET,
 ) -> list[BaseMessage]:
     """按优先级预留模型组装提交给模型的 messages 序列。
@@ -125,6 +125,8 @@ def build_model_messages(
     → ④ 历史拿剩余预算按完整原子单元裁剪（保底最近 2 个单元超长单条截断）。
     工具结果注入历史前截 200 字（3.4.5；完整结果仅存 agent_message 与 tool_call_log）。
     system+schema 超预算属配置错误直接报错；当前输入超限显式报错（不静默截断）。
+    current_input=None 表示工具循环继续轮（无新用户输入；尾部工具结果段整体留在 history
+    原子单元内——openai 协议要求 tool_calls 后紧跟 tool 角色，不得展平为 user）。
     """
     from langchain_core.messages import SystemMessage
 
@@ -134,11 +136,14 @@ def build_model_messages(
             f"系统提示词与工具 schema（约 {system_tokens + tool_schema_tokens} tokens）超出输入预算 {token_budget}"
         )
 
-    input_tokens = estimate_tokens(current_input)
     remaining = token_budget - system_tokens - tool_schema_tokens
-    if input_tokens >= remaining:
-        raise ContextBudgetError(f"当前输入约 {input_tokens} tokens，超过剩余预算 {remaining}（请缩短内容或减少历史）")
-    remaining -= input_tokens
+    if current_input is not None:
+        input_tokens = estimate_tokens(current_input)
+        if input_tokens >= remaining:
+            raise ContextBudgetError(
+                f"当前输入约 {input_tokens} tokens，超过剩余预算 {remaining}（请缩短内容或减少历史）"
+            )
+        remaining -= input_tokens
 
     # ③ 注入上下文截断
     injection: str | None = None
@@ -188,7 +193,8 @@ def build_model_messages(
         messages.append(SystemMessage(content=f"[参考上下文]\n{injection}"))
     for unit in reversed(kept):
         messages.extend(unit)
-    messages.append(_as_user_message(current_input))
+    if current_input is not None:
+        messages.append(_as_user_message(current_input))
     return messages
 
 

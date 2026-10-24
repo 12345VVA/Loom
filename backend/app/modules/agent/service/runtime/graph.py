@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Callable
 from typing import Annotated
 
@@ -58,6 +59,7 @@ class GraphDeps:
         tool_schema_tokens: int,
         max_tool_rounds: int,
         context_token_budget: int | None = None,  # E15 动态输入预算（None = 常数下限）
+        stream_answer: bool = False,  # E1：最终答案候选轮 token 流式（仅 SSE 会话启用）
         pre_model_hooks: list | None = None,  # 产出型中间件（MemoryInjection 等，返回 state delta）
         apply_hooks: Callable | None = None,  # apply_pre_model_hooks
         guardrails_validator: Callable[[list], None] = None,  # type: ignore[assignment] —— 校验型（护栏完整性，对组装后 messages）
@@ -73,6 +75,7 @@ class GraphDeps:
         self.tool_schema_tokens = tool_schema_tokens
         self.max_tool_rounds = max_tool_rounds
         self.context_token_budget = context_token_budget or AGENT_CONTEXT_TOKEN_BUDGET
+        self.stream_answer = stream_answer
         self.pre_model_hooks = pre_model_hooks or []
         self.apply_hooks = apply_hooks
         self.guardrails_validator = guardrails_validator
@@ -99,13 +102,20 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
         injected = delta.get("injected_context") or ""
 
     # ② 上下文组装（system 消息在此前置——护栏唯一注入点在 prompt_render.render）
-    # 契约：state.messages 的最后一条即当前用户输入（run 发起时构造）
+    # 契约：首轮 state.messages 的最后一条即当前用户输入；工具循环轮尾部是工具结果段，
+    # 整体留在 history 原子单元（协议：tool_calls 后必须紧跟 tool 角色，不得展平为 user）
+    if messages and isinstance(messages[-1], ToolMessage):
+        current_input = None  # 工具循环继续轮：无新用户输入
+        history = messages
+    else:
+        current_input = str(messages[-1].content) if messages else ""
+        history = messages[:-1] if messages else []
     assembled = build_model_messages(
         system_message=deps.system_message,
         tool_schema_tokens=deps.tool_schema_tokens,
         injected_context=injected,
-        history=messages[:-1] if messages else [],
-        current_input=str(messages[-1].content) if messages else "",
+        history=history,
+        current_input=current_input,
         token_budget=deps.context_token_budget,  # E15：动态输入预算（链最小窗口 − 输出上限，下限兜底）
     )
     # ③ 校验型钩子：护栏完整性对「提交给模型的 messages」验证（fail-close）
@@ -113,9 +123,12 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
         deps.guardrails_validator(assembled)
     if deps.on_event is not None:
         deps.on_event("model_started", {"modelCalls": int(state.get("model_calls") or 0) + 1})
-    llm_result = deps.model.generate([assembled])  # LLMResult：message + llm_output.usage（预算 token 计数）
-    response = llm_result.generations[0][0].message
-    usage = (llm_result.llm_output or {}).get("usage") or {}
+    if deps.stream_answer and deps.on_event is not None:
+        response, usage = _call_model_streaming(deps, assembled)
+    else:
+        llm_result = deps.model.generate([assembled])  # LLMResult：message + llm_output.usage（预算 token 计数）
+        response = llm_result.generations[0][0].message
+        usage = (llm_result.llm_output or {}).get("usage") or {}
     deps.budget.on_model_call(usage)
     if deps.on_event is not None:
         deps.on_event(
@@ -124,6 +137,32 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
         )
     # 无 reducer 通道为覆盖语义：返回全量（当前值 +1），不返回增量
     return {"messages": [response], "model_calls": int(state.get("model_calls") or 0) + 1}
+
+
+def _call_model_streaming(deps: GraphDeps, assembled) -> tuple[AIMessage, dict]:
+    """E1 流式最终答案候选轮：answer_delta 实时下发（generation_id 分桶，seq 单调）；
+    判定为工具决策响应（聚合 toolCalls 非空）→ answer_reset + **服务端同步撤销**
+    （AIMessage 剔除临时文本仅保留 tool_calls 结构——被 reset 的内容不进入 agent_message、
+    不进入后续上下文构建、不进入 trace 权威答案，设计 3.1 / D22 / A35）。"""
+    generation_id = uuid.uuid4().hex
+    seq = 0
+
+    def on_delta(text: str) -> None:
+        nonlocal seq
+        seq += 1
+        deps.on_event("answer_delta", {"generationId": generation_id, "delta": text, "seq": seq})
+
+    result = deps.model.generate_streaming(assembled, on_delta)  # 平铺 list[BaseMessage]（非 generate 的 batch 语义）
+    response = result.generations[0].message  # ChatResult 单层（区别于 generate 的 LLMResult 两层）
+    usage = (result.llm_output or {}).get("usage") or {}
+    if getattr(response, "tool_calls", None):
+        deps.on_event("answer_reset", {"generationId": generation_id, "upToSeq": seq})
+        # 服务端同步撤销：临时文本不入 state（messages 通道）——终局 ToolMessage/后续上下文/
+        # trace 权威答案都不会再见到它；前端草稿区由 answer_reset 清除
+        response = AIMessage(content="", tool_calls=response.tool_calls, additional_kwargs=response.additional_kwargs)
+    else:
+        deps.on_event("answer_done", {"generationId": generation_id, "seq": seq})
+    return response, usage
 
 
 def _execute_tools(state: AgentState, deps: GraphDeps) -> dict:

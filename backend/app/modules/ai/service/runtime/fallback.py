@@ -59,6 +59,7 @@ class FallbackMixin:
         *,
         session: Session,
         min_context_window: int | None = None,
+        task_id: int | None = None,
     ) -> Iterable[str] | None:
         if not profile.fallback_profile_id:
             return None
@@ -102,6 +103,7 @@ class FallbackMixin:
                 structured_response=structured_response or options.get("response_format"),
                 response_format_overridden=response_format_overridden,
                 min_context_window=min_context_window,
+                task_id=task_id,
             )
         finally:
             _fallback_depth.reset(token)

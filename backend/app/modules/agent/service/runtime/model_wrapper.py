@@ -137,6 +137,72 @@ class LoomChatModel(BaseChatModel):
             },
         )
 
+    def generate_streaming(self, messages: list[BaseMessage], on_delta) -> ChatResult:
+        """E1 最终答案候选轮流式：经 ai ``chat_iter`` 管线（task_id 审计通道 + 窗口约束），
+        content 增量实时回调 ``on_delta(text)``；返回 ChatResult（tool_calls 归一化、
+        usage 计数），供图统一消费与服务端撤销判定。
+
+        注意 messages 为**平铺** list[BaseMessage]（区别于 langchain generate 的 batch
+        语义——那是「LLMResult 两层 generations」的来源）；工具决策响应的判定依据 =
+        done 事件携带的聚合 toolCalls（openai 流式增量聚合）。仅 openai-compatible
+        渠道（R1）；实例纪律同 _generate。
+        """
+        if self._runtime_service is None:
+            raise RuntimeError("LoomChatModel 未装配 runtime_service（单 run 实例须由 RunService 注入）")
+
+        payload = AiChatRequest(
+            profile_code=self.model_profile_code,
+            messages=[AiRuntimeMessage(**_message_to_openai_dict(m)) for m in messages],
+            options=self._build_options(),
+        )
+        content_parts: list[str] = []
+        tool_calls: list[dict] = []
+        usage: dict = {}
+        request_id = None
+        for frame in self._runtime_service.chat_iter(
+            payload,
+            current_user=self._caller,
+            task_id=self._task_id,
+            min_context_window=self.min_context_window,
+        ):
+            event = _parse_sse_frame(frame)
+            if event is None:
+                continue  # 心跳注释帧
+            name = event.get("event")
+            if name == "delta":
+                text = event.get("content") or ""
+                if text:
+                    content_parts.append(text)
+                    on_delta(text)
+            elif name == "done":
+                usage = event.get("usage") or {}
+                request_id = event.get("requestId")
+                tool_calls = list(event.get("toolCalls") or [])
+            elif name == "error":
+                raise RuntimeError(f"模型流式调用失败：{event.get('message') or event}")
+        content = "".join(content_parts)
+        message = AIMessage(content=content)
+        if tool_calls:
+            message.additional_kwargs["tool_calls"] = tool_calls
+            message.tool_calls = [
+                {
+                    "name": call["function"]["name"],
+                    "args": _parse_arguments(call["function"].get("arguments")),
+                    "id": call["id"],
+                    "type": "tool_call",
+                }
+                for call in tool_calls
+                if call.get("function", {}).get("name")
+            ]
+        return ChatResult(
+            generations=[ChatGeneration(message=message)],
+            llm_output={
+                "model_profile": self.model_profile_code,
+                "usage": usage,
+                "request_id": request_id,
+            },
+        )
+
     def _build_options(self) -> dict:
         """openai 标准采样参数 + 工具 schema（options 全量透传，无白名单——不得放自定义键）。"""
         options: dict[str, Any] = {"temperature": self.temperature, "max_tokens": self.max_tokens}
@@ -146,6 +212,14 @@ class LoomChatModel(BaseChatModel):
         if self._bound_schemas:
             options["tools"] = self._bound_schemas
         return options
+
+
+def _parse_sse_frame(frame: str) -> dict | None:
+    """ai 流式管线单帧解析：``data: {json}``；注释/心跳帧返回 None。"""
+    text = frame.strip()
+    if not text.startswith("data:"):
+        return None
+    return json.loads(text[5:].strip())
 
 
 def _parse_tool_calls(raw: dict) -> list[dict]:

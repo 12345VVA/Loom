@@ -144,6 +144,7 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
         self,
         payload: AiChatRequest,
         current_user: User | None = None,
+        task_id: int | None = None,
         min_context_window: int | None = None,
     ) -> Iterable[str]:
         AiSecurityService.check_input_safety(payload.messages)
@@ -161,6 +162,22 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
             skip_masking=settings.AI_ALLOW_SKIP_MASKING and payload.skip_masking,
             # E15：调用方声明的最小窗口约束（回退路径校验用；None 时行为零变化）
             min_context_window=min_context_window,
+            # E1：审计通道与 chat 同口径（task_id 落 AiModelCallLog 供归因）
+            task_id=task_id,
+        )
+
+    def chat_iter(
+        self,
+        payload: AiChatRequest,
+        current_user: User | None = None,
+        task_id: int | None = None,
+        min_context_window: int | None = None,
+    ) -> Iterable[str]:
+        """token 级流式公共能力（E1）：与 stream_chat 同管线；治理/审计口径与 chat 一致
+        （task_id 通道 + min_context_window 回退约束）。agent 最终答案候选轮专用入口；
+        done 事件携带 adapter 聚合的 toolCalls（工具决策响应判定依据）。"""
+        return self.stream_chat(
+            payload, current_user=current_user, task_id=task_id, min_context_window=min_context_window
         )
 
     def embedding(
@@ -411,22 +428,24 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
         response_format_overridden: bool = False,
         skip_masking: bool = False,
         min_context_window: int | None = None,
+        task_id: int | None = None,
     ) -> Iterable[str]:
         start = time.perf_counter()
         # 流式生成器由 Starlette 在 AnyIO 线程池中迭代，与创建请求会话的事件循环线程不同，
         # SQLAlchemy Session 非线程安全：改用同库独立会话，随生成器 finally 关闭
         session = _independent_session(self.session)
-        st = _InvocationState.from_resolved(session, resolved, start)
+        st = _InvocationState.from_resolved(session, resolved, start, task_id=task_id)
         provider, model, profile = st.provider, st.model, st.profile
         content_parts: list[str] = []
         usage: dict[str, Any] = {}
         request_id: str | None = None
         emitted_delta = False
         done_sent = False
+        tool_calls: list[dict[str, Any]] | None = None  # E1：done 事件聚合的流式工具调用
         request_options = request_options or {}
 
         try:
-            self._begin_invocation(st, current_user)
+            self._begin_invocation(st, current_user, task_id)
             yield _sse_event(
                 {"event": "start", "provider": provider.code, "model": model.code, "profile": profile.code}
             )
@@ -473,11 +492,15 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
                             usage = event.get("usage") or usage
                         if event.get("requestId"):
                             request_id = event.get("requestId")
+                        tool_calls = event.get("toolCalls")  # E1：adapter 聚合结果（None 透传）
             content = "".join(content_parts)
             # 对流式完成后的完整内容进行脱敏（跳过结构化数据，或配置跳过）
             if not skip_masking and not _is_structured_response(structured_response):
                 content = AiSecurityService.mask_sensitive_output(content)
             done_payload = {"event": "done", "content": content, "usage": usage or {}}
+            # E1：adapter 聚合的流式 tool_calls（None=纯文本答案；列表=工具决策响应）
+            if tool_calls is not None:
+                done_payload["toolCalls"] = tool_calls
             if _is_structured_response(structured_response):
                 parsed = _parse_content(content)
                 done_payload.update(parsed)
@@ -580,6 +603,7 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
                     current_user=current_user,
                     session=session,
                     min_context_window=min_context_window,
+                    task_id=task_id,
                 )
                 if fallback is not None:
                     self._audit_failure(

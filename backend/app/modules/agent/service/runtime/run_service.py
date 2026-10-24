@@ -400,6 +400,7 @@ class AgentRunService:
                 run_mode=run_mode,
                 current_user=current_user,
                 handle=handle,
+                stream_answer=True,  # E1：SSE 会话启用 token 流式
             )
         except Exception:
             # 发起段校验失败（未发布/窗口不足/degraded 等）：锁必须随失败释放，
@@ -502,6 +503,7 @@ class AgentRunService:
         run_mode: str,
         current_user: Any,
         handle: RunHandle,
+        stream_answer: bool = False,  # E1：SSE 会话启用最终答案 token 流式；invoke 保持整段
     ) -> dict:
         """请求线程收尾：校验链（载荷/窗口）→ trace 落库 + 用户消息 → 工作线程任务包。"""
         payload = self._load_payload(profile, run_mode)
@@ -528,6 +530,7 @@ class AgentRunService:
             "session_id": session_row.id,
             "question": question,
             "run_mode": run_mode,
+            "stream_answer": stream_answer,
             "engine": self.session.get_bind(),  # 请求线程的引擎（工作线程自建 Session 用；非 Session）
             "user": {
                 "id": current_user.id,
@@ -641,6 +644,7 @@ class AgentRunService:
                     max_tool_rounds=int(payload["max_tool_rounds"]),
                     context_token_budget=int(payload.get("context_token_budget") or 0)
                     or None,  # E15 动态输入预算（None 走常数下限）
+                    stream_answer=bool(job.get("stream_answer")),  # E1：仅 SSE 会话启用
                     guardrails_validator=validate_guardrails,
                     on_event=handle.emit,
                     should_cancel=should_cancel,

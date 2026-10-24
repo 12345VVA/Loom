@@ -35,6 +35,32 @@ from app.modules.agent.service.runtime.tool_executor import ToolExecutor
 from app.modules.agent.service.tool_registry import bootstrap_registry, get_tool
 
 
+class _StreamingFakeModel:
+    """E1 流式脚本桩：每轮 (content_chunks, tool_calls)，generate_streaming 逐块回调。"""
+
+    def __init__(self, script: list[tuple[list[str], list[dict] | None]]):
+        self.script = list(script)
+        self.calls: list[list] = []
+
+    def generate(self, messages, **kwargs):  # 非流式路径不在此测试出现
+        raise AssertionError("stream_answer 启用时不应走 _generate")
+
+    def generate_streaming(self, messages, on_delta):
+        self.calls.append(messages)
+        chunks, tool_calls = self.script.pop(0)
+        for text in chunks:
+            on_delta(text)
+        message = AIMessage(content="".join(chunks))
+        if tool_calls:
+            message.tool_calls = tool_calls
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        return ChatResult(
+            generations=[ChatGeneration(message=message)],
+            llm_output={"usage": {"totalTokens": 10}},
+        )
+
+
 class _FakeCtx:
     def __init__(self):
         self.db = None
@@ -358,6 +384,117 @@ class AgentStateShapeTestCase(unittest.TestCase):
 
     def test_state_channels(self):
         self.assertEqual(set(AgentState.__annotations__.keys()), {"messages", "model_calls", "tool_rounds"})
+
+
+class _StreamingCaseBase(unittest.TestCase):
+    """流式图测试共用装配（stream_answer=True + 事件收集）。"""
+
+    def setUp(self):
+        bootstrap_registry()
+
+    def tearDown(self):
+        bootstrap_registry()
+
+    def _build_streaming(self, script: list[tuple[list[str], list[dict] | None]]):
+        events: list[tuple[str, dict]] = []
+        executor = ToolExecutor(
+            snapshot_tools=_time_tool_snapshot(),
+            bound_names={"current_time"},
+            context=_FakeCtx(),
+        )
+        deps = GraphDeps(
+            model=_StreamingFakeModel(script),
+            tool_executor=executor,
+            budget=RunBudget(max_tool_rounds=3),
+            system_message=prompt_render.render("你是测试智能体", {"user_name": "tester"}),
+            tool_schema_tokens=estimate_tokens('{"type":"object"}'),
+            max_tool_rounds=3,
+            guardrails_validator=None,
+            on_event=lambda t, p: events.append((t, p)),
+            stream_answer=True,  # E1
+        )
+        return build_agent_graph(deps), events, deps
+
+
+class StreamingAnswerTestCase(_StreamingCaseBase):
+    """E1 token 流式（设计 3.1 / D22）：answer_delta/reset 序列 + 服务端同步撤销（A35）。"""
+
+    def test_tool_decision_resets_and_strips_content(self):
+        """工具决策轮：delta 实时发 → reset 撤销 → AIMessage 仅剩 tool_calls（content 剔除）。"""
+        tool_call = [{"name": "current_time", "args": {}, "id": "call_1", "type": "tool_call"}]
+        graph, events, _deps = self._build_streaming(
+            [
+                (["让我", "查一下时间"], tool_call),  # 轮1：工具决策（流式文本须被撤销）
+                (["现在", "是 12:00"], None),  # 轮2：最终答案
+            ]
+        )
+        state = graph.invoke({"messages": [HumanMessage("现在几点")], "model_calls": 0, "tool_rounds": 0})
+
+        types = [t for t, _ in events]
+        self.assertEqual(types.count("answer_delta"), 4)
+        self.assertEqual(types.count("answer_reset"), 1)
+        self.assertEqual(types.count("answer_done"), 1)
+        # 轮1 的 delta 先于 reset；reset.upToSeq == 该轮最后一个 seq
+        first_gen = next(p["generationId"] for t, p in events if t == "answer_delta")
+        deltas_gen1 = [p for t, p in events if t == "answer_delta" and p["generationId"] == first_gen]
+        self.assertEqual([p["seq"] for p in deltas_gen1], [1, 2])
+        reset = next(p for t, p in events if t == "answer_reset")
+        self.assertEqual(reset["generationId"], first_gen)
+        self.assertEqual(reset["upToSeq"], 2)
+
+        # 服务端同步撤销：进入 state 的轮1 AIMessage 无临时文本（A35 不入上下文）
+        ai_messages = [m for m in state["messages"] if isinstance(m, AIMessage)]
+        self.assertEqual(ai_messages[0].content, "")
+        self.assertEqual(ai_messages[0].tool_calls[0]["id"], "call_1")
+        self.assertEqual(ai_messages[1].content, "现在是 12:00")  # 最终答案保留
+        # 跨 generation 分桶：两轮 generationId 不同
+        done = next(p for t, p in events if t == "answer_done")
+        self.assertNotEqual(done["generationId"], first_gen)
+
+    def test_pure_answer_emits_done_without_reset(self):
+        """纯文本答案：answer_delta + answer_done，无 reset；final 内容完整。"""
+        graph, events, _deps = self._build_streaming([(["你好", "呀"], None)])
+        state = graph.invoke({"messages": [HumanMessage("hi")], "model_calls": 0, "tool_rounds": 0})
+        types = [t for t, _ in events]
+        self.assertNotIn("answer_reset", types)
+        self.assertEqual(types, ["model_started", "answer_delta", "answer_delta", "answer_done", "model_finished"])
+        self.assertEqual(state["messages"][-1].content, "你好呀")
+
+    def test_tool_continuation_keeps_tool_role_in_context(self):
+        """工具循环轮组装（协议正确性修复）：尾部工具结果段整体留在 history 原子单元，
+        AI(tool_calls) 后紧跟 Tool 角色（不再展平为 user 消息——openai 协议要求）。"""
+        tool_call = [{"name": "current_time", "args": {}, "id": "call_1", "type": "tool_call"}]
+        graph, _events, deps = self._build_streaming(
+            [
+                (["查一下"], tool_call),
+                (["好了"], None),
+            ]
+        )
+        graph.invoke({"messages": [HumanMessage("现在几点")], "model_calls": 0, "tool_rounds": 0})
+        round2 = deps.model.calls[1]  # 第二次模型调用的组装后输入（平铺）
+        self.assertIsInstance(round2[-1], ToolMessage)  # 尾部=工具结果（tool 角色）
+        self.assertEqual(round2[-1].tool_call_id, "call_1")
+        self.assertIsInstance(round2[-2], AIMessage)  # 其前是 assistant(tool_calls)
+        self.assertTrue(round2[-2].tool_calls)
+        self.assertNotIsInstance(round2[-1], HumanMessage)
+
+    def test_non_stream_mode_emits_no_answer_events(self):
+        """invoke（stream_answer=False）：零 answer_* 事件，一期行为不变。"""
+        script = [AIMessage(content="直接回答。")]
+        executor = ToolExecutor(snapshot_tools=_time_tool_snapshot(), bound_names={"current_time"}, context=_FakeCtx())
+        events: list[tuple[str, dict]] = []
+        deps = GraphDeps(
+            model=_fake_model(script),
+            tool_executor=executor,
+            budget=RunBudget(max_tool_rounds=3),
+            system_message="sys",
+            tool_schema_tokens=10,
+            max_tool_rounds=3,
+            guardrails_validator=None,
+            on_event=lambda t, p: events.append((t, p)),
+        )
+        build_agent_graph(deps).invoke({"messages": [HumanMessage("hi")], "model_calls": 0, "tool_rounds": 0})
+        self.assertFalse([t for t, _ in events if t.startswith("answer_")])
 
 
 if __name__ == "__main__":

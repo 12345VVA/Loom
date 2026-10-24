@@ -73,6 +73,10 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
             )
             stream = self._create_stream(model, messages, call_options, None)
         request_id = extract_request_id(stream)
+        # E1：流式 tool_calls 增量聚合（openai 协议按 index 分片：id/function.name/arguments
+        # 分帧到达）；聚合结果随 done 事件下发——agent 流式轮据此判定「工具决策响应」并发
+        # answer_reset。仅本 adapter 聚合（R1：工具循环仅绑 openai-compatible）。
+        tool_call_slots: dict[int, dict[str, Any]] = {}
         for chunk in stream:
             data = chunk.model_dump(mode="json") if hasattr(chunk, "model_dump") else {}
             choice = (data.get("choices") or [{}])[0]
@@ -81,17 +85,30 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
             reasoning_delta = message_delta.get("reasoning_content") or message_delta.get("reasoning")
             finish_reason = choice.get("finish_reason")
             usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
+            for tc in message_delta.get("tool_calls") or []:
+                slot = tool_call_slots.setdefault(
+                    tc.get("index", 0), {"id": "", "function": {"name": "", "arguments": ""}}
+                )
+                if tc.get("id"):
+                    slot["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    slot["function"]["name"] += fn["name"]
+                if fn.get("arguments"):
+                    slot["function"]["arguments"] += fn["arguments"]
             # DeepSeek 等思考模型的思维链增量，按 thinking_delta 事件透传（不混入正文）
             if reasoning_delta:
                 yield {"event": "thinking_delta", "content": reasoning_delta, "raw": data, "requestId": request_id}
             if delta:
                 yield {"event": "delta", "content": delta, "raw": data, "requestId": request_id}
             if usage or finish_reason:
+                aggregated = [tool_call_slots[i] for i in sorted(tool_call_slots)] if tool_call_slots else None
                 yield {
                     "event": "done",
                     "raw": data,
                     "usage": usage,
                     "finishReason": finish_reason,
+                    "toolCalls": aggregated,
                     "requestId": request_id,
                 }
 
