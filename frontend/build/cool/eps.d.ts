@@ -4875,6 +4875,11 @@ declare namespace Eps {
 
 	interface AgentSession {
 		/**
+		 * 删除
+		 */
+		delete(data?: any): Promise<any>;
+
+		/**
 		 * 获取详情
 		 */
 		info(data: { id: number }): Promise<session>;
@@ -4911,12 +4916,18 @@ declare namespace Eps {
 		/**
 		 * 权限标识
 		 */
-		permission: { info: string; list: string; messages: string; page: string };
+		permission: { delete: string; info: string; list: string; messages: string; page: string };
 
 		/**
 		 * 权限状态
 		 */
-		_permission: { info: boolean; list: boolean; messages: boolean; page: boolean };
+		_permission: {
+			delete: boolean;
+			info: boolean;
+			list: boolean;
+			messages: boolean;
+			page: boolean;
+		};
 
 		request: Request;
 	}

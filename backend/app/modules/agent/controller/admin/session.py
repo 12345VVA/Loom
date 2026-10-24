@@ -35,7 +35,7 @@ from app.modules.base.service.security_service import get_current_user
         list_response_model=AgentSessionRead,
         page_item_model=AgentSessionRead,
         info_response_model=AgentSessionRead,
-        actions=("page", "info", "list"),
+        actions=("page", "info", "list", "delete"),
         page_query=QueryConfig(
             keyword_like_fields=("title", "session_code"),
             field_eq=(

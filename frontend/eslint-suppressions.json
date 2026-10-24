@@ -84,7 +84,7 @@
   },
   "src/modules/agent/views/session.vue": {
     "vue/component-name-in-template-casing": {
-      "count": 2
+      "count": 1
     }
   },
   "src/modules/agent/views/trace.vue": {

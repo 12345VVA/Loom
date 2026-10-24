@@ -41,6 +41,19 @@ export interface LiveToolBlock {
 	status: 'running' | 'done' | 'skipped';
 }
 
+/** 本轮 run 的工具步骤时间线（工作台「Agent 分析」面板数据源） */
+export interface ToolStepItem extends LiveToolBlock {
+	startTs: number;
+	endTs?: number;
+}
+
+/** 本轮 run 的 token 累积（model_finished.usage 逐轮求和） */
+export interface TokenStats {
+	promptTokens: number;
+	completionTokens: number;
+	totalTokens: number;
+}
+
 const TERMINAL_EVENTS: RunEventType[] = ['final', 'error', 'cancelled', 'timed_out'];
 
 /**
@@ -63,6 +76,13 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 	const runningTool = ref<LiveToolBlock | null>(null);
 	const traceToken = ref<string | null>(null);
 	const stopHint = ref<string>('');
+	// 工作台「Agent 分析」：本轮 run 的工具步骤时间线 + token 累积 + 耗时（终态定格，下轮 send 清空）
+	const toolSteps = ref<ToolStepItem[]>([]);
+	const tokenStats = ref<TokenStats>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+	const elapsedMs = ref<number | null>(null);
+	const modelCallsCount = ref(0);
+	const toolRoundsFinal = ref<number | null>(null);
+	let runStartedAt = 0;
 
 	const currentProfileId = ref<number | undefined>(undefined);
 	const publishedProfiles = computed(() => profiles.value.filter((p) => p.status === 'published'));
@@ -92,6 +112,14 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		messages.value = ((await service.agent.session.messages({ session_id: row.id })) || []) as any[];
 	}
 
+	async function removeSession(row: AgentSessionRow) {
+		await service.agent.session.delete({ ids: [row.id] });
+		if (currentSessionId.value === row.id) {
+			newSession();
+		}
+		await loadSessions();
+	}
+
 	function newSession() {
 		currentSessionId.value = null;
 		messages.value = [];
@@ -105,6 +133,12 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		stopHint.value = '';
 		streamingText.value = '';
 		draft.clear();
+		toolSteps.value = [];
+		tokenStats.value = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+		elapsedMs.value = null;
+		modelCallsCount.value = 0;
+		toolRoundsFinal.value = null;
+		runStartedAt = Date.now();
 		messages.value.push({ role: 'user', content: question });
 
 		try {
@@ -124,6 +158,7 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		} catch (err: any) {
 			stopHint.value = err?.message || '连接中断';
 		} finally {
+			elapsedMs.value = Date.now() - runStartedAt;
 			await refreshAfterRun();
 			running.value = false;
 			runningTool.value = null;
@@ -139,25 +174,47 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 					currentSessionId.value = event.payload.sessionId;
 				}
 				break;
-			case 'tool_started':
+			case 'tool_started': {
 				runningTool.value = {
 					toolCallId: event.payload?.toolCallId,
 					toolName: event.payload?.toolName,
 					status: 'running'
 				};
+				toolSteps.value = [
+					...toolSteps.value,
+					{
+						toolCallId: event.payload?.toolCallId,
+						toolName: event.payload?.toolName,
+						status: 'running',
+						startTs: Date.now()
+					}
+				];
 				break;
+			}
 			case 'tool_finished':
-			case 'tool_skipped':
+			case 'tool_skipped': {
+				const status = event.type === 'tool_finished' ? 'done' : 'skipped';
 				if (runningTool.value && runningTool.value.toolCallId === event.payload?.toolCallId) {
-					runningTool.value = {
-						...runningTool.value,
-						status: event.type === 'tool_finished' ? 'done' : 'skipped'
-					};
+					runningTool.value = { ...runningTool.value, status };
 				}
+				toolSteps.value = toolSteps.value.map(step =>
+					step.toolCallId === event.payload?.toolCallId && step.status === 'running'
+						? { ...step, status, endTs: Date.now() }
+						: step
+				);
 				break;
-			case 'model_finished':
-				// 轮次粒度事件；token 级增量由 answer_* 事件承载
+			}
+			case 'model_finished': {
+				// 轮次粒度事件：usage 累积 + 调用计数（langchain openai 形态 prompt_tokens/completion_tokens）
+				modelCallsCount.value += 1;
+				const usage = event.payload?.usage || {};
+				tokenStats.value = {
+					promptTokens: tokenStats.value.promptTokens + (usage.prompt_tokens ?? 0),
+					completionTokens: tokenStats.value.completionTokens + (usage.completion_tokens ?? 0),
+					totalTokens: tokenStats.value.totalTokens + (usage.total_tokens ?? 0)
+				};
 				break;
+			}
 			case 'answer_delta': {
 				// E1：生成中草稿区增量（generation 分桶 + seq 单调去重）
 				const { generationId, delta, seq } = event.payload || {};
@@ -175,6 +232,13 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 				break;
 			case 'final':
 				streamingText.value = event.payload?.answer || '';
+				// 服务端权威口径覆盖本地计数（final payload：modelCalls/toolRounds）
+				if (typeof event.payload?.modelCalls === 'number') {
+					modelCallsCount.value = event.payload.modelCalls;
+				}
+				if (typeof event.payload?.toolRounds === 'number') {
+					toolRoundsFinal.value = event.payload.toolRounds;
+				}
 				break;
 			case 'error':
 				stopHint.value = event.payload?.message || '运行失败';
@@ -224,6 +288,11 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		messages,
 		running,
 		runningTool,
+		toolSteps,
+		tokenStats,
+		elapsedMs,
+		modelCallsCount,
+		toolRoundsFinal,
 		traceToken,
 		stopHint,
 		streamingText,
@@ -231,6 +300,7 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		loadSessions,
 		openSession,
 		newSession,
+		removeSession,
 		send,
 		stop
 	};
