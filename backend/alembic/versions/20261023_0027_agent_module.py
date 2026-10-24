@@ -7,8 +7,6 @@ Create Date: 2026-10-23
 
 from __future__ import annotations
 
-import sqlalchemy as sa
-
 from alembic import op
 
 revision = "20261023_0027"
@@ -61,7 +59,7 @@ CREATE TABLE IF NOT EXISTS agent_profile_draft (
     synced_at TIMESTAMP WITH TIME ZONE,
     PRIMARY KEY (id)
 )
-"""
+"""  # profile_id 不建表级 UNIQUE：模型形态是唯一索引（列级 unique 合并进 index，见下方专用段）
 
 _SNAPSHOT_DDL = """
 CREATE TABLE IF NOT EXISTS agent_profile_snapshot (
@@ -195,17 +193,18 @@ CREATE TABLE IF NOT EXISTS agent_tool_resource (
 )
 """
 
-# (表名, 索引列) —— 与模型 Field(index=True) 一一对应（ix_{table}_{col}）
+# (表名, 索引列) —— 与模型 Field(index=True) 一一对应（ix_{table}_{col}；BaseEntity 的
+# delete_time 各表皆有索引，0026 同款，此前抄漏被 test_migration_drift/alembic check 拦截）
 _INDEXED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "agent_profile": ("code", "name", "enabled", "status", "created_by"),
-    "agent_profile_draft": ("profile_id",),
-    "agent_profile_snapshot": ("profile_id", "snapshot_hash"),
-    "agent_profile_publish_record": ("profile_id", "snapshot_id"),
-    "agent_session": ("session_code", "profile_id", "user_id", "run_mode"),
-    "agent_message": ("session_id",),
-    "agent_run_trace": ("profile_id", "run_mode", "snapshot_id", "session_id", "user_id", "status"),
-    "agent_tool_call_log": ("trace_id",),
-    "agent_tool_resource": ("tool_name", "status"),
+    "agent_profile": ("code", "name", "enabled", "status", "created_by", "delete_time"),
+    "agent_profile_draft": ("profile_id", "delete_time"),
+    "agent_profile_snapshot": ("profile_id", "snapshot_hash", "delete_time"),
+    "agent_profile_publish_record": ("profile_id", "snapshot_id", "delete_time"),
+    "agent_session": ("session_code", "profile_id", "user_id", "run_mode", "delete_time"),
+    "agent_message": ("session_id", "delete_time"),
+    "agent_run_trace": ("profile_id", "run_mode", "snapshot_id", "session_id", "user_id", "status", "delete_time"),
+    "agent_tool_call_log": ("trace_id", "delete_time"),
+    "agent_tool_resource": ("tool_name", "status", "delete_time"),
 }
 
 # partial unique（模型 __table_args__ 同名同条件）
@@ -230,11 +229,20 @@ def upgrade() -> None:
     ):
         op.execute(ddl)
 
+    # 索引一律 CREATE INDEX IF NOT EXISTS（真实升级路径上 agent 表可能先被 init_db 的
+    # create_all 预建，op.create_index 无存在性守卫会撞已存在索引中断整链——0026 同款）。
+    # 索引名/列集合不变，test_migration_drift 对账不受影响。
     for table, columns in _INDEXED_COLUMNS.items():
         for col in columns:
-            op.create_index(f"ix_{table}_{col}", table, [col])
+            op.execute(f"CREATE INDEX IF NOT EXISTS ix_{table}_{col} ON {table} ({col})")
     for name, table, col, where in _PARTIAL_UNIQUES:
-        op.create_index(name, table, [col], unique=True, postgresql_where=sa.text(where))
+        op.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON {table} ({col}) WHERE {where}")
+
+    # draft.profile_id 专用段：模型形态 = 唯一索引（无独立约束）。旧版迁移建的是表级 UNIQUE
+    # + 普通索引，已部署库重放时先摘旧形态再建唯一索引，最终态与 create_all 轨一致。
+    op.execute("ALTER TABLE agent_profile_draft DROP CONSTRAINT IF EXISTS agent_profile_draft_profile_id_key")
+    op.execute("DROP INDEX IF EXISTS ix_agent_profile_draft_profile_id")
+    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_agent_profile_draft_profile_id ON agent_profile_draft (profile_id)")
 
 
 def downgrade() -> None:

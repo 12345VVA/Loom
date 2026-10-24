@@ -7,7 +7,6 @@ Create Date: 2026-10-22
 
 from __future__ import annotations
 
-import sqlalchemy as sa
 from alembic import op
 
 revision = "20261022_0026"
@@ -74,13 +73,13 @@ _STYLE_DDL = _SCENE_DDL.replace("asset_scene", "asset_style")
 # media_asset 产物回链增列（asset 模块，决策 #23/#29）：派生冗余列规避 SQLite/PG JSON 方言分裂；
 # tags 为扩展级预埋（核心期任何 DTO/接口不读写）
 _MEDIA_COLUMNS = (
-    ("asset_refs", sa.Text(), False),
-    ("source_character_id", sa.Integer(), True),
-    ("source_scene_id", sa.Integer(), True),
-    ("source_style_id", sa.Integer(), True),
-    ("composed_prompt_hash", sa.String(length=64), True),
-    ("composer_version", sa.String(length=16), False),
-    ("tags", sa.Text(), False),
+    ("asset_refs", "TEXT", False),
+    ("source_character_id", "INTEGER", True),
+    ("source_scene_id", "INTEGER", True),
+    ("source_style_id", "INTEGER", True),
+    ("composed_prompt_hash", "VARCHAR(64)", True),
+    ("composer_version", "VARCHAR(16)", False),
+    ("tags", "TEXT", False),
 )
 
 
@@ -90,37 +89,25 @@ def upgrade() -> None:
     op.execute(_SCENE_DDL)
     op.execute(_STYLE_DDL)
 
+    # 索引/增列一律 IF NOT EXISTS 幂等（SQLite 3.3+/PG 9.5+ 双支持）：真实升级路径上库可能
+    # 先被 init_db 的 create_all 预建过结构（启动先于迁移），op.create_index/add_column 无
+    # 存在性守卫会 DuplicateTable 中断整链。索引名/列集合不变，test_migration_drift 对账不受影响。
     for table in ("asset_character", "asset_scene", "asset_style"):
         for col in ("code", "name", "status", "category", "cover_media_id", "created_by", "delete_time"):
-            op.create_index(f"ix_{table}_{col}", table, [col])
+            op.execute(f"CREATE INDEX IF NOT EXISTS ix_{table}_{col} ON {table} ({col})")
     # partial unique（软删行不参与判定；模型 __table_args__ 同名同条件）
-    op.create_index(
-        "uq_asset_character_code",
-        "asset_character",
-        ["code"],
-        unique=True,
-        postgresql_where=sa.text("delete_time IS NULL"),
-    )
-    op.create_index(
-        "uq_asset_scene_code",
-        "asset_scene",
-        ["code"],
-        unique=True,
-        postgresql_where=sa.text("delete_time IS NULL"),
-    )
-    op.create_index(
-        "uq_asset_style_code",
-        "asset_style",
-        ["code"],
-        unique=True,
-        postgresql_where=sa.text("delete_time IS NULL"),
-    )
+    for table in ("asset_character", "asset_scene", "asset_style"):
+        op.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_{table.split('_')[-1]}_code"
+            f" ON {table} (code) WHERE delete_time IS NULL"
+        )
 
-    # --- media_asset 回链增列（跨方言 add_column，照 0024 模式）---
-    for col_name, col_type, indexed in _MEDIA_COLUMNS:
-        op.add_column("media_asset", sa.Column(col_name, col_type, nullable=True))
+    # --- media_asset 回链增列（ADD COLUMN IF NOT EXISTS 为 PG 9.6+ 语法；SQLite 开发路径
+    #     不经 alembic，见文件头注）---
+    for col_name, col_ddl, indexed in _MEDIA_COLUMNS:
+        op.execute(f"ALTER TABLE media_asset ADD COLUMN IF NOT EXISTS {col_name} {col_ddl}")
         if indexed:
-            op.create_index(f"ix_media_asset_{col_name}", "media_asset", [col_name])
+            op.execute(f"CREATE INDEX IF NOT EXISTS ix_media_asset_{col_name} ON media_asset ({col_name})")
 
 
 def downgrade() -> None:
