@@ -7,7 +7,7 @@
 	"agent.profile.modelProfilePlaceholder": "Select an openai-compatible profile",
 	"agent.profile.description": "Description",
 	"agent.profile.systemPrompt": "System Prompt",
-	"agent.profile.systemPromptPlaceholder": "Supports {{USER_NAME}} and {{TIME}} variables; a safety guardrail is prepended server-side",
+	"agent.profile.systemPromptPlaceholder": "Supports {'{{'}USER_NAME{'}'} and {'{{'}TIME{'}'} variables; a safety guardrail is prepended server-side",
 	"agent.profile.tools": "Tool Allowlist",
 	"agent.profile.toolsPlaceholder": "Choose from the first-version closed list (all read-only)",
 	"agent.profile.temperature": "Temperature",

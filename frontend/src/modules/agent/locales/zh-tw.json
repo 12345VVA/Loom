@@ -7,7 +7,7 @@
 	"agent.profile.modelProfilePlaceholder": "選擇 openai-compatible 渠道檔案",
 	"agent.profile.description": "描述",
 	"agent.profile.systemPrompt": "系統提示詞",
-	"agent.profile.systemPromptPlaceholder": "支援 {{USER_NAME}}、{{TIME}} 變數；服務端會自動前置安全邊界提示詞",
+	"agent.profile.systemPromptPlaceholder": "支援 {'{{'}USER_NAME{'}'}、{'{{'}TIME{'}'} 變數；服務端會自動前置安全邊界提示詞",
 	"agent.profile.tools": "工具白名單",
 	"agent.profile.toolsPlaceholder": "從首版封閉清單中選擇（全部唯讀）",
 	"agent.profile.temperature": "溫度",
