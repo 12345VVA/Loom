@@ -47,6 +47,7 @@
   "agent.session.history": "Sessions",
   "agent.session.inputPlaceholder": "Type a message (Ctrl+Enter to send)",
   "agent.session.new": "New Session",
+  "agent.session.newChatHint": "Type a message to start a new conversation",
   "agent.session.placeholder": "Pick an agent and start chatting",
   "agent.session.profilePlaceholder": "Published agents only",
   "agent.session.selectProfile": "Select Agent",
@@ -94,6 +95,7 @@
   "agent.workspace.roleTool": "Tool Result",
   "agent.workspace.roleUser": "User",
   "agent.workspace.selectAgent": "Select Agent",
+  "agent.workspace.switchAgentConfirm": "Switching the agent starts a new session. The current one stays in history.",
   "agent.workspace.stepCount": "{n} steps",
   "agent.workspace.title": "AI Assistant"
 }

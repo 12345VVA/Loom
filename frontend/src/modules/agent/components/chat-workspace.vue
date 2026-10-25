@@ -105,7 +105,7 @@
 					<chat-message v-for="(m, i) in messages" :key="m.id || `m-${i}`" :message="m" />
 				</template>
 				<div v-else-if="!running" class="ws-messages__empty">
-					{{ isDraft ? t('agent.debug.empty') : t('agent.session.placeholder') }}
+					{{ emptyText }}
 				</div>
 
 				<!-- 本轮 run 分析面板：工具步骤时间线 + 统计（有内容才出现） -->
@@ -284,13 +284,33 @@ const agentName = computed(
 		t('agent.workspace.title')
 );
 const streamingRendered = computed(() => renderMarkdown(streamingText.value));
+// 空态分态：未选智能体 → 选择引导；已选无消息 → 新对话引导
+//（修复「已选中智能体却仍提示选择智能体」的矛盾）
+const emptyText = computed(() => {
+	if (isDraft) return t('agent.debug.empty');
+	if (!currentProfileId.value) return t('agent.session.placeholder');
+	return t('agent.session.newChatHint');
+});
 // 注意 running 是 ref：computed 内必须 .value（裸引用是恒 truthy 的 RefImpl 对象，
 // 曾致空会话也渲染「Agent 分析」面板）
 const showAnalysis = computed(() => running.value || toolSteps.value.length > 0 || modelCallsCount.value > 0);
 // 模型调用/工具轮次：流中用本地计数，final 后以服务端权威口径为准
 const toolRounds = computed(() => toolRoundsFinal.value ?? toolSteps.value.length);
 
-function onAgentChange(id: number) {
+async function onAgentChange(id: number) {
+	// 正查看已有会话时确认再切换；新会话态静默切换。
+	// 取消直接 return：选择器为受控 :model-value，不改 state 自动回弹
+	if (currentSessionId.value != null) {
+		try {
+			await ElMessageBox.confirm(
+				t('agent.workspace.switchAgentConfirm'),
+				t('agent.workspace.title'),
+				{ type: 'warning' }
+			);
+		} catch {
+			return;
+		}
+	}
 	currentProfileId.value = id;
 	newSession();
 }
@@ -299,7 +319,9 @@ async function refresh() {
 	if (isDraft) return; // draft 调试台无会话列表（profileId 由外部注入）
 	loadingHistory.value = true;
 	try {
-		await Promise.all([loadProfiles(), loadSessions()]);
+		// 先 profiles 后 sessions：会话列表按当前智能体过滤，profileId 须先就位
+		await loadProfiles();
+		await loadSessions();
 	} finally {
 		loadingHistory.value = false;
 	}

@@ -47,6 +47,7 @@
   "agent.session.history": "會話歷史",
   "agent.session.inputPlaceholder": "輸入訊息（Ctrl+Enter 發送）",
   "agent.session.new": "新會話",
+  "agent.session.newChatHint": "輸入訊息，開始新對話",
   "agent.session.placeholder": "選擇智能體並開始對話",
   "agent.session.profilePlaceholder": "僅顯示已發布智能體",
   "agent.session.selectProfile": "選擇智能體",
@@ -94,6 +95,7 @@
   "agent.workspace.roleTool": "工具結果",
   "agent.workspace.roleUser": "使用者",
   "agent.workspace.selectAgent": "選擇智慧代理",
+  "agent.workspace.switchAgentConfirm": "切換智慧代理將開始新會話，當前會話保留在歷史中",
   "agent.workspace.stepCount": "{n} 步",
   "agent.workspace.title": "智慧助手"
 }

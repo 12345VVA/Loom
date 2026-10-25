@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useCool, useStream } from '/@/cool';
 import { AnswerDraftBuffer } from '/$/agent/utils/answer-draft';
 
@@ -102,10 +102,19 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 	}
 
 	async function loadSessions() {
-		// EPS 实体类型为全可选+失真形态（asset 期坑⑩）——行模型收敛走运行时过滤，此处断言放宽
-		sessions.value = ((await service.agent.session.list({ page: 1, size: 100 })) ||
-			[]) as unknown as AgentSessionRow[];
+		// EPS 实体类型为全可选+失真形态（asset 期坑⑩）——行模型收敛走运行时过滤，此处断言放宽；
+		// 按当前智能体过滤（后端 page_query field_eq 已支持 profileId）
+		sessions.value = ((await service.agent.session.list({
+			page: 1,
+			size: 100,
+			profileId: currentProfileId.value
+		})) || []) as unknown as AgentSessionRow[];
 	}
+
+	// 切换智能体即重拉该智能体的会话列表（draft 无会话语义，跳过）
+	watch(currentProfileId, () => {
+		if (mode === 'published') loadSessions();
+	});
 
 	async function openSession(row: AgentSessionRow) {
 		currentSessionId.value = row.id;
@@ -317,6 +326,12 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 				[]) as any[];
 		} catch {
 			// draft 会话 messages 走同一端点；失败时保留流式文本兜底
+		}
+		// 会话可能在本次 run 中才创建（run_started 回填 sessionId）——终态必须同步刷新历史列表
+		try {
+			await loadSessions();
+		} catch {
+			// 列表刷新失败静默，不影响主回复展示
 		}
 		streamingText.value = '';
 		draft.clear();
