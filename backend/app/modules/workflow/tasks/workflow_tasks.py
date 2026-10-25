@@ -385,7 +385,7 @@ def execute_workflow(
     except (json.JSONDecodeError, TypeError) as e:
         # 参数 JSON 畸形：立即写 failed 终态，避免实例假死在 running（否则需进程重启兜底）
         _mark_instance_failed(instance_id, f"初始参数解析失败: {e}")
-        logger.error("工作流 %d 参数 JSON 解析失败: %s", instance_id, e)
+        logger.error("工作流 %d 参数 JSON 解析失败: %s", instance_id, e, exc_info=True)
         return
     asyncio.run(async_execute(instance_id, definition_id, initial_vars, resume_val))
 
@@ -481,6 +481,7 @@ def _resolve_execution_graph(
     definition = session.get(WorkflowDefinition, definition_id)
     if not instance or not definition:
         logger.error("工作流执行失败: 找不到实例 %d 或定义 %d", instance_id, definition_id)
+        _mark_instance_failed(instance_id, "工作流执行失败: 找不到实例或定义")
         return None
     thread_id = instance.thread_id
     if graph_json_override is not None:
@@ -489,10 +490,12 @@ def _resolve_execution_graph(
         effective_vid = version_id or instance.version_id or definition.current_version_id
         if effective_vid is None:
             logger.error("工作流执行失败: 实例 %d 无可用版本（未发布？）", instance_id)
+            _mark_instance_failed(instance_id, "工作流执行失败: 实例无可用版本")
             return None
         version = session.get(WorkflowDefinitionVersion, effective_vid)
         if not version:
             logger.error("工作流执行失败: 版本 %d 不存在", effective_vid)
+            _mark_instance_failed(instance_id, "工作流执行失败: 版本不存在")
             return None
         graph_json = json.loads(version.graph_json)
     # 三期B7（WF-P2-10）：执行入口统一迁移 deprecated tool → tool_executor

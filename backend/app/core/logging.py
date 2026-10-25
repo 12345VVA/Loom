@@ -73,7 +73,9 @@ class JsonFormatter(logging.Formatter):
                 root = unpack_exception(exc)
                 payload["error_type"] = type(root).__name__
                 payload["error_message"] = str(root)
-            payload["exception"] = _format_filtered_traceback(record.exc_info)
+            # 文件侧保留完整堆栈（不过滤框架帧）——异常若发生在框架层
+            # （中间件/调度），完整帧只有文件里查得到；控制台才做降噪过滤
+            payload["exception"] = _format_exception_for(record.exc_info, filter_frames=False)
         return json.dumps(payload, ensure_ascii=False)
 
 
@@ -118,11 +120,13 @@ def _frame_package(frame) -> str:
     return parts[0].rsplit("/", 1)[-1] if parts and parts[0] else "other"
 
 
-def _append_single_exception(te: traceback.TracebackException, lines: list[str], filtered: dict) -> None:
-    """渲染单个异常段：过滤框架帧，统计被滤帧来源包。"""
+def _append_single_exception(
+    te: traceback.TracebackException, lines: list[str], filtered: dict, filter_frames: bool
+) -> None:
+    """渲染单个异常段：按开关过滤框架帧并统计被滤帧来源包。"""
     lines.append("Traceback (most recent call last):")
     for frame in te.stack:
-        if _frame_is_framework(frame):
+        if filter_frames and _frame_is_framework(frame):
             package_name = _frame_package(frame)
             filtered[package_name] = filtered.get(package_name, 0) + 1
             continue
@@ -133,23 +137,23 @@ def _append_single_exception(te: traceback.TracebackException, lines: list[str],
 
 
 def _append_filtered_traceback(
-    te: traceback.TracebackException, lines: list[str], filtered: dict | None = None
+    te: traceback.TracebackException, lines: list[str], filtered: dict | None = None, filter_frames: bool = True
 ) -> None:
-    """递归渲染 TracebackException：过滤每段的框架内部帧，并保留异常链（__cause__/__context__）。
+    """递归渲染 TracebackException：可选过滤框架内部帧，保留异常链（__cause__/__context__）。
 
     - 异常链渲染顺序与标准 traceback.format_exception 一致：先 cause/context，再分隔句。
-    - BaseExceptionGroup（anyio TaskGroup 等并发场景）解包为逐个子异常并列渲染，
-      group 自身的创建点栈（框架内部帧）直接丢弃。
+    - BaseExceptionGroup（anyio TaskGroup 等并发场景）解包为逐个子异常并列渲染。
     - filtered 字典统计被滤帧数量与来源包，供尾部提示行使用。
+    - filter_frames=False 时保留全部帧（文件日志用），filtered 恒为空。
     """
     filtered = {} if filtered is None else filtered
     if te.__cause__:
-        _append_filtered_traceback(te.__cause__, lines, filtered)
+        _append_filtered_traceback(te.__cause__, lines, filtered, filter_frames)
         lines.append("")
         lines.append("The above exception was the direct cause of the following exception:")
         lines.append("")
     elif te.__context__ and not te.__suppress_context__:
-        _append_filtered_traceback(te.__context__, lines, filtered)
+        _append_filtered_traceback(te.__context__, lines, filtered, filter_frames)
         lines.append("")
         lines.append("During handling of the above exception, another exception occurred:")
         lines.append("")
@@ -160,22 +164,24 @@ def _append_filtered_traceback(
         for index, sub in enumerate(sub_exceptions, start=1):
             lines.append(f"--- 异常组子项 {index}/{len(sub_exceptions)} ---")
             # Python 3.11 的 .exceptions 成员本身就是 TracebackException 实例
-            _append_filtered_traceback(sub, lines, filtered)
+            _append_filtered_traceback(sub, lines, filtered, filter_frames)
         return
 
-    _append_single_exception(te, lines, filtered)
+    _append_single_exception(te, lines, filtered, filter_frames)
 
 
-def _format_filtered_traceback(exc_info) -> str:
-    """格式化异常堆栈：过滤第三方框架内部帧，并保留异常链与异常组根因。
+def _format_exception_for(exc_info, filter_frames: bool) -> str:
+    """格式化异常堆栈：保留异常链与异常组根因。
 
-    渲染异常时回退标准完整堆栈，避免误伤；帧被过滤时在尾部提示过滤量与来源包。
+    - filter_frames=True（控制台）：滤除框架内部帧，尾部提示被滤数量与来源包；
+    - filter_frames=False（文件日志）：完整堆栈——框架帧（中间件/调度层异常）
+      只有在文件里才查得到，不得与控制台一同丢弃。
     """
     etype, value, tb = exc_info
     lines: list[str] = []
     filtered: dict = {}
-    _append_filtered_traceback(traceback.TracebackException.from_exception(value), lines, filtered)
-    if filtered:
+    _append_filtered_traceback(traceback.TracebackException.from_exception(value), lines, filtered, filter_frames)
+    if filter_frames and filtered:
         packages = ", ".join(sorted(filtered))
         total = sum(filtered.values())
         lines.append(_FRAME_FILTER_NOTE.format(count=total, packages=packages))
@@ -183,6 +189,11 @@ def _format_filtered_traceback(exc_info) -> str:
     if text:
         return text
     return "".join(traceback.format_exception(etype, value, tb)).rstrip("\n")
+
+
+def _format_filtered_traceback(exc_info) -> str:
+    """控制台口径：过滤框架帧 + 尾部提示。"""
+    return _format_exception_for(exc_info, filter_frames=True)
 
 
 class ConsoleFormatter(logging.Formatter):

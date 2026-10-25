@@ -21,12 +21,16 @@ from app.celery_app import (
 )
 from app.core.logging import request_id_ctx
 from app.framework.api.exception_handlers import register_exception_handlers
+from app.framework.middleware.request_id import RequestIdMiddleware
 from app.framework.middleware.response_envelope import ResponseEnvelopeMiddleware
 
 
 def _build_app() -> FastAPI:
     app = FastAPI()
     register_exception_handlers(app)
+    # 模拟真实链的内外序（Envelope 在 RequestId 外侧），500 追踪号依赖
+    # RequestIdMiddleware 写入的 request.state.request_id
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(ResponseEnvelopeMiddleware)
 
     @app.post("/only-post")
@@ -37,9 +41,17 @@ def _build_app() -> FastAPI:
     def validate_required(a: int, b: int):  # 两个必填 query 全缺 → 2 处校验错误
         return {"a": a, "b": b}
 
+    @app.get("/validate-single")
+    def validate_single(a: int):  # 单个必填 query 缺失 → 1 处校验错误
+        return {"a": a}
+
     @app.get("/http-401")
     def http_401():
         raise HTTPException(status_code=401, detail="未登录")
+
+    @app.get("/boom")
+    def boom():
+        raise RuntimeError("数据库连接炸了")
 
     return app
 
@@ -68,6 +80,59 @@ class ErrorContractTests(unittest.TestCase):
         self.assertEqual(len(data["data"]["errors"]), 2)
         fields = {item["field"] for item in data["data"]["errors"]}
         self.assertEqual(fields, {"a", "b"})
+
+    def test_validation_422_single_error_also_has_details(self) -> None:
+        """单条校验错误同样返回结构化明细（1 条与 N 条契约一致）。"""
+        resp = self.client.get("/validate-single")
+        self.assertEqual(resp.status_code, 422)
+        data = resp.json()
+        self.assertEqual(data["code"], 1004)
+        self.assertEqual(len(data["data"]["errors"]), 1)
+        self.assertEqual(data["data"]["errors"][0]["field"], "a")
+
+    def test_404_logs_at_debug_level(self) -> None:
+        """404 在 DEBUG 级别开启时必须有且仅有日志（分级降噪≠完全不记）。"""
+        with self.assertLogs("app.exceptions", level="DEBUG") as captured:
+            resp = self.client.get("/not-exists")
+        self.assertEqual(resp.status_code, 404)
+        http_logs = [line for line in captured.output if "HTTP 404" in line]
+        self.assertEqual(len(http_logs), 1)
+        # 响应侧给全局中文文案
+        self.assertEqual(resp.json()["message"], "路由不存在")
+
+    def test_500_message_carries_trace_id_when_not_debug(self) -> None:
+        """非 DEBUG 下 500 响应 message 必须带追踪号（报障截图可与 error.log 对账）。"""
+        from app.core.config import settings
+
+        client = TestClient(_build_app(), raise_server_exceptions=False)
+        saved = settings.DEBUG
+        settings.DEBUG = False
+        try:
+            with self.assertLogs("app.exceptions", level="ERROR"):
+                resp = client.get("/boom")
+        finally:
+            settings.DEBUG = saved
+        self.assertEqual(resp.status_code, 500)
+        self.assertIn("追踪号", resp.json()["message"])
+
+    def test_non_json_error_response_normalized(self) -> None:
+        """非 JSON 错误（网关注入 text/plain）也兜底为 error envelope。"""
+        from starlette.responses import PlainTextResponse
+
+        app = FastAPI()
+        register_exception_handlers(app)
+        app.add_middleware(ResponseEnvelopeMiddleware)
+
+        @app.get("/plain-403")
+        def plain_403():
+            return PlainTextResponse("Forbidden by gateway", status_code=403)
+
+        client = TestClient(app)
+        resp = client.get("/plain-403")
+        self.assertEqual(resp.status_code, 403)
+        data = resp.json()
+        self.assertEqual(data["code"], 1003)
+        self.assertEqual(data["message"], "Forbidden by gateway")
 
     def test_http_exception_401_maps_unauthorized_and_logs(self) -> None:
         with self.assertLogs("app.exceptions", level="WARNING") as captured:
@@ -110,6 +175,31 @@ class CeleryLogContextTests(unittest.TestCase):
             _log_task_retry(sender=SimpleNamespace(name="task.execute"), task_id="t-9", reason="timeout")
         self.assertIn("task.execute", "\n".join(captured.output))
         self.assertIn("timeout", "\n".join(captured.output))
+
+    def test_beat_task_gets_fallback_request_id(self) -> None:
+        """beat/无来源任务兜底生成 celery:{task_id} 追踪号，worker 日志可按任务检索。"""
+        fake_task = SimpleNamespace(request=SimpleNamespace(id="abc-123", headers={}))
+        _restore_log_context(task=fake_task)
+        try:
+            self.assertEqual(request_id_ctx.get(), "celery:abc-123")
+        finally:
+            _clear_log_context(task=fake_task)
+        self.assertIsNone(request_id_ctx.get())
+
+    def test_prerun_clears_stale_tokens_for_same_task_id(self) -> None:
+        """postrun 异常路径未执行时，同 id 重跑的 prerun 必须先清残留再兜底。"""
+        from app.celery_app import _TASK_CONTEXT_TOKENS
+
+        fake_task = SimpleNamespace(request=SimpleNamespace(id="stale-1", headers={}))
+        # 模拟上一轮执行残留：token 登记在 dict 里（真实现场由 prerun 写入）
+        stale_token = request_id_ctx.set("stale")
+        _TASK_CONTEXT_TOKENS["stale-1"] = [(request_id_ctx, stale_token)]
+        try:
+            _restore_log_context(task=fake_task)
+            # 残留的 "stale" 被清掉，重新兜底为任务级追踪号
+            self.assertEqual(request_id_ctx.get(), "celery:stale-1")
+        finally:
+            _clear_log_context(task=fake_task)
 
 
 class SseGeneratorCleanupTests(unittest.TestCase):

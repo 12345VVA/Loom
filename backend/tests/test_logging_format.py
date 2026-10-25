@@ -62,6 +62,56 @@ def test_format_filtered_traceback_filters_flagged_frames():
     assert "已过滤" in rendered  # 尾部提示保留被滤帧数量与来源包
 
 
+def test_file_log_variant_keeps_all_frames():
+    """文件日志口径（filter_frames=False）必须保留全部帧、不出现过滤提示。
+
+    框架层异常（中间件/调度）的完整堆栈只有在文件里才查得到——控制台降噪
+    不得波及文件侧（N1：提示语指向的文件也曾被同一过滤掏空）。
+    """
+    original = app_logging._FRAME_FILTER_SUBSTRINGS
+    app_logging._FRAME_FILTER_SUBSTRINGS = (*original, "test_logging_format")
+    try:
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError:
+            full = app_logging._format_exception_for(sys.exc_info(), filter_frames=False)
+            console = app_logging._format_exception_for(sys.exc_info(), filter_frames=True)
+    finally:
+        app_logging._FRAME_FILTER_SUBSTRINGS = original
+
+    assert "test_logging_format.py" in full  # 帧保留
+    assert "已过滤" not in full  # 无提示语（与控制台口径的关键差异）
+    assert "File " not in console  # 对照：控制台口径仍过滤
+
+
+def test_json_formatter_exception_uses_full_traceback():
+    """JsonFormatter 的 exception 字段应含框架帧（文件侧完整口径）。"""
+    import logging as _logging
+
+    formatter = JsonFormatter()
+    original = app_logging._FRAME_FILTER_SUBSTRINGS
+    app_logging._FRAME_FILTER_SUBSTRINGS = (*original, "test_logging_format")
+    try:
+        try:
+            raise RuntimeError("boom-json")
+        except RuntimeError:
+            record = _logging.LogRecord(
+                name="app.test",
+                level=_logging.ERROR,
+                pathname=__file__,
+                lineno=1,
+                msg="x",
+                args=None,
+                exc_info=sys.exc_info(),
+            )
+            data = json.loads(formatter.format(record))
+    finally:
+        app_logging._FRAME_FILTER_SUBSTRINGS = original
+
+    assert "test_logging_format.py" in data["exception"]
+    assert "已过滤" not in data["exception"]
+
+
 def test_console_formatter_includes_context_and_message():
     """控制台 formatter 应输出级别/logger/消息，并注入 request_id 上下文。"""
     formatter = ConsoleFormatter()

@@ -775,6 +775,7 @@ class WorkflowCompiler:
                         node_id,
                         expression,
                         e,
+                        exc_info=True,
                     )
                     raise NodeExecutionError(node_id, 0, e) from e
                 logger.error(
@@ -782,6 +783,7 @@ class WorkflowCompiler:
                     node_id,
                     expression,
                     e,
+                    exc_info=True,
                 )
                 return false_route or END
 

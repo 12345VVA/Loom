@@ -85,17 +85,29 @@ def _inject_log_context(headers=None, **kwargs):
 
 @task_prerun.connect
 def _restore_log_context(task=None, **kwargs):
-    """worker 侧：任务开始前恢复派发时携带的日志上下文。"""
+    """worker 侧：任务开始前恢复派发时携带的日志上下文。
+
+    无来源上下文（beat 定时任务、外部直投）时兜底生成任务级追踪号
+    ``celery:{task_id}``，worker 日志可按任务实例检索。
+    """
     request = getattr(task, "request", None) if task is not None else None
-    context = (getattr(request, "headers", None) or {}).get(_TASK_CONTEXT_HEADER)
-    if not context:
-        return
-    tokens: list = []
-    if context.get("request_id"):
-        tokens.append((request_id_ctx, request_id_ctx.set(context["request_id"])))
-    if context.get("workflow_instance_id") is not None:
-        tokens.append((workflow_instance_id_ctx, workflow_instance_id_ctx.set(context["workflow_instance_id"])))
     run_id = getattr(request, "id", None)
+    if run_id:
+        # 清同 id 残留（postrun 因异常路径未执行的兜底）：残留 contextvar 必须
+        # 一并复位，否则旧值挂在 worker 进程上污染后续任务的日志
+        stale_tokens = _TASK_CONTEXT_TOKENS.pop(run_id, None)
+        if stale_tokens:
+            for var, token in reversed(stale_tokens):
+                var.reset(token)
+    context = (getattr(request, "headers", None) or {}).get(_TASK_CONTEXT_HEADER)
+    tokens: list = []
+    if context:
+        if context.get("request_id"):
+            tokens.append((request_id_ctx, request_id_ctx.set(context["request_id"])))
+        if context.get("workflow_instance_id") is not None:
+            tokens.append((workflow_instance_id_ctx, workflow_instance_id_ctx.set(context["workflow_instance_id"])))
+    elif run_id:
+        tokens.append((request_id_ctx, request_id_ctx.set(f"celery:{run_id}")))
     if tokens and run_id:
         _TASK_CONTEXT_TOKENS[run_id] = tokens
 

@@ -18,8 +18,10 @@ from app.framework.api.response import error
 logger = logging.getLogger("app.exceptions")
 
 # 4xx 客户端错误分级日志：认证/授权/限流失败对安全排查有价值（WARNING），
-# 404 路由探测类噪音大（DEBUG），其余 INFO
+# 404 路由探测类噪音大（DEBUG，调低日志级别后可查），其余 INFO。
+# starlette 内置异常 detail 为英文常量，常见两个映射全局中文文案。
 _CLIENT_ERROR_LOG_LEVELS = {401: logging.WARNING, 403: logging.WARNING, 429: logging.WARNING, 404: logging.DEBUG}
+_STATUS_DETAIL_ZH = {404: "路由不存在", 405: "方法不允许"}
 
 
 def _extract_context(request: Request) -> dict:
@@ -45,7 +47,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         level = _CLIENT_ERROR_LOG_LEVELS.get(exc.status_code, logging.INFO)
-        if level >= logging.INFO:
+        # 按 logger 实际生效级别判断（静态 >= INFO 判断会让 404 的 DEBUG 永远不记录）
+        if logger.isEnabledFor(level):
             logger.log(
                 level,
                 "HTTP %s: %s",
@@ -53,9 +56,10 @@ def register_exception_handlers(app: FastAPI) -> None:
                 exc.detail,
                 extra=_extract_context(request),
             )
+        detail = _STATUS_DETAIL_ZH.get(exc.status_code) or str(exc.detail)
         return JSONResponse(
             status_code=exc.status_code,
-            content=error(str(exc.detail), code=status_to_error_code(exc.status_code)),
+            content=error(detail, code=status_to_error_code(exc.status_code)),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -80,10 +84,11 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            # 恒定返回结构化明细：1 条与 N 条契约一致，前端可直接定位字段
             content=error(
                 f"参数错误: {first['field']} {first['message']}",
                 code=ErrorCode.VALIDATION,
-                data={"errors": details} if len(details) > 1 else None,
+                data={"errors": details},
             ),
         )
 
