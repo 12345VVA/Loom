@@ -45,7 +45,7 @@
   "agent.profile.workflowBindingPlaceholder": "选择已发布的工作流（执行走现行发布版）",
   "agent.session.empty": "暂无会话",
   "agent.session.history": "会话历史",
-  "agent.session.inputPlaceholder": "输入消息（Ctrl+Enter 发送）",
+  "agent.session.inputPlaceholder": "输入消息",
   "agent.session.new": "新会话",
   "agent.session.newChatHint": "输入消息，开始新对话",
   "agent.session.placeholder": "选择智能体并开始对话",

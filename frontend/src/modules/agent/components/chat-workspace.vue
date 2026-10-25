@@ -108,6 +108,12 @@
 					{{ emptyText }}
 				</div>
 
+				<!-- 流式中的 assistant 回复以同构气泡渲染（final 重拉后无视觉跳变） -->
+				<chat-message
+					v-if="running && streamingText"
+					:message="{ role: 'assistant', content: streamingText }"
+				/>
+
 				<!-- 本轮 run 分析面板：工具步骤时间线 + 统计（有内容才出现） -->
 				<div v-if="showAnalysis" class="ws-analysis">
 					<div class="ws-analysis__header" @click="analysisOpen = !analysisOpen">
@@ -156,10 +162,6 @@
 				<div v-if="runningTool" class="ws-live-tool">
 					<el-icon class="is-loading"><loading /></el-icon>
 					{{ t('agent.session.toolRunning') }}：{{ runningTool.toolName }}
-				</div>
-				<div v-if="running && streamingText" class="ws-streaming">
-					<span class="ws-streaming__loading"><span></span><span></span><span></span></span>
-					<div class="ws-streaming__text" v-html="streamingRendered"></div>
 				</div>
 				<el-alert v-if="stopHint" :title="stopHint" type="warning" :closable="false" class="ws-stop-hint" />
 			</div>
@@ -214,7 +216,6 @@ import {
 } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import ChatMessage from './chat-message.vue';
-import { renderMarkdown } from '../utils/markdown';
 import { useAgentSession, type AgentSessionRow } from '../composables/use-agent-session';
 
 type WorkspaceMode = 'standalone' | 'embedded' | 'widget';
@@ -283,7 +284,6 @@ const agentName = computed(
 		publishedProfiles.value.find(p => p.id === currentProfileId.value)?.name ||
 		t('agent.workspace.title')
 );
-const streamingRendered = computed(() => renderMarkdown(streamingText.value));
 // 空态分态：未选智能体 → 选择引导；已选无消息 → 新对话引导
 //（修复「已选中智能体却仍提示选择智能体」的矛盾）
 const emptyText = computed(() => {
@@ -639,74 +639,6 @@ defineExpose({ refresh });
 	color: var(--el-color-primary);
 	font-size: 13px;
 	margin: 8px 0;
-}
-
-.ws-streaming {
-	display: flex;
-	gap: 8px;
-	max-width: 86%;
-	margin: 8px 0;
-	padding: 8px 12px;
-	border-radius: 8px;
-	background-color: var(--el-fill-color-light);
-
-	&__loading {
-		display: inline-flex;
-		gap: 3px;
-		align-items: center;
-		flex-shrink: 0;
-
-		span {
-			width: 5px;
-			height: 5px;
-			border-radius: 50%;
-			background-color: var(--el-color-primary);
-			animation: ws-blink 1.2s infinite both;
-
-			&:nth-child(2) {
-				animation-delay: 0.2s;
-			}
-
-			&:nth-child(3) {
-				animation-delay: 0.4s;
-			}
-		}
-	}
-
-	&__text {
-		line-height: 1.6;
-		word-break: break-word;
-		min-width: 0;
-
-		:deep(p) {
-			margin: 0 0 6px;
-
-			&:last-child {
-				margin-bottom: 0;
-			}
-		}
-
-		:deep(pre) {
-			margin: 6px 0;
-			padding: 8px 10px;
-			border-radius: 6px;
-			background-color: var(--el-fill-color-darker);
-			overflow: auto;
-			font-size: 12px;
-		}
-	}
-}
-
-@keyframes ws-blink {
-	0%,
-	80%,
-	100% {
-		opacity: 0.25;
-	}
-
-	40% {
-		opacity: 1;
-	}
 }
 
 .ws-stop-hint {

@@ -1,5 +1,5 @@
 <template>
-	<template v-if="!isMobileView">
+	<template v-if="!isMobileView && !pageHasWorkspace">
 		<div
 			v-if="!isOpen"
 			ref="ballEl"
@@ -28,7 +28,7 @@
 	</template>
 
 	<Teleport to="body">
-		<div v-if="isMobileView" class="assistant-mobile" :class="{ 'is-open': isOpen }">
+		<div v-if="isMobileView && !pageHasWorkspace" class="assistant-mobile" :class="{ 'is-open': isOpen }">
 			<chat-workspace v-if="everOpened" mode="widget" closable @close="isOpen = false" />
 		</div>
 	</Teleport>
@@ -44,10 +44,15 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 import ChatWorkspace from './chat-workspace.vue';
 import ballIcon from '../static/img/ai-ball.png';
 
 const { t } = useI18n();
+const route = useRoute();
+
+// 会话页已内嵌完整 ChatWorkspace（standalone），悬浮球冗余——桌面球与移动面板一并隐藏
+const pageHasWorkspace = computed(() => route.path.startsWith('/agent/session'));
 
 const MOBILE_BREAKPOINT = 768;
 const DRAG_THRESHOLD_PX = 5;

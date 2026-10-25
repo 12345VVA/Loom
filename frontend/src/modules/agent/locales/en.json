@@ -45,7 +45,7 @@
   "agent.profile.workflowBindingPlaceholder": "Select a published workflow (runs its current live version)",
   "agent.session.empty": "No sessions yet",
   "agent.session.history": "Sessions",
-  "agent.session.inputPlaceholder": "Type a message (Ctrl+Enter to send)",
+  "agent.session.inputPlaceholder": "Type a message",
   "agent.session.new": "New Session",
   "agent.session.newChatHint": "Type a message to start a new conversation",
   "agent.session.placeholder": "Pick an agent and start chatting",
