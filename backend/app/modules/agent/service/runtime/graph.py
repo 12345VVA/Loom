@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections.abc import Callable
 from typing import Annotated
@@ -33,6 +34,7 @@ from app.modules.agent.service.runtime.run_service import (
     dispose_pending_tool_calls,
     fallback_reply,
 )
+from app.modules.agent.service.runtime.timing import timed
 from app.modules.agent.service.runtime.tool_executor import ToolExecutor
 
 logger = logging.getLogger("agent.graph")
@@ -67,7 +69,9 @@ class GraphDeps:
         should_cancel: Callable[[], bool] | None = None,
         should_stop_scheduling: Callable[[], bool] | None = None,  # 锁所有权校验（P5 注入）
         on_final: Callable[[AgentState], None] | None = None,
+        trace_token: str | None = None,  # 耗时打点关联（agent.timing 日志字段）
     ):
+        self.trace_token = trace_token
         self.model = model
         self.tool_executor = tool_executor
         self.budget = budget
@@ -85,6 +89,18 @@ class GraphDeps:
         self.on_final = on_final
 
 
+def _normalize_usage(usage: dict | None) -> dict:
+    """usage 键归一为 snake_case 三键（ai adapter 产出为 camelCase——前端 token 统计
+    曾因读 prompt_tokens 恒 0；预算/事件/落库统一走本形态）。"""
+    if not usage:
+        return {}
+    return {
+        "prompt_tokens": int(usage.get("prompt_tokens") or usage.get("promptTokens") or 0),
+        "completion_tokens": int(usage.get("completion_tokens") or usage.get("completionTokens") or 0),
+        "total_tokens": int(usage.get("total_tokens") or usage.get("totalTokens") or 0),
+    }
+
+
 def _call_model(state: AgentState, deps: GraphDeps) -> dict:
     """模型调用节点：预算/取消/锁所有权检查 → 上下文组装 → LoomChatModel.invoke → 计数。"""
     messages = list(state.get("messages") or [])
@@ -94,6 +110,7 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
         # 终止路径的兜底说明（真实终态由外层 run 线程标注 cancelled）
         return {"messages": [AIMessage(content="（本次运行已停止。）")], "model_calls": 0}
 
+    trace_token = deps.trace_token
     # ① 产出型 pre_model 钩子（记忆注入 → injected_context，交由裁剪器按预算消费）
     probe_state = {"messages": messages}
     injected = ""
@@ -104,36 +121,54 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
     # ② 上下文组装（system 消息在此前置——护栏唯一注入点在 prompt_render.render）
     # 契约：首轮 state.messages 的最后一条即当前用户输入；工具循环轮尾部是工具结果段，
     # 整体留在 history 原子单元（协议：tool_calls 后必须紧跟 tool 角色，不得展平为 user）
-    if messages and isinstance(messages[-1], ToolMessage):
-        current_input = None  # 工具循环继续轮：无新用户输入
-        history = messages
-    else:
-        current_input = str(messages[-1].content) if messages else ""
-        history = messages[:-1] if messages else []
-    assembled = build_model_messages(
-        system_message=deps.system_message,
-        tool_schema_tokens=deps.tool_schema_tokens,
-        injected_context=injected,
-        history=history,
-        current_input=current_input,
-        token_budget=deps.context_token_budget,  # E15：动态输入预算（链最小窗口 − 输出上限，下限兜底）
-    )
-    # ③ 校验型钩子：护栏完整性对「提交给模型的 messages」验证（fail-close）
-    if deps.guardrails_validator is not None:
-        deps.guardrails_validator(assembled)
+    with timed("llm.assemble", trace_token=trace_token):
+        if messages and isinstance(messages[-1], ToolMessage):
+            current_input = None  # 工具循环继续轮：无新用户输入
+            history = messages
+        else:
+            current_input = str(messages[-1].content) if messages else ""
+            history = messages[:-1] if messages else []
+        assembled = build_model_messages(
+            system_message=deps.system_message,
+            tool_schema_tokens=deps.tool_schema_tokens,
+            injected_context=injected,
+            history=history,
+            current_input=current_input,
+            token_budget=deps.context_token_budget,  # E15：动态输入预算（链最小窗口 − 输出上限，下限兜底）
+        )
+        # ③ 校验型钩子：护栏完整性对「提交给模型的 messages」验证（fail-close）
+        if deps.guardrails_validator is not None:
+            deps.guardrails_validator(assembled)
     if deps.on_event is not None:
         deps.on_event("model_started", {"modelCalls": int(state.get("model_calls") or 0) + 1})
-    if deps.stream_answer and deps.on_event is not None:
-        response, usage = _call_model_streaming(deps, assembled)
-    else:
-        llm_result = deps.model.generate([assembled])  # LLMResult：message + llm_output.usage（预算 token 计数）
-        response = llm_result.generations[0][0].message
-        usage = (llm_result.llm_output or {}).get("usage") or {}
+    round_started = time.perf_counter()
+    with timed(
+        "llm.round",
+        level=logging.INFO,
+        slow="model",
+        message="agent LLM 轮次耗时",
+        trace_token=trace_token,
+    ) as bag:
+        bag["round"] = int(state.get("model_calls") or 0) + 1
+        bag["streaming"] = bool(deps.stream_answer)
+        bag["profile"] = getattr(deps.model, "model_profile_code", "")
+        if deps.stream_answer and deps.on_event is not None:
+            response, raw_usage = _call_model_streaming(deps, assembled)
+        else:
+            llm_result = deps.model.generate([assembled])  # LLMResult：message + llm_output.usage（预算 token 计数）
+            response = llm_result.generations[0][0].message
+            raw_usage = (llm_result.llm_output or {}).get("usage") or {}
+        usage = _normalize_usage(raw_usage)
+        bag.update(prompt_tokens=usage.get("prompt_tokens"), total_tokens=usage.get("total_tokens"))
     deps.budget.on_model_call(usage)
     if deps.on_event is not None:
         deps.on_event(
             "model_finished",
-            {"hasToolCalls": bool(getattr(response, "tool_calls", None)), "usage": usage},
+            {
+                "hasToolCalls": bool(getattr(response, "tool_calls", None)),
+                "usage": usage,
+                "latencyMs": int((time.perf_counter() - round_started) * 1000),
+            },
         )
     # 无 reducer 通道为覆盖语义：返回全量（当前值 +1），不返回增量
     return {"messages": [response], "model_calls": int(state.get("model_calls") or 0) + 1}
@@ -172,7 +207,8 @@ def _execute_tools(state: AgentState, deps: GraphDeps) -> dict:
     calls = list(getattr(last, "tool_calls", None) or [])
     deps.budget.on_tool_round(len(calls))
 
-    outcomes = deps.tool_executor.execute_round(last)
+    with timed("tool.round", trace_token=deps.trace_token, tool_count=len(calls)):
+        outcomes = deps.tool_executor.execute_round(last)
     tool_messages = ToolExecutor.to_tool_messages(outcomes)
     for outcome in outcomes:
         if deps.on_event is not None:

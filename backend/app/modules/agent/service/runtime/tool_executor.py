@@ -17,9 +17,11 @@ from fastapi import HTTPException
 from langchain_core.messages import AIMessage, ToolMessage
 from pydantic import ValidationError
 
+from app.core.config import settings
 from app.modules.agent.model.agent import AGENT_MESSAGE_ROLES
 from app.modules.agent.service.runtime.memory_service import truncate_tool_result
 from app.modules.agent.service.runtime.middleware import ToolDenied, apply_wrap_tool
+from app.modules.agent.service.runtime.timing import logger as timing_logger
 from app.modules.agent.service.tool_registry import (
     assert_execution_allowed,
     get_tool,
@@ -198,6 +200,22 @@ class ToolExecutor:
             )
         except Exception:  # noqa: BLE001 —— 日志失败不影响执行流
             logger.exception("tool_call_log 落库失败")
+
+        # 慢调用告警（WARN-only；逐条明细以 AgentToolCallLog 为准，不双写 INFO）
+        duration_ms = outcome.duration_ms or int((time.monotonic() - started) * 1000)
+        threshold = int(getattr(settings, "AGENT_TIMING_SLOW_TOOL_MS", 0) or 0)
+        if threshold and duration_ms >= threshold:
+            timing_logger.warning(
+                "工具慢调用",
+                extra={
+                    "phase": "tool.call",
+                    "duration_ms": duration_ms,
+                    "status": "ok" if outcome.success else "error",
+                    "tool_name": outcome.name,
+                    "tool_success": outcome.success,
+                    "trace_id": self.context.trace_id,
+                },
+            )
 
     # --- 结果回填（ToolMessage）---
 

@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     # 节点载荷冷热分离阈值（T8）：单字段字节超此值则落对象存储、主表存引用
     PAYLOAD_STORAGE_THRESHOLD: int = 32 * 1024
 
+    # Agent 运行观测（耗时打点慢调用告警阈值，毫秒）
+    AGENT_TIMING_SLOW_MODEL_MS: int = 30_000  # 单轮 LLM（渠道耗时为主；超过多半是渠道/网络异常）
+    AGENT_TIMING_SLOW_TOOL_MS: int = 10_000  # 单工具慢调用
+    AGENT_TIMING_SLOW_PHASE_MS: int = 5_000  # 其他阶段（会话解析/落库/装配等本地开销）
+
     # OpenAI / Ollama 配置
     OPENAI_API_KEY: str  # 启动时自动从 .env 中读取
     OPENAI_BASE_URL: str  # 启动时自动从 .env 中读取
