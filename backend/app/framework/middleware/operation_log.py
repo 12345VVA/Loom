@@ -1,11 +1,11 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.framework.runtime import registry
 
@@ -114,68 +114,92 @@ def mask_sensitive_data(data: dict, sensitive_fields: set = None) -> dict:
     return masked
 
 
-class OperationLogMiddleware(BaseHTTPMiddleware):
+class OperationLogMiddleware:
+    """操作日志中间件：记录管理端修改类请求（POST/PUT/DELETE）的参数摘要。
+
+    纯 ASGI 纪律（必守）：本中间件曾以 BaseHTTPMiddleware + ``await request.body()``
+    实现——``request._body`` 缓存会让 ``wrapped_receive`` 在 SSE 挂起期的断连监听链
+    中**永远返回合成的 http.request**（starlette base.py state3 首分支），被内侧层
+    的 state2 判非 disconnect 击穿整条监听链（真机实测：所有 SSE 流必崩、前端只能
+    靠 trace 兜底拉回复，表现为「每次对话都慢」）。读 body 必须走「一次读全 + 单条
+    回放 + 后续透传」的纯 ASGI 模式（与 BodyBuffer 同构，不制造额外消息）。
     """
-    操作日志中间件。
-    记录管理端的所有修改类请求 (POST, PUT, DELETE)。
-    """
 
-    async def dispatch(self, request: Request, call_next):
-        # 仅记录管理端且为修改类的请求
-        if not request.url.path.startswith("/admin") or request.method not in ("POST", "PUT", "DELETE"):
-            return await call_next(request)
+    def __init__(self, app: ASGIApp):
+        self.app = app
 
-        # 排除特定的白名单路径 (如登录、文件上传等，避免记录二进制大对象或敏感密码)
-        if any(path in request.url.path for path in ("/login", "/upload", "/eps")):
-            return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not self._should_log(scope):
+            await self.app(scope, receive, send)
+            return
 
-        # 尝试获取 Body (注意：这会读取并消耗 stream，FastAPI 默认不推荐在中间件直接读取)
-        # 生产环境建议使用自定义 APIRoute 或者是更优雅的拦截方式
-        MAX_BODY_SIZE = 1 * 1024 * 1024  # 1MB，超过则跳过记录
-        params = {}
-        if request.method in ("POST", "PUT"):
-            try:
-                body_bytes = await request.body()
-                if body_bytes:
-                    # 关键修复：重置请求体流，确保后续中间件和路由能再次读取 Body
-                    request._body = body_bytes
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+        status_holder = {"code": 0}
 
-                    async def _re_receive():
-                        return {"type": "http.request", "body": body_bytes}
+        async def send_capture(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                status_holder["code"] = message.get("status", 0)
+            await send(message)
 
-                    request._receive = _re_receive
+        params: dict[str, Any] = {}
+        # 读 body（上游 BodyBuffer 已合并为单条；此处防御性读循环并限流）
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            message = await receive()
+            if message.get("type") != "http.request":
+                break
+            chunk = message.get("body", b"")
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > 1 * 1024 * 1024 or not message.get("more_body", False):
+                break
 
-                    if len(body_bytes) > MAX_BODY_SIZE:
+        if chunks and method in ("POST", "PUT"):
+            body_bytes = b"".join(chunks)
+            if body_bytes:
+                try:
+                    if len(body_bytes) > 1 * 1024 * 1024:
                         params = {"_warning": "body_too_large"}
                     else:
-                        params = json.loads(body_bytes.decode())
-                        params = mask_sensitive_data(params)
-            except Exception as exc:
-                logger.warning(f"解析请求Body失败 - {request.url.path}", exc_info=exc)
-                params = {"_error": "failed_to_parse_body"}
+                        params = mask_sensitive_data(json.loads(body_bytes.decode()))
+                except Exception as exc:
+                    logger.warning("解析请求Body失败 - %s", path, exc_info=exc)
+                    params = {"_error": "failed_to_parse_body"}
 
-        # 执行请求
-        response = await call_next(request)
+        # 回放单条完整 body，后续透传原始 receive（uvicorn 队列只剩 disconnect，
+        # 不向监听链制造任何额外 http.request——本缺陷的根因即在此）
+        pending: list[Message] = [{"type": "http.request", "body": b"".join(chunks), "more_body": False}]
 
-        # 记录日志 (异步或简单的同步写入)
-        # 获取当前用户 (中间件可能拿不到 Depends(get_current_user))
-        # 通常从 request.state.current_user 获取 (如果前序中间件已解析)
-        current_user = getattr(request.state, "current_user", None)
-        user_id = getattr(current_user, "id", None)
+        async def replay_receive() -> Message:
+            if pending:
+                return pending.pop(0)
+            return await receive()
 
-        log_payload = {
-            "user_id": user_id,
-            "action": request.url.path,
-            "method": request.method,
-            "params": json.dumps(params, ensure_ascii=False) if params else None,
-            "ip": request.client.host if request.client else None,
-            "status": 1 if response.status_code < 400 else 0,
-            "message": f"Status: {response.status_code}",
-        }
-        task = asyncio.create_task(asyncio.to_thread(_write_operation_log, log_payload))
-        task.add_done_callback(_on_op_log_task_done)
+        started = time.perf_counter()
+        try:
+            await self.app(scope, replay_receive, send_capture)
+        finally:
+            current_user = (scope.get("state") or {}).get("current_user")
+            log_payload = {
+                "user_id": getattr(current_user, "id", None),
+                "action": path,
+                "method": method,
+                "params": json.dumps(params, ensure_ascii=False) if params else None,
+                "ip": (scope.get("client") or (None,))[0],
+                "status": 1 if 0 < status_holder["code"] < 400 else 0,
+                "message": f"Status: {status_holder['code'] or 'no-response'} ({int((time.perf_counter() - started) * 1000)}ms)",
+            }
+            task = asyncio.create_task(asyncio.to_thread(_write_operation_log, log_payload))
+            task.add_done_callback(_on_op_log_task_done)
 
-        return response
+    @staticmethod
+    def _should_log(scope: Scope) -> bool:
+        path = scope.get("path", "")
+        if not path.startswith("/admin") or scope.get("method") not in ("POST", "PUT", "DELETE"):
+            return False
+        return not any(item in path for item in ("/login", "/upload", "/eps"))
 
 
 def _write_operation_log(payload: dict[str, Any]) -> None:

@@ -78,6 +78,21 @@ class MiddlewareTopologyTests(unittest.TestCase):
         self.assertEqual(self.chain[-2], AppAuthorityMiddleware.__name__)
         self.assertEqual(self.chain[-3], AiApiAuthorityMiddleware.__name__)
 
+    def test_operation_log_is_pure_asgi(self) -> None:
+        """OperationLog 必须保持纯 ASGI（非 BaseHTTPMiddleware）。
+
+        根因锁（真机实测）：BaseHTTPMiddleware 形态下 dispatch 预读 body 的
+        ``request._body`` 缓存会让 wrapped_receive 在 SSE 挂起期的断连监听链中
+        永远返回合成 http.request，击穿整条监听链——所有 SSE 流必崩（表现为
+        「每次对话都慢」：前端只能等超时后靠 trace 兜底拉回复）。任何人把它改回
+        BaseHTTPMiddleware 或在 BaseHTTPMiddleware 中预读 body 都会复发。
+        """
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        from app.framework.middleware.operation_log import OperationLogMiddleware
+
+        self.assertFalse(issubclass(OperationLogMiddleware, BaseHTTPMiddleware))
+
 
 if __name__ == "__main__":
     unittest.main()
