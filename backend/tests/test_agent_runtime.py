@@ -252,6 +252,16 @@ class GuardrailsTestCase(unittest.TestCase):
         self.assertIn("tester", rendered)  # 已知变量被替换
         self.assertIn("{{MYSTERY}}", rendered)  # 未知占位保留原文
 
+    def test_render_injects_time_environment(self):
+        """运行环境段无条件注入（时间感知）：存量 agent 未写 {{TIME}} 也可见当前时间。"""
+        rendered = prompt_render.render("你是测试智能体", {"user_name": "tester"})
+        self.assertIn("[运行环境（系统注入，自动更新）]", rendered)
+        self.assertIn("当前时间：", rendered)
+        self.assertIn("星期", rendered)
+        self.assertIn("UTC", rendered)
+        self.assertTrue(prompt_render.is_guardrails_intact(rendered))  # 护栏校验不受注入段影响
+        self.assertIn("你是测试智能体", rendered)  # 模板仍在其后
+
     def test_intact_check_rejects_missing_guardrails(self):
         self.assertFalse(prompt_render.is_guardrails_intact("只是一个普通 system"))
         self.assertFalse(prompt_render.is_guardrails_intact(None))
