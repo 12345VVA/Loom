@@ -37,6 +37,7 @@ from app.core.startup_checks import assert_startup_settings, validate_startup_se
 from app.framework.api.exception_handlers import register_exception_handlers
 from app.framework.middleware.admin_csrf import assert_cors_configuration
 from app.framework.middleware.body_buffer import BodyBufferMiddleware
+from app.framework.middleware.exception_guard import ExceptionGuardMiddleware, install_process_exception_hooks
 from app.framework.middleware.metrics import render_metrics
 from app.framework.middleware.module_runtime import PrefixScopedMiddleware
 from app.framework.router import create_api_router
@@ -75,6 +76,8 @@ async def lifespan(app: FastAPI):
     # 调大 anyio 线程池上限：承载 offload 的同步阻塞调用（同步 DB/HTTP service、同步 def 路由）
     # anyio >= 4.15 移除了旧名 total，统一为 total_tokens（随 pip-all 依赖刷新一并切换）
     anyio.to_thread.current_default_thread_limiter().total_tokens = settings.ASYNC_THREAD_POOL_SIZE
+    # 进程级异常兜底：主线程/子线程未捕获异常与 asyncio 孤儿任务统一走应用日志
+    install_process_exception_hooks()
     # 启动时执行
     assert_cors_configuration(allow_credentials=True, allow_origins=settings.cors_origins_list)
     assert_startup_settings()
@@ -259,6 +262,10 @@ for binding in reversed(load_module_middlewares()):
 # 请求体预读合并（纯 ASGI）：置于全部 BaseHTTPMiddleware 之外，消除请求体
 # 分片残留导致 SSE 长挂起响应被断连监听链误伤的问题（见 body_buffer 模块注释）
 app.add_middleware(BodyBufferMiddleware)
+
+# ASGI 全链路异常兜底（纯 ASGI）：捕获中间件/流式响应协程冒出的异常，规范化
+# 记录并在响应未开始时回退统一 500（置于 CORS 内侧，异常响应可补 CORS 头）
+app.add_middleware(ExceptionGuardMiddleware)
 
 # CORS 配置
 # 放在最后以确保它是最外层中间件，能处理所有请求（包括预检）和错误响应的 CORS 头
