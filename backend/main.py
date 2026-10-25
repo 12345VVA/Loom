@@ -36,6 +36,7 @@ from app.core.logging import configure_logging
 from app.core.startup_checks import assert_startup_settings, validate_startup_settings
 from app.framework.api.exception_handlers import register_exception_handlers
 from app.framework.middleware.admin_csrf import assert_cors_configuration
+from app.framework.middleware.body_buffer import BodyBufferMiddleware
 from app.framework.middleware.metrics import render_metrics
 from app.framework.middleware.module_runtime import PrefixScopedMiddleware
 from app.framework.router import create_api_router
@@ -254,6 +255,10 @@ for binding in reversed(load_module_middlewares()):
         prefixes=binding.prefixes,
         module_name=binding.module,
     )
+
+# 请求体预读合并（纯 ASGI）：置于全部 BaseHTTPMiddleware 之外，消除请求体
+# 分片残留导致 SSE 长挂起响应被断连监听链误伤的问题（见 body_buffer 模块注释）
+app.add_middleware(BodyBufferMiddleware)
 
 # CORS 配置
 # 放在最后以确保它是最外层中间件，能处理所有请求（包括预检）和错误响应的 CORS 头
