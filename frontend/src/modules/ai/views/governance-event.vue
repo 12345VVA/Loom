@@ -3,10 +3,10 @@
 		<cl-row class="toolbar-row">
 			<cl-refresh-btn />
 			<cl-filter :label="$t('事件')">
-				<cl-select :options="eventOptions" prop="eventType" :width="130" />
+				<cl-select :options="eventOptions" prop="eventType" :width="130" clearable />
 			</cl-filter>
 			<cl-filter :label="$t('指标')">
-				<cl-select :options="metricOptions" prop="metric" :width="130" />
+				<cl-select :options="metricOptions" prop="metric" :width="130" clearable />
 			</cl-filter>
 			<cl-flex1 />
 			<stat-chips :items="statItems" />
@@ -90,14 +90,15 @@ const Table = useTable({
 		{ label: t('已通知'), prop: 'notified', minWidth: 90 },
 		{ label: t('消息'), prop: 'message', minWidth: 260, showOverflowTooltip: true },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } }
-	]
+	],
+	contextMenu: ['refresh']
 });
 
 const Crud = useCrud(
 	{
 		service: service.ai.governance_event
 	},
-	app => {
+	(app) => {
 		app.refresh();
 		loadStats();
 	}

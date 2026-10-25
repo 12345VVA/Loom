@@ -4,12 +4,19 @@
 			<cl-refresh-btn />
 			<cl-add-btn />
 			<cl-multi-delete-btn />
-			<el-button type="primary" plain @click="openMatch">{{ $t('测试匹配') }}</el-button>
+			<el-button
+				v-permission="service.ai.governance_rule.permission?.match"
+				type="primary"
+				plain
+				@click="openMatch"
+			>
+				{{ $t('测试匹配') }}
+			</el-button>
 			<cl-filter :label="$t('范围')">
-				<cl-select :options="scopeOptions" prop="scopeType" :width="130" />
+				<cl-select :options="scopeOptions" prop="scopeType" :width="130" clearable />
 			</cl-filter>
 			<cl-filter :label="$t('模式')">
-				<cl-select :options="modeOptions" prop="mode" :width="130" />
+				<cl-select :options="modeOptions" prop="mode" :width="130" clearable />
 			</cl-filter>
 			<cl-flex1 />
 			<cl-search-key :placeholder="$t('搜索编码、名称')" />
@@ -18,7 +25,12 @@
 		<cl-row>
 			<cl-table ref="Table">
 				<template #slot-toggle="{ scope }">
-					<el-button text type="primary" @click="toggleRule(scope.row)">
+					<el-button
+						v-permission="service.ai.governance_rule.permission?.toggle"
+						text
+						type="primary"
+						@click="toggleRule(scope.row)"
+					>
 						{{ scope.row.status ? $t('停用') : $t('启用') }}
 					</el-button>
 				</template>
@@ -225,7 +237,7 @@ const Upsert = useUpsert({
 
 const Table = useTable({
 	columns: [
-		{ type: 'selection' },
+		{ type: 'selection', width: 60 },
 		{ label: t('编码'), prop: 'code', minWidth: 150 },
 		{ label: t('名称'), prop: 'name', minWidth: 150 },
 		{
@@ -257,15 +269,16 @@ const Table = useTable({
 		},
 		{ label: t('启用'), prop: 'status', width: 90, component: { name: 'cl-switch' } },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
-		{ type: 'op', width: 260, buttons: ['edit', 'delete', 'slot-toggle'] }
-	]
+		{ type: 'op', width: 260, fixed: 'right', buttons: ['edit', 'delete', 'slot-toggle'] }
+	],
+	contextMenu: ['refresh', 'check', 'edit', 'delete']
 });
 
 const Crud = useCrud(
 	{
 		service: service.ai.governance_rule
 	},
-	app => {
+	(app) => {
 		app.refresh();
 	}
 );
@@ -304,6 +317,6 @@ function normalizeSingleId(value: any) {
 }
 
 function optionLabel(options: { label: string; value: string }[], value: string) {
-	return options.find(item => item.value === value)?.label || value || '-';
+	return options.find((item) => item.value === value)?.label || value || '-';
 }
 </script>

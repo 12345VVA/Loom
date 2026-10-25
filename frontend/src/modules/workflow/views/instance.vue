@@ -415,7 +415,7 @@ const Table = useTable({
 
 const Crud = useCrud(
 	{
-		service: (service as any).workflow.instance
+		service: service.workflow.instance
 	},
 	app => {
 		// 默认只看生产实例（crud.params 持久 merge，翻页/搜索自动携带）
@@ -429,8 +429,8 @@ onMounted(() => {
 
 async function fetchDefinitions() {
 	try {
-		const list = await (service as any).workflow.definition.list();
-		definitions.value = list;
+		const list = await service.workflow.definition.list();
+		definitions.value = list as unknown as WorkflowDefinition[];
 	} catch (e) {
 		console.error('Fetch workflow definitions failed', e);
 	}
@@ -450,7 +450,7 @@ async function onDefinitionChange(val: number) {
 	}
 	try {
 		// definition.list 不再返回 graphJson（纯版本表模型），改为 info 取草稿拓扑
-		const def = await (service as any).workflow.definition.info({ id: val });
+		const def = await service.workflow.definition.info({ id: val });
 		const graphJson = def.draftGraphJson || def.graphJson;
 		if (graphJson) {
 			const graph = JSON.parse(graphJson);
@@ -469,9 +469,9 @@ async function onDefinitionChange(val: number) {
 	}
 }
 
-// 发起生产实例（submitStartInstance 与断点重试共用，收敛 (service as any) 单点）
+// 发起生产实例（submitStartInstance 与断点重试共用，收敛 service 单点）
 async function startInstance(definitionId: number, inputs: object) {
-	await (service as any).workflow.instance.start({ definitionId, inputs });
+	await service.workflow.instance.start({ definitionId, inputs });
 }
 
 async function submitStartInstance() {
@@ -524,7 +524,7 @@ async function submitApproval() {
 
 	approvalDialog.loading = true;
 	try {
-		await (service as any).workflow.instance.resume({
+		await service.workflow.instance.resume({
 			instanceId: approvalDialog.instanceId,
 			userInput: val
 		});
@@ -552,7 +552,7 @@ async function viewExecutionLogs(row: WorkflowInstance) {
 	logDrawer.loading = true;
 	logDrawer.items = [];
 	try {
-		const list = await (service as any).workflow.instance.logs({ instanceId: row.id });
+		const list = await service.workflow.instance.logs({ instanceId: row.id });
 		logDrawer.items = list.map((item: any, index: number) => ({
 			...item,
 			isExpanded: item.status !== 'success' || index === list.length - 1
@@ -582,7 +582,7 @@ async function retryViewingInstance() {
 async function cancelViewingInstance() {
 	if (!viewingInstanceId.value) return;
 	try {
-		await (service as any).workflow.instance.cancel({ instanceId: viewingInstanceId.value });
+		await service.workflow.instance.cancel({ instanceId: viewingInstanceId.value });
 		ElMessage.success(t('已发送停止请求，实例将尽快取消'));
 		viewingStatus.value = 'cancelled';
 		Crud.value?.refresh();

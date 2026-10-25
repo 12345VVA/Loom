@@ -48,7 +48,7 @@ import { useI18n } from 'vue-i18n';
 const route = useRoute();
 const { service } = useCool();
 const { t } = useI18n();
-const evalService = (service as any).workflow_eval;
+const evalService = service.workflow_eval;
 
 const runs = ref<any[]>([]);
 const loading = ref(false);

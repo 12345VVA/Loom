@@ -53,19 +53,31 @@ const {
 	onChanged: () => Crud.value?.refresh()
 });
 
-const Crud = useCrud({ service: serviceAsset }, (app) => {
-	app.refresh();
-	if (viewMode.value === 'wall') refreshWall();
-});
+// ---- CRUD 实例（双视图在 onRefresh 中联动同步过滤参数） ----
+const Crud = useCrud(
+	{
+		service: serviceAsset,
+		async onRefresh(params, { next }) {
+			if (viewMode.value === 'wall') {
+				refreshWall(params);
+			}
+			return next(params);
+		}
+	},
+	(app) => {
+		app.refresh();
+		if (viewMode.value === 'wall') refreshWall();
+	}
+);
 
 // ---- 表格形态 ----
 const Table = useTable({
 	columns: [
-		{ type: 'selection' },
+		{ type: 'selection', width: 60 },
 		{ label: t('封面'), prop: 'coverUrl', component: { name: 'cl-image', props: { size: 48 } } },
 		{ label: t('标识'), prop: 'code', minWidth: 140 },
 		{ label: t('名称'), prop: 'name', minWidth: 120 },
-		{ label: t('分类'), prop: 'category', minWidth: 90 },
+		{ label: t('分类'), prop: 'category', minWidth: 90, dict: dict.get(dictType) },
 		{
 			label: t('状态'),
 			prop: 'status',
@@ -76,11 +88,12 @@ const Table = useTable({
 		{
 			type: 'op',
 			width: 300,
+			fixed: 'right',
 			// 编辑/删除的行级权限在 slot 内判断（permission.mdc：操作列都要权限控制）
 			buttons: ['slot-op']
 		}
 	],
-	contextMenu: ['refresh']
+	contextMenu: ['refresh', 'check', 'edit', 'delete']
 });
 
 // ---- upsert ----
@@ -126,7 +139,8 @@ const Upsert = useUpsert({
 			label: t('参考图集'),
 			prop: 'refImageIds',
 			group: 'refs',
-			component: { name: 'slot-refImages' }
+			// cool-crud-conventions.mdc：slot 命名必须严格与 prop 保持一致（slot-{prop}）
+			component: { name: 'slot-refImageIds' }
 		},
 		{
 			label: t('推荐 Profile'),
@@ -156,15 +170,15 @@ const Upsert = useUpsert({
 			<cl-add-btn />
 			<cl-multi-delete-btn />
 			<el-radio-group :model-value="viewMode" size="small" class="view-switch" @update:model-value="(val) => switchView(val as 'wall' | 'table')">
-				<el-radio-button value="wall">{{ $t('封面墙') }}</el-radio-button>
-				<el-radio-button value="table">{{ $t('表格') }}</el-radio-button>
+				<el-radio-button value="wall">{{ t('封面墙') }}</el-radio-button>
+				<el-radio-button value="table">{{ t('表格') }}</el-radio-button>
 			</el-radio-group>
 			<cl-flex1 />
-			<cl-filter :label="$t('状态')">
-				<cl-select :options="statusOptions" prop="status" />
+			<cl-filter :label="t('状态')">
+				<cl-select :options="statusOptions" prop="status" clearable />
 			</cl-filter>
-			<cl-filter :label="$t('分类')">
-				<cl-select :options="categoryOptions" prop="category" />
+			<cl-filter :label="t('分类')">
+				<cl-select :options="categoryOptions" prop="category" clearable />
 			</cl-filter>
 			<cl-search-key />
 		</cl-row>
@@ -185,7 +199,7 @@ const Upsert = useUpsert({
 			<cl-table ref="Table">
 				<template #slot-op="{ scope }">
 					<el-button v-if="canEdit(scope.row)" link type="primary" size="small" @click="openDetail(scope.row)">
-						{{ $t('详情') }}
+						{{ t('详情') }}
 					</el-button>
 					<el-button
 						v-if="canEdit(scope.row)"
@@ -195,7 +209,7 @@ const Upsert = useUpsert({
 						size="small"
 						@click="Crud?.rowEdit(scope.row)"
 					>
-						{{ $t('编辑') }}
+						{{ t('编辑') }}
 					</el-button>
 					<el-button
 						v-if="canDelete(scope.row)"
@@ -205,7 +219,7 @@ const Upsert = useUpsert({
 						size="small"
 						@click="Crud?.rowDelete(scope.row)"
 					>
-						{{ $t('删除') }}
+						{{ t('删除') }}
 					</el-button>
 					<el-button
 						v-if="scope.row.status === 'draft' && (isMine(scope.row) || isAdmin)"
@@ -215,7 +229,7 @@ const Upsert = useUpsert({
 						size="small"
 						@click="transition(scope.row, 'publish')"
 					>
-						{{ $t('发布') }}
+						{{ t('发布') }}
 					</el-button>
 					<el-button
 						v-if="scope.row.status === 'published' && (isMine(scope.row) || isAdmin)"
@@ -225,7 +239,7 @@ const Upsert = useUpsert({
 						size="small"
 						@click="transition(scope.row, 'archive')"
 					>
-						{{ $t('归档') }}
+						{{ t('归档') }}
 					</el-button>
 					<el-button
 						v-if="scope.row.status === 'archived' && (isMine(scope.row) || isAdmin)"
@@ -235,7 +249,7 @@ const Upsert = useUpsert({
 						size="small"
 						@click="transition(scope.row, 'restore')"
 					>
-						{{ $t('恢复') }}
+						{{ t('恢复') }}
 					</el-button>
 					<el-button
 						v-if="scope.row.status === 'published'"
@@ -245,7 +259,7 @@ const Upsert = useUpsert({
 						size="small"
 						@click="fork(scope.row)"
 					>
-						{{ $t('复制副本') }}
+						{{ t('复制副本') }}
 					</el-button>
 				</template>
 			</cl-table>
@@ -259,13 +273,13 @@ const Upsert = useUpsert({
 				:page-size="wallPage.size"
 				:total="wallPage.total"
 				layout="prev, pager, next"
-				@current-change="refreshWall"
+				@current-change="() => refreshWall()"
 			/>
 			<cl-pagination v-else />
 		</cl-row>
 
 		<cl-upsert ref="Upsert">
-			<template #slot-refImages="{ scope }">
+			<template #slot-refImageIds="{ scope }">
 				<ref-image-manager
 					:model-value="refImageModel(scope)"
 					@update:model-value="refImageChange(scope, $event)"
@@ -277,28 +291,28 @@ const Upsert = useUpsert({
 		<el-drawer v-model="drawer.visible" :title="drawer.row?.name || ''" size="480px">
 			<template v-if="drawer.row">
 				<el-descriptions :column="1" border size="small">
-					<el-descriptions-item :label="$t('标识')">{{ drawer.row.code }}</el-descriptions-item>
-					<el-descriptions-item :label="$t('状态')">{{ drawer.row.status }}</el-descriptions-item>
-					<el-descriptions-item :label="$t('成功产出')">
-						{{ detailStats?.successCount ?? $t('加载中') }}
+					<el-descriptions-item :label="t('标识')">{{ drawer.row.code }}</el-descriptions-item>
+					<el-descriptions-item :label="t('状态')">{{ drawer.row.status }}</el-descriptions-item>
+					<el-descriptions-item :label="t('成功产出')">
+						{{ detailStats?.successCount ?? t('加载中') }}
 					</el-descriptions-item>
 				</el-descriptions>
 				<div class="detail-refs">
-					<div class="head">{{ $t('参考图') }}</div>
+					<div class="head">{{ t('参考图') }}</div>
 					<div v-for="m in drawer.row.mediaItems || []" :key="m.id" class="ref-item">
 						<el-image :src="m.url" :preview-src-list="[m.url]" fit="cover" class="ref" />
 						<el-tag v-if="m.id === primaryRefId(drawer.row)" class="ref-primary" size="small" type="success">
-							{{ $t('首选') }}
+							{{ t('首选') }}
 						</el-tag>
 					</div>
 					<span v-for="mid in drawer.row.missingMediaIds || []" :key="mid" class="missing">
-						{{ $t('#{id} 已失效', { id: mid }) }}
+						{{ t('#{id} 已失效', { id: mid }) }}
 					</span>
 				</div>
 				<div class="detail-prompt">
 					<div class="head">
-						<span>{{ $t('外观 Prompt') }}</span>
-						<el-button link size="small" @click="copyDetailPrompt">{{ $t('复制') }}</el-button>
+						<span>{{ t('外观 Prompt') }}</span>
+						<el-button link size="small" @click="copyDetailPrompt">{{ t('复制') }}</el-button>
 					</div>
 					<pre>{{ drawer.row.appearancePrompt || '—' }}</pre>
 				</div>

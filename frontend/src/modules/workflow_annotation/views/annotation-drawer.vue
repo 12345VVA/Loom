@@ -149,7 +149,7 @@ const emit = defineEmits<{
 
 const { service } = useCool();
 const { t } = useI18n();
-const annService = (service as any).workflow_annotation.annotation;
+const annService = service.workflow_annotation.annotation;
 
 const form = reactive({
 	label: 'pass',
@@ -224,7 +224,7 @@ async function loadExisting() {
 			form.score = typeof existing.score === 'number' ? existing.score : existing.label === 'fail' ? 0 : 1;
 			form.reason = existing.reason || '';
 			form.isGold = !!existing.isGold;
-			annotationId.value = existing.id;
+			annotationId.value = existing.id ?? null;
 			existingInfo.value = existing;
 			mode.value = 'update';
 		} else {

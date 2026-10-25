@@ -46,7 +46,7 @@ import { useI18n } from 'vue-i18n';
 
 const { service } = useCool();
 const { t } = useI18n();
-const evalService = (service as any).workflow_eval;
+const evalService = service.workflow_eval;
 
 // 测试集选项（顶部筛选 + 新增表单共用）
 const testSetOptions = ref<any[]>([]);

@@ -3,7 +3,14 @@
 		<header class="toolbar">
 			<cl-select v-model="query.groupBy" :options="groupOptions" :width="160" />
 			<el-input-number v-model="query.days" :min="1" :max="365" controls-position="right" />
-			<el-button type="primary" :loading="loading" @click="loadStats">{{ $t('刷新') }}</el-button>
+			<el-button
+				type="primary"
+				:loading="loading"
+				v-permission="service.ai.dashboard.permission?.cost"
+				@click="loadStats"
+			>
+				{{ $t('刷新') }}
+			</el-button>
 		</header>
 
 		<section class="summary">

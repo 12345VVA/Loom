@@ -665,7 +665,7 @@ function restoreNodeTestHistory(h: { inputsJson: string }) {
 async function stopTestRun() {
 	if (!testLogDrawer.instanceId) return;
 	try {
-		await (service as any).workflow.instance.cancel({ instanceId: testLogDrawer.instanceId });
+		await service.workflow.instance.cancel({ instanceId: testLogDrawer.instanceId });
 		ElMessage.success(t('已发送停止请求，试运行将尽快取消'));
 	} catch (err: any) {
 		ElMessage.error(t('停止失败: ') + (err.message || err));

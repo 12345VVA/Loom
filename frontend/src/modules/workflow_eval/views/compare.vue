@@ -90,7 +90,7 @@ import { verdictType } from '../utils/format';
 const route = useRoute();
 const { service } = useCool();
 const { t } = useI18n();
-const evalService = (service as any).workflow_eval;
+const evalService = service.workflow_eval;
 
 const data = ref<any>(null);
 const loading = ref(false);

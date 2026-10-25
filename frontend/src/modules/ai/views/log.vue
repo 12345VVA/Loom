@@ -3,10 +3,10 @@
 		<cl-row class="toolbar-row">
 			<cl-refresh-btn />
 			<cl-filter :label="$t('状态')">
-				<cl-select :options="statusOptions" prop="status" :width="130" />
+				<cl-select :options="statusOptions" prop="status" :width="130" clearable />
 			</cl-filter>
 			<cl-filter :label="$t('模型类型')">
-				<cl-select :options="modelTypeOptions" prop="modelType" :width="130" />
+				<cl-select :options="modelTypeOptions" prop="modelType" :width="130" clearable />
 			</cl-filter>
 			<cl-flex1 />
 			<stat-chips :items="statItems" />
@@ -150,14 +150,15 @@ const Table = useTable({
 		{ label: 'Request ID', prop: 'requestId', minWidth: 180, showOverflowTooltip: true },
 		{ label: t('错误信息'), prop: 'errorMessage', minWidth: 240, showOverflowTooltip: true },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } }
-	]
+	],
+	contextMenu: ['refresh']
 });
 
 const Crud = useCrud(
 	{
 		service: service.ai.log
 	},
-	app => {
+	(app) => {
 		app.refresh();
 		loadStats();
 	}

@@ -5,7 +5,7 @@
 			<cl-add-btn />
 			<cl-multi-delete-btn />
 			<cl-filter :label="$t('模型类型')">
-				<cl-select :options="modelTypeOptions" prop="modelType" :width="130" />
+				<cl-select :options="modelTypeOptions" prop="modelType" :width="130" clearable />
 			</cl-filter>
 			<cl-flex1 />
 			<el-tooltip
@@ -58,9 +58,9 @@
 				<div class="default-config-editor">
 					<div class="default-config-editor__tools">
 						<span>{{ $t('模型调用价格配置') }}</span>
-						<el-button text type="primary" @click="fillPricingConfig(scope)">{{
-							$t('填充示例')
-						}}</el-button>
+						<el-button text type="primary" @click="fillPricingConfig(scope)">
+							{{ $t('填充示例') }}
+						</el-button>
 					</div>
 					<cl-editor-codemirror v-model="scope.pricingConfig" :height="150" />
 				</div>
@@ -69,9 +69,9 @@
 				<div class="default-config-editor">
 					<div class="default-config-editor__tools">
 						<span>{{ defaultConfigHint(scope) }}</span>
-						<el-button text type="primary" @click="fillDefaultConfig(scope)">{{
-							$t('填充示例')
-						}}</el-button>
+						<el-button text type="primary" @click="fillDefaultConfig(scope)">
+							{{ $t('填充示例') }}
+						</el-button>
 					</div>
 					<cl-editor-codemirror v-model="scope.defaultConfig" :height="200" />
 				</div>
@@ -85,7 +85,7 @@ defineOptions({
 	name: 'ai-model'
 });
 
-import { computed, h, onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
 import { useDict } from '/$/dict';
@@ -120,29 +120,27 @@ function isChatModel(scope: Record<string, unknown>): boolean {
 	return type === 'chat' || type === 'llm';
 }
 
-// 分组标题组件
-function renderSection(title: string, desc?: string) {
-	return () =>
-		h('div', { class: 'form-section-header' }, [
-			h('span', { class: 'form-section-header__bar' }),
-			h('span', { class: 'form-section-header__title' }, title),
-			desc ? h('span', { class: 'form-section-header__desc' }, desc) : null
-		]);
-}
-
+// ---- Upsert 配置（标准 tabs 分组，消除虚假 prop，cool-crud-conventions.mdc） ----
 const Upsert = useUpsert({
 	dialog: { width: '840px' },
 	props: { labelWidth: '110px' },
 	items: [
-		// --- 1. 基本信息 ---
 		{
-			prop: '_sec_base',
-			span: 24,
-			component: { vm: renderSection(t('基本信息'), t('配置模型所属厂商、类型、编码与展示名称')) }
+			type: 'tabs',
+			props: {
+				type: 'card',
+				labels: [
+					{ label: t('基本信息'), value: 'base' },
+					{ label: t('规格与参数'), value: 'config' },
+					{ label: t('状态控制'), value: 'control' }
+				]
+			}
 		},
+		// --- 1. 基本信息 ---
 		{
 			label: t('厂商'),
 			prop: 'providerId',
+			group: 'base',
 			required: true,
 			span: 12,
 			component: {
@@ -162,6 +160,7 @@ const Upsert = useUpsert({
 		{
 			label: t('模型类型'),
 			prop: 'modelType',
+			group: 'base',
 			value: 'chat',
 			required: true,
 			span: 12,
@@ -170,6 +169,7 @@ const Upsert = useUpsert({
 		{
 			label: t('编码'),
 			prop: 'code',
+			group: 'base',
 			required: true,
 			span: 12,
 			component: { name: 'el-input', props: { placeholder: '例如: gpt-image-2.5-flare' } }
@@ -177,6 +177,7 @@ const Upsert = useUpsert({
 		{
 			label: t('名称'),
 			prop: 'name',
+			group: 'base',
 			required: true,
 			span: 12,
 			component: { name: 'el-input', props: { placeholder: '例如: GPT-Image-2.5 Flare' } }
@@ -184,20 +185,16 @@ const Upsert = useUpsert({
 		{
 			label: t('能力标签'),
 			prop: 'capabilities',
+			group: 'base',
 			span: 24,
 			component: { name: 'slot-capabilities' }
 		},
 
-		// --- 2. 上下文与Token规格（仅对话/LLM模型显示） ---
-		{
-			prop: '_sec_context',
-			span: 24,
-			hidden: ({ scope }) => !isChatModel(scope),
-			component: { vm: renderSection(t('容量规格'), t('限制上下文窗口大小与最大生成长度')) }
-		},
+		// --- 2. 规格与参数 ---
 		{
 			label: t('上下文长度'),
 			prop: 'contextWindow',
+			group: 'config',
 			span: 12,
 			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
@@ -208,6 +205,7 @@ const Upsert = useUpsert({
 		{
 			label: t('最大输出'),
 			prop: 'maxOutputTokens',
+			group: 'config',
 			span: 12,
 			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
@@ -215,35 +213,26 @@ const Upsert = useUpsert({
 				props: { min: 1, placeholder: '例如: 4096', 'controls-position': 'right', style: { width: '100%' } }
 			}
 		},
-
-		// --- 3. 价格与默认配置 ---
-		{
-			prop: '_sec_config',
-			span: 24,
-			component: { vm: renderSection(t('配置与参数'), t('模型调用计费规则与默认启动参数')) }
-		},
 		{
 			label: t('价格配置'),
 			prop: 'pricingConfig',
+			group: 'config',
 			span: 24,
 			component: { name: 'slot-pricingConfig' }
 		},
 		{
 			label: t('默认参数'),
 			prop: 'defaultConfig',
+			group: 'config',
 			span: 24,
 			component: { name: 'slot-defaultConfig' }
 		},
 
-		// --- 4. 状态与控制 ---
-		{
-			prop: '_sec_control',
-			span: 24,
-			component: { vm: renderSection(t('状态与控制'), t('排序优先级与启用状态')) }
-		},
+		// --- 3. 状态与控制 ---
 		{
 			label: t('排序'),
 			prop: 'orderNum',
+			group: 'control',
 			value: 0,
 			span: 12,
 			component: {
@@ -254,6 +243,7 @@ const Upsert = useUpsert({
 		{
 			label: t('启用'),
 			prop: 'status',
+			group: 'control',
 			value: true,
 			span: 12,
 			component: { name: 'el-switch' }
@@ -295,11 +285,6 @@ const Upsert = useUpsert({
 	},
 	onSubmit(data, { next }) {
 		const payload = { ...data };
-		Object.keys(payload).forEach(key => {
-			if (key.startsWith('_')) {
-				delete payload[key];
-			}
-		});
 		if (Array.isArray(payload.capabilities)) {
 			payload.capabilities = payload.capabilities.filter(Boolean).join(',');
 		}
@@ -314,7 +299,7 @@ const Upsert = useUpsert({
 
 const Table = useTable({
 	columns: [
-		{ type: 'selection' },
+		{ type: 'selection', width: 60 },
 		{ label: t('名称'), prop: 'name', minWidth: 160 },
 		{ label: t('厂商'), prop: 'providerName', minWidth: 150 },
 		{ label: t('编码'), prop: 'code', minWidth: 180, hidden: true },
@@ -337,15 +322,16 @@ const Table = useTable({
 		{ label: t('最大输出'), prop: 'maxOutputTokens', minWidth: 110 },
 		{ label: t('启用'), prop: 'status', width: 100, component: { name: 'cl-switch' } },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
-		{ type: 'op', buttons: ['edit', 'delete'] }
-	]
+		{ type: 'op', width: 160, fixed: 'right', buttons: ['edit', 'delete'] }
+	],
+	contextMenu: ['refresh', 'check', 'edit', 'delete']
 });
 
 const Crud = useCrud(
 	{
 		service: service.ai.model
 	},
-	app => {
+	(app) => {
 		app.refresh();
 	}
 );
@@ -353,7 +339,7 @@ const Crud = useCrud(
 function splitCapabilities(value?: string | null) {
 	return String(value || '')
 		.split(',')
-		.map(item => item.trim())
+		.map((item) => item.trim())
 		.filter(Boolean);
 }
 
@@ -363,7 +349,7 @@ function formatCapabilities(value?: string | null) {
 	const dictItems = dict.get('ai_model_capability').value || [];
 	const map = new Map(dictItems.map((item: { value: unknown; label: string }) => [String(item.value), item.label]));
 	return list
-		.map(item => {
+		.map((item) => {
 			const label = map.get(item);
 			return label ? `${label} (${item})` : item;
 		})
@@ -380,68 +366,66 @@ function defaultConfigHint(scope: Record<string, unknown>) {
 	return t('模型默认参数 JSON');
 }
 
-function defaultConfigPlaceholder(scope: Record<string, unknown>) {
-	return JSON.stringify(defaultConfigTemplate(scope), null, 2);
+function fillPricingConfig(scope: Record<string, unknown>) {
+	scope.pricingConfig = JSON.stringify(
+		{
+			input_cost_per_million_tokens: 0,
+			output_cost_per_million_tokens: 0,
+			currency: 'USD'
+		},
+		null,
+		2
+	);
 }
 
 function fillDefaultConfig(scope: Record<string, unknown>) {
-	scope.defaultConfig = defaultConfigPlaceholder(scope);
-}
-
-function fillPricingConfig(scope: Record<string, unknown>) {
-	scope.pricingConfig = JSON.stringify({ input: 0, output: 0 }, null, 2);
-}
-
-function defaultConfigTemplate(scope: Record<string, unknown>) {
 	if (scope.modelType === 'image') {
-		return {
-			size: '1024x1024',
-			_size_format: 'pixel',
-			_allow_custom_size: true,
-			_sizes: [
-				{ label: '1024x1024 (1:1)', value: '1024x1024' },
-				{ label: '768x1024 (3:4)', value: '768x1024' },
-				{ label: '1024x768 (4:3)', value: '1024x768' },
-				{ label: '720x1280 (9:16)', value: '720x1280' },
-				{ label: '1280x720 (16:9)', value: '1280x720' }
-			],
-			_limits: { max_n: 4 }
-		};
+		scope.defaultConfig = JSON.stringify(
+			{
+				size: '1024x1024',
+				_size_format: 'pixel',
+				_sizes: ['1024x1024', '768x1024', '1024x768', '512x512'],
+				_allow_custom_size: true,
+				_limits: {
+					min_width: 256,
+					max_width: 2048,
+					min_height: 256,
+					max_height: 2048
+				}
+			},
+			null,
+			2
+		);
+		return;
 	}
-	if (scope.modelType === 'embedding') {
-		return {};
-	}
-	return {
-		temperature: 0.7,
-		top_p: 0.9,
-		max_tokens: 1024
-	};
+	scope.defaultConfig = JSON.stringify(
+		{
+			temperature: 0.7,
+			top_p: 1.0
+		},
+		null,
+		2
+	);
 }
 </script>
 
 <style lang="scss" scoped>
+.capability-tip-icon {
+	color: var(--el-text-color-secondary);
+	margin-right: 8px;
+	cursor: pointer;
+}
+
 .capability-option-item {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	width: 100%;
-
-	.capability-option-code {
-		font-size: 12px;
-		color: var(--el-text-color-secondary);
-		margin-left: 16px;
-	}
+	gap: 12px;
 }
 
-.capability-tip-icon {
-	font-size: 16px;
-	color: var(--el-text-color-placeholder);
-	cursor: help;
-	transition: color 0.3s;
-
-	&:hover {
-		color: var(--el-color-primary);
-	}
+.capability-option-code {
+	color: var(--el-text-color-secondary);
+	font-size: 12px;
 }
 
 .default-config-editor {
@@ -454,36 +438,6 @@ function defaultConfigTemplate(scope: Record<string, unknown>) {
 		margin-bottom: 8px;
 		color: var(--el-text-color-secondary);
 		font-size: 13px;
-	}
-}
-
-:deep(.form-section-header) {
-	display: flex;
-	align-items: center;
-	padding: 8px 0 6px;
-	margin: 6px 0 4px;
-	border-bottom: 1px solid var(--el-border-color-lighter);
-
-	.form-section-header__bar {
-		width: 3px;
-		height: 14px;
-		background: var(--el-color-primary);
-		border-radius: 2px;
-		margin-right: 8px;
-		flex-shrink: 0;
-	}
-
-	.form-section-header__title {
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--el-text-color-primary);
-		letter-spacing: 0.3px;
-	}
-
-	.form-section-header__desc {
-		font-size: 12px;
-		color: var(--el-text-color-placeholder);
-		margin-left: 8px;
 	}
 }
 </style>

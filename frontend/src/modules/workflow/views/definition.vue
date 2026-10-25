@@ -105,7 +105,7 @@ const Upsert = useUpsert({
 		const res: any = await next(data);
 		if (graphJson && res?.id) {
 			try {
-				await (service as any).workflow.definition.saveDraft({
+				await service.workflow.definition.saveDraft({
 					definitionId: res.id,
 					graphJson
 				});
@@ -147,7 +147,7 @@ const Table = useTable({
 
 const Crud = useCrud(
 	{
-		service: (service as any).workflow.definition
+		service: service.workflow.definition
 	},
 	app => {
 		app.refresh();

@@ -37,7 +37,7 @@ export type AssetUpsertForm = Omit<Partial<AssetRow>, 'refImageIds'> & {
 
 // 三库 service 的公共面（EPS 已为各端点生成具名 Response，三库结构一致）
 interface AssetLibService {
-	page(data: { page: number; size: number }): Promise<{
+	page(data: { page: number; size: number } & Record<string, any>): Promise<{
 		list: unknown[];
 		pagination: { page: number; size: number; total: number };
 	}>;
@@ -91,11 +91,15 @@ export function useAssetLibrary(service: AssetLibService, options: { onChanged?:
 	const wallList = ref<AssetRow[]>([]);
 	const wallLoading = ref(false);
 	const wallPage = reactive({ page: 1, size: 24, total: 0 });
+	let lastWallParams: Record<string, any> = {};
 
-	async function refreshWall() {
+	async function refreshWall(params?: Record<string, any>) {
+		if (params && typeof params === 'object') {
+			lastWallParams = { ...params };
+		}
 		wallLoading.value = true;
 		try {
-			const res = await service.page({ page: wallPage.page, size: wallPage.size });
+			const res = await service.page({ page: wallPage.page, size: wallPage.size, ...lastWallParams });
 			wallPage.total = res.pagination.total;
 			// EPS 实体为全可选宽松形态，收敛为视图行模型（无 id 的残缺行直接丢弃）
 			wallList.value = (res.list || []).filter(
@@ -180,7 +184,10 @@ export function useAssetLibrary(service: AssetLibService, options: { onChanged?:
 
 	// ---- upsert onOpened：参考图元信息回填（info 接口 mediaItems）+ published 编辑确认（验收 13）----
 	function onUpsertOpened(data: AssetRow | undefined, form: AssetUpsertForm | undefined, close: () => void) {
-		if (form) form._mediaItems = data?.mediaItems || [];
+		if (form) {
+			form._mediaItems = data?.mediaItems || [];
+			initRefImageForm(form);
+		}
 		if (data?.status === 'published' && data.id != null) {
 			service
 				.referenceStats({ id: data.id })
@@ -248,13 +255,28 @@ export function buildSubmitPayload(data: AssetUpsertForm): AssetUpsertForm {
 	return payload;
 }
 
-/** upsert slot 取值：表单 refImageIds（onOpen 已展开为数组）→ 组件条目（回填媒体缩略图） */
+/** upsert slot 取值：表单 refImageIds（onOpen/onOpened 已展开为数组，防御未解析字符串）→ 组件条目（回填媒体缩略图） */
 export function refImageModel(form: AssetUpsertForm | undefined): RefImageEntry[] {
-	return ((form?.refImageIds as RefImageEntry[]) || []).map((e) => ({
-		id: e.id,
-		role: e.role,
-		_url: (form?._mediaItems || []).find((m) => m.id === e.id)?.url
-	}));
+	let raw = form?.refImageIds;
+	if (typeof raw === 'string') {
+		try {
+			raw = JSON.parse(raw);
+		} catch {
+			raw = [];
+		}
+	}
+	if (!Array.isArray(raw)) {
+		return [];
+	}
+	return (raw as (RefImageEntry | number)[]).map((e) => {
+		const id = typeof e === 'object' && e !== null ? e.id : e;
+		const role = typeof e === 'object' && e !== null ? e.role : undefined;
+		return {
+			id,
+			role,
+			_url: (form?._mediaItems || []).find((m) => m.id === id)?.url
+		};
+	});
 }
 
 /** upsert slot 赋值：组件条目 → 表单 refImageIds */

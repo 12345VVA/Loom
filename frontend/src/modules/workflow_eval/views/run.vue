@@ -243,7 +243,7 @@ import { statusTagType, caseStatusType, kappaLevelType, parseJudgeDetail } from 
 const { service } = useCool();
 const { t } = useI18n();
 const router = useRouter();
-const evalService = (service as any).workflow_eval;
+const evalService = service.workflow_eval;
 
 const testSetOptions = ref<any[]>([]);
 const definitionOptions = ref<any[]>([]);
@@ -251,7 +251,7 @@ const definitionOptions = ref<any[]>([]);
 	try {
 		const [ts, defs] = await Promise.all([
 			evalService.test_set.list(),
-			(service as any).workflow.definition.list()
+			service.workflow.definition.list()
 		]);
 		testSetOptions.value = ts || [];
 		definitionOptions.value = defs || [];
@@ -271,7 +271,7 @@ async function onDefinitionChange() {
 	versionOptions.value = [];
 	if (!startDialog.form.definitionId) return;
 	try {
-		const res = await (service as any).workflow.version.page({
+		const res = await service.workflow.version.page({
 			definitionId: startDialog.form.definitionId,
 			size: 50
 		});
@@ -350,7 +350,7 @@ async function computeKappa() {
 	if (!detail.runId) return;
 	kappaLoading.value = true;
 	try {
-		kappaResult.value = await (service as any).workflow_annotation.annotation.kappa({ evalRunId: detail.runId });
+		kappaResult.value = await service.workflow_annotation.annotation.kappa({ evalRunId: detail.runId });
 	} catch (e: any) {
 		ElMessage.error(e?.message || e);
 	} finally {

@@ -124,7 +124,7 @@ import { formatVersionNo } from '../utils';
 const route = useRoute();
 const { service } = useCool();
 const { t } = useI18n();
-const wfService = (service as any).workflow;
+const wfService = service.workflow;
 
 // 当前页面展示的工作流定义 id（keep-alive 缓存复用：切换不同工作流时需重载）
 let activeDefinitionId = Number(route.query.definitionId);
@@ -150,7 +150,7 @@ async function initPage(defId: number) {
 	// 取 definition 名称用于标题
 	try {
 		const def = await wfService.definition.info({ id: defId });
-		defName.value = def.name;
+		defName.value = def?.name || '';
 	} catch (e) {
 		// ignore
 		console.warn('[workflow/version] 拉取 definition.info 用于标题失败', e);

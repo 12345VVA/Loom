@@ -3,12 +3,12 @@
 		<cl-row class="toolbar-row">
 			<cl-refresh-btn />
 			<cl-filter :label="$t('状态')">
-				<cl-select :options="statusOptions" prop="status" :width="140" />
+				<cl-select :options="statusOptions" prop="status" :width="140" clearable />
 			</cl-filter>
 			<cl-filter :label="$t('任务类型')">
-				<cl-select :options="taskTypeOptions" prop="taskType" :width="140" />
+				<cl-select :options="taskTypeOptions" prop="taskType" :width="140" clearable />
 			</cl-filter>
-			<el-button type="primary" @click="openSubmit">{{ $t('提交任务') }}</el-button>
+			<cl-multi-delete-btn />
 			<cl-flex1 />
 			<stat-chips :items="statItems" />
 			<cl-search-key :placeholder="$t('搜索场景、配置、错误')" />
@@ -17,23 +17,32 @@
 		<cl-row>
 			<cl-table ref="Table">
 				<template #slot-op="{ scope }">
-					<el-button text type="primary" @click="showPayload(scope.row)">{{
-						$t('查看')
-					}}</el-button>
+					<el-button
+						v-permission="service.ai.task.permission?.info"
+						text
+						type="primary"
+						@click="showPayload(scope.row)"
+					>
+						{{ $t('查看') }}
+					</el-button>
 					<el-button
 						v-if="canCancel(scope.row)"
+						v-permission="service.ai.task.permission?.cancel"
 						text
 						type="danger"
 						@click="cancelTask(scope.row)"
-						>{{ $t('取消') }}</el-button
 					>
+						{{ $t('取消') }}
+					</el-button>
 					<el-button
 						v-if="canRetry(scope.row)"
+						v-permission="service.ai.task.permission?.retry"
 						text
 						type="warning"
 						@click="retryTask(scope.row)"
-						>{{ $t('重试') }}</el-button
 					>
+						{{ $t('重试') }}
+					</el-button>
 				</template>
 			</cl-table>
 		</cl-row>
@@ -54,7 +63,7 @@
 							viewer.row.id || '-'
 						}}</el-descriptions-item>
 						<el-descriptions-item :label="$t('状态')">{{
-							statusOptions.find(item => item.value === viewer.row.status)?.label ||
+							statusOptions.find((item) => item.value === viewer.row.status)?.label ||
 							viewer.row.status ||
 							'-'
 						}}</el-descriptions-item>
@@ -76,16 +85,17 @@
 								preview-teleported
 							/>
 							<div class="image-result__actions">
-								<el-button text type="primary" @click="copyText(item.value)">{{
-									$t('复制')
-								}}</el-button>
+								<el-button text type="primary" @click="copyText(item.value)">
+									{{ $t('复制') }}
+								</el-button>
 								<el-button
 									v-if="item.url"
 									text
 									type="primary"
 									@click="openUrl(item.url)"
-									>{{ $t('打开') }}</el-button
 								>
+									{{ $t('打开') }}
+								</el-button>
 							</div>
 						</div>
 					</div>
@@ -105,7 +115,7 @@ defineOptions({
 });
 
 import { computed, reactive } from 'vue';
-import { useCrud, useForm, useTable } from '@cool-vue/crud';
+import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
@@ -139,10 +149,9 @@ const viewer = reactive({
 	visible: false,
 	row: null as any
 });
-const Form = useForm();
 
 const statItems = computed(() =>
-	statusOptions.map(item => ({
+	statusOptions.map((item) => ({
 		label: item.label,
 		value: stats.statusCounts[item.value] || 0
 	}))
@@ -153,10 +162,11 @@ const taskImageItems = computed(() => {
 	}
 	return extractImageItems(viewer.row?.resultPayload);
 });
-const taskPreviewUrls = computed(() => taskImageItems.value.map(item => item.src));
+const taskPreviewUrls = computed(() => taskImageItems.value.map((item) => item.src));
 
 const Table = useTable({
 	columns: [
+		{ type: 'selection' },
 		{
 			label: t('类型'),
 			prop: 'taskType',
@@ -177,15 +187,16 @@ const Table = useTable({
 		{ label: t('重试'), prop: 'retryCount', minWidth: 80 },
 		{ label: t('错误信息'), prop: 'errorMessage', minWidth: 220, showOverflowTooltip: true },
 		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
-		{ type: 'op', width: 220, buttons: ['slot-op'] }
-	]
+		{ type: 'op', width: 240, fixed: 'right', buttons: ['slot-op', 'delete'] }
+	],
+	contextMenu: ['refresh', 'check', 'delete']
 });
 
 const Crud = useCrud(
 	{
 		service: service.ai.task
 	},
-	app => {
+	(app) => {
 		app.refresh();
 		loadStats();
 	}
@@ -197,150 +208,63 @@ async function loadStats() {
 	stats.recentErrors = res?.recentErrors || [];
 }
 
-function openSubmit() {
-	Form.value?.open({
-		title: t('提交 AI 任务'),
-		width: '600px',
-		form: {
-			taskType: 'chat',
-			scenario: 'default',
-			profileCode: '',
-			payload:
-				'{\n  "messages": [\n    { "role": "user", "content": "你好" }\n  ],\n  "options": { "max_tokens": 512 }\n}'
-		},
-		items: [
-			{
-				label: t('任务类型'),
-				prop: 'taskType',
-				required: true,
-				component: { name: 'cl-select', props: { options: taskTypeOptions } }
-			},
-			{ label: t('场景'), prop: 'scenario' },
-			{ label: t('调用配置编码'), prop: 'profileCode' },
-			{
-				label: t('请求 JSON'),
-				prop: 'payload',
-				component: {
-					name: 'cl-editor',
-					props: { name: 'cl-editor-codemirror', height: 300 }
-				}
-			}
-		],
-		on: {
-			async submit(data, { close, done }) {
-				try {
-					const payload = JSON.parse(data.payload || '{}');
-					await service.ai.task.submit({
-						taskType: data.taskType,
-						scenario: data.scenario || 'default',
-						profileCode: data.profileCode || undefined,
-						payload
-					});
-					ElMessage.success(t('提交成功'));
-					close();
-					Crud.value?.refresh();
-					loadStats();
-				} catch (err: any) {
-					ElMessage.error(err.message || t('提交失败'));
-					done();
-				}
-			}
-		}
-	});
-}
-
-async function cancelTask(row: any) {
-	await ElMessageBox.confirm(t('确认取消该任务？'), t('提示'), { type: 'warning' });
-	await service.ai.task.cancel({ id: row.id });
-	ElMessage.success(t('取消成功'));
-	Crud.value?.refresh();
-	loadStats();
-}
-
-async function retryTask(row: any) {
-	await service.ai.task.retry({ id: row.id });
-	ElMessage.success(t('已重新提交'));
-	Crud.value?.refresh();
-	loadStats();
-}
-
-async function showPayload(row: Eps.task) {
+function showPayload(row: any) {
 	viewer.row = row;
 	viewer.visible = true;
-	if (row?.id) {
-		try {
-			const detail = await service.ai.task.info({ id: row.id });
-			if (detail && viewer.row?.id === row.id) {
-				viewer.row = detail;
-			}
-		} catch (err) {
-			console.error('Failed to load task detail:', err);
-		}
-	}
 }
 
 function canCancel(row: any) {
-	return ['pending', 'running'].includes(row.status);
+	return row.status === 'pending' || row.status === 'running';
 }
 
 function canRetry(row: any) {
-	return ['failed', 'cancelled'].includes(row.status);
+	return row.status === 'failed' || row.status === 'cancelled';
 }
 
-function formatJson(value?: string) {
-	if (!value) {
-		return '-';
-	}
+async function cancelTask(row: any) {
+	await ElMessageBox.confirm(t('确定要取消该任务吗？'), t('提示'), { type: 'warning' });
 	try {
-		const parsed = JSON.parse(value);
-		// unknown 化递归（显式 any 会超本文件压制计数）：JSON 结构运行时形态，
-		// 收窄全靠 typeof/Array.isArray 守卫
-		const sanitize = (obj: unknown, depth = 0): unknown => {
-			if (depth > 6 || !obj) return obj;
-			if (typeof obj === 'string') {
-				if (
-					obj.length > 500 &&
-					(obj.startsWith('data:image') || /^[A-Za-z0-9+/=]{100,}$/.test(obj.slice(0, 100)))
-				) {
-					return `${obj.slice(0, 80)}... [base64 truncated: ${obj.length} chars]`;
-				}
-				return obj;
-			}
-			if (Array.isArray(obj)) {
-				return obj.map(item => sanitize(item, depth + 1));
-			}
-			if (typeof obj === 'object') {
-				const rec = obj as Record<string, unknown>;
-				const res: Record<string, unknown> = {};
-				for (const k of Object.keys(rec)) {
-					if (
-						(k === 'b64_json' || k === 'b64Json' || k === 'base64') &&
-						typeof rec[k] === 'string' &&
-						rec[k].length > 200
-					) {
-						res[k] = `${(rec[k] as string).slice(0, 60)}... [base64 truncated: ${
-							(rec[k] as string).length
-						} bytes]`;
-					} else {
-						res[k] = sanitize(rec[k], depth + 1);
-					}
-				}
-				return res;
-			}
-			return obj;
-		};
-		return JSON.stringify(sanitize(parsed), null, 2);
-	} catch {
-		return value;
+		await service.ai.task.cancel({ id: row.id });
+		ElMessage.success(t('任务已取消'));
+		Crud.value?.refresh();
+		loadStats();
+	} catch (err: any) {
+		ElMessage.error(err.message || t('取消失败'));
 	}
 }
 
-async function copyText(value: string) {
-	await navigator.clipboard.writeText(value);
+async function retryTask(row: any) {
+	await ElMessageBox.confirm(t('确定要重试该任务吗？'), t('提示'), { type: 'info' });
+	try {
+		await service.ai.task.retry({ id: row.id });
+		ElMessage.success(t('任务已重新提交'));
+		Crud.value?.refresh();
+		loadStats();
+	} catch (err: any) {
+		ElMessage.error(err.message || t('重试失败'));
+	}
+}
+
+function formatJson(val: any) {
+	if (!val) return '-';
+	if (typeof val === 'string') {
+		try {
+			return JSON.stringify(JSON.parse(val), null, 2);
+		} catch {
+			return val;
+		}
+	}
+	return JSON.stringify(val, null, 2);
+}
+
+function copyText(val: string) {
+	if (!val) return;
+	navigator.clipboard.writeText(val);
 	ElMessage.success(t('已复制'));
 }
 
 function openUrl(url: string) {
+	if (!url) return;
 	window.open(url, '_blank');
 }
 </script>
@@ -362,41 +286,46 @@ function openUrl(url: string) {
 	}
 }
 
-pre {
-	margin: 0;
-	white-space: pre-wrap;
-	word-break: break-word;
-	font-size: 12px;
+.task-meta {
+	margin-bottom: 16px;
 }
 
 .image-results {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+	display: flex;
+	flex-wrap: wrap;
 	gap: 12px;
-	margin-bottom: 12px;
-}
-
-.task-meta {
-	margin-bottom: 12px;
+	margin-bottom: 16px;
 }
 
 .image-result {
-	border: 1px solid var(--el-border-color-lighter);
-	border-radius: 6px;
-	background: var(--el-fill-color-blank);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
 
 	&__preview {
-		display: block;
-		width: 100%;
-		height: 180px;
-		background: var(--el-fill-color-lighter);
+		width: 120px;
+		height: 120px;
+		border: 1px solid var(--el-border-color-lighter);
+		border-radius: 6px;
+		background: var(--el-fill-color-light);
 	}
 
 	&__actions {
 		display: flex;
-		justify-content: flex-end;
-		gap: 8px;
-		padding: 8px;
+		gap: 4px;
 	}
+}
+
+pre {
+	margin: 0;
+	padding: 12px;
+	background-color: var(--el-fill-color-light);
+	border-radius: 4px;
+	font-family: monospace;
+	font-size: 13px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-all;
 }
 </style>

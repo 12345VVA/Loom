@@ -4,7 +4,12 @@
 			<cl-refresh-btn />
 			<cl-add-btn />
 			<cl-multi-delete-btn />
-			<el-button @click="openCatalog">{{ $t('导入预设') }}</el-button>
+			<el-button
+				v-permission="service.ai.provider.permission?.importCatalog"
+				@click="openCatalog"
+			>
+				{{ $t('导入预设') }}
+			</el-button>
 			<cl-flex1 />
 			<cl-search-key :placeholder="$t('搜索编码、名称')" />
 		</cl-row>
@@ -12,14 +17,24 @@
 		<cl-row>
 			<cl-table ref="Table">
 				<template #slot-test="{ scope }">
-					<el-button text type="primary" @click="testProvider(scope.row)">{{
-						$t('测试')
-					}}</el-button>
+					<el-button
+						v-permission="service.ai.provider.permission?.test"
+						text
+						type="primary"
+						@click="testProvider(scope.row)"
+					>
+						{{ $t('测试') }}
+					</el-button>
 				</template>
 				<template #slot-sync="{ scope }">
-					<el-button text type="primary" @click="syncModels(scope.row)">{{
-						$t('同步模型')
-					}}</el-button>
+					<el-button
+						v-permission="service.ai.provider.permission?.syncModels"
+						text
+						type="primary"
+						@click="syncModels(scope.row)"
+					>
+						{{ $t('同步模型') }}
+					</el-button>
 				</template>
 			</cl-table>
 		</cl-row>
@@ -34,9 +49,9 @@
 				<div class="extra-config-editor">
 					<div class="extra-config-editor__tools">
 						<span>{{ $t('按适配器填充常用配置') }}</span>
-						<el-button text type="primary" @click="fillExtraConfig(scope)">{{
-							$t('填充模板')
-						}}</el-button>
+						<el-button text type="primary" @click="fillExtraConfig(scope)">
+							{{ $t('填充模板') }}
+						</el-button>
 					</div>
 					<cl-editor-codemirror v-model="scope.extraConfig" :height="200" />
 				</div>
@@ -63,9 +78,9 @@
 				</el-table-column>
 				<el-table-column :label="$t('操作')" width="90" align="center">
 					<template #default="{ row }">
-						<el-button text type="primary" @click="importCatalog(row)">{{
-							$t('导入')
-						}}</el-button>
+						<el-button text type="primary" @click="importCatalog(row)">
+							{{ $t('导入') }}
+						</el-button>
 					</template>
 				</el-table-column>
 			</el-table>
@@ -80,7 +95,7 @@ defineOptions({
 
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { ElMessage } from 'element-plus';
-import { h, reactive, ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { useCool } from '/@/cool';
 import { useI18n } from 'vue-i18n';
 
@@ -103,6 +118,7 @@ const adapterOptions = [
 	{ label: 'ToAPIs', value: 'toapis' },
 	{ label: 'Poryf（再来点Token）', value: 'poryf' }
 ];
+
 const extraConfigTemplates: Record<string, string> = {
 	bailian: JSON.stringify(
 		{
@@ -137,20 +153,11 @@ const extraConfigTemplates: Record<string, string> = {
 		2
 	)
 };
+
 const catalog = reactive({
 	visible: false,
 	items: [] as any[]
 });
-
-// 分组标题组件
-function renderSection(title: string, desc?: string) {
-	return () =>
-		h('div', { class: 'form-section-header' }, [
-			h('span', { class: 'form-section-header__bar' }),
-			h('span', { class: 'form-section-header__title' }, title),
-			desc ? h('span', { class: 'form-section-header__desc' }, desc) : null
-		]);
-}
 
 // 跟踪用户是否手动修改过编码
 const isCodeManuallyEdited = ref(false);
@@ -177,19 +184,28 @@ function deriveCode(name?: string, adapter?: string): string {
 	return '';
 }
 
+// ---- Upsert 配置（标准 tabs 分组，消除虚假 prop，cool-crud-conventions.mdc） ----
 const Upsert = useUpsert({
 	dialog: { width: '800px' },
 	props: { labelWidth: '120px' },
 	items: [
-		// --- 1. 基本信息 ---
 		{
-			prop: '_sec_base',
-			span: 24,
-			component: { vm: renderSection(t('基本信息'), t('配置厂商展示名称、唯一标识与适配器通道')) }
+			type: 'tabs',
+			props: {
+				type: 'card',
+				labels: [
+					{ label: t('基本信息'), value: 'base' },
+					{ label: t('接口与鉴权'), value: 'auth' },
+					{ label: t('扩展配置'), value: 'extra' },
+					{ label: t('状态控制'), value: 'control' }
+				]
+			}
 		},
+		// --- 1. 基本信息 ---
 		{
 			label: t('名称'),
 			prop: 'name',
+			group: 'base',
 			required: true,
 			span: 12,
 			component: {
@@ -211,6 +227,7 @@ const Upsert = useUpsert({
 		{
 			label: t('编码'),
 			prop: 'code',
+			group: 'base',
 			required: false,
 			span: 12,
 			component: {
@@ -226,6 +243,7 @@ const Upsert = useUpsert({
 		{
 			label: t('适配器'),
 			prop: 'adapter',
+			group: 'base',
 			value: 'openai-compatible',
 			required: true,
 			span: 12,
@@ -251,6 +269,7 @@ const Upsert = useUpsert({
 		{
 			label: t('排序'),
 			prop: 'orderNum',
+			group: 'base',
 			value: 0,
 			span: 12,
 			component: {
@@ -261,13 +280,9 @@ const Upsert = useUpsert({
 
 		// --- 2. 接口与鉴权 ---
 		{
-			prop: '_sec_auth',
-			span: 24,
-			component: { vm: renderSection(t('接口与鉴权'), t('API 接入地址与访问授权密钥')) }
-		},
-		{
 			label: 'Base URL',
 			prop: 'baseUrl',
+			group: 'auth',
 			span: 24,
 			component: {
 				name: 'el-input',
@@ -277,6 +292,7 @@ const Upsert = useUpsert({
 		{
 			label: 'API Key',
 			prop: 'apiKey',
+			group: 'auth',
 			span: 24,
 			component: {
 				name: 'el-input',
@@ -290,6 +306,7 @@ const Upsert = useUpsert({
 		{
 			label: t('管理 Access Key'),
 			prop: 'adminAccessKey',
+			group: 'auth',
 			span: 12,
 			hidden: ({ scope }) => scope.adapter !== 'volcengine-ark',
 			component: {
@@ -304,6 +321,7 @@ const Upsert = useUpsert({
 		{
 			label: t('管理 Secret Key'),
 			prop: 'adminSecretKey',
+			group: 'auth',
 			span: 12,
 			hidden: ({ scope }) => scope.adapter !== 'volcengine-ark',
 			component: {
@@ -318,26 +336,18 @@ const Upsert = useUpsert({
 
 		// --- 3. 厂商扩展配置 ---
 		{
-			prop: '_sec_extra',
-			span: 24,
-			component: { vm: renderSection(t('厂商扩展配置'), t('高级参数 JSON，如超时时间、轮询频率等')) }
-		},
-		{
 			label: t('扩展配置'),
 			prop: 'extraConfig',
+			group: 'extra',
 			span: 24,
 			component: { name: 'slot-extraConfig' }
 		},
 
 		// --- 4. 状态控制 ---
 		{
-			prop: '_sec_control',
-			span: 24,
-			component: { vm: renderSection(t('状态控制'), t('控制厂商的整体启用与停用')) }
-		},
-		{
 			label: t('启用'),
 			prop: 'status',
+			group: 'control',
 			value: true,
 			span: 12,
 			component: { name: 'el-switch' }
@@ -361,21 +371,16 @@ const Upsert = useUpsert({
 		if (!payload.code || !String(payload.code).trim()) {
 			payload.code = deriveCode(payload.name, payload.adapter);
 		}
-		Object.keys(payload).forEach(key => {
-			if (key.startsWith('_')) {
-				delete payload[key];
-			}
-		});
 		next(payload);
 	}
 });
 
 const Table = useTable({
 	columns: [
-		{ type: 'selection' },
+		{ type: 'selection', width: 60 },
 		{ label: t('编码'), prop: 'code', minWidth: 150, hidden: true },
 		{ label: t('名称'), prop: 'name', minWidth: 150 },
-		{ label: t('适配器'), prop: 'adapter', minWidth: 150 },
+		{ label: t('适配器'), prop: 'adapter', minWidth: 150, dict: adapterOptions },
 		{ label: 'Base URL', prop: 'baseUrl', minWidth: 240, showOverflowTooltip: true, hidden: true },
 		{ label: 'API Key', prop: 'apiKeyMask', minWidth: 130 },
 		{ label: t('管理 AK'), prop: 'adminAccessKeyMask', minWidth: 130 },
@@ -384,16 +389,18 @@ const Table = useTable({
 		{
 			type: 'op',
 			width: 340,
+			fixed: 'right',
 			buttons: ['edit', 'delete', 'slot-test', 'slot-sync']
 		}
-	]
+	],
+	contextMenu: ['refresh', 'check', 'edit', 'delete']
 });
 
 const Crud = useCrud(
 	{
 		service: service.ai.provider
 	},
-	app => {
+	(app) => {
 		app.refresh();
 	}
 );
@@ -477,35 +484,5 @@ function modelTypeStats(row: any) {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
-}
-
-:deep(.form-section-header) {
-	display: flex;
-	align-items: center;
-	padding: 8px 0 6px;
-	margin: 6px 0 4px;
-	border-bottom: 1px solid var(--el-border-color-lighter);
-
-	.form-section-header__bar {
-		width: 3px;
-		height: 14px;
-		background: var(--el-color-primary);
-		border-radius: 2px;
-		margin-right: 8px;
-		flex-shrink: 0;
-	}
-
-	.form-section-header__title {
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--el-text-color-primary);
-		letter-spacing: 0.3px;
-	}
-
-	.form-section-header__desc {
-		font-size: 12px;
-		color: var(--el-text-color-placeholder);
-		margin-left: 8px;
-	}
 }
 </style>

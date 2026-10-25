@@ -4,6 +4,9 @@
 			<cl-refresh-btn />
 			<cl-add-btn />
 			<cl-multi-delete-btn />
+			<cl-filter :label="t('类型')">
+				<cl-select :options="modelTypeOptions" prop="modelType" :width="120" clearable />
+			</cl-filter>
 			<cl-flex1 />
 			<cl-search-key :placeholder="$t('搜索编码、名称、场景')" />
 		</cl-row>
@@ -13,6 +16,7 @@
 				<template #slot-default="{ scope }">
 					<el-button
 						v-if="!scope.row.isDefault"
+						v-permission="service.ai.profile.permission?.setDefault"
 						text
 						type="primary"
 						@click="setDefault(scope.row)"
@@ -22,7 +26,12 @@
 					<el-tag v-else size="small" type="success">{{ $t('默认') }}</el-tag>
 				</template>
 				<template #slot-test="{ scope }">
-					<el-button text type="primary" @click="openTest(scope.row)">
+					<el-button
+						v-permission="service.ai.profile.permission?.test"
+						text
+						type="primary"
+						@click="openTest(scope.row)"
+					>
 						{{ $t('测试') }}
 					</el-button>
 				</template>
@@ -81,13 +90,13 @@
 					<el-image
 						:src="item.src"
 						fit="contain"
-						:preview-src-list="tester.imageItems.map(i => i.src)"
+						:preview-src-list="tester.imageItems.map((i) => i.src)"
 						:initial-index="index"
 						preview-teleported
 					/>
-					<el-button text type="primary" @click="copyText(item.value)">{{
-						$t('复制')
-					}}</el-button>
+					<el-button text type="primary" @click="copyText(item.value)">
+						{{ $t('复制') }}
+					</el-button>
 				</div>
 			</div>
 			<el-input
@@ -162,7 +171,7 @@ function getModelType(scope: Record<string, unknown>): string {
 	if (scope.modelType) return String(scope.modelType);
 	if (scope.modelId) {
 		const mid = normalizeSingleId(scope.modelId);
-		const m = modelsList.value.find(item => item.id == mid);
+		const m = modelsList.value.find((item) => item.id == mid);
 		if (m) return m.modelType || '';
 	}
 	return '';
@@ -186,16 +195,6 @@ function renderLabelWithTip(label: string, tip: string) {
 		]);
 }
 
-// 分组标题组件
-function renderSection(title: string, desc?: string) {
-	return () =>
-		h('div', { class: 'form-section-header' }, [
-			h('span', { class: 'form-section-header__bar' }),
-			h('span', { class: 'form-section-header__title' }, title),
-			desc ? h('span', { class: 'form-section-header__desc' }, desc) : null
-		]);
-}
-
 // 跟踪用户是否手动修改过名称与编码
 const isCodeManuallyEdited = ref(false);
 const isNameManuallyEdited = ref(false);
@@ -213,7 +212,7 @@ function deriveProfileSlug(text: string): string {
 function handleModelChange(val: unknown) {
 	const mid = normalizeSingleId(val);
 	if (!mid) return;
-	const m = modelsList.value.find(item => item.id == mid);
+	const m = modelsList.value.find((item) => item.id == mid);
 	if (!m) return;
 
 	Upsert.value?.setForm('modelType', m.modelType || '');
@@ -255,7 +254,7 @@ function syncFromModelConfig(scope: Record<string, unknown>) {
 		ElMessage.warning(t('请先选择模型'));
 		return;
 	}
-	const m = modelsList.value.find(item => item.id == mid);
+	const m = modelsList.value.find((item) => item.id == mid);
 	if (!m) {
 		ElMessage.warning(t('未找到所选模型信息'));
 		return;
@@ -287,7 +286,7 @@ function clearCustomConfig(scope: Record<string, unknown>) {
 
 function handleScenarioInput(scenVal: string) {
 	const currentMid = normalizeSingleId(Upsert.value?.getForm('modelId'));
-	const m = currentMid ? modelsList.value.find(item => item.id == currentMid) : null;
+	const m = currentMid ? modelsList.value.find((item) => item.id == currentMid) : null;
 	const scen = String(scenVal || 'default').trim();
 
 	if (!isNameManuallyEdited.value && m) {
@@ -315,19 +314,29 @@ function handleNameInput(nameVal: string) {
 	}
 }
 
+// ---- Upsert 配置（标准 tabs 分组，消除虚假 prop，cool-crud-conventions.mdc） ----
 const Upsert = useUpsert({
 	dialog: { width: '840px' },
 	props: { labelWidth: '120px' },
 	items: [
-		// --- 1. 基本信息 ---
 		{
-			prop: '_sec_base',
-			span: 24,
-			component: { vm: renderSection(t('基本信息'), t('配置关联模型、业务场景、调用编码与展示名称')) }
+			type: 'tabs',
+			props: {
+				type: 'card',
+				labels: [
+					{ label: t('基本信息'), value: 'base' },
+					{ label: t('推理参数'), value: 'params' },
+					{ label: t('私有参数'), value: 'custom' },
+					{ label: t('调度容灾'), value: 'schedule' },
+					{ label: t('状态控制'), value: 'control' }
+				]
+			}
 		},
+		// --- 1. 基本信息 ---
 		{
 			label: t('模型'),
 			prop: 'modelId',
+			group: 'base',
 			required: true,
 			span: 12,
 			component: {
@@ -350,6 +359,7 @@ const Upsert = useUpsert({
 		{
 			label: t('场景'),
 			prop: 'scenario',
+			group: 'base',
 			value: 'default',
 			required: true,
 			span: 12,
@@ -366,6 +376,7 @@ const Upsert = useUpsert({
 		{
 			label: t('名称'),
 			prop: 'name',
+			group: 'base',
 			required: true,
 			span: 12,
 			component: {
@@ -381,6 +392,7 @@ const Upsert = useUpsert({
 		{
 			label: t('编码'),
 			prop: 'code',
+			group: 'base',
 			required: false,
 			span: 12,
 			component: {
@@ -396,15 +408,10 @@ const Upsert = useUpsert({
 
 		// --- 2. 模型推理参数 ---
 		{
-			prop: '_sec_params',
-			span: 24,
-			hidden: ({ scope }) => !isChatModel(scope),
-			component: { vm: renderSection(t('模型推理参数'), t('控制输出随机性、长度限制、响应格式与函数工具')) }
-		},
-		{
 			label: t('采样温度'),
 			renderLabel: renderLabelWithTip(t('采样温度'), t('控制输出随机性，范围 0-2，精确任务建议调低')),
 			prop: 'temperature',
+			group: 'params',
 			span: 8,
 			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
@@ -426,6 +433,7 @@ const Upsert = useUpsert({
 				t('仅保留累计概率前 P 的词元，值越小输出越确定')
 			),
 			prop: 'topP',
+			group: 'params',
 			span: 8,
 			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
@@ -444,6 +452,7 @@ const Upsert = useUpsert({
 			label: t('单次最大 Token'),
 			renderLabel: renderLabelWithTip(t('单次最大 Token'), t('限制单次回复生成的最大 Token 数')),
 			prop: 'maxTokens',
+			group: 'params',
 			span: 8,
 			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
@@ -459,6 +468,7 @@ const Upsert = useUpsert({
 		{
 			label: t('响应格式'),
 			prop: 'responseFormat',
+			group: 'params',
 			span: 24,
 			hidden: ({ scope }) => !isChatModel(scope),
 			component: {
@@ -473,6 +483,7 @@ const Upsert = useUpsert({
 				t('JSON 数组，声明模型可调用的工具（Function Calling）')
 			),
 			prop: 'toolsConfig',
+			group: 'params',
 			span: 24,
 			hidden: ({ scope }) => !isChatModel(scope),
 			component: { name: 'cl-editor', props: { name: 'cl-editor-codemirror', height: 180 } }
@@ -480,32 +491,19 @@ const Upsert = useUpsert({
 
 		// --- 3. 模型私有参数 ---
 		{
-			prop: '_sec_custom_config',
-			span: 24,
-			component: {
-				vm: renderSection(
-					t('模型私有参数'),
-					t('用于覆盖模型的默认私有参数（如生图尺寸、质量、步数或专用推理参数，价格参数除外）')
-				)
-			}
-		},
-		{
 			label: t('私有参数配置'),
 			prop: 'customConfig',
+			group: 'custom',
 			span: 24,
 			component: { name: 'slot-customConfig' }
 		},
 
-		// --- 3. 运行调度与容灾 ---
-		{
-			prop: '_sec_schedule',
-			span: 24,
-			component: { vm: renderSection(t('运行调度与容灾'), t('超时控制、异常重试与故障转移降级')) }
-		},
+		// --- 4. 运行调度与容灾 ---
 		{
 			label: t('超时时间 (秒)'),
 			renderLabel: renderLabelWithTip(t('超时时间 (秒)'), t('单次调用允许的最长等待时间')),
 			prop: 'timeout',
+			group: 'schedule',
 			span: 12,
 			component: {
 				name: 'el-input-number',
@@ -521,6 +519,7 @@ const Upsert = useUpsert({
 			label: t('重试次数'),
 			renderLabel: renderLabelWithTip(t('重试次数'), t('调用失败后自动重试的次数上限')),
 			prop: 'retryCount',
+			group: 'schedule',
 			value: 0,
 			span: 12,
 			component: {
@@ -532,6 +531,7 @@ const Upsert = useUpsert({
 			label: t('重试间隔 (秒)'),
 			renderLabel: renderLabelWithTip(t('重试间隔 (秒)'), t('两次重试之间的等待时间')),
 			prop: 'retryDelaySeconds',
+			group: 'schedule',
 			value: 0,
 			span: 12,
 			component: {
@@ -543,6 +543,7 @@ const Upsert = useUpsert({
 			label: t('兜底配置ID'),
 			renderLabel: renderLabelWithTip(t('兜底配置ID'), t('主模型调用失败时用于降级容灾的备用 Profile ID')),
 			prop: 'fallbackProfileId',
+			group: 'schedule',
 			span: 12,
 			component: {
 				name: 'el-input-number',
@@ -555,15 +556,11 @@ const Upsert = useUpsert({
 			}
 		},
 
-		// --- 4. 状态与控制 ---
-		{
-			prop: '_sec_control',
-			span: 24,
-			component: { vm: renderSection(t('状态与控制'), t('排序权重、默认命中与启用状态')) }
-		},
+		// --- 5. 状态与控制 ---
 		{
 			label: t('排序'),
 			prop: 'orderNum',
+			group: 'control',
 			value: 0,
 			span: 8,
 			component: {
@@ -574,6 +571,7 @@ const Upsert = useUpsert({
 		{
 			label: t('默认'),
 			prop: 'isDefault',
+			group: 'control',
 			value: false,
 			span: 8,
 			component: { name: 'el-switch' }
@@ -581,6 +579,7 @@ const Upsert = useUpsert({
 		{
 			label: t('启用'),
 			prop: 'status',
+			group: 'control',
 			value: true,
 			span: 8,
 			component: { name: 'el-switch' }
@@ -594,7 +593,7 @@ const Upsert = useUpsert({
 
 		if (data && data.modelId && !data.modelType) {
 			const mid = normalizeSingleId(data.modelId);
-			const m = modelsList.value.find(item => item.id == mid);
+			const m = modelsList.value.find((item) => item.id == mid);
 			if (m) data.modelType = m.modelType;
 		}
 
@@ -606,7 +605,7 @@ const Upsert = useUpsert({
 			}
 		} else if (!data?.id && data?.modelId) {
 			const mid = normalizeSingleId(data.modelId);
-			const m = modelsList.value.find(item => item.id == mid);
+			const m = modelsList.value.find((item) => item.id == mid);
 			if (m?.defaultConfig) {
 				try {
 					data.customConfig = JSON.stringify(JSON.parse(m.defaultConfig), null, 2);
@@ -620,16 +619,11 @@ const Upsert = useUpsert({
 		const payload = { ...data };
 		if (!payload.code || !String(payload.code).trim()) {
 			const currentMid = normalizeSingleId(payload.modelId);
-			const m = currentMid ? modelsList.value.find(item => item.id == currentMid) : null;
+			const m = currentMid ? modelsList.value.find((item) => item.id == currentMid) : null;
 			const base = (m?.code || deriveProfileSlug(payload.name || '') || 'profile').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
 			const scen = String(payload.scenario || 'default').toLowerCase().replace(/[^a-z0-9-_]/g, '-');
 			payload.code = `${base}-${scen}`.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
 		}
-		Object.keys(payload).forEach(key => {
-			if (key.startsWith('_')) {
-				delete payload[key];
-			}
-		});
 		// 非对话模型时，清理对话专用参数（置 null 触发后端显式清空更新）
 		const type = getModelType(payload);
 		if (type && type !== 'chat' && type !== 'llm') {
@@ -666,7 +660,7 @@ const Upsert = useUpsert({
 
 const Table = useTable({
 	columns: [
-		{ type: 'selection' },
+		{ type: 'selection', width: 60 },
 		{ label: t('编码'), prop: 'code', minWidth: 160, hidden: true },
 		{ label: t('名称'), prop: 'name', minWidth: 150 },
 		{ label: t('场景'), prop: 'scenario', minWidth: 130 },
@@ -694,16 +688,18 @@ const Table = useTable({
 		{
 			type: 'op',
 			width: 280,
+			fixed: 'right',
 			buttons: ['edit', 'delete', 'slot-default', 'slot-test']
 		}
-	]
+	],
+	contextMenu: ['refresh', 'check', 'edit', 'delete']
 });
 
 const Crud = useCrud(
 	{
 		service: service.ai.profile
 	},
-	app => {
+	(app) => {
 		app.refresh();
 	}
 );
@@ -740,87 +736,14 @@ function normalizeSingleId(value: unknown) {
 	return Array.isArray(value) ? value[0] : value;
 }
 
-async function copyText(value: string) {
-	await navigator.clipboard.writeText(value);
+function copyText(val: string) {
+	if (!val) return;
+	navigator.clipboard.writeText(val);
 	ElMessage.success(t('已复制'));
 }
 </script>
 
 <style lang="scss" scoped>
-.result {
-	margin-top: 16px;
-}
-
-.mb-12 {
-	margin-bottom: 12px;
-}
-
-.test-images {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-	gap: 10px;
-	margin-top: 14px;
-}
-
-.test-image {
-	border: 1px solid var(--el-border-color-lighter);
-	border-radius: 6px;
-	overflow: hidden;
-
-	.el-image {
-		display: block;
-		width: 100%;
-		height: 160px;
-		background: var(--el-fill-color-light);
-	}
-}
-
-.label-with-tip {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-
-	.label-tip-icon {
-		color: var(--el-text-color-placeholder);
-		cursor: help;
-		transition: color 0.3s;
-
-		&:hover {
-			color: var(--el-color-primary);
-		}
-	}
-}
-
-:deep(.form-section-header) {
-	display: flex;
-	align-items: center;
-	padding: 8px 0 6px;
-	margin: 6px 0 4px;
-	border-bottom: 1px solid var(--el-border-color-lighter);
-
-	.form-section-header__bar {
-		width: 3px;
-		height: 14px;
-		background: var(--el-color-primary);
-		border-radius: 2px;
-		margin-right: 8px;
-		flex-shrink: 0;
-	}
-
-	.form-section-header__title {
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--el-text-color-primary);
-		letter-spacing: 0.3px;
-	}
-
-	.form-section-header__desc {
-		font-size: 12px;
-		color: var(--el-text-color-placeholder);
-		margin-left: 8px;
-	}
-}
-
 .custom-config-editor {
 	width: 100%;
 
@@ -835,7 +758,7 @@ async function copyText(value: string) {
 
 	&__hint {
 		font-size: 12px;
-		color: var(--el-text-color-placeholder);
+		color: var(--el-text-color-secondary);
 	}
 
 	&__actions {
@@ -843,5 +766,39 @@ async function copyText(value: string) {
 		align-items: center;
 		gap: 8px;
 	}
+}
+
+.label-with-tip {
+	display: inline-flex;
+	align-items: center;
+}
+
+.label-tip-icon {
+	color: var(--el-text-color-secondary);
+	margin-left: 4px;
+	cursor: pointer;
+}
+
+.test-images {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin-top: 16px;
+}
+
+.test-image {
+	width: 120px;
+	text-align: center;
+
+	.el-image {
+		width: 120px;
+		height: 120px;
+		border-radius: 4px;
+		border: 1px solid var(--el-border-color-lighter);
+	}
+}
+
+.result {
+	margin-top: 16px;
 }
 </style>

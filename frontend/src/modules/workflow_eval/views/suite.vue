@@ -40,12 +40,12 @@ import { useI18n } from 'vue-i18n';
 
 const { service } = useCool();
 const { t } = useI18n();
-const evalService = (service as any).workflow_eval;
+const evalService = service.workflow_eval;
 
 const definitionOptions = ref<{ label: string; value: number }[]>([]);
 (async () => {
 	try {
-		const res = await (service as any).workflow.definition.list();
+		const res = await service.workflow.definition.list();
 		definitionOptions.value = (res || []).map((d: any) => ({
 			label: d.name || `#${d.id}`,
 			value: d.id

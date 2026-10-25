@@ -66,9 +66,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 const { service } = useCool();
 const { t } = useI18n();
 
-// eps.d.ts 在 dev server 启动时由后端 EPS 自动生成；新增的 base/session 控制器类型
-// 尚未写入快照，这里用 as any 绕过类型检查，运行时由 EPS 正常注入 service.base.session。
-const sessionService = (service.base as any).session;
+const sessionService = service.base.session;
 
 const list = ref<any[]>([]);
 const loading = ref(false);
@@ -116,7 +114,7 @@ async function refresh() {
 	loading.value = true;
 	try {
 		const res = await sessionService.list();
-		list.value = res?.list || [];
+		list.value = Array.isArray(res) ? res : (res as any)?.list || [];
 	} catch {
 		list.value = [];
 	} finally {

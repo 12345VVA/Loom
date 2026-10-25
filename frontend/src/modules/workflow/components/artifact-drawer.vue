@@ -336,13 +336,13 @@ async function fetchArtifacts(instanceId: number) {
 	items.value = [];
 	try {
 		await ensureDownloadToken();
-		const res = await (service as any).workflow.artifact.page({
+		const res = await service.workflow.artifact.page({
 			instanceId,
 			page: 1,
 			size: 500
 		});
 		// 核心关键修复：CoolAdmin 标准分页接口返回的是 res.list，并兼容部分环境下的 res.items
-		items.value = res?.list || res?.items || [];
+		items.value = (res?.list || (res as any)?.items || []) as any[];
 		// 记录总数（WFU 低级）：超过单页 500 上限时统计栏提示「仅显示前 N 条」
 		totalCount.value = res?.pagination?.total ?? items.value.length;
 	} catch (err: any) {

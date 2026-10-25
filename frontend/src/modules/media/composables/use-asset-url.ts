@@ -33,7 +33,7 @@ export function useAssetUrl() {
 
 		globalTokenPromise = (async () => {
 			try {
-				const mediaService = (service as any)?.media?.asset;
+				const mediaService = service.media.asset;
 				if (!mediaService?.downloadToken) return globalDownloadToken.value;
 
 				const res = await mediaService.downloadToken();

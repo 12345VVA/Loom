@@ -31,7 +31,8 @@ const categoryDict = computed(() => (props.dictType ? dict.get(props.dictType).v
 
 function categoryLabel(row: AssetRow) {
 	if (!row.category) return '';
-	return categoryDict.value.find((o) => o.value === row.category)?.name || '';
+	const item = categoryDict.value.find((o) => o.value === row.category);
+	return item?.label ?? item?.name ?? '';
 }
 
 function isMine(row: AssetRow) {

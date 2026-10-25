@@ -58,7 +58,7 @@ const Table = useTable({
 	]
 });
 
-const Crud = useCrud({ service: (service as any).workflow_annotation.annotation }, app => app.refresh());
+const Crud = useCrud({ service: service.workflow_annotation.annotation }, app => app.refresh());
 </script>
 
 <style lang="scss" scoped></style>
