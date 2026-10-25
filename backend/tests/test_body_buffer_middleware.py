@@ -127,6 +127,7 @@ class BodyBufferSseTests(unittest.TestCase):
         recv.disconnect()
         body = _response_body(sent)
         self.assertIn(b"data: first", body)
+
         self.assertIn(b"data: second", body)
 
 
