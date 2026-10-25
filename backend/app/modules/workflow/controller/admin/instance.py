@@ -259,6 +259,12 @@ class WorkflowInstanceController(BaseController):
                         break
             except asyncio.CancelledError:
                 logger.info("工作流实例 %d 的 SSE 监控长连接已被客户端关闭", instance_id)
+            except Exception as exc:  # noqa: BLE001 —— 订阅层/生成器自身异常：显式错误帧后干净收流
+                logger.exception("工作流实例 %d SSE 流异常", instance_id)
+                # 帧类型编码进 data.type（前端 parseSse 丢弃 event: 行）；yield 后自然
+                # return——流正常 EOF，前端走既有指数退避重连 + info/logs 轮询对齐状态
+                frame = json.dumps({"type": "stream_error", "message": str(exc)[:300]}, ensure_ascii=False)
+                yield "event: stream_error" + chr(10) + "data: " + frame + chr(10) + chr(10)
 
         # 反代理防缓冲三件套与 AI 侧 model.py 对齐：Nginx 默认 proxy_buffering on，
         # 缺 X-Accel-Buffering: no 时节点状态事件会攒到缓冲满才刷出（prod compose 拓扑必现）

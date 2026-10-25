@@ -140,7 +140,7 @@ export function useWorkflowTest(
 		testDialog.loading = true;
 		try {
 			// 试运行走 /trial（跑草稿版）；正式运行入口 instance.vue 仍用 .start（跑已发布版）
-			const res = await (service as any).workflow.instance.trial({
+			const res = await service.workflow.instance.trial({
 				definitionId: Number(workflowId.value),
 				inputs
 			});
@@ -241,6 +241,13 @@ export function useWorkflowTest(
 			}
 			return;
 		}
+		if (type === 'stream_error') {
+			// 服务端订阅层/流自身异常（generator 已干净收流）：提示后走既有指数退避重连，
+			// 断流期间错过的终态帧由 startStream 首帧的 info/logs 对齐兜底
+			ElMessage.warning(t('实时连接异常，正在重连...'));
+			scheduleReconnect();
+			return;
+		}
 
 		// ── 回落现有 data.status 分支 ──
 		const status = data?.status;
@@ -316,10 +323,10 @@ export function useWorkflowTest(
 			testLogDrawer.loading = true;
 		}
 		try {
-			const infoPromise = (service as any).workflow.instance.info({
+			const infoPromise = service.workflow.instance.info({
 				id: testLogDrawer.instanceId
 			});
-			const logsPromise = (service as any).workflow.instance
+			const logsPromise = service.workflow.instance
 				.logs({ instanceId: testLogDrawer.instanceId })
 				.catch((err: any) => {
 					console.warn('Fetch logs failed', err);
