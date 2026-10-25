@@ -23,6 +23,9 @@ from app.core.config import settings
 # agent 模块既有 logger 均为 agent.* 前缀（agent.run_service / agent.graph ...），
 # app.* 前缀是 framework 异常通道（app.exceptions）的约定
 logger = logging.getLogger("agent.timing")
+# 显式 INFO：耗时恒定打点（每 run 4+N 条）不受全局 LOG_LEVEL=WARNING 影响——
+# 慢问题排查依赖常态可见；DEBUG 细粒度段仍受全局级别控制（生产静默）
+logger.setLevel(logging.INFO)
 
 _SLOW_THRESHOLD_BY_KIND = {
     "model": "AGENT_TIMING_SLOW_MODEL_MS",
@@ -63,6 +66,7 @@ def timed(
         logger.error(
             message or f"{phase} 异常终止",
             extra={"phase": phase, "duration_ms": int((time.perf_counter() - started) * 1000), **bag},
+            exc_info=exc,  # 完整堆栈进日志（规范化渲染），否则异常段只剩 KeyError/AttributeError 名
         )
         raise
     duration_ms = int((time.perf_counter() - started) * 1000)
