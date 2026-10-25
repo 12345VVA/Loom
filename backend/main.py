@@ -92,11 +92,22 @@ async def lifespan(app: FastAPI):
             flush=True,
         )
         sys.exit(1)
-    with Session(engine) as session:
-        bootstrap_modules(session)
-        from app.modules.workflow.service.workflow_service import recover_orphaned_instances
+    try:
+        with Session(engine) as session:
+            bootstrap_modules(session)
+            from app.modules.workflow.service.workflow_service import recover_orphaned_instances
 
-        recover_orphaned_instances(session)
+            recover_orphaned_instances(session)
+    except DBOperationalError:
+        raise  # 数据库连接失败已由上方分支给出简洁提示
+    except Exception as exc:
+        # 模块引导失败（alembic 未升级、注册表缺失、菜单对账异常等）：控制台给
+        # 一句话原因，完整堆栈交由日志规范化记录，避免原始脏堆栈直接糊屏
+        import logging as _logging
+
+        _logging.getLogger("app.exceptions").critical("启动失败: 模块引导异常", exc_info=exc)
+        print(f"\n[启动失败] 模块引导异常：{exc}\n完整堆栈见 logs/error.log\n", file=sys.stderr, flush=True)
+        sys.exit(1)
     print(f"{settings.APP_NAME} v{settings.APP_VERSION} 启动中...")
     yield
     # 关闭时执行：释放 checkpointer 持有的底层 DB 连接（sqlite3 / psycopg 单例）
@@ -275,6 +286,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=settings.cors_methods_list,
     allow_headers=settings.cors_headers_list,
+    expose_headers=settings.cors_expose_headers_list,
 )
 
 

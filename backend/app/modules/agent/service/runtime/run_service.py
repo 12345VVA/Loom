@@ -429,17 +429,21 @@ class AgentRunService:
         worker.start()
 
         def generator():
-            yield sse_frame("run_started", {"traceToken": trace_token, "sessionId": session_row.id})
-            while True:
-                try:
-                    event = handle.event_queue.get(timeout=HEARTBEAT_INTERVAL_SECONDS)
-                except queue_mod.Empty:
-                    yield HEARTBEAT_FRAME  # 心跳保活（长时模型调用，R2）
-                    continue
-                if event is None:
-                    break
-                yield sse_frame(event.type, event.payload)
-            _unregister_handle(handle)
+            try:
+                yield sse_frame("run_started", {"traceToken": trace_token, "sessionId": session_row.id})
+                while True:
+                    try:
+                        event = handle.event_queue.get(timeout=HEARTBEAT_INTERVAL_SECONDS)
+                    except queue_mod.Empty:
+                        yield HEARTBEAT_FRAME  # 心跳保活（长时模型调用，R2）
+                        continue
+                    if event is None:
+                        break
+                    yield sse_frame(event.type, event.payload)
+            finally:
+                # 客户端断开（GeneratorExit）/流异常中断也必须注销，否则 handle
+                # 泄漏——stop_run 的注册表将长期残留已死连接的令牌
+                _unregister_handle(handle)
 
         return StreamingResponse(generator(), media_type="text/event-stream")
 

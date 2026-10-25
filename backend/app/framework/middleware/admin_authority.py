@@ -11,6 +11,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.core.database import engine
+from app.framework.api.error_codes import status_to_error_code
+from app.framework.api.response import error
 from app.framework.router.grouping import get_group_config
 from app.framework.router.route_meta import get_route_tags, get_scope_tag, resolve_request_route
 from app.framework.runtime import registry
@@ -37,7 +39,12 @@ class AdminAuthorityMiddleware(BaseHTTPMiddleware):
             with Session(engine) as session:
                 registry.resolve("authorize_request")(session, request, effective_scope, route_tags, scope_whitelist)
         except HTTPException as exc:
-            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            # 鉴权拒绝走统一 error envelope（本中间件位于 ResponseEnvelope 外侧，
+            # 返回的响应不会再被包装，必须自行保证契约形态）
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=error(str(exc.detail), code=status_to_error_code(exc.status_code)),
+            )
 
         return await call_next(request)
 

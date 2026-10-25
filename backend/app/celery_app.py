@@ -6,11 +6,22 @@ import logging
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import setup_logging, task_failure
+from celery.signals import (
+    before_task_publish,
+    setup_logging,
+    task_failure,
+    task_postrun,
+    task_prerun,
+    task_retry,
+)
 from kombu import Queue
 
 from app.core.config import settings
-from app.core.logging import configure_logging
+from app.core.logging import (
+    configure_logging,
+    request_id_ctx,
+    workflow_instance_id_ctx,
+)
 from app.modules.ai.constants import AI_TASK_QUEUES
 
 logger = logging.getLogger("app.exceptions")
@@ -38,6 +49,66 @@ def _log_task_failure(sender=None, task_id=None, exc=None, **kwargs):
         task_id,
         exc_info=exc,
     )
+
+
+@task_retry.connect
+def _log_task_retry(sender=None, task_id=None, reason=None, **kwargs):
+    """任务重试记录：重试是失败的前奏，无栈也要留痕（原因含在 reason 里）。"""
+    logger.warning(
+        "Celery 任务重试: %s[%s] reason=%s",
+        getattr(sender, "name", "?"),
+        task_id,
+        reason,
+    )
+
+
+# --- 日志上下文跨进程串联：HTTP 请求派发的任务在 worker 侧继承 request_id ---
+
+_TASK_CONTEXT_HEADER = "loom_log_context"
+# task.request.id → (contextvar, token) 列表；prerun/postrun 在同一 worker 线程顺序执行
+_TASK_CONTEXT_TOKENS: dict[str, list] = {}
+
+
+@before_task_publish.connect
+def _inject_log_context(headers=None, **kwargs):
+    """派发侧：把当前请求/工作流日志上下文随消息头带出。"""
+    if headers is None:
+        return
+    context: dict = {}
+    if request_id_ctx.get():
+        context["request_id"] = request_id_ctx.get()
+    if workflow_instance_id_ctx.get() is not None:
+        context["workflow_instance_id"] = workflow_instance_id_ctx.get()
+    if context:
+        headers[_TASK_CONTEXT_HEADER] = context
+
+
+@task_prerun.connect
+def _restore_log_context(task=None, **kwargs):
+    """worker 侧：任务开始前恢复派发时携带的日志上下文。"""
+    request = getattr(task, "request", None) if task is not None else None
+    context = (getattr(request, "headers", None) or {}).get(_TASK_CONTEXT_HEADER)
+    if not context:
+        return
+    tokens: list = []
+    if context.get("request_id"):
+        tokens.append((request_id_ctx, request_id_ctx.set(context["request_id"])))
+    if context.get("workflow_instance_id") is not None:
+        tokens.append((workflow_instance_id_ctx, workflow_instance_id_ctx.set(context["workflow_instance_id"])))
+    run_id = getattr(request, "id", None)
+    if tokens and run_id:
+        _TASK_CONTEXT_TOKENS[run_id] = tokens
+
+
+@task_postrun.connect
+def _clear_log_context(task=None, **kwargs):
+    """worker 侧：任务结束后清理 contextvar（worker 进程复用，避免串扰下一个任务）。"""
+    request = getattr(task, "request", None) if task is not None else None
+    run_id = getattr(request, "id", None)
+    tokens = _TASK_CONTEXT_TOKENS.pop(run_id, None) if run_id else None
+    if tokens:
+        for var, token in reversed(tokens):
+            var.reset(token)
 
 
 celery_app = Celery(

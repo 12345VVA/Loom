@@ -301,7 +301,7 @@ async def execute_intent_classifier_node(variables: dict[str, Any], config: dict
         # 这里仅使用 user_prompt 即可
         matched_intent_name = (await asyncio.to_thread(run_ai_chat, profile_code, prompt)).strip()
     except Exception as e:
-        logger.error(f"意图分类大模型调用失败: {e}")
+        logger.error(f"意图分类大模型调用失败: {e}", exc_info=True)
         matched_intent_name = "其他"
 
     # 3. 匹配目标跳转路由
@@ -406,7 +406,7 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
                 results.append(iter_output)
                 logger.info("[Loop] Iteration %d/%d complete: item=%s", idx + 1, len(items), str(item)[:80])
             except Exception as e:
-                logger.error("[Loop] Iteration %d/%d failed: %s", idx + 1, len(items), e)
+                logger.error("[Loop] Iteration %d/%d failed: %s", idx + 1, len(items), e, exc_info=True)
                 results.append({"error": str(e), "item_index": idx})
                 if stop_on_error:
                     break
@@ -499,7 +499,7 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
     results = []
     for idx, r in enumerate(raw_results):
         if isinstance(r, Exception):
-            logger.error("[Batch] Iteration %d failed: %s", idx, r)
+            logger.error("[Batch] Iteration %d failed: %s", idx, r, exc_info=r)
             results.append({"error": str(r), "item_index": idx})
         else:
             results.append(r)
@@ -587,7 +587,7 @@ async def execute_image_generator_node(variables: dict[str, Any], config: dict[s
         image_val = await asyncio.to_thread(resolve_image_input_value, image_val)
         ai_result = await asyncio.to_thread(run_ai_image, profile_code, prompt, size, image_val, custom_options)
     except Exception as e:
-        logger.error(f"工作流生图 API 呼叫失败: {e}")
+        logger.error(f"工作流生图 API 呼叫失败: {e}", exc_info=True)
         # 带上原始异常摘要（此前整体抹为固定文案，厂商限流/鉴权/参数错误无法区分）
         raise ValueError(f"工作流生图失败: {friendly_error_message(e)}") from e
 
@@ -785,7 +785,7 @@ async def execute_tool_executor_node(variables: dict[str, Any], config: dict[str
     except Exception as e:
         # WF-P0-2：执行异常原样冒泡（原实现吞成字符串返回，节点假 success），
         # 交由节点级重试/失败链路处理
-        logger.error("工具执行器 '%s' 执行失败: %s", tool_code, e)
+        logger.error("工具执行器 '%s' 执行失败: %s", tool_code, e, exc_info=True)
         raise
 
     return {output_variable: res}
@@ -859,7 +859,7 @@ async def execute_variable_assignment_node(variables: dict[str, Any], config: di
                 # 默认以节点失败收尾；节点 config onExpressionError="fallback"
                 # 显式选择保留旧行为（赋 None 继续）
                 if str(config.get("on_expression_error", "fail")).lower() != "fallback":
-                    logger.error("变量赋值表达式 '%s' 执行失败（fail-fast）: %s", val, e)
+                    logger.error("变量赋值表达式 '%s' 执行失败（fail-fast）: %s", val, e, exc_info=True)
                     raise
                 logger.warning(f"变量赋值表达式 '{val}' 执行失败，已按 fallback 赋 None: {e}")
                 updates[var_name] = None
@@ -941,7 +941,7 @@ async def execute_variable_transform_node(variables: dict[str, Any], config: dic
     except Exception as e:
         # X-1（三期B6）：转换整体异常曾静默落 result=None 流入下游（下游拿 None
         # 继续运算，失败被推迟且难以归因）——改为以节点失败收尾
-        logger.error("变量转换节点执行失败: %s", e)
+        logger.error("变量转换节点执行失败: %s", e, exc_info=True)
         raise
 
     if not output_var:

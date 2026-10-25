@@ -77,7 +77,7 @@ class TaskInvoker:
                             # 同时也注册类名全称作为备选
                             cls._service_map[f"{module_name}.{name}"] = obj
                 except Exception as e:
-                    print(f"Failed to load service {module_path}: {e}")
+                    logger.warning("加载服务模块失败: %s (%s: %s)", module_path, type(e).__name__, e)
 
         # 扫描完成后填充白名单（配置驱动优先，否则登记所有已扫描公开方法）
         cls._refresh_allowed_services()

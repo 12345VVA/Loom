@@ -308,6 +308,12 @@ class Settings(BaseSettings):
         )
 
     @property
+    def cors_expose_headers_list(self) -> list[str]:
+        # 浏览器 JS 只能读到 expose 声明的响应头——X-Request-Id 暴露后前端报障
+        # 可从 Network 面板取追踪号与 error.log 对账
+        return ["X-Request-Id"]
+
+    @property
     def eps_enabled(self) -> bool:
         raw = self.EPS_ENABLED
         if raw == "":

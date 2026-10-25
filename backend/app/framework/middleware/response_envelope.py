@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
+from app.framework.api.error_codes import status_to_error_code
 from app.framework.api.response import is_enveloped, ok
 
 SKIP_PREFIXES = ("/docs", "/redoc", "/openapi.json")
@@ -54,7 +55,20 @@ class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
                     media_type=response.media_type,
                 )
 
-        if is_enveloped(payload):
+        # 错误响应契约兜底：4xx/5xx 必须是 error envelope（code≠1000）。历史上
+        # starlette Router 的裸 {"detail": ...}（未被 handler 接管的 404/405 等）
+        # 会被 ok() 误包成 code=1000 success——在这里统一转为 error envelope。
+        if response.status_code >= 400:
+            if is_enveloped(payload) and payload.get("code") != 1000:
+                content = payload
+            else:
+                detail = payload.get("detail") if isinstance(payload, dict) else payload
+                content = {
+                    "code": status_to_error_code(response.status_code),
+                    "message": str(detail) if detail is not None else f"请求失败（HTTP {response.status_code}）",
+                    "data": None,
+                }
+        elif is_enveloped(payload):
             content = payload
         else:
             content = ok(_normalize_payload(payload))
