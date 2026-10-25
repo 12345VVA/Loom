@@ -2,14 +2,18 @@
 Celery 应用配置
 """
 
+import logging
+
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import setup_logging
+from celery.signals import setup_logging, task_failure
 from kombu import Queue
 
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.modules.ai.constants import AI_TASK_QUEUES
+
+logger = logging.getLogger("app.exceptions")
 
 
 @setup_logging.connect
@@ -19,6 +23,20 @@ def setup_celery_logging(**kwargs):
         log_dir=settings.LOG_DIR,
         retention_days=settings.LOG_RETENTION_DAYS,
         file_prefix="celery",
+    )
+
+
+@task_failure.connect
+def _log_task_failure(sender=None, task_id=None, exc=None, **kwargs):
+    """任务失败规范化记录：celery 自带日志格式不统一，统一走应用日志出口。
+
+    exc_info 传异常实例，由 ConsoleFormatter 完成框架帧过滤与异常组展开。
+    """
+    logger.error(
+        "Celery 任务失败: %s[%s]",
+        getattr(sender, "name", "?"),
+        task_id,
+        exc_info=exc,
     )
 
 

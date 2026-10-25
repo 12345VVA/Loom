@@ -59,6 +59,7 @@ def test_format_filtered_traceback_filters_flagged_frames():
     assert "Traceback" in rendered
     assert "RuntimeError: boom" in rendered
     assert "File " not in rendered  # 测试文件的所有帧均被过滤
+    assert "已过滤" in rendered  # 尾部提示保留被滤帧数量与来源包
 
 
 def test_console_formatter_includes_context_and_message():
@@ -101,3 +102,49 @@ def test_json_formatter_remains_valid_json():
     data = json.loads(rendered)
     assert data["message"] == "hello"
     assert data["level"] == "ERROR"
+
+
+def test_unpack_exception_takes_first_leaf():
+    """unpack_exception 应穿过异常组取第一个普通异常作为根因代表。"""
+    leaf = ValueError("真实根因")
+    group = ExceptionGroup("unhandled errors in a TaskGroup", [leaf, KeyError("x")])
+
+    assert app_logging.unpack_exception(leaf) is leaf
+    assert app_logging.unpack_exception(group) is leaf
+    nested = ExceptionGroup("outer", [group])
+    assert app_logging.unpack_exception(nested) is leaf
+
+
+def test_format_filtered_traceback_unwraps_exception_group():
+    """异常组（anyio TaskGroup 场景）应逐个渲染子异常并保留其消息，不再只显示 group 包装。"""
+    try:
+        try:
+            raise RuntimeError("流式响应中途崩溃")
+        except RuntimeError:
+            raise ExceptionGroup("unhandled errors in a TaskGroup", [RuntimeError("流式响应中途崩溃")])
+    except ExceptionGroup:
+        rendered = _format_filtered_traceback(sys.exc_info())
+
+    assert "异常组" in rendered
+    assert "RuntimeError: 流式响应中途崩溃" in rendered
+    assert "unhandled errors in a TaskGroup" in rendered
+
+
+def test_json_formatter_extracts_error_type_from_group():
+    """异常组日志应解包出根因代表的 error_type / error_message 结构化字段。"""
+    formatter = JsonFormatter()
+    group = ExceptionGroup("unhandled errors in a TaskGroup", [RuntimeError("SSE 中断")])
+    record = logging.LogRecord(
+        name="app.test",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="ASGI 链路未捕获异常",
+        args=None,
+        exc_info=(type(group), group, group.__traceback__),
+    )
+    data = json.loads(formatter.format(record))
+
+    assert data["error_type"] == "RuntimeError"
+    assert data["error_message"] == "SSE 中断"
+    assert "SSE 中断" in data["exception"]
