@@ -76,9 +76,22 @@ class _FakeRuntimeService:
         self.content = content
         self.calls: list[dict] = []
 
-    def chat(self, payload, current_user=None, task_id=None, min_context_window=None):
+    def chat(
+        self,
+        payload,
+        current_user=None,
+        task_id=None,
+        min_context_window=None,
+        scan_system_messages=True,
+    ):
         self.calls.append(
-            {"payload": payload, "caller": current_user, "task_id": task_id, "min_context_window": min_context_window}
+            {
+                "payload": payload,
+                "caller": current_user,
+                "task_id": task_id,
+                "min_context_window": min_context_window,
+                "scan_system_messages": scan_system_messages,
+            }
         )
         return {
             "success": True,
@@ -364,6 +377,7 @@ class LoomChatModelShapeTestCase(unittest.TestCase):
         call = runtime.calls[0]
         self.assertEqual(call["task_id"], 9527)
         self.assertIsNone(call["min_context_window"])  # 未配置时默认 None（E15）
+        self.assertFalse(call["scan_system_messages"])  # 护栏自证修复：agent 侧关闭 system 注入扫描
         options = call["payload"].options
         self.assertEqual(set(options.keys()), {"temperature", "max_tokens", "tools"})  # 无自定义键（P0 评审）
         self.assertEqual(options["tools"][0]["function"]["name"], "t")
