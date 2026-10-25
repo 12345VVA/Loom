@@ -15,6 +15,7 @@ from app.core.config import settings
 
 _lock = threading.Lock()
 _requests: dict[tuple[str, str, int], int] = defaultdict(int)
+_errors: dict[tuple[str, str, str], int] = defaultdict(int)  # (method, path, "4xx"/"5xx")
 _latency_total: dict[tuple[str, str], float] = defaultdict(float)
 _latency_count: dict[tuple[str, str], int] = defaultdict(int)
 _events: dict[tuple[str, tuple[tuple[str, str], ...]], int] = defaultdict(int)
@@ -34,6 +35,12 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         method = request.method
         with _lock:
             _requests[(method, path, response.status_code)] += 1
+            if response.status_code >= 400:
+                # 错误维度（按状态族聚合，供错误率告警）。已知边界：SSE 流内失败
+                # 的响应状态恒为 200（异常发生在流体阶段），此维度测不到——流内
+                # 失败由 ExceptionGuard 的规范化日志与 agent/workflow 终态事件覆盖
+                status_class = "5xx" if response.status_code >= 500 else "4xx"
+                _errors[(method, path, status_class)] += 1
             _latency_total[(method, path)] += elapsed
             _latency_count[(method, path)] += 1
         return response
@@ -53,6 +60,14 @@ def render_metrics() -> str:
     with _lock:
         for (method, path, status_code), value in sorted(_requests.items()):
             lines.append(f'loom_http_requests_total{{method="{method}",path="{path}",status="{status_code}"}} {value}')
+        lines.extend(
+            [
+                "# HELP loom_http_errors_total HTTP error responses by status class.",
+                "# TYPE loom_http_errors_total counter",
+            ]
+        )
+        for (method, path, status_class), value in sorted(_errors.items()):
+            lines.append(f'loom_http_errors_total{{method="{method}",path="{path}",class="{status_class}"}} {value}')
         lines.extend(
             [
                 "# HELP loom_http_request_duration_seconds_avg Average HTTP request duration.",

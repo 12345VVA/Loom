@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.framework.api.error_codes import ErrorCode, status_to_error_code
+from app.framework.api.errors import BusinessError
 from app.framework.api.response import error
 
 logger = logging.getLogger("app.exceptions")
@@ -92,6 +93,15 @@ def register_exception_handlers(app: FastAPI) -> None:
             ),
         )
 
+    @app.exception_handler(BusinessError)
+    async def business_error_handler(_: Request, exc: BusinessError) -> JSONResponse:
+        # 业务规则异常：message 面向用户直接透出，不打堆栈（非缺陷，是契约行为）
+        logger.info("业务拒绝: %s (code=%s)", exc.message, exc.code, extra={"error_type": type(exc).__name__})
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.message, code=exc.code, data=exc.data),
+        )
+
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         # 统一异常日志出口：DEBUG / 非 DEBUG 都记录完整堆栈（日志给开发者排查），
@@ -115,5 +125,5 @@ def register_exception_handlers(app: FastAPI) -> None:
             message = f"服务器内部错误（追踪号 {request_id}）" if request_id else "服务器内部错误"
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=error(message),
+            content=error(message, code=ErrorCode.SERVER_ERROR),
         )

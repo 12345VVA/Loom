@@ -113,7 +113,26 @@ class ErrorContractTests(unittest.TestCase):
         finally:
             settings.DEBUG = saved
         self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.json()["code"], 1050)  # SERVER_ERROR：与 4xx 的 FAIL(1001) 可区分
         self.assertIn("追踪号", resp.json()["message"])
+
+    def test_business_error_returns_envelope(self) -> None:
+        """BusinessError（渐进式业务异常基类）转 error envelope，不打堆栈。"""
+        from app.framework.api.errors import BusinessError
+
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        @app.get("/closed")
+        def closed():
+            raise BusinessError("工单已关闭，无法撤回", code=1006, status_code=409)
+
+        client = TestClient(app)
+        resp = client.get("/closed")
+        self.assertEqual(resp.status_code, 409)
+        data = resp.json()
+        self.assertEqual(data["code"], 1006)
+        self.assertEqual(data["message"], "工单已关闭，无法撤回")
 
     def test_non_json_error_response_normalized(self) -> None:
         """非 JSON 错误（网关注入 text/plain）也兜底为 error envelope。"""

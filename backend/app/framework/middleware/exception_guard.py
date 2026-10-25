@@ -103,8 +103,14 @@ class ExceptionGuardMiddleware:
     async def _fallback(self, send: Send, response_started: bool, request_id: str) -> None:
         if response_started:
             return
+        from app.framework.api.error_codes import status_to_error_code
+
         body = json.dumps(
-            {"code": 1001, "message": "服务器内部错误", "data": None},
+            {
+                "code": status_to_error_code(500),
+                "message": "服务器内部错误",
+                "data": None,
+            },
             ensure_ascii=False,
         ).encode("utf-8")
         try:

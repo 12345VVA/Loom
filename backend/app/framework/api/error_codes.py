@@ -18,9 +18,10 @@ class ErrorCode(IntEnum):
     RATE_LIMITED = 1007
     CONFIG_INVALID = 1100
     TASK_FAILED = 1200
+    SERVER_ERROR = 1050  # 服务端内部错误（与 4xx 的 FAIL 区分，前端可按码识别 500 类）
 
 
-# HTTP 状态码 → 业务错误码。未命中的 4xx/5xx 统一落 FAIL，避免
+# HTTP 状态码 → 业务错误码。未命中的 4xx 落 FAIL、5xx 落 SERVER_ERROR，避免
 # "code=404 这类裸状态码混进业务码段" 的契约漂移（历史 fallback 行为）。
 _STATUS_TO_ERROR_CODE: dict[int, int] = {
     400: ErrorCode.VALIDATION,
@@ -32,9 +33,13 @@ _STATUS_TO_ERROR_CODE: dict[int, int] = {
     413: ErrorCode.VALIDATION,
     422: ErrorCode.VALIDATION,
     429: ErrorCode.RATE_LIMITED,
+    500: ErrorCode.SERVER_ERROR,
 }
 
 
 def status_to_error_code(status_code: int) -> int:
-    """HTTP 状态码映射业务错误码：已知映射优先，未知一律 FAIL。"""
-    return _STATUS_TO_ERROR_CODE.get(status_code, ErrorCode.FAIL)
+    """HTTP 状态码映射业务错误码：已知映射优先，未知 5xx 落 SERVER_ERROR、其余 FAIL。"""
+    mapped = _STATUS_TO_ERROR_CODE.get(status_code)
+    if mapped is not None:
+        return mapped
+    return ErrorCode.SERVER_ERROR if status_code >= 500 else ErrorCode.FAIL
