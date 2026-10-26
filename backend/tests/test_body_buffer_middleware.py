@@ -116,13 +116,22 @@ class BodyBufferSseTests(unittest.TestCase):
     def test_bare_basehttp_stack_breaks_on_residue(self) -> None:
         """反向基线：裸 BaseHTTPMiddleware 栈遇错位残余分片 + SSE 挂起即崩（bug 存在性）。
 
-        复现产物即线上报错原文：RuntimeError: Unexpected message received: http.request
-        （collapse_excgroups 会把单成员 ExceptionGroup 解包为裸 RuntimeError）。
+        复现产物即线上报错原文：RuntimeError: Unexpected message received: http.request。
+        异常形态随调度漂移：崩点 wrapped_receive 处于 receive_or_disconnect 自己的
+        task group 内，ExceptionGroup 是否被 collapse_excgroups 解包取决于异常逃逸
+        路径（CI 慢机两度以单成员 ExceptionGroup 形态冒出 raise app_exc，collapse
+        作用域之外）——断言只锁「会崩 + 崩因正确」，不锁包装形态。
         """
         app = _passthrough_basehttp(_sse_endpoint_app)
         recv = _ScriptedReceive(_SSE_RECV_SCRIPT)
-        with self.assertRaises(RuntimeError, msg="Unexpected message received: http.request"):
+        with self.assertRaises(BaseException) as ctx:
             asyncio.run(_drive(app, recv))
+        exc = ctx.exception
+        if isinstance(exc, BaseExceptionGroup):
+            self.assertEqual(len(exc.exceptions), 1, f"预期单异常，实际：{exc!r}")
+            exc = exc.exceptions[0]
+        self.assertIsInstance(exc, RuntimeError)
+        self.assertIn("Unexpected message received: http.request", str(exc))
 
     def test_body_buffer_keeps_sse_alive_with_residue(self) -> None:
         """修复正向：Buffer 包裹后同一场景完整收流（残余分片被吞）。"""
