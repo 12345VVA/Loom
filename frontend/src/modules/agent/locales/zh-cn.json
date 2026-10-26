@@ -63,6 +63,7 @@
   "agent.trace.agent": "智能体",
   "agent.trace.all": "全部",
   "agent.trace.detail": "运行详情",
+  "agent.trace.guardrails": "护栏版本",
   "agent.trace.detailBtn": "详情",
   "agent.trace.duration": "耗时",
   "agent.trace.messages": "消息轨迹",

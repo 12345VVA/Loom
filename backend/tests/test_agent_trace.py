@@ -29,6 +29,7 @@ from app.modules.agent.model.agent import (
 )
 from app.modules.agent.service.profile_service import AgentProfileService
 from app.modules.agent.service.runtime import model_wrapper as model_wrapper_module
+from app.modules.agent.service.runtime.prompt_render import GUARDRAILS_VERSION
 from app.modules.agent.service.runtime.run_service import AgentRunService
 from app.modules.agent.service.tool_registry import bootstrap_registry, sync_resources
 from app.modules.ai.model.ai import AiModel, AiModelProfile, AiProvider
@@ -207,6 +208,8 @@ class ObservationChainTestCase(unittest.TestCase):
         trace = self.session.exec(select(AgentRunTrace)).first()
         self.assertIsNotNone(trace)
         self.assertEqual(trace.status, "completed")
+        # D16：trace 记录本次 run 实际使用的护栏版本（安全策略实时生效可追溯）
+        self.assertEqual(trace.guardrails_version, GUARDRAILS_VERSION)
 
         logs = self.session.exec(select(AgentToolCallLog).where(AgentToolCallLog.trace_id == trace.id)).all()
         self.assertEqual(len(logs), 1)

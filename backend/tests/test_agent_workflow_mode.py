@@ -205,6 +205,7 @@ class WorkflowModeTestCase(unittest.TestCase):
         trace = self.session.exec(select(AgentRunTrace)).first()
         self.assertEqual(trace.status, "completed")
         self.assertEqual(trace.workflow_instance_id, result["payload"]["workflowInstanceId"])
+        self.assertIsNone(trace.guardrails_version)  # D16：编排型不经 LLM 护栏，不记版本
         messages = self.session.exec(select(AgentMessage).order_by(AgentMessage.id)).all()  # type: ignore[attr-defined]
         self.assertEqual([m.role for m in messages], ["user", "assistant"])
         self.assertEqual(messages[-1].content, "编排结果文本")

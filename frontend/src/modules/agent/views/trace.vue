@@ -39,6 +39,10 @@
 					<el-descriptions-item :label="t('agent.trace.duration')">{{ detail.durationMs }}ms</el-descriptions-item>
 					<el-descriptions-item :label="t('agent.trace.modelCalls')">{{ detail.modelCalls }}</el-descriptions-item>
 					<el-descriptions-item :label="t('agent.trace.toolRounds')">{{ detail.toolRounds }}</el-descriptions-item>
+					<!-- D16：本次 run 实际使用的护栏版本（编排型无护栏显示 -） -->
+					<el-descriptions-item :label="t('agent.trace.guardrails')">
+						{{ detail.guardrailsVersion ?? '-' }}
+					</el-descriptions-item>
 				</el-descriptions>
 				<el-alert
 					v-if="detail.error"

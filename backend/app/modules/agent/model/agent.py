@@ -204,6 +204,9 @@ class AgentRunTrace(BaseEntity, table=True):
     duration_ms: int | None = Field(default=None)
     # 编排模式（E17）：workflow 型 run 的实例回链（观测跳转 workflow 模块）
     workflow_instance_id: int | None = Field(default=None)
+    # 本次 run 实际使用的护栏版本（D16：安全策略实时生效，trace 记版本可追溯；
+    # 编排型 run 不经 LLM 护栏，记 None）
+    guardrails_version: str | None = Field(default=None, max_length=20)
     status: str = Field(default=AGENT_RUN_RUNNING, index=True, max_length=20)
     # 备注性错误信息（取消区分「已请求/确认终止」+ 残留清单 + 预算触发项等）
     error: str | None = Field(default=None, sa_column=Column(Text))
@@ -356,6 +359,7 @@ class AgentRunTraceRead(BaseModel):
     completion_tokens: int | None = None
     duration_ms: int | None = None
     workflow_instance_id: int | None = None
+    guardrails_version: str | None = None
     status: str
     error: str | None = None
     created_at: datetime | None = None

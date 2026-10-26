@@ -304,6 +304,11 @@ declare namespace Eps {
 		workflowInstanceId?: number;
 
 		/**
+		 * guardrails_version
+		 */
+		guardrailsVersion?: string;
+
+		/**
 		 * status
 		 */
 		status?: string;

@@ -5360,6 +5360,17 @@
                           ],
                           "title": "Error"
                         },
+                        "guardrailsVersion": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Guardrailsversion"
+                        },
                         "id": {
                           "title": "Id",
                           "type": "number"
@@ -5664,6 +5675,17 @@
                                   }
                                 ],
                                 "title": "Error"
+                              },
+                              "guardrailsVersion": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Guardrailsversion"
                               },
                               "id": {
                                 "title": "Id",
@@ -6217,6 +6239,18 @@
           "validate": null
         },
         {
+          "comment": "guardrails_version",
+          "dict": null,
+          "label": "guardrailsVersion",
+          "nullable": true,
+          "prop": "guardrailsVersion",
+          "propertyName": "guardrailsVersion",
+          "required": false,
+          "source": "guardrails_version",
+          "type": "string",
+          "validate": null
+        },
+        {
           "comment": "status",
           "dict": null,
           "label": "status",
@@ -6444,6 +6478,18 @@
           "required": false,
           "source": "workflow_instance_id",
           "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "guardrails_version",
+          "dict": null,
+          "label": "guardrailsVersion",
+          "nullable": true,
+          "prop": "guardrailsVersion",
+          "propertyName": "guardrailsVersion",
+          "required": false,
+          "source": "guardrails_version",
+          "type": "string",
           "validate": null
         },
         {

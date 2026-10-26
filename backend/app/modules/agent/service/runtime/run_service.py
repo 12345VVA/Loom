@@ -29,6 +29,7 @@ from app.modules.agent.model.agent import (
     AgentToolCallLog,
 )
 from app.modules.agent.service.runtime.memory_service import AGENT_RUN_TOKEN_BUDGET
+from app.modules.agent.service.runtime.prompt_render import guardrails_version
 from app.modules.agent.service.runtime.timing import logger as timing_logger
 from app.modules.agent.service.runtime.timing import timed
 from app.modules.agent.service.runtime.tool_executor import ToolExecutor
@@ -579,6 +580,11 @@ class AgentRunService:
             agent_name=profile.name,
             session_id=session_row.id,
             user_id=current_user.id,
+            # D16：trace 记录本次 run 实际使用的护栏版本（安全策略实时生效可追溯）；
+            # 编排型（E17）不经 LLM 护栏，记 None。
+            guardrails_version=(
+                None if payload.get("execution_mode") == AGENT_EXECUTION_MODE_WORKFLOW else guardrails_version()
+            ),
             status=AGENT_RUN_RUNNING,
             error=f"token:{handle.trace_token}",  # trace_token 随 trace 落库（stopStream 按 token 定位）
         )

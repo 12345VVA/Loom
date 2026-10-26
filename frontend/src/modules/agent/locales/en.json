@@ -63,6 +63,7 @@
   "agent.trace.agent": "Agent",
   "agent.trace.all": "All",
   "agent.trace.detail": "Run Detail",
+  "agent.trace.guardrails": "Guardrails",
   "agent.trace.detailBtn": "Detail",
   "agent.trace.duration": "Duration",
   "agent.trace.messages": "Message Trace",
