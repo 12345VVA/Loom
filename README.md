@@ -134,9 +134,10 @@ uvicorn main:app --reload
 Celery Worker 与 Beat（新终端）：
 
 ```bash
-# Worker：全量消费队列
+# Worker：全量消费队列（须覆盖 app.celery_app.conf.task_queues 全部声明，
+# 缺口会在 worker 启动时以 ERROR 日志报出）
 celery -A app.celery_app worker --loglevel=info \
-  -Q celery,default,workflow,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video
+  -Q celery,default,workflow,workflow.eval,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video,media.mirror,agent.approval
 
 # Beat：定时任务调度
 celery -A app.celery_app beat --loglevel=info

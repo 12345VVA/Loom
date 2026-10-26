@@ -13,6 +13,7 @@ from celery.signals import (
     task_postrun,
     task_prerun,
     task_retry,
+    worker_ready,
 )
 from kombu import Queue
 
@@ -232,3 +233,46 @@ celery_app.conf.beat_schedule = {
         "options": {"queue": "agent.approval"},
     },
 }
+
+
+# --- 队列覆盖校验（P0-9 部署哨兵）---
+
+def _queue_coverage_gaps(consumed: set[str], declared: set[str], routed: set[str]) -> list[str]:
+    """计算「已声明或被路由指向、但本 worker 未消费」的队列（排序返回）。
+
+    ``celery`` 为 Celery 缺省队列，无任务路由到它时不消费是常态，豁免。
+    """
+    expected = (declared | routed) - {"celery"}
+    return sorted(expected - consumed)
+
+
+@worker_ready.connect
+def _verify_queue_coverage(sender=None, **kwargs):
+    """worker 就绪后校验实际消费队列覆盖所有声明/路由队列，缺失打 ERROR 日志。
+
+    背景（P0-9 审查 2026-10-26）：prod compose 的 -Q 清单曾缺 media.mirror/agent.approval
+    消费者——beat 周期投递的任务无人消费、静默积压（E4 审批巡检生产失效），且 compose
+    手抄清单与 task_queues 声明无任何机制关联。此处把缺口显式化：
+    - 单 worker 全量消费（本项目默认部署形态）：无缺口，静默通过；
+    - 分部部署（如 workflow.eval 独占 worker）：每个 worker 都会报出自己不消费的队列，
+      属预期噪音，运维按部署拓扑核对即可——只告警不中断，避免误杀合法分部。
+    """
+    consumer = getattr(sender, "task_consumer", None)
+    if consumer is None:
+        logger.warning("队列覆盖校验跳过：worker consumer 未就绪")
+        return
+    consuming = {queue.name for queue in consumer.queues}
+    declared = {queue.name for queue in celery_app.conf.task_queues}
+    routed: set[str] = set()
+    for value in (celery_app.conf.task_routes or {}).values():
+        if isinstance(value, str):
+            routed.add(value)
+        elif isinstance(value, dict) and "queue" in value:
+            routed.add(value["queue"])
+    gaps = _queue_coverage_gaps(consuming, declared, routed)
+    if gaps:
+        logger.error(
+            "队列覆盖缺口：本 worker 未消费 %s（已声明或被 task_routes 指向，任务将无人消费而积压）。"
+            "请核对启动命令 -Q 清单与 celery_app.conf.task_queues/task_routes",
+            gaps,
+        )

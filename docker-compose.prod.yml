@@ -90,7 +90,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c 'celery -A app.celery_app worker --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,workflow,workflow.eval,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video'
+    command: sh -c 'celery -A app.celery_app worker --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,workflow,workflow.eval,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video,media.mirror,agent.approval'
     # 镜像内置 HEALTHCHECK 打的是 uvicorn /health，对 worker 无意义——
     # 覆盖为 celery 自身的 worker 存活探针
     healthcheck:

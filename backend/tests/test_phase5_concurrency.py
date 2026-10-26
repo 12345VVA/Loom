@@ -22,7 +22,7 @@ import redis
 from helpers import make_test_engine
 from sqlmodel import Session, SQLModel
 
-from app.celery_app import celery_app
+from app.celery_app import _queue_coverage_gaps, celery_app
 from app.modules.ai.model.ai import AiGovernanceRule, AiModel, AiModelProfile, AiProvider
 from app.modules.ai.service.governance_service import (
     AiGovernanceBlocked,
@@ -373,6 +373,42 @@ class CeleryAcksLateConfigTestCase(unittest.TestCase):
         """硬超时保持 30 分钟，软超时早 5 分钟触发优雅收尾。"""
         self.assertEqual(celery_app.conf.task_time_limit, 30 * 60)
         self.assertLess(celery_app.conf.task_soft_time_limit, celery_app.conf.task_time_limit)
+
+
+class CeleryQueueCoverageTestCase(unittest.TestCase):
+    """P0-9 部署哨兵（异步审查 2026-10-26）：路由指向的队列必须都有声明；
+    worker 侧覆盖校验纯函数的缺口/豁免语义。"""
+
+    def test_task_routes_queues_all_declared(self):
+        """task_routes 指向的队列必须都在 task_queues 声明（缺省 celery 队列豁免）。"""
+        declared = {queue.name for queue in celery_app.conf.task_queues}
+        routed: set[str] = set()
+        for value in celery_app.conf.task_routes.values():
+            if isinstance(value, str):
+                routed.add(value)
+            elif isinstance(value, dict) and "queue" in value:
+                routed.add(value["queue"])
+        undeclared = routed - declared - {"celery"}
+        self.assertEqual(undeclared, set(), f"task_routes 指向了未声明队列: {sorted(undeclared)}")
+
+    def test_queue_coverage_gaps_lists_missing_sorted(self):
+        gaps = _queue_coverage_gaps(
+            consumed={"celery", "default"},
+            declared={"celery", "default", "workflow"},
+            routed={"agent.approval", "workflow.eval"},
+        )
+        self.assertEqual(gaps, ["agent.approval", "workflow", "workflow.eval"])
+
+    def test_queue_coverage_gaps_empty_when_all_covered(self):
+        queues = {"celery", "default", "workflow", "workflow.eval", "agent.approval", "media.mirror"}
+        self.assertEqual(_queue_coverage_gaps(consumed=queues, declared=queues, routed=set()), [])
+
+    def test_queue_coverage_gaps_ignores_default_celery_queue(self):
+        """缺省 celery 队列无任务路由时不强制消费。"""
+        self.assertEqual(
+            _queue_coverage_gaps(consumed={"default"}, declared={"celery", "default"}, routed=set()),
+            [],
+        )
 
 
 if __name__ == "__main__":
