@@ -75,7 +75,12 @@ def get_redis_client() -> Redis | None:
 
     if _redis_client is None:
         try:
-            _redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+            _redis_client = Redis.from_url(
+                settings.REDIS_URL,
+                decode_responses=True,
+                socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
+                socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT,
+            )
             _redis_client.ping()
         except RedisError as exc:
             logger.warning("Redis 不可用，暂时跳过服务端缓存（%.0fs 后重试）: %s", _REDIS_RETRY_INTERVAL_SECONDS, exc)

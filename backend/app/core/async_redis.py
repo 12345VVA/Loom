@@ -29,7 +29,12 @@ async def get_async_redis_client() -> AsyncRedis | None:
 
     if _async_client is None:
         try:
-            _async_client = AsyncRedis.from_url(settings.REDIS_URL, decode_responses=True)
+            _async_client = AsyncRedis.from_url(
+                settings.REDIS_URL,
+                decode_responses=True,
+                socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
+                socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT,
+            )
             await _async_client.ping()
         except (RedisError, OSError) as exc:
             logger.warning("异步 Redis 不可用，SSE 订阅将降级为同步轮询: %s", exc)

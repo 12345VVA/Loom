@@ -38,6 +38,11 @@ class Settings(BaseSettings):
 
     # Redis 配置
     REDIS_URL: str  # 启动时自动从 .env 中读取
+    # 套接字超时（异步审查 P2-1）：redis-py 默认 None = 网络故障时无限阻塞，
+    # 曾把限流/publish 等同步调用点从「慢」放大成「挂死全站」。超时抛 RedisError
+    # （TimeoutError 为其子类）→ 既有 fail-open/内存降级路径天然接住，语义零变化。
+    REDIS_SOCKET_TIMEOUT: float = 2.0
+    REDIS_CONNECT_TIMEOUT: float = 1.0
 
     # Celery 配置
     CELERY_BROKER_URL: str  # 启动时自动从 .env 中读取

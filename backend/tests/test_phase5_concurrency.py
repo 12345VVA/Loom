@@ -10,19 +10,22 @@
   - monitor 模式 + Redis 故障 → fail-open 放行
   - enforce 模式 + Redis 正常 + 超限 → 抛 AiGovernanceBlocked（映射 429，回归保护）
 - 5.4 (P1-5): Celery acks_late + soft_time_limit 配置生效
+- 5.5 (P2-1, 异步审查): Redis 客户端套接字超时——默认 None 会把网络故障放大成全站挂死
 """
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import redis
 from helpers import make_test_engine
 from sqlmodel import Session, SQLModel
 
 from app.celery_app import _queue_coverage_gaps, celery_app
+from app.core.config import settings
 from app.modules.ai.model.ai import AiGovernanceRule, AiModel, AiModelProfile, AiProvider
 from app.modules.ai.service.governance_service import (
     AiGovernanceBlocked,
@@ -409,6 +412,65 @@ class CeleryQueueCoverageTestCase(unittest.TestCase):
             _queue_coverage_gaps(consumed={"default"}, declared={"celery", "default"}, routed=set()),
             [],
         )
+
+
+class RedisClientTimeoutConfigTestCase(unittest.TestCase):
+    """P2-1：三类 Redis 客户端构造必须带套接字超时（默认 None = 无限阻塞）。"""
+
+    def test_settings_defaults(self):
+        self.assertEqual(settings.REDIS_SOCKET_TIMEOUT, 2.0)
+        self.assertEqual(settings.REDIS_CONNECT_TIMEOUT, 1.0)
+
+    def test_cache_service_client_built_with_timeouts(self):
+        import app.modules.base.service.cache_service as cache_service
+
+        with patch.object(cache_service.Redis, "from_url", return_value=MagicMock()) as from_url:
+            cache_service._redis_client = None
+            cache_service._redis_unavailable = False
+            try:
+                self.assertIsNotNone(cache_service.get_redis_client())
+            finally:
+                cache_service._redis_client = None
+                cache_service._redis_unavailable = False
+        _, kwargs = from_url.call_args
+        self.assertEqual(kwargs["socket_timeout"], settings.REDIS_SOCKET_TIMEOUT)
+        self.assertEqual(kwargs["socket_connect_timeout"], settings.REDIS_CONNECT_TIMEOUT)
+
+    def test_core_sync_client_built_with_timeouts(self):
+        from app.core import redis as core_redis
+
+        with patch.object(core_redis.redis, "from_url", return_value=MagicMock()) as from_url:
+            core_redis._redis_client = None
+            try:
+                core_redis.get_redis()
+            finally:
+                core_redis._redis_client = None
+        _, kwargs = from_url.call_args
+        self.assertEqual(kwargs["socket_timeout"], settings.REDIS_SOCKET_TIMEOUT)
+        self.assertEqual(kwargs["socket_connect_timeout"], settings.REDIS_CONNECT_TIMEOUT)
+
+    def test_async_client_built_with_timeouts(self):
+        from app.core import async_redis
+
+        fake_client = MagicMock()
+        fake_client.ping = AsyncMock(return_value=True)
+
+        async def scenario() -> MagicMock:
+            with patch.object(async_redis.AsyncRedis, "from_url", return_value=fake_client) as from_url:
+                async_redis._async_client = None
+                async_redis._async_unavailable = False
+                try:
+                    client = await async_redis.get_async_redis_client()
+                    self.assertIsNotNone(client)
+                finally:
+                    async_redis._async_client = None
+                    async_redis._async_unavailable = False
+            return from_url
+
+        from_url = asyncio.run(scenario())
+        _, kwargs = from_url.call_args
+        self.assertEqual(kwargs["socket_timeout"], settings.REDIS_SOCKET_TIMEOUT)
+        self.assertEqual(kwargs["socket_connect_timeout"], settings.REDIS_CONNECT_TIMEOUT)
 
 
 if __name__ == "__main__":
