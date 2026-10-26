@@ -216,11 +216,13 @@ class Settings(BaseSettings):
     PASSWORD_PBKDF2_ITERATIONS: int = 210_000
     ADMIN_SESSION_MAX_CONCURRENT: int = 0
 
-    # 数据库连接池
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
+    # 数据库连接池（异步审查 P1-3：5/10 与 anyio 线程池 100 严重错配；
+    # pool_timeout 缺省 30s 是雪崩放大器——超载时请求挂等 30s 而非快速失败）
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 20
     DB_POOL_RECYCLE: int = 1800
     DB_POOL_PRE_PING: bool = True
+    DB_POOL_TIMEOUT: int = 5
     # 跳过启动时自动补建索引（CREATE INDEX IF NOT EXISTS）。
     # Field(index=True) 仅对 create_all 新建表生效，现有库不会自动补索引；_ensure_indexes 为现有库补齐查询关键索引。
     # 生产 PostgreSQL 大表建议由 DBA 在维护窗口用 CREATE INDEX CONCURRENTLY 建立后置 True，避免启动时锁表。

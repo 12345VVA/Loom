@@ -800,16 +800,18 @@ class WorkflowInstanceService(BaseAdminCrudService):
             convert_keys_to_snake,
         )
 
-        definition = self.session.get(WorkflowDefinition, definition_id)
+        # 同步 DB 经 to_thread 卸载（异步审查 P0-1：本方法为 async def，
+        # 直接调用会在事件循环上做阻塞查询）
+        definition = await asyncio.to_thread(self.session.get, WorkflowDefinition, definition_id)
         if not definition:
             raise HTTPException(status_code=404, detail="工作流定义不存在")
-        assert_workflow_owner(self.session, definition, current_user)
+        await asyncio.to_thread(assert_workflow_owner, self.session, definition, current_user)
 
         # 节点测试在 editor 编辑草稿过程中，测草稿版（无草稿回退 current）
         draft_vid = definition.draft_version_id or definition.current_version_id
         if draft_vid is None:
             raise HTTPException(status_code=400, detail="该工作流尚无任何版本，无法测试节点")
-        version = self.session.get(WorkflowDefinitionVersion, draft_vid)
+        version = await asyncio.to_thread(self.session.get, WorkflowDefinitionVersion, draft_vid)
         if not version:
             raise HTTPException(status_code=404, detail="版本不存在")
         try:
@@ -866,9 +868,9 @@ class WorkflowInstanceService(BaseAdminCrudService):
         ctx = await self._resolve_node_for_test(definition_id, node_id, current_user)
         config, node_type = ctx["config"], ctx["node_type"]
 
-        # 2. 防重放：同一节点 2 秒内不重复执行 (使用 Redis)
+        # 2. 防重放：同一节点 2 秒内不重复执行 (使用 Redis；同步客户端 to_thread 卸载)
         dedup_key = f"loom:workflow:test_node:{definition_id}:{node_id}"
-        if not redis_client.set(dedup_key, "1", nx=True, ex=2):
+        if not await asyncio.to_thread(redis_client.set, dedup_key, "1", nx=True, ex=2):
             raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
 
         # 3. 建 run_type='test_node' 测试实例（副作用门控按 != production 天然跳过通知/产物）
@@ -881,9 +883,13 @@ class WorkflowInstanceService(BaseAdminCrudService):
             run_type="test_node",
             user_id=current_user.id if current_user else None,
         )
-        self.session.add(instance)
-        self.session.commit()
-        self.session.refresh(instance)
+
+        def _persist_test_instance() -> None:
+            self.session.add(instance)
+            self.session.commit()
+            self.session.refresh(instance)
+
+        await asyncio.to_thread(_persist_test_instance)
 
         # 4. 执行节点（与整图执行共享重试/输出映射 + 超时控制，默认 180 秒；LLM 节点常需 60-180 秒响应）
         timeout_seconds = settings.WORKFLOW_NODE_TEST_TIMEOUT

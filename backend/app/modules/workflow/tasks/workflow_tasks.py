@@ -652,7 +652,10 @@ async def async_execute(
                             )
                             session.commit()
                         logger.warning("[Workflow] 节点执行超时 instance=%d (%ds)", instance_id, node_timeout)
-                        publish_event(
+                        # publish 是同步 Redis IO，统一 to_thread 卸载避免阻塞执行事件循环
+                        # （异步审查 P0-7；与上方 _set_current_node_sync 同姿势，下同）
+                        await asyncio.to_thread(
+                            publish_event,
                             instance_id,
                             "failed",
                             {"status": "failed", "error": timeout_msg, "node_id": timeout_node_id},
@@ -680,13 +683,13 @@ async def async_execute(
                                 # 先写 DB 再广播，保证前端收到高亮事件时 DB 归因已就绪；
                                 # 串行等待保证 N 与 N+1 的写入不乱序
                                 await asyncio.to_thread(_set_current_node_sync, instance_id, nid)
-                            publish_event(instance_id, "node_start", payload)
+                            await asyncio.to_thread(publish_event, instance_id, "node_start", payload)
                         elif etype == "node_done":
                             nid = payload.get("node_id")
                             lat = payload.get("latency_ms")
                             if nid and isinstance(lat, int):
                                 _node_latency[nid] = lat
-                            publish_event(instance_id, "node_done", payload)
+                            await asyncio.to_thread(publish_event, instance_id, "node_done", payload)
                         else:
                             logger.debug("[Workflow] 忽略未知 custom 事件: %r", payload)
                         continue
@@ -717,7 +720,9 @@ async def async_execute(
                                     _cas(session, "running", status="failed", error_message=err_msg)
                                     session.commit()
                                 logger.error("[Workflow] %s instance=%d", err_msg, instance_id)
-                                publish_event(instance_id, "failed", {"status": "failed", "error": err_msg})
+                                await asyncio.to_thread(
+                                    publish_event, instance_id, "failed", {"status": "failed", "error": err_msg}
+                                )
                                 _notify_workflow_failure(instance_id)
                                 return
                             with Session(engine) as session:
@@ -727,7 +732,9 @@ async def async_execute(
                                     # 不覆盖 cancelled：若执行期间用户已取消，按取消收尾
                                     if inst.status == "cancelled":
                                         session.commit()
-                                        publish_event(instance_id, "cancelled", {"status": "cancelled"})
+                                        await asyncio.to_thread(
+                                            publish_event, instance_id, "cancelled", {"status": "cancelled"}
+                                        )
                                         return
                                 inst.status = "paused"
                                 inst.current_node = inst.current_node or "human_input"
@@ -735,7 +742,8 @@ async def async_execute(
                                 session.commit()
                                 current_node_name = inst.current_node
 
-                            publish_event(
+                            await asyncio.to_thread(
+                                publish_event,
                                 instance_id,
                                 "paused",
                                 {
@@ -758,7 +766,7 @@ async def async_execute(
                         if await asyncio.to_thread(_is_cancelled_sync, instance_id):
                             await _drain_flush(flush_queue, flush_task, instance_id, flush_stats)
                             logger.info("[Workflow] 实例 %d 已取消，停止执行", instance_id)
-                            publish_event(instance_id, "cancelled", {"status": "cancelled"})
+                            await asyncio.to_thread(publish_event, instance_id, "cancelled", {"status": "cancelled"})
                             return
 
                         node_info = nodes_map.get(node_id, {})
@@ -786,7 +794,8 @@ async def async_execute(
 
                         current_vars = merged_vars
 
-                        publish_event(
+                        await asyncio.to_thread(
+                            publish_event,
                             instance_id,
                             "node_update",
                             {
@@ -813,7 +822,7 @@ async def async_execute(
                     if instance.status == "cancelled":
                         # 末节点刚跑完时用户取消：尊重 cancelled，不发 success
                         session.commit()
-                        publish_event(instance_id, "cancelled", {"status": "cancelled"})
+                        await asyncio.to_thread(publish_event, instance_id, "cancelled", {"status": "cancelled"})
                         return
                     # T8：state_data 超阈值时以 storage ref 还原全量快照再做 success 终态
                     state_data_str = resolve_payload(instance.state_data, instance.state_data_ref) or "{}"
@@ -828,7 +837,7 @@ async def async_execute(
                         session.expire(instance)
                         latest_status = instance.status
                         if latest_status == "cancelled":
-                            publish_event(instance_id, "cancelled", {"status": "cancelled"})
+                            await asyncio.to_thread(publish_event, instance_id, "cancelled", {"status": "cancelled"})
                         else:
                             logger.warning(
                                 "[Workflow] 实例 %d success 收尾时状态已变为 %s，跳过 success 广播",
@@ -844,7 +853,8 @@ async def async_execute(
                 persist_workflow_artifacts(
                     instance_id, inst_definition_id, inst_version_id, inst_user_id, None, workflow_output
                 )
-            publish_event(
+            await asyncio.to_thread(
+                publish_event,
                 instance_id,
                 "success",
                 {
@@ -884,7 +894,8 @@ async def async_execute(
         except Exception as se:
             logger.error("记录工作流异常失败: %s", se, exc_info=True)
 
-        publish_event(
+        await asyncio.to_thread(
+            publish_event,
             instance_id,
             "failed",
             {"status": "failed", "error": error_msg_safe, "node_id": failed_node_id},

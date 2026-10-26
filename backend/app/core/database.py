@@ -86,6 +86,8 @@ engine_kwargs = {
     "pool_size": settings.DB_POOL_SIZE,
     "max_overflow": settings.DB_MAX_OVERFLOW,
     "pool_recycle": settings.DB_POOL_RECYCLE,
+    # 连接池获取超时（异步审查 P1-3）：缺省 30s，超载时请求挂等 30s 再 5xx——快速失败
+    "pool_timeout": settings.DB_POOL_TIMEOUT,
 }
 
 engine = create_engine(DATABASE_URL, **engine_kwargs)

@@ -673,6 +673,10 @@ class AgentRunService:
             user_message.meta = json.dumps({"attachments": attachment_metas}, ensure_ascii=False)
         self.session.add(user_message)
         self.session.commit()
+        # 连接已随 commit 归还池。此后至流结束前仅允许访问主键属性（trace.id /
+        # session_row.id 走 identity map 不触发 SELECT）；任何非主键属性访问都会
+        # refresh 并重新 checkout 连接，使 agent SSE 流式期间 DB 连接悬挂回归
+        # （异步审查 P0-2；expire_on_commit=True 实测见报告 v3）——改这里前先读此注释
         handle.trace_id = trace.id
         return {
             "trace_id": trace.id,

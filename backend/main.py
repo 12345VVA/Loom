@@ -2,6 +2,7 @@
 Loom API - FastAPI 主入口
 """
 
+import asyncio
 import os
 import re
 import sys
@@ -172,23 +173,13 @@ def _require_upload_token(request: Request) -> str:
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少认证信息")
 
 
-@app.get("/uploads/{file_path:path}")
-async def serve_upload(
-    file_path: str,
-    token: str = Depends(_require_upload_token),
-    session: Session = Depends(get_session),
-):
-    """提供上传文件访问，需专用下载令牌鉴权 + 资源归属校验。
+def _resolve_upload_access(session: Session, token: str, file_path: str) -> tuple[str, dict[str, str]]:
+    """serve_upload 的同步阻塞段：令牌鉴权 + 防路径穿越 + 归属校验 + 响应头组装。
 
-    支持通过 Authorization: Bearer <token> 或 ?token=<token> 传递下载令牌。
-    所有响应附 X-Content-Type-Options: nosniff 防内容嗅探；
-    可执行/可内联类型（如 PDF）设 Content-Disposition: attachment 防自动渲染。
-
-    鉴权策略：
-    - get_user_from_download_token 校验令牌签名/类型/token_version，并查 DB 确认用户存在且
-      is_active（verify_download_token 的无 DB 高频路径不校验 is_active，被禁用用户在 TTL 内
-      仍可访问，故 /uploads 改用查 DB 版本）。
-    - 非超管用户须为该文件（MediaAsset）的创建者，防止 IDOR 越权下载他人资源。
+    同步 def，由 serve_upload 经 to_thread 卸载——令牌校验/超管判定/两个归属
+    select/文件 stat 全是阻塞调用，曾直接跑在事件循环上（异步审查 P0-1：/uploads
+    是全站频次最高的图片/附件加载路径）。HTTPException 穿透 await，由既有异常
+    处理器接管，契约不变。
     """
     # 鉴权：校验下载令牌 + 用户有效（含 is_active），失败抛 401
     current_user = get_user_from_download_token(session, token)
@@ -202,6 +193,8 @@ async def serve_upload(
         raise HTTPException(status_code=404, detail="文件不存在") from exc
     if common != uploads_root or not os.path.isfile(full_path):
         raise HTTPException(status_code=404, detail="文件不存在")
+
+    headers: dict[str, str] = {"X-Content-Type-Options": "nosniff"}
 
     # IDOR 防护：非超管须为资源归属者。本地存储 storage_url 形如 /uploads/<file_path>，
     # file_path 已通过 isfile 校验为真实文件（UUID 命名，不含 SQL LIKE 通配符 % _）。
@@ -226,13 +219,34 @@ async def serve_upload(
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该资源")
 
     # nosniff 全量；可执行/可内联类型强制下载，避免浏览器自动渲染（PDF 等）
-    headers = {"X-Content-Type-Options": "nosniff"}
     ext = os.path.splitext(file_path)[1].lower()
     if ext in _UPLOAD_FORCE_DOWNLOAD_EXTENSIONS:
         # 过滤 filename 中的特殊字符，防 HTTP 头注入（双引号、换行符、反斜杠）
         safe_name = _sanitize_download_filename(os.path.basename(full_path))
         headers["Content-Disposition"] = f'attachment; filename="{safe_name}"'
 
+    return full_path, headers
+
+
+@app.get("/uploads/{file_path:path}")
+async def serve_upload(
+    file_path: str,
+    token: str = Depends(_require_upload_token),
+    session: Session = Depends(get_session),
+):
+    """提供上传文件访问，需专用下载令牌鉴权 + 资源归属校验。
+
+    支持通过 Authorization: Bearer <token> 或 ?token=<token> 传递下载令牌。
+    所有响应附 X-Content-Type-Options: nosniff 防内容嗅探；
+    可执行/可内联类型（如 PDF）设 Content-Disposition: attachment 防自动渲染。
+
+    鉴权策略：
+    - get_user_from_download_token 校验令牌签名/类型/token_version，并查 DB 确认用户存在且
+      is_active（verify_download_token 的无 DB 高频路径不校验 is_active，被禁用用户在 TTL 内
+      仍可访问，故 /uploads 改用查 DB 版本）。
+    - 非超管用户须为该文件（MediaAsset）的创建者，防止 IDOR 越权下载他人资源。
+    """
+    full_path, headers = await asyncio.to_thread(_resolve_upload_access, session, token, file_path)
     return FileResponse(full_path, headers=headers)
 
 
@@ -304,8 +318,9 @@ async def root():
 async def health():
     """健康检查"""
     checks = {
-        "database": _check_database(),
-        "redis": _check_redis(),
+        # DB connect / Redis ping 是同步阻塞调用，to_thread 卸载（异步审查 P0-1 同源清单）
+        "database": await asyncio.to_thread(_check_database),
+        "redis": await asyncio.to_thread(_check_redis),
         "celery": _check_celery_config(),
         "settings": _check_startup_settings(),
     }

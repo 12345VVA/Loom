@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 
@@ -94,7 +95,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window = int(time.time()) // 60
         cache_key = f"ratelimit:{client_id}:{window}:{path}"
 
-        current = registry.resolve("cache_incr")(cache_key, ttl_seconds=90)
+        # cache_incr 是同步 Redis 网络往返，必须 to_thread 卸载——本中间件在事件循环上
+        # 执行，直接调用会让每个请求都阻塞 loop（异步审查 P0-1；framework 禁 import
+        # modules，registry 异步化留待后续，先以线程卸载止血）
+        current = await asyncio.to_thread(registry.resolve("cache_incr"), cache_key, ttl_seconds=90)
 
         if current is None:
             # Redis 计数不可靠：fail-open 放行，跳过限流判断（避免不可靠计数误拒正常请求）
