@@ -1,7 +1,7 @@
 <template>
 	<!-- cl-crud 骨架承载权限指令（页面本体为交互式会话，非标准表格） -->
 	<cl-crud ref="Crud">
-		<ChatWorkspace mode="standalone" class="agent-session-workspace" />
+		<chat-workspace mode="standalone" class="agent-session-workspace" />
 	</cl-crud>
 </template>
 

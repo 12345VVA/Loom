@@ -64,11 +64,6 @@
       "count": 4
     }
   },
-  "src/modules/agent/components/chat-message.vue": {
-    "vue/component-name-in-template-casing": {
-      "count": 1
-    }
-  },
   "src/modules/agent/composables/use-agent-session.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
@@ -79,17 +74,9 @@
       "count": 16
     }
   },
-  "src/modules/agent/views/session.vue": {
-    "vue/component-name-in-template-casing": {
-      "count": 1
-    }
-  },
   "src/modules/agent/views/trace.vue": {
     "@typescript-eslint/no-explicit-any": {
       "count": 6
-    },
-    "vue/component-name-in-template-casing": {
-      "count": 2
     }
   },
   "src/modules/ai/components/ai-payload-inspector.vue": {

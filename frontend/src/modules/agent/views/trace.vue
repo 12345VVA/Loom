@@ -49,10 +49,10 @@
 				/>
 
 				<div class="section-title">{{ t('agent.trace.toolLogs') }}</div>
-				<ToolTracePanel :logs="toolBlocks" />
+				<tool-trace-panel :logs="toolBlocks" />
 
 				<div class="section-title">{{ t('agent.trace.messages') }}</div>
-				<ChatMessage v-for="(m, i) in detailMessages" :key="i" :message="m" />
+				<chat-message v-for="(m, i) in detailMessages" :key="i" :message="m" />
 			</div>
 		</el-drawer>
 	</cl-crud>

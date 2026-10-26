@@ -34,6 +34,31 @@ export interface AgentSessionRow {
 	createTime?: string;
 }
 
+/** 消息附件引用（AgentMessage.meta.attachments，后端校验后落库） */
+export interface AttachmentRef {
+	id: number;
+	name: string;
+	mime: string;
+	size: number;
+	url: string;
+}
+
+/** 解析消息行的 meta JSON → attachments（异常吞，缺省空数组） */
+function parseAttachments(meta?: string | null): AttachmentRef[] {
+	if (!meta) return [];
+	try {
+		const parsed = JSON.parse(meta);
+		return Array.isArray(parsed?.attachments) ? parsed.attachments : [];
+	} catch {
+		return [];
+	}
+}
+
+/** DB 消息行 → 视图行（解析 meta 附件；AI/工具消息 meta 恒空） */
+function toViewMessage(row: any): any {
+	return { ...row, attachments: parseAttachments(row?.meta) };
+}
+
 /** 本地进行中的工具调用块（SSE 事件驱动渲染） */
 /** 终态事件集（一次 run 恰一个；send 等它抵达后再收尾刷新） */
 const TERMINAL_EVENT_TYPES: ReadonlySet<RunEventType> = new Set(['final', 'error', 'cancelled', 'timed_out']);
@@ -119,7 +144,7 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 	async function openSession(row: AgentSessionRow) {
 		currentSessionId.value = row.id;
 		currentProfileId.value = row.profileId;
-		messages.value = ((await service.agent.session.messages({ session_id: row.id })) || []) as any[];
+		messages.value = ((await service.agent.session.messages({ session_id: row.id })) || []).map(toViewMessage);
 	}
 
 	async function removeSession(row: AgentSessionRow) {
@@ -136,9 +161,10 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		streamingText.value = '';
 	}
 
-	/** 发送一条消息（SSE）。终态后重拉服务端消息（权威口径）。 */
-	async function send(question: string) {
-		if (running.value || !question.trim() || !currentProfileId.value) return;
+	/** 发送一条消息（SSE）。终态后重拉服务端消息（权威口径）。附件为已上传 media 引用。 */
+	async function send(question: string, attachments: AttachmentRef[] = []) {
+		if (running.value || !currentProfileId.value) return;
+		if (!question.trim() && !attachments.length) return;
 		running.value = true;
 		stopHint.value = '';
 		streamingText.value = '';
@@ -150,7 +176,8 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		toolRoundsFinal.value = null;
 		const sentMessages = messages.value.length;
 		runStartedAt = Date.now();
-		messages.value.push({ role: 'user', content: question });
+		// 乐观气泡带附件（终态后 refreshAfterRun 以服务端行替换，meta 重解析）
+		messages.value.push({ role: 'user', content: question, attachments });
 
 		try {
 			const url = mode === 'published' ? '/admin/agent/chat/chatStream' : '/admin/agent/profile/debugChat';
@@ -174,7 +201,8 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 				data: {
 					profileId: currentProfileId.value,
 					sessionId: currentSessionId.value,
-					question
+					question,
+					attachments: attachments.map(a => a.id)
 				},
 				cb: (event: RunEvent) => {
 					handleEvent(event);
@@ -323,7 +351,7 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		if (!currentSessionId.value) return;
 		try {
 			messages.value = ((await service.agent.session.messages({ session_id: currentSessionId.value })) ||
-				[]) as any[];
+				[]).map(toViewMessage);
 		} catch {
 			// draft 会话 messages 走同一端点；失败时保留流式文本兜底
 		}
