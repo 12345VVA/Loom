@@ -9,6 +9,1710 @@
               "content": {
                 "application/json": {
                   "schema": {
+                    "$ref": "#/components/schemas/ApprovalDecideRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "additionalProperties": true,
+                      "title": "Response Decide Admin Agent Approval Decide Post",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "decide",
+          "path": "/decide",
+          "prefix": "/admin/agent/approval",
+          "summary": "审批决定（approve/reject；审批人≠请求者；组终局自动恢复）",
+          "tag": "approval"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "id",
+                "required": true,
+                "schema": {
+                  "minimum": 1,
+                  "title": "Id",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "info",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "审批行（管理审批面）：args_json 不出列（治理——面上看摘要与 hash，args 原文仅执行链内部消费）。",
+                      "properties": {
+                        "approver": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Approver"
+                        },
+                        "argsHash": {
+                          "title": "Argshash",
+                          "type": "string"
+                        },
+                        "argsSummary": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Argssummary"
+                        },
+                        "createTime": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Createtime"
+                        },
+                        "decidedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Decidedat"
+                        },
+                        "executedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Executedat"
+                        },
+                        "expiresAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Expiresat"
+                        },
+                        "id": {
+                          "title": "Id",
+                          "type": "number"
+                        },
+                        "leaseExpiresAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Leaseexpiresat"
+                        },
+                        "requestedBy": {
+                          "title": "Requestedby",
+                          "type": "number"
+                        },
+                        "resultSummary": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Resultsummary"
+                        },
+                        "sessionId": {
+                          "title": "Sessionid",
+                          "type": "number"
+                        },
+                        "snapshotId": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Snapshotid"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        },
+                        "toolCallGroupId": {
+                          "title": "Toolcallgroupid",
+                          "type": "string"
+                        },
+                        "toolCallId": {
+                          "title": "Toolcallid",
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "title": "Toolname",
+                          "type": "string"
+                        },
+                        "toolRound": {
+                          "title": "Toolround",
+                          "type": "number"
+                        },
+                        "traceId": {
+                          "title": "Traceid",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "traceId",
+                        "toolCallGroupId",
+                        "toolRound",
+                        "toolCallId",
+                        "toolName",
+                        "argsHash",
+                        "status",
+                        "requestedBy"
+                      ],
+                      "title": "AgentToolApprovalRead",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "info",
+          "path": "/info",
+          "prefix": "/admin/agent/approval",
+          "summary": "获取详情",
+          "tag": "approval"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "list",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "items": {
+                        "description": "审批行（管理审批面）：args_json 不出列（治理——面上看摘要与 hash，args 原文仅执行链内部消费）。",
+                        "properties": {
+                          "approver": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Approver"
+                          },
+                          "argsHash": {
+                            "title": "Argshash",
+                            "type": "string"
+                          },
+                          "argsSummary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Argssummary"
+                          },
+                          "createTime": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Createtime"
+                          },
+                          "decidedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Decidedat"
+                          },
+                          "executedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Executedat"
+                          },
+                          "expiresAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Expiresat"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "number"
+                          },
+                          "leaseExpiresAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Leaseexpiresat"
+                          },
+                          "requestedBy": {
+                            "title": "Requestedby",
+                            "type": "number"
+                          },
+                          "resultSummary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Resultsummary"
+                          },
+                          "sessionId": {
+                            "title": "Sessionid",
+                            "type": "number"
+                          },
+                          "snapshotId": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Snapshotid"
+                          },
+                          "status": {
+                            "title": "Status",
+                            "type": "string"
+                          },
+                          "toolCallGroupId": {
+                            "title": "Toolcallgroupid",
+                            "type": "string"
+                          },
+                          "toolCallId": {
+                            "title": "Toolcallid",
+                            "type": "string"
+                          },
+                          "toolName": {
+                            "title": "Toolname",
+                            "type": "string"
+                          },
+                          "toolRound": {
+                            "title": "Toolround",
+                            "type": "number"
+                          },
+                          "traceId": {
+                            "title": "Traceid",
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sessionId",
+                          "traceId",
+                          "toolCallGroupId",
+                          "toolRound",
+                          "toolCallId",
+                          "toolName",
+                          "argsHash",
+                          "status",
+                          "requestedBy"
+                        ],
+                        "title": "AgentToolApprovalRead",
+                        "type": "object"
+                      },
+                      "title": "Response Endpoint Agent Approval List Admin Agent Approval List Post",
+                      "type": "array"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "list",
+          "path": "/list",
+          "prefix": "/admin/agent/approval",
+          "summary": "获取列表",
+          "tag": "approval"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "page",
+                "required": false,
+                "schema": {
+                  "default": 1,
+                  "maximum": 100000,
+                  "minimum": 1,
+                  "title": "Page",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "size",
+                "required": false,
+                "schema": {
+                  "default": 10,
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Size",
+                  "type": "number"
+                }
+              },
+              {
+                "in": "query",
+                "name": "keyword",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Keyword"
+                }
+              },
+              {
+                "in": "query",
+                "name": "order",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Order"
+                }
+              },
+              {
+                "in": "query",
+                "name": "sort",
+                "required": false,
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Sort"
+                }
+              },
+              {
+                "in": "query",
+                "name": "_action_name",
+                "required": false,
+                "schema": {
+                  "default": "page",
+                  "title": " Action Name",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "description": "审批行（管理审批面）：args_json 不出列（治理——面上看摘要与 hash，args 原文仅执行链内部消费）。",
+                            "properties": {
+                              "approver": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Approver"
+                              },
+                              "argsHash": {
+                                "title": "Argshash",
+                                "type": "string"
+                              },
+                              "argsSummary": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Argssummary"
+                              },
+                              "createTime": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Createtime"
+                              },
+                              "decidedAt": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Decidedat"
+                              },
+                              "executedAt": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Executedat"
+                              },
+                              "expiresAt": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Expiresat"
+                              },
+                              "id": {
+                                "title": "Id",
+                                "type": "number"
+                              },
+                              "leaseExpiresAt": {
+                                "anyOf": [
+                                  {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Leaseexpiresat"
+                              },
+                              "requestedBy": {
+                                "title": "Requestedby",
+                                "type": "number"
+                              },
+                              "resultSummary": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Resultsummary"
+                              },
+                              "sessionId": {
+                                "title": "Sessionid",
+                                "type": "number"
+                              },
+                              "snapshotId": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Snapshotid"
+                              },
+                              "status": {
+                                "title": "Status",
+                                "type": "string"
+                              },
+                              "toolCallGroupId": {
+                                "title": "Toolcallgroupid",
+                                "type": "string"
+                              },
+                              "toolCallId": {
+                                "title": "Toolcallid",
+                                "type": "string"
+                              },
+                              "toolName": {
+                                "title": "Toolname",
+                                "type": "string"
+                              },
+                              "toolRound": {
+                                "title": "Toolround",
+                                "type": "number"
+                              },
+                              "traceId": {
+                                "title": "Traceid",
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "sessionId",
+                              "traceId",
+                              "toolCallGroupId",
+                              "toolRound",
+                              "toolCallId",
+                              "toolName",
+                              "argsHash",
+                              "status",
+                              "requestedBy"
+                            ],
+                            "title": "AgentToolApprovalRead",
+                            "type": "object"
+                          },
+                          "title": "Items",
+                          "type": "array"
+                        },
+                        "page": {
+                          "title": "Page",
+                          "type": "number"
+                        },
+                        "page_size": {
+                          "title": "Page Size",
+                          "type": "number"
+                        },
+                        "total": {
+                          "title": "Total",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "page_size"
+                      ],
+                      "title": "PageResult[AgentToolApprovalRead]",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "page",
+          "path": "/page",
+          "prefix": "/admin/agent/approval",
+          "summary": "获取分页",
+          "tag": "approval"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ApprovalReconcileRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "additionalProperties": true,
+                      "title": "Response Reconcile Admin Agent Approval Reconcile Post",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "reconcile",
+          "path": "/reconcile",
+          "prefix": "/admin/agent/approval",
+          "summary": "租约残留人工核对收口（标记 succeeded/failed）",
+          "tag": "approval"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ApprovalReconcileRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "additionalProperties": true,
+                      "title": "Response Retry Admin Agent Approval Retry Post",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "retry",
+          "path": "/retry",
+          "prefix": "/admin/agent/approval",
+          "summary": "只读工具残留重试（写工具永不重试，D11）",
+          "tag": "approval"
+        }
+      ],
+      "columns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "session_id",
+          "dict": null,
+          "label": "sessionId",
+          "nullable": false,
+          "prop": "sessionId",
+          "propertyName": "sessionId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "session_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "trace_id",
+          "dict": null,
+          "label": "traceId",
+          "nullable": false,
+          "prop": "traceId",
+          "propertyName": "traceId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "trace_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_call_group_id",
+          "dict": null,
+          "label": "toolCallGroupId",
+          "nullable": false,
+          "prop": "toolCallGroupId",
+          "propertyName": "toolCallGroupId",
+          "required": true,
+          "source": "tool_call_group_id",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "tool_round",
+          "dict": null,
+          "label": "toolRound",
+          "nullable": false,
+          "prop": "toolRound",
+          "propertyName": "toolRound",
+          "required": true,
+          "source": "tool_round",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_call_id",
+          "dict": null,
+          "label": "toolCallId",
+          "nullable": false,
+          "prop": "toolCallId",
+          "propertyName": "toolCallId",
+          "required": true,
+          "source": "tool_call_id",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "tool_name",
+          "dict": null,
+          "label": "toolName",
+          "nullable": false,
+          "prop": "toolName",
+          "propertyName": "toolName",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "tool_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "args_summary",
+          "dict": null,
+          "label": "argsSummary",
+          "nullable": true,
+          "prop": "argsSummary",
+          "propertyName": "argsSummary",
+          "required": false,
+          "source": "args_summary",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "args_hash",
+          "dict": null,
+          "label": "argsHash",
+          "nullable": false,
+          "prop": "argsHash",
+          "propertyName": "argsHash",
+          "required": true,
+          "source": "args_hash",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "snapshot_id",
+          "dict": null,
+          "label": "snapshotId",
+          "nullable": true,
+          "prop": "snapshotId",
+          "propertyName": "snapshotId",
+          "required": false,
+          "source": "snapshot_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "status",
+          "dict": null,
+          "label": "status",
+          "nullable": false,
+          "prop": "status",
+          "propertyName": "status",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "status",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "requested_by",
+          "dict": null,
+          "label": "requestedBy",
+          "nullable": false,
+          "prop": "requestedBy",
+          "propertyName": "requestedBy",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "requested_by",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "approver",
+          "dict": null,
+          "label": "approver",
+          "nullable": true,
+          "prop": "approver",
+          "propertyName": "approver",
+          "required": false,
+          "source": "approver",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "decided_at",
+          "dict": null,
+          "label": "decidedAt",
+          "nullable": true,
+          "prop": "decidedAt",
+          "propertyName": "decidedAt",
+          "required": false,
+          "source": "decided_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "lease_expires_at",
+          "dict": null,
+          "label": "leaseExpiresAt",
+          "nullable": true,
+          "prop": "leaseExpiresAt",
+          "propertyName": "leaseExpiresAt",
+          "required": false,
+          "source": "lease_expires_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "executed_at",
+          "dict": null,
+          "label": "executedAt",
+          "nullable": true,
+          "prop": "executedAt",
+          "propertyName": "executedAt",
+          "required": false,
+          "source": "executed_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "expires_at",
+          "dict": null,
+          "label": "expiresAt",
+          "nullable": true,
+          "prop": "expiresAt",
+          "propertyName": "expiresAt",
+          "required": false,
+          "source": "expires_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "result_summary",
+          "dict": null,
+          "label": "resultSummary",
+          "nullable": true,
+          "prop": "resultSummary",
+          "propertyName": "resultSummary",
+          "required": false,
+          "source": "result_summary",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "module": "agent",
+      "name": "approval",
+      "namespace": "admin/agent/approval",
+      "pageColumns": [
+        {
+          "comment": "id",
+          "dict": null,
+          "label": "id",
+          "nullable": false,
+          "prop": "id",
+          "propertyName": "id",
+          "required": true,
+          "source": "id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "session_id",
+          "dict": null,
+          "label": "sessionId",
+          "nullable": false,
+          "prop": "sessionId",
+          "propertyName": "sessionId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "session_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "trace_id",
+          "dict": null,
+          "label": "traceId",
+          "nullable": false,
+          "prop": "traceId",
+          "propertyName": "traceId",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "trace_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_call_group_id",
+          "dict": null,
+          "label": "toolCallGroupId",
+          "nullable": false,
+          "prop": "toolCallGroupId",
+          "propertyName": "toolCallGroupId",
+          "required": true,
+          "source": "tool_call_group_id",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "tool_round",
+          "dict": null,
+          "label": "toolRound",
+          "nullable": false,
+          "prop": "toolRound",
+          "propertyName": "toolRound",
+          "required": true,
+          "source": "tool_round",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "tool_call_id",
+          "dict": null,
+          "label": "toolCallId",
+          "nullable": false,
+          "prop": "toolCallId",
+          "propertyName": "toolCallId",
+          "required": true,
+          "source": "tool_call_id",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "tool_name",
+          "dict": null,
+          "label": "toolName",
+          "nullable": false,
+          "prop": "toolName",
+          "propertyName": "toolName",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "tool_name",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "args_summary",
+          "dict": null,
+          "label": "argsSummary",
+          "nullable": true,
+          "prop": "argsSummary",
+          "propertyName": "argsSummary",
+          "required": false,
+          "source": "args_summary",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "args_hash",
+          "dict": null,
+          "label": "argsHash",
+          "nullable": false,
+          "prop": "argsHash",
+          "propertyName": "argsHash",
+          "required": true,
+          "source": "args_hash",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "snapshot_id",
+          "dict": null,
+          "label": "snapshotId",
+          "nullable": true,
+          "prop": "snapshotId",
+          "propertyName": "snapshotId",
+          "required": false,
+          "source": "snapshot_id",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "status",
+          "dict": null,
+          "label": "status",
+          "nullable": false,
+          "prop": "status",
+          "propertyName": "status",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "status",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "requested_by",
+          "dict": null,
+          "label": "requestedBy",
+          "nullable": false,
+          "prop": "requestedBy",
+          "propertyName": "requestedBy",
+          "required": true,
+          "search": {
+            "value": true
+          },
+          "source": "requested_by",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "approver",
+          "dict": null,
+          "label": "approver",
+          "nullable": true,
+          "prop": "approver",
+          "propertyName": "approver",
+          "required": false,
+          "source": "approver",
+          "type": "number",
+          "validate": null
+        },
+        {
+          "comment": "decided_at",
+          "dict": null,
+          "label": "decidedAt",
+          "nullable": true,
+          "prop": "decidedAt",
+          "propertyName": "decidedAt",
+          "required": false,
+          "source": "decided_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "lease_expires_at",
+          "dict": null,
+          "label": "leaseExpiresAt",
+          "nullable": true,
+          "prop": "leaseExpiresAt",
+          "propertyName": "leaseExpiresAt",
+          "required": false,
+          "source": "lease_expires_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "executed_at",
+          "dict": null,
+          "label": "executedAt",
+          "nullable": true,
+          "prop": "executedAt",
+          "propertyName": "executedAt",
+          "required": false,
+          "source": "executed_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "expires_at",
+          "dict": null,
+          "label": "expiresAt",
+          "nullable": true,
+          "prop": "expiresAt",
+          "propertyName": "expiresAt",
+          "required": false,
+          "source": "expires_at",
+          "type": "datetime",
+          "validate": null
+        },
+        {
+          "comment": "result_summary",
+          "dict": null,
+          "label": "resultSummary",
+          "nullable": true,
+          "prop": "resultSummary",
+          "propertyName": "resultSummary",
+          "required": false,
+          "source": "result_summary",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "created_at",
+          "dict": null,
+          "label": "createTime",
+          "nullable": true,
+          "prop": "createTime",
+          "propertyName": "createTime",
+          "required": false,
+          "source": "created_at",
+          "type": "datetime",
+          "validate": null
+        }
+      ],
+      "pageQueryOp": {
+        "fieldEq": [
+          "status",
+          "sessionId",
+          "traceId",
+          "requestedBy"
+        ],
+        "fieldLike": [],
+        "keyWordLikeFields": [
+          "tool_name"
+        ]
+      },
+      "prefix": "/admin/agent/approval"
+    },
+    {
+      "api": [
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
                     "$ref": "#/components/schemas/ChatStreamRequest"
                   }
                 }
@@ -90,6 +1794,140 @@
           "path": "/chatStream",
           "prefix": "/admin/agent/chat",
           "summary": "正式对话流式运行（published 快照；受控事件队列）",
+          "tag": "chat"
+        },
+        {
+          "dts": {
+            "parameters": [],
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ResumeStatusRequest"
+                  }
+                }
+              },
+              "required": true
+            },
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "description": "E4 恢复状态轮询（前端凭 traceToken/traceId 重建查询——三概念分离之恢复执行）。\n\nwaiting：组内审批未全部终局（继续轮询）；running：恢复执行中；terminal：终态已落库\n（附带回复与统计，前端刷新消息后停止轮询）。",
+                      "properties": {
+                        "answer": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Answer"
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Error"
+                        },
+                        "groupId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Groupid"
+                        },
+                        "status": {
+                          "title": "Status",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "status"
+                      ],
+                      "title": "ResumeStatusResponse",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "POST",
+          "name": "resumeStatus",
+          "path": "/resumeStatus",
+          "prefix": "/admin/agent/chat",
+          "summary": "审批挂起 run 的恢复状态轮询（仅本人 trace）",
           "tag": "chat"
         },
         {
@@ -194,7 +2032,7 @@
           "name": "stopStream",
           "path": "/stopStream",
           "prefix": "/admin/agent/chat",
-          "summary": "停止运行（取消令牌置位；仅本人）",
+          "summary": "停止运行（取消令牌置位；仅本人；支持取消挂起中审批）",
           "tag": "chat"
         }
       ],

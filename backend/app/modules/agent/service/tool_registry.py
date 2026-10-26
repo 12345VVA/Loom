@@ -66,7 +66,8 @@ _LEVEL_ORDER = {
 }
 
 # 契约兼容性判定的约束键分类（fail-close：current 新增未识别约束 → 不兼容）
-_COMPAT_IGNORED_KEYS = {"description", "default"}  # 语义无影响
+# title：pydantic schema 自带展示元数据，手写快照可省——语义无影响
+_COMPAT_IGNORED_KEYS = {"description", "default", "title"}  # 语义无影响
 # 可放宽键：current 约束 ≥ snapshot（更宽松）则兼容，收紧则不兼容
 _COMPAT_RELAXABLE_KEYS = {"enum", "minimum", "maximum"}
 # 结构递归键

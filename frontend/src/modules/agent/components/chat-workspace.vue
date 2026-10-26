@@ -275,7 +275,15 @@
 						<el-icon class="is-loading"><loading /></el-icon>
 						{{ t('agent.session.toolRunning') }}：{{ runningTool.toolName }}
 					</div>
-					<el-alert v-if="stopHint" :title="stopHint" type="warning" :closable="false" class="ws-stop-hint" />
+						<el-alert v-if="stopHint" :title="stopHint" type="warning" :closable="false" class="ws-stop-hint" />
+					<!-- E4 审批挂起等待态（恢复轮询驱动终局刷新；停止按钮对挂起 run 仍有效） -->
+					<el-alert
+						v-if="awaitingApproval"
+						:title="awaitingApproval.message"
+						type="info"
+						:closable="false"
+						class="ws-stop-hint"
+					/>
 				</div>
 			</div>
 
@@ -425,6 +433,7 @@ const {
 	modelCallsCount,
 	toolRoundsFinal,
 	stopHint,
+	awaitingApproval,
 	streamingText,
 	loadProfiles,
 	loadSessions,

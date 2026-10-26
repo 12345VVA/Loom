@@ -134,6 +134,7 @@ celery_app = Celery(
         "app.modules.workflow_eval.tasks.eval_tasks",
         "app.modules.media.tasks.mirror_tasks",
         "app.modules.media.tasks.ingest_tasks",
+        "app.modules.agent.tasks.approval_tasks",
     ],
 )
 
@@ -158,6 +159,7 @@ celery_app.conf.update(
         Queue("workflow"),
         Queue("workflow.eval"),  # T9：批量评估独立队列，生产用 -Q workflow.eval 独占 worker，避免饿死正式工作流
         Queue("media.mirror"),  # WFI-3b：媒体产物 TOS 镜像低优先级队列（可并入 default worker 或独立部署）
+        Queue("agent.approval"),  # E4：HITL 审批过期巡检（低频周期任务，可并入 default worker）
         *(Queue(queue_name) for queue_name in AI_TASK_QUEUES),
     ),
     task_routes={
@@ -175,6 +177,8 @@ celery_app.conf.update(
         "task.dispatch_due_tasks": {"queue": "default"},
         "task.execute_system_task": {"queue": "default"},
         "task.clean_expired_logs": {"queue": "default"},
+        # E4 HITL 审批巡检（设计附录 task-celery 对齐：agent.approval 队列）
+        "agent.approval.sweep_expiry": {"queue": "agent.approval"},
     },
 )
 
@@ -219,5 +223,12 @@ celery_app.conf.beat_schedule = {
     "sweep-uningested-ai-media-ingest": {
         "task": "media.ingest.sweep_uningested",
         "schedule": 3600.0,
+    },
+    # 每分钟巡检 HITL 审批：pending 过期（SLA 默认 7 天）→ expired + 组终局触发恢复；
+    # executing 租约残留检测与 args 保留期清理同任务（E4，条件更新幂等，多 worker 安全）
+    "sweep-agent-approval-expiry": {
+        "task": "agent.approval.sweep_expiry",
+        "schedule": 60.0,
+        "options": {"queue": "agent.approval"},
     },
 }

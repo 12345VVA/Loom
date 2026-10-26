@@ -1,71 +1,267 @@
 [
-  {
-    "code": "nav_agent",
-    "name": "智能体管理",
-    "type": "group",
-    "icon": "icon-agent",
-    "sort_order": 58,
-    "role_codes": ["admin"],
+ {
+  "code": "nav_agent",
+  "name": "智能体管理",
+  "type": "group",
+  "icon": "icon-agent",
+  "sort_order": 58,
+  "role_codes": [
+   "admin"
+  ],
+  "children": [
+   {
+    "code": "nav_agent_profile",
+    "name": "智能体列表",
+    "type": "menu",
+    "module": "agent",
+    "resource": "profile",
+    "path": "/agent/profile",
+    "component": "modules/agent/views/profile.vue",
+    "icon": "icon-agent-profile",
+    "sort_order": 1,
+    "role_codes": [
+     "admin"
+    ],
     "children": [
-      {
-        "code": "nav_agent_profile",
-        "name": "智能体列表",
-        "type": "menu",
-        "module": "agent",
-        "resource": "profile",
-        "path": "/agent/profile",
-        "component": "modules/agent/views/profile.vue",
-        "icon": "icon-agent-profile",
-        "sort_order": 1,
-        "role_codes": ["admin"],
-        "children": [
-          { "code": "agent_profile_add", "name": "新增", "type": "button", "permission": "agent:profile:add", "role_codes": ["admin"] },
-          { "code": "agent_profile_update", "name": "修改", "type": "button", "permission": "agent:profile:update", "role_codes": ["admin"] },
-          { "code": "agent_profile_delete", "name": "删除", "type": "button", "permission": "agent:profile:delete", "role_codes": ["admin"] },
-          { "code": "agent_profile_page", "name": "分页", "type": "button", "permission": "agent:profile:page", "role_codes": ["admin"] },
-          { "code": "agent_profile_info", "name": "详情", "type": "button", "permission": "agent:profile:info", "role_codes": ["admin"] },
-          { "code": "agent_profile_publish", "name": "发布", "type": "button", "permission": "agent:profile:publish", "role_codes": ["admin"] },
-          { "code": "agent_profile_rollback", "name": "回滚", "type": "button", "permission": "agent:profile:rollback", "role_codes": ["admin"] },
-          { "code": "agent_profile_debug", "name": "调试台", "type": "button", "permission": "agent:profile:debugChat", "role_codes": ["admin"] }
-        ]
-      },
-      {
-        "code": "nav_agent_session",
-        "name": "智能体会话",
-        "type": "menu",
-        "module": "agent",
-        "resource": "session",
-        "path": "/agent/session",
-        "component": "modules/agent/views/session.vue",
-        "icon": "icon-agent-session",
-        "sort_order": 2,
-        "role_codes": ["admin"],
-        "children": [
-          { "code": "agent_chat_stream", "name": "对话", "type": "button", "permission": "agent:chat:stream", "role_codes": ["admin"] },
-          { "code": "agent_chat_stop", "name": "停止对话", "type": "button", "permission": "agent:chat:stop", "role_codes": ["admin"] },
-          { "code": "agent_session_page", "name": "分页", "type": "button", "permission": "agent:session:page", "role_codes": ["admin"] },
-          { "code": "agent_session_info", "name": "详情", "type": "button", "permission": "agent:session:info", "role_codes": ["admin"] }
-        ]
-      },
-      {
-        "code": "nav_agent_trace",
-        "name": "调用追踪",
-        "type": "menu",
-        "module": "agent",
-        "resource": "trace",
-        "path": "/agent/trace",
-        "component": "modules/agent/views/trace.vue",
-        "icon": "icon-agent-trace",
-        "sort_order": 3,
-        "role_codes": ["admin"],
-        "children": [
-          { "code": "agent_trace_page", "name": "分页", "type": "button", "permission": "agent:trace:page", "role_codes": ["admin"] },
-          { "code": "agent_trace_info", "name": "详情", "type": "button", "permission": "agent:trace:info", "role_codes": ["admin"] },
-          { "code": "agent_tool_list", "name": "工具清单", "type": "button", "permission": "agent:tool:list", "role_codes": ["admin"] },
-          { "code": "agent_tool_toggle", "name": "工具启停", "type": "button", "permission": "agent:tool:toggle", "role_codes": ["admin"] },
-          { "code": "agent_tool_refresh", "name": "工具刷新", "type": "button", "permission": "agent:tool:refresh", "role_codes": ["admin"] }
-        ]
-      }
+     {
+      "code": "agent_profile_add",
+      "name": "新增",
+      "type": "button",
+      "permission": "agent:profile:add",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_profile_update",
+      "name": "修改",
+      "type": "button",
+      "permission": "agent:profile:update",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_profile_delete",
+      "name": "删除",
+      "type": "button",
+      "permission": "agent:profile:delete",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_profile_page",
+      "name": "分页",
+      "type": "button",
+      "permission": "agent:profile:page",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_profile_info",
+      "name": "详情",
+      "type": "button",
+      "permission": "agent:profile:info",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_profile_publish",
+      "name": "发布",
+      "type": "button",
+      "permission": "agent:profile:publish",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_profile_rollback",
+      "name": "回滚",
+      "type": "button",
+      "permission": "agent:profile:rollback",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_profile_debug",
+      "name": "调试台",
+      "type": "button",
+      "permission": "agent:profile:debugChat",
+      "role_codes": [
+       "admin"
+      ]
+     }
     ]
-  }
+   },
+   {
+    "code": "nav_agent_session",
+    "name": "智能体会话",
+    "type": "menu",
+    "module": "agent",
+    "resource": "session",
+    "path": "/agent/session",
+    "component": "modules/agent/views/session.vue",
+    "icon": "icon-agent-session",
+    "sort_order": 2,
+    "role_codes": [
+     "admin"
+    ],
+    "children": [
+     {
+      "code": "agent_chat_stream",
+      "name": "对话",
+      "type": "button",
+      "permission": "agent:chat:stream",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_chat_stop",
+      "name": "停止对话",
+      "type": "button",
+      "permission": "agent:chat:stop",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_session_page",
+      "name": "分页",
+      "type": "button",
+      "permission": "agent:session:page",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_session_info",
+      "name": "详情",
+      "type": "button",
+      "permission": "agent:session:info",
+      "role_codes": [
+       "admin"
+      ]
+     }
+    ]
+   },
+   {
+    "code": "nav_agent_trace",
+    "name": "调用追踪",
+    "type": "menu",
+    "module": "agent",
+    "resource": "trace",
+    "path": "/agent/trace",
+    "component": "modules/agent/views/trace.vue",
+    "icon": "icon-agent-trace",
+    "sort_order": 3,
+    "role_codes": [
+     "admin"
+    ],
+    "children": [
+     {
+      "code": "agent_trace_page",
+      "name": "分页",
+      "type": "button",
+      "permission": "agent:trace:page",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_trace_info",
+      "name": "详情",
+      "type": "button",
+      "permission": "agent:trace:info",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_tool_list",
+      "name": "工具清单",
+      "type": "button",
+      "permission": "agent:tool:list",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_tool_toggle",
+      "name": "工具启停",
+      "type": "button",
+      "permission": "agent:tool:toggle",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_tool_refresh",
+      "name": "工具刷新",
+      "type": "button",
+      "permission": "agent:tool:refresh",
+      "role_codes": [
+       "admin"
+      ]
+     }
+    ]
+   },
+   {
+    "code": "nav_agent_approval",
+    "name": "审批队列",
+    "type": "menu",
+    "module": "agent",
+    "resource": "approval",
+    "path": "/agent/approval",
+    "component": "modules/agent/views/approval.vue",
+    "icon": "icon-agent-profile",
+    "sort_order": 4,
+    "role_codes": [
+     "admin"
+    ],
+    "children": [
+     {
+      "code": "agent_approval_page",
+      "name": "分页",
+      "type": "button",
+      "permission": "agent:approval:page",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_approval_info",
+      "name": "详情",
+      "type": "button",
+      "permission": "agent:approval:info",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_approval_decide",
+      "name": "审批决定",
+      "type": "button",
+      "permission": "agent:approval:decide",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_approval_reconcile",
+      "name": "人工核对",
+      "type": "button",
+      "permission": "agent:approval:reconcile",
+      "role_codes": [
+       "admin"
+      ]
+     }
+    ]
+   }
+  ]
+ }
 ]

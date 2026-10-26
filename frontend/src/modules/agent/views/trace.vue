@@ -74,8 +74,10 @@ const { service } = useCool();
 const { t } = useI18n();
 const serviceTrace = service.agent.trace;
 
-// 状态字典（cool-crud-conventions.mdc：简单枚举复用 dict 与 dictColor）
+// 状态字典（cool-crud-conventions.mdc：简单枚举复用 dict 与 dictColor）；waiting_approval 为 E4 非终态
 const statusOptions = [
+	{ label: t('agent.trace.statusRunning'), value: 'running', type: 'primary' },
+	{ label: t('agent.trace.statusWaitingApproval'), value: 'waiting_approval', type: 'warning' },
 	{ label: t('agent.trace.statusCompleted'), value: 'completed', type: 'success' },
 	{ label: t('agent.trace.statusFailed'), value: 'failed', type: 'danger' },
 	{ label: t('agent.trace.statusCancelled'), value: 'cancelled', type: 'info' },

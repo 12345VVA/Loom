@@ -38,10 +38,12 @@ AGENT_EXECUTION_MODES = {AGENT_EXECUTION_MODE_CHAT, AGENT_EXECUTION_MODE_WORKFLO
 
 # run 终态机（需求 4.2 ⑤）：running 为执行中非终态；预算耗尽收尾 → completed 非 failed
 AGENT_RUN_RUNNING = "running"
+AGENT_RUN_WAITING_APPROVAL = "waiting_approval"  # E4：HITL 审批挂起（非终态，D27/D30 三概念分离）
 AGENT_RUN_COMPLETED = "completed"
 AGENT_RUN_FAILED = "failed"
 AGENT_RUN_CANCELLED = "cancelled"
 AGENT_RUN_TIMED_OUT = "timed_out"
+AGENT_RUN_NON_TERMINAL_STATUSES = {AGENT_RUN_RUNNING, AGENT_RUN_WAITING_APPROVAL}
 AGENT_RUN_TERMINAL_STATUSES = {AGENT_RUN_COMPLETED, AGENT_RUN_FAILED, AGENT_RUN_CANCELLED, AGENT_RUN_TIMED_OUT}
 
 # 工具三级风险分级（需求 D11）：首版封闭清单全部 readonly
@@ -64,6 +66,42 @@ AGENT_TOOL_CHANGE_KINDS = {
     AGENT_TOOL_CHANGE_CONTRACT,
     AGENT_TOOL_CHANGE_META,
     AGENT_TOOL_CHANGE_BOTH,
+}
+
+# HITL 工具审批（E4，二批 3.5）：status 八值状态机
+# pending → approved → executing → succeeded/failed（执行链）
+# pending → rejected / expired / cancelled（决定与过期链）
+AGENT_APPROVAL_PENDING = "pending"
+AGENT_APPROVAL_APPROVED = "approved"
+AGENT_APPROVAL_REJECTED = "rejected"
+AGENT_APPROVAL_EXPIRED = "expired"
+AGENT_APPROVAL_EXECUTING = "executing"
+AGENT_APPROVAL_SUCCEEDED = "succeeded"
+AGENT_APPROVAL_FAILED = "failed"
+AGENT_APPROVAL_CANCELLED = "cancelled"
+AGENT_APPROVAL_STATUSES = {
+    AGENT_APPROVAL_PENDING,
+    AGENT_APPROVAL_APPROVED,
+    AGENT_APPROVAL_REJECTED,
+    AGENT_APPROVAL_EXPIRED,
+    AGENT_APPROVAL_EXECUTING,
+    AGENT_APPROVAL_SUCCEEDED,
+    AGENT_APPROVAL_FAILED,
+    AGENT_APPROVAL_CANCELLED,
+}
+# 已决定（脱离 pending；approved 仍待执行）；终局（不再有任何动作）
+AGENT_APPROVAL_DECIDED_STATUSES = {
+    AGENT_APPROVAL_APPROVED,
+    AGENT_APPROVAL_REJECTED,
+    AGENT_APPROVAL_EXPIRED,
+    AGENT_APPROVAL_CANCELLED,
+}
+AGENT_APPROVAL_TERMINAL_STATUSES = {
+    AGENT_APPROVAL_SUCCEEDED,
+    AGENT_APPROVAL_FAILED,
+    AGENT_APPROVAL_REJECTED,
+    AGENT_APPROVAL_EXPIRED,
+    AGENT_APPROVAL_CANCELLED,
 }
 
 # 发布动作
@@ -222,6 +260,52 @@ class AgentRunTrace(BaseEntity, table=True):
     status: str = Field(default=AGENT_RUN_RUNNING, index=True, max_length=20)
     # 备注性错误信息（取消区分「已请求/确认终止」+ 残留清单 + 预算触发项等）
     error: str | None = Field(default=None, sa_column=Column(Text))
+    # E4：跨审批挂起的执行时长累计（D27——duration 不含审批等待；挂起时累积，终态时 duration_ms = execution_ms + 恢复段）
+    execution_ms: int = Field(default=0)
+
+
+class AgentToolApproval(BaseEntity, table=True):
+    """HITL 工具审批行（E4，二批 3.5）：每次需审批的 tool_call 一行，恢复处理以组为单位。
+
+    - 组合唯一 (trace_id, tool_round, tool_call_id)（同 trace 多轮的 tool_call_id 重用不冲突）；
+    - tool_call_group_id = 同一次 assistant 响应的整组标识（挂起/恢复/过期收尾的判定单元）；
+    - args_json/args_hash 是审批锚点：恢复执行前 args_hash 比对（A14 漂移不可利用），
+      args_json 在终局超保留期后清理（仅留摘要与 hash）；
+    - 租约：进入 executing 写 lease_expires_at，到期仍 executing = 残留执行（人工核对入口）；
+    - 审批占位永不入消息——挂起 AI 消息落 agent_message（meta.tool_calls），tool 结果在恢复时原子补齐。
+    """
+
+    __tablename__ = "agent_tool_approval"
+    __table_args__ = (
+        Index(
+            "uq_agent_approval_call",
+            "trace_id",
+            "tool_round",
+            "tool_call_id",
+            unique=True,
+            postgresql_where=text("delete_time IS NULL"),
+            sqlite_where=text("delete_time IS NULL"),
+        ),
+    )
+
+    session_id: int = Field(index=True)
+    trace_id: int = Field(index=True)
+    tool_call_group_id: str = Field(index=True, max_length=64)
+    tool_round: int = Field(default=0)
+    tool_call_id: str = Field(max_length=150)
+    tool_name: str = Field(max_length=150)
+    args_json: str | None = Field(default=None, sa_column=Column(Text))  # 原始 args JSON（保留期后清理）
+    args_summary: str | None = Field(default=None, sa_column=Column(Text))  # 展示摘要（截断，长期保留）
+    args_hash: str = Field(default="", max_length=64)
+    snapshot_id: int | None = Field(default=None)
+    status: str = Field(default=AGENT_APPROVAL_PENDING, index=True, max_length=20)
+    requested_by: int = Field(index=True)
+    approver: int | None = Field(default=None)
+    decided_at: datetime | None = Field(default=None)
+    lease_expires_at: datetime | None = Field(default=None)
+    executed_at: datetime | None = Field(default=None)
+    expires_at: datetime | None = Field(default=None)  # pending 过期线（SLA）
+    result_summary: str | None = Field(default=None, sa_column=Column(Text))
 
 
 class AgentToolCallLog(BaseEntity, table=True):
@@ -457,6 +541,49 @@ class ToolToggleRequest(BaseModel):
 
     id: int
     status: bool
+
+
+class AgentToolApprovalRead(BaseModel):
+    """审批行（管理审批面）：args_json 不出列（治理——面上看摘要与 hash，args 原文仅执行链内部消费）。"""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    session_id: int
+    trace_id: int
+    tool_call_group_id: str
+    tool_round: int
+    tool_call_id: str
+    tool_name: str
+    args_summary: str | None = None
+    args_hash: str
+    snapshot_id: int | None = None
+    status: str
+    requested_by: int
+    approver: int | None = None
+    decided_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    executed_at: datetime | None = None
+    expires_at: datetime | None = None
+    result_summary: str | None = None
+    created_at: datetime | None = None
+
+
+class ApprovalDecideRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    action: str  # approve / reject
+
+
+class ApprovalReconcileRequest(BaseModel):
+    """executing 租约到期残留的人工核对处置（A25）。"""
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    outcome: str  # succeeded / failed
+    note: str | None = None
 
 
 class ProfilePublishRequest(BaseModel):

@@ -38,9 +38,28 @@ class ChatStopRequest(BaseModel):
     trace_token: str
 
 
+class ResumeStatusRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
+
+    trace_id: int
+
+
 class StopResponse(BaseModel):
     stopped: bool
     message: str
+
+
+class ResumeStatusResponse(BaseModel):
+    """E4 恢复状态轮询（前端凭 traceToken/traceId 重建查询——三概念分离之恢复执行）。
+
+    waiting：组内审批未全部终局（继续轮询）；running：恢复执行中；terminal：终态已落库
+    （附带回复与统计，前端刷新消息后停止轮询）。
+    """
+
+    status: str
+    answer: str | None = None
+    error: str | None = None
+    groupId: str | None = None
 
 
 _SSE_HEADERS = {
@@ -78,7 +97,7 @@ class AgentChatController(BaseController):
             current_user=current_user,
         )
 
-    @Post("/stopStream", summary="停止运行（取消令牌置位；仅本人）", permission=f"{_PERM}:stop")
+    @Post("/stopStream", summary="停止运行（取消令牌置位；仅本人；支持取消挂起中审批）", permission=f"{_PERM}:stop")
     def stop_stream(
         self,
         payload: ChatStopRequest,
@@ -87,6 +106,50 @@ class AgentChatController(BaseController):
     ) -> StopResponse:
         result = AgentRunService(session).stop_run(payload.trace_token, current_user)
         return StopResponse(**result)
+
+    @Post("/resumeStatus", summary="审批挂起 run 的恢复状态轮询（仅本人 trace）", permission=f"{_PERM}:stream")
+    def resume_status(
+        self,
+        payload: ResumeStatusRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> ResumeStatusResponse:
+        from sqlmodel import select
+
+        from app.modules.agent.model.agent import (
+            AGENT_RUN_NON_TERMINAL_STATUSES,
+            AGENT_RUN_WAITING_APPROVAL,
+            AgentMessage,
+            AgentRunTrace,
+        )
+        from app.modules.agent.service import approval_service
+
+        trace = session.get(AgentRunTrace, payload.trace_id)
+        if trace is None or trace.delete_time is not None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="运行轨迹不存在")
+        if trace.user_id != current_user.id and not getattr(current_user, "is_super_admin", False):
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=403, detail="仅可查询本人的运行")
+        if trace.status == AGENT_RUN_WAITING_APPROVAL:
+            live = approval_service.suspended_group_of(session, trace.id)
+            return ResumeStatusResponse(status="waiting", groupId=live[0] if live else None)
+        if trace.status in AGENT_RUN_NON_TERMINAL_STATUSES:
+            return ResumeStatusResponse(status="running")
+        # 终态：权威答案 = 该 trace 会话最后一条 assistant 消息（终态落库已含挂起 AI 与组结果）
+        last_answer = session.exec(
+            select(AgentMessage)
+            .where(AgentMessage.session_id == trace.session_id, AgentMessage.role == "assistant")
+            .order_by(AgentMessage.id.desc())  # type: ignore[attr-defined]
+            .limit(1)
+        ).first()
+        return ResumeStatusResponse(
+            status="terminal",
+            answer=last_answer.content if last_answer else None,
+            error=trace.error,
+        )
 
 
 router = AgentChatController.router

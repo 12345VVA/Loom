@@ -12,6 +12,7 @@ export type RunEventType =
 	| 'answer_delta'
 	| 'answer_reset'
 	| 'answer_done'
+	| 'approval_required'
 	| 'final'
 	| 'error'
 	| 'cancelled'
@@ -63,6 +64,9 @@ function toViewMessage(row: any): any {
 /** 终态事件集（一次 run 恰一个；send 等它抵达后再收尾刷新） */
 const TERMINAL_EVENT_TYPES: ReadonlySet<RunEventType> = new Set(['final', 'error', 'cancelled', 'timed_out']);
 
+/** E4 审批挂起：连接结束 ≠ Run 终结（三概念分离）——approval_required 后结束传输，等待轮询恢复 */
+const RESUME_POLL_INTERVAL_MS = 5000;
+
 export interface LiveToolBlock {
 	toolCallId: string;
 	toolName: string;
@@ -108,6 +112,9 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 	const elapsedMs = ref<number | null>(null);
 	const modelCallsCount = ref(0);
 	const toolRoundsFinal = ref<number | null>(null);
+	/** E4 审批挂起态（session 内轮询 resumeStatus 至终局；停止按钮对挂起 run 仍有效） */
+	const awaitingApproval = ref<{ traceId: number; message: string } | null>(null);
+	let resumePollTimer: ReturnType<typeof setInterval> | null = null;
 	let runStartedAt = 0;
 
 	const currentProfileId = ref<number | undefined>(undefined);
@@ -206,7 +213,8 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 				},
 				cb: (event: RunEvent) => {
 					handleEvent(event);
-					if (TERMINAL_EVENT_TYPES.has(event.type)) settleFinal();
+					// approval_required 同样收尾等待（连接结束 ≠ Run 终结：后续由恢复轮询驱动刷新）
+					if (TERMINAL_EVENT_TYPES.has(event.type) || event.type === 'approval_required') settleFinal();
 				}
 			});
 			// 等终态事件（或服务端 run 超时上限 + 余量，防终态帧丢失时永久挂起）
@@ -324,6 +332,16 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 			case 'answer_done':
 				// 草稿定稿：保留至 final / 终态刷新以服务端消息替代
 				break;
+			case 'approval_required': {
+				// E4：本轮含需审批调用，已挂起——展示等待态并启动恢复轮询（终局自动刷新）
+				const traceId = Number(event.payload?.traceId) || 0;
+				awaitingApproval.value = {
+					traceId,
+					message: event.payload?.message || '本轮包含需要人工审批的工具调用，已挂起等待审批'
+				};
+				startResumePolling(traceId);
+				break;
+			}
 			case 'final':
 				streamingText.value = event.payload?.answer || '';
 				// 服务端权威口径覆盖本地计数（final payload：modelCalls/toolRounds）
@@ -343,6 +361,36 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 			case 'timed_out':
 				stopHint.value = '本次运行超时';
 				break;
+		}
+	}
+
+	/** E4 恢复轮询：挂起 run 审批终局后刷新消息（三概念分离之恢复执行——轮询结果接口形态）。 */
+	function startResumePolling(traceId: number) {
+		stopResumePolling();
+		if (!traceId) return;
+		// EPS 行模型失真（asset 期坑⑩）——最小行类型收敛（ResumeStatusResponse: status/answer/error/groupId）
+		type ResumeStatusRow = { status?: string; answer?: string | null; error?: string | null; groupId?: string | null };
+		resumePollTimer = setInterval(async () => {
+			try {
+				const status = (await service.agent.chat.resumeStatus({ traceId })) as unknown as ResumeStatusRow;
+				if (status?.status === 'terminal') {
+					stopResumePolling();
+					awaitingApproval.value = null;
+					await refreshAfterRun();
+					if (status.error) stopHint.value = status.error;
+				} else if (status?.status === 'waiting' && status.groupId) {
+					awaitingApproval.value = { ...awaitingApproval.value! };
+				}
+			} catch {
+				// 单次轮询失败静默——下一轮重试
+			}
+		}, RESUME_POLL_INTERVAL_MS);
+	}
+
+	function stopResumePolling() {
+		if (resumePollTimer) {
+			clearInterval(resumePollTimer);
+			resumePollTimer = null;
 		}
 	}
 
@@ -396,6 +444,7 @@ export function useAgentSession(options: { mode: 'published' | 'draft' }) {
 		traceToken,
 		stopHint,
 		streamingText,
+		awaitingApproval,
 		loadProfiles,
 		loadSessions,
 		openSession,

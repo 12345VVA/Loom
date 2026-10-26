@@ -28,6 +28,7 @@ from app.modules.agent.model.agent import (
     AgentProfileUpdateRequest,
     AgentRunTrace,
     AgentSession,
+    AgentToolApproval,
     AgentToolResource,
     AgentToolResourceVersion,
 )
@@ -53,6 +54,7 @@ class AgentProfileCrudTestCase(unittest.TestCase):
         self.engine = make_test_engine(
             tables=[
                 AgentProfile.__table__,
+                AgentToolApproval.__table__,
                 AgentToolResource.__table__,
                 AgentToolResourceVersion.__table__,
                 AgentProfileDraft.__table__,

@@ -40,6 +40,25 @@ from app.modules.agent.service.runtime.tool_executor import ToolExecutor
 logger = logging.getLogger("agent.graph")
 
 
+class ApprovalSuspension(Exception):
+    """E4 整组预检命中：本轮含需审批调用（整轮零执行，二批 3.5）。
+
+    携带挂起轮的 AIMessage（tool_calls 为组重建锚点）；由 run_service 捕获后落审批行、
+    置 trace=waiting_approval、emit approval_required 并结束本次执行线程。
+    """
+
+    def __init__(self, ai_message: AIMessage):
+        super().__init__(f"本轮含需审批调用（{len(ai_message.tool_calls or [])} 个调用整组挂起）")
+        self.ai_message = ai_message
+
+
+def _approval_calls(ai_message: AIMessage) -> list[dict]:
+    """整组预检：任一 call 指向需审批工具（当前注册 level 实时判定，D14）→ 整组挂起。"""
+    from app.modules.agent.service.approval_service import approval_required_for
+
+    return [c for c in (ai_message.tool_calls or []) if approval_required_for(c.get("name") or "")]
+
+
 class AgentState(TypedDict):
     """运行态：messages 全量累积（裁剪只在 call_model 内进行，不回写）；双计数器。"""
 
@@ -202,10 +221,16 @@ def _call_model_streaming(deps: GraphDeps, assembled) -> tuple[AIMessage, dict]:
 
 
 def _execute_tools(state: AgentState, deps: GraphDeps) -> dict:
-    """工具执行节点：进入即计 1 轮（评审 P0-1 递增时机）；顺序执行 + 超限同构处置。"""
+    """工具执行节点：进入即计 1 轮（评审 P0-1 递增时机）；顺序执行 + 超限同构处置。
+
+    E4 整组预检（在计数后）：本轮任一调用需审批 → raise ApprovalSuspension（整轮零执行，
+    挂起轮的 tool_round 已计 1——恢复侧预置对齐，不重复计）。
+    """
     messages = list(state.get("messages") or [])
     last = messages[-1] if messages else None
     calls = list(getattr(last, "tool_calls", None) or [])
+    if last is not None and _approval_calls(last):
+        raise ApprovalSuspension(last)
     deps.budget.on_tool_round(len(calls))
 
     with timed("tool.round", trace_token=deps.trace_token, tool_count=len(calls)):

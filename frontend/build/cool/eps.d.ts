@@ -1,4 +1,106 @@
 declare namespace Eps {
+	interface approval {
+		/**
+		 * id
+		 */
+		id?: number;
+
+		/**
+		 * session_id
+		 */
+		sessionId?: number;
+
+		/**
+		 * trace_id
+		 */
+		traceId?: number;
+
+		/**
+		 * tool_call_group_id
+		 */
+		toolCallGroupId?: string;
+
+		/**
+		 * tool_round
+		 */
+		toolRound?: number;
+
+		/**
+		 * tool_call_id
+		 */
+		toolCallId?: string;
+
+		/**
+		 * tool_name
+		 */
+		toolName?: string;
+
+		/**
+		 * args_summary
+		 */
+		argsSummary?: string;
+
+		/**
+		 * args_hash
+		 */
+		argsHash?: string;
+
+		/**
+		 * snapshot_id
+		 */
+		snapshotId?: number;
+
+		/**
+		 * status
+		 */
+		status?: string;
+
+		/**
+		 * requested_by
+		 */
+		requestedBy?: number;
+
+		/**
+		 * approver
+		 */
+		approver?: number;
+
+		/**
+		 * decided_at
+		 */
+		decidedAt?: Date;
+
+		/**
+		 * lease_expires_at
+		 */
+		leaseExpiresAt?: Date;
+
+		/**
+		 * executed_at
+		 */
+		executedAt?: Date;
+
+		/**
+		 * expires_at
+		 */
+		expiresAt?: Date;
+
+		/**
+		 * result_summary
+		 */
+		resultSummary?: string;
+
+		/**
+		 * created_at
+		 */
+		createTime?: Date;
+
+		/**
+		 * 任意键值
+		 */
+		[key: string]: any;
+	}
+
 	interface chat {
 		/**
 		 * 任意键值
@@ -210,6 +312,16 @@ declare namespace Eps {
 		 * metadata_hash
 		 */
 		metadataHash?: string;
+
+		/**
+		 * contract_hash
+		 */
+		contractHash?: string;
+
+		/**
+		 * meta_hash
+		 */
+		metaHash?: string;
 
 		/**
 		 * created_at
@@ -3144,6 +3256,18 @@ declare namespace Eps {
 		[key: string]: any;
 	}
 
+	interface AgentApprovalPageResponse {
+		pagination: PagePagination;
+		list: approval[];
+	}
+
+	interface AgentChatResumeStatusResponse {
+		/** status */ status: string;
+		/** answer */ answer?: string | null;
+		/** error */ error?: string | null;
+		/** groupId */ groupId?: string | null;
+	}
+
 	interface AgentChatStopStreamResponse {
 		/** stopped */ stopped: boolean;
 		/** message */ message: string;
@@ -3250,6 +3374,8 @@ declare namespace Eps {
 		/** schemaSummary */ schemaSummary?: string | null;
 		/** promptMetadataJson */ promptMetadataJson?: string | null;
 		/** metadataHash */ metadataHash: string;
+		/** contractHash */ contractHash?: string | null;
+		/** metaHash */ metaHash?: string | null;
 		/** createTime */ createTime?: string | null;
 		/** updateTime */ updateTime?: string | null;
 	}
@@ -4771,6 +4897,64 @@ declare namespace Eps {
 		/** updateTime */ updateTime: string;
 	}
 
+	interface AgentApproval {
+		/**
+		 * 审批决定（approve/reject；审批人≠请求者；组终局自动恢复）
+		 */
+		decide(data?: any): Promise<any>;
+
+		/**
+		 * 获取详情
+		 */
+		info(data: { id: number }): Promise<approval>;
+
+		/**
+		 * 获取列表
+		 */
+		list(data?: any): Promise<approval[]>;
+
+		/**
+		 * 获取分页
+		 */
+		page(data?: any): Promise<AgentApprovalPageResponse>;
+
+		/**
+		 * 租约残留人工核对收口（标记 succeeded/failed）
+		 */
+		reconcile(data?: any): Promise<any>;
+
+		/**
+		 * 只读工具残留重试（写工具永不重试，D11）
+		 */
+		retry(data?: any): Promise<any>;
+
+		/**
+		 * 权限标识
+		 */
+		permission: {
+			decide: string;
+			info: string;
+			list: string;
+			page: string;
+			reconcile: string;
+			retry: string;
+		};
+
+		/**
+		 * 权限状态
+		 */
+		_permission: {
+			decide: boolean;
+			info: boolean;
+			list: boolean;
+			page: boolean;
+			reconcile: boolean;
+			retry: boolean;
+		};
+
+		request: Request;
+	}
+
 	interface AgentChat {
 		/**
 		 * 正式对话流式运行（published 快照；受控事件队列）
@@ -4778,19 +4962,24 @@ declare namespace Eps {
 		chatStream(data?: any): Promise<any>;
 
 		/**
-		 * 停止运行（取消令牌置位；仅本人）
+		 * 审批挂起 run 的恢复状态轮询（仅本人 trace）
+		 */
+		resumeStatus(data?: any): Promise<AgentChatResumeStatusResponse>;
+
+		/**
+		 * 停止运行（取消令牌置位；仅本人；支持取消挂起中审批）
 		 */
 		stopStream(data?: any): Promise<AgentChatStopStreamResponse>;
 
 		/**
 		 * 权限标识
 		 */
-		permission: { chatStream: string; stopStream: string };
+		permission: { chatStream: string; resumeStatus: string; stopStream: string };
 
 		/**
 		 * 权限状态
 		 */
-		_permission: { chatStream: boolean; stopStream: boolean };
+		_permission: { chatStream: boolean; resumeStatus: boolean; stopStream: boolean };
 
 		request: Request;
 	}
@@ -4988,6 +5177,27 @@ declare namespace Eps {
 		toggleEnabled(data?: any): Promise<AgentToolToggleEnabledResponse>;
 
 		/**
+		 * 工具资源版本历史（E12：双哈希分类变更线，倒序）
+		 */
+		versions(data: {
+			toolName: string;
+		}): Promise<
+			{
+				/** id */ id: number;
+				/** toolName */ toolName: string;
+				/** version */ version: number;
+				/** contractHash */ contractHash: string;
+				/** metaHash */ metaHash: string;
+				/** changeKind */ changeKind: string;
+				/** level */ level: string;
+				/** description */ description?: string | null;
+				/** schemaSummary */ schemaSummary?: string | null;
+				/** createdBy */ createdBy?: number | null;
+				/** createTime */ createTime?: string | null;
+			}[]
+		>;
+
+		/**
 		 * 权限标识
 		 */
 		permission: {
@@ -4997,6 +5207,7 @@ declare namespace Eps {
 			refresh: string;
 			registryStatus: string;
 			toggleEnabled: string;
+			versions: string;
 		};
 
 		/**
@@ -5009,6 +5220,7 @@ declare namespace Eps {
 			refresh: boolean;
 			registryStatus: boolean;
 			toggleEnabled: boolean;
+			versions: boolean;
 		};
 
 		request: Request;
@@ -7870,6 +8082,7 @@ declare namespace Eps {
 		request: Request;
 
 		agent: {
+			approval: AgentApproval;
 			chat: AgentChat;
 			profile: AgentProfile;
 			session: AgentSession;
