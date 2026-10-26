@@ -3890,6 +3890,17 @@
                           ],
                           "title": "Category"
                         },
+                        "contractHash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Contracthash"
+                        },
                         "createTime": {
                           "anyOf": [
                             {
@@ -3924,6 +3935,17 @@
                         "level": {
                           "title": "Level",
                           "type": "string"
+                        },
+                        "metaHash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Metahash"
                         },
                         "metadataHash": {
                           "title": "Metadatahash",
@@ -4139,6 +4161,17 @@
                             ],
                             "title": "Category"
                           },
+                          "contractHash": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Contracthash"
+                          },
                           "createTime": {
                             "anyOf": [
                               {
@@ -4173,6 +4206,17 @@
                           "level": {
                             "title": "Level",
                             "type": "string"
+                          },
+                          "metaHash": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Metahash"
                           },
                           "metadataHash": {
                             "title": "Metadatahash",
@@ -4417,6 +4461,17 @@
                                 ],
                                 "title": "Category"
                               },
+                              "contractHash": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Contracthash"
+                              },
                               "createTime": {
                                 "anyOf": [
                                   {
@@ -4451,6 +4506,17 @@
                               "level": {
                                 "title": "Level",
                                 "type": "string"
+                              },
+                              "metaHash": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "title": "Metahash"
                               },
                               "metadataHash": {
                                 "title": "Metadatahash",
@@ -4742,6 +4808,17 @@
                           ],
                           "title": "Category"
                         },
+                        "contractHash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Contracthash"
+                        },
                         "createTime": {
                           "anyOf": [
                             {
@@ -4776,6 +4853,17 @@
                         "level": {
                           "title": "Level",
                           "type": "string"
+                        },
+                        "metaHash": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Metahash"
                         },
                         "metadataHash": {
                           "title": "Metadatahash",
@@ -4908,6 +4996,187 @@
           "path": "/toggleEnabled",
           "prefix": "/admin/agent/tool",
           "summary": "工具启停（实时运行控制，D14 紧急禁用立即生效）",
+          "tag": "tool"
+        },
+        {
+          "dts": {
+            "parameters": [
+              {
+                "in": "query",
+                "name": "toolName",
+                "required": true,
+                "schema": {
+                  "title": "Toolname",
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": null,
+            "responses": {
+              "200": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "items": {
+                        "description": "资源版本行（E12 管理面回放：变更时点形态 + 双哈希分类）。",
+                        "properties": {
+                          "changeKind": {
+                            "title": "Changekind",
+                            "type": "string"
+                          },
+                          "contractHash": {
+                            "title": "Contracthash",
+                            "type": "string"
+                          },
+                          "createTime": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Createtime"
+                          },
+                          "createdBy": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Createdby"
+                          },
+                          "description": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Description"
+                          },
+                          "id": {
+                            "title": "Id",
+                            "type": "number"
+                          },
+                          "level": {
+                            "title": "Level",
+                            "type": "string"
+                          },
+                          "metaHash": {
+                            "title": "Metahash",
+                            "type": "string"
+                          },
+                          "schemaSummary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Schemasummary"
+                          },
+                          "toolName": {
+                            "title": "Toolname",
+                            "type": "string"
+                          },
+                          "version": {
+                            "title": "Version",
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "toolName",
+                          "version",
+                          "contractHash",
+                          "metaHash",
+                          "changeKind",
+                          "level"
+                        ],
+                        "title": "AgentToolResourceVersionRead",
+                        "type": "object"
+                      },
+                      "title": "Response Versions Admin Agent Tool Versions Get",
+                      "type": "array"
+                    }
+                  }
+                },
+                "description": "Successful Response"
+              },
+              "422": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "properties": {
+                        "detail": {
+                          "items": {
+                            "properties": {
+                              "ctx": {
+                                "title": "Context",
+                                "type": "object"
+                              },
+                              "input": {
+                                "title": "Input"
+                              },
+                              "loc": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "title": "Location",
+                                "type": "array"
+                              },
+                              "msg": {
+                                "title": "Message",
+                                "type": "string"
+                              },
+                              "type": {
+                                "title": "Error Type",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loc",
+                              "msg",
+                              "type"
+                            ],
+                            "title": "ValidationError",
+                            "type": "object"
+                          },
+                          "title": "Detail",
+                          "type": "array"
+                        }
+                      },
+                      "title": "HTTPValidationError",
+                      "type": "object"
+                    }
+                  }
+                },
+                "description": "Validation Error"
+              }
+            }
+          },
+          "method": "GET",
+          "name": "versions",
+          "path": "/versions",
+          "prefix": "/admin/agent/tool",
+          "summary": "工具资源版本历史（E12：双哈希分类变更线，倒序）",
           "tag": "tool"
         }
       ],
@@ -5056,6 +5325,30 @@
           "propertyName": "metadataHash",
           "required": true,
           "source": "metadata_hash",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "contract_hash",
+          "dict": null,
+          "label": "contractHash",
+          "nullable": true,
+          "prop": "contractHash",
+          "propertyName": "contractHash",
+          "required": false,
+          "source": "contract_hash",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "meta_hash",
+          "dict": null,
+          "label": "metaHash",
+          "nullable": true,
+          "prop": "metaHash",
+          "propertyName": "metaHash",
+          "required": false,
+          "source": "meta_hash",
           "type": "string",
           "validate": null
         },
@@ -5232,6 +5525,30 @@
           "propertyName": "metadataHash",
           "required": true,
           "source": "metadata_hash",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "contract_hash",
+          "dict": null,
+          "label": "contractHash",
+          "nullable": true,
+          "prop": "contractHash",
+          "propertyName": "contractHash",
+          "required": false,
+          "source": "contract_hash",
+          "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "meta_hash",
+          "dict": null,
+          "label": "metaHash",
+          "nullable": true,
+          "prop": "metaHash",
+          "propertyName": "metaHash",
+          "required": false,
+          "source": "meta_hash",
           "type": "string",
           "validate": null
         },

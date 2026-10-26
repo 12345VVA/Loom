@@ -26,6 +26,7 @@ from app.modules.agent.model.agent import (
     AgentSession,
     AgentToolCallLog,
     AgentToolResource,
+    AgentToolResourceVersion,
 )
 from app.modules.agent.service.profile_service import AgentProfileService
 from app.modules.agent.service.runtime import model_wrapper as model_wrapper_module
@@ -134,6 +135,7 @@ class ObservationChainTestCase(unittest.TestCase):
                 AgentRunTrace.__table__,
                 AgentToolCallLog.__table__,
                 AgentToolResource.__table__,
+                AgentToolResourceVersion.__table__,
                 *_AI_CHANNEL_TABLES,
                 Role.__table__,
                 UserRoleLink.__table__,

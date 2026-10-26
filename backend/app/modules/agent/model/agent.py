@@ -54,6 +54,18 @@ AGENT_TOOL_LEVELS = {AGENT_TOOL_LEVEL_READONLY, AGENT_TOOL_LEVEL_REVERSIBLE_WRIT
 AGENT_TOOL_SOURCE_BUILTIN = "builtin"
 AGENT_TOOL_SOURCE_MCP = "mcp"
 
+# 资源版本变更分类（E12，二批 3.13：双哈希分类——兼容判定只看 contract_hash）
+AGENT_TOOL_CHANGE_CREATED = "created"  # 首次入册
+AGENT_TOOL_CHANGE_CONTRACT = "contract_change"  # 仅契约变（parameters/level）
+AGENT_TOOL_CHANGE_META = "meta_change"  # 仅元数据变（description 等）
+AGENT_TOOL_CHANGE_BOTH = "both"
+AGENT_TOOL_CHANGE_KINDS = {
+    AGENT_TOOL_CHANGE_CREATED,
+    AGENT_TOOL_CHANGE_CONTRACT,
+    AGENT_TOOL_CHANGE_META,
+    AGENT_TOOL_CHANGE_BOTH,
+}
+
 # 发布动作
 AGENT_PUBLISH_ACTION_PUBLISH = "publish"
 AGENT_PUBLISH_ACTION_ROLLBACK = "rollback"
@@ -242,9 +254,43 @@ class AgentToolResource(BaseEntity, table=True):
     status: bool = Field(default=True, index=True)  # 管理员启停（实时运行控制）
     schema_summary: str | None = Field(default=None, sa_column=Column(Text))  # JSON
     prompt_metadata_json: str | None = Field(default=None, sa_column=Column(Text))  # JSON
+    # metadata_hash 为一期混合哈希（保留维护向后兼容）；E12 起拆双哈希当前值列（sync 随版本行同步维护）
     metadata_hash: str = Field(default="", max_length=64)
+    contract_hash: str | None = Field(default=None, max_length=64)  # sha256(parameters+level)——契约态
+    meta_hash: str | None = Field(default=None, max_length=64)  # sha256(description)——元数据态
     created_by: int | None = Field(default=None)
     updated_by: int | None = Field(default=None)
+
+
+class AgentToolResourceVersion(BaseEntity, table=True):
+    """工具资源版本表（E12，二批 3.13）：**只增不改**承载历史。
+
+    - 版本行记录变更时点的完整形态（level/description/schema_summary + 双哈希），管理面可回放；
+    - 当前值列在 agent_tool_resource.contract_hash/meta_hash（资源表自身可读当前契约态）；
+    - 兼容判定只看 contract_hash——meta 变更不触发运行时 fail-close，仅入版本提示重发布；
+    - NULL 当前值列 = 存量行尚未入版本体系（迁移 0032 后首次 sync 建 v1=created）。"""
+
+    __tablename__ = "agent_tool_resource_version"
+    __table_args__ = (
+        Index(
+            "uq_agent_tool_version",
+            "tool_name",
+            "version",
+            unique=True,
+            postgresql_where=text("delete_time IS NULL"),
+            sqlite_where=text("delete_time IS NULL"),
+        ),
+    )
+
+    tool_name: str = Field(index=True, max_length=150)
+    version: int = Field(default=1)
+    contract_hash: str = Field(default="", max_length=64)
+    meta_hash: str = Field(default="", max_length=64)
+    change_kind: str = Field(default=AGENT_TOOL_CHANGE_CREATED, max_length=20)
+    level: str = Field(default=AGENT_TOOL_LEVEL_READONLY, max_length=30)
+    description: str | None = Field(default=None, sa_column=Column(Text))  # 本版本时点值（meta 回放）
+    schema_summary: str | None = Field(default=None, sa_column=Column(Text))  # 本版本时点值（契约回放）
+    created_by: int | None = Field(default=None)
 
 
 # --- DTO（对齐 model-schema.mdc 三件套）---
@@ -379,8 +425,28 @@ class AgentToolResourceRead(BaseModel):
     schema_summary: str | None = None
     prompt_metadata_json: str | None = None
     metadata_hash: str
+    contract_hash: str | None = None
+    meta_hash: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class AgentToolResourceVersionRead(BaseModel):
+    """资源版本行（E12 管理面回放：变更时点形态 + 双哈希分类）。"""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, alias_generator=resolve_alias)
+
+    id: int
+    tool_name: str
+    version: int
+    contract_hash: str
+    meta_hash: str
+    change_kind: str
+    level: str
+    description: str | None = None
+    schema_summary: str | None = None
+    created_by: int | None = None
+    created_at: datetime | None = None
 
 
 # --- 工具 DTO 请求 ---

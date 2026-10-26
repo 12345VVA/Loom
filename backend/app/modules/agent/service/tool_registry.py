@@ -30,12 +30,17 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.modules.agent.model.agent import (
+    AGENT_TOOL_CHANGE_BOTH,
+    AGENT_TOOL_CHANGE_CONTRACT,
+    AGENT_TOOL_CHANGE_CREATED,
+    AGENT_TOOL_CHANGE_META,
     AGENT_TOOL_LEVEL_DANGEROUS_WRITE,
     AGENT_TOOL_LEVEL_READONLY,
     AGENT_TOOL_LEVEL_REVERSIBLE_WRITE,
     AGENT_TOOL_LEVELS,
     AGENT_TOOL_SOURCE_BUILTIN,
     AgentToolResource,
+    AgentToolResourceVersion,
 )
 
 logger = logging.getLogger("agent.tool_registry")
@@ -210,11 +215,65 @@ def metadata_hash_of(description: str, parameters: dict, level: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-def sync_resources(session: Session, operator_id: int | None = None) -> dict:
-    """注册表 → agent_tool_resource upsert。
+def contract_hash_of(parameters: dict, level: str) -> str:
+    """契约哈希（E12）：parameters + level——兼容判定与「已过期提示」只看它。"""
+    source = json.dumps(parameters, sort_keys=True, ensure_ascii=False) + level
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
-    只更新系统维护字段（display_name/description/category/schema_summary/level/metadata_hash/
+
+def meta_hash_of(description: str) -> str:
+    """元数据哈希（E12）：description（展示元数据）——变更仅入版本，不影响兼容判定。"""
+    return hashlib.sha256(description.encode("utf-8")).hexdigest()
+
+
+def _append_version_row(
+    session: Session,
+    *,
+    tool_name: str,
+    change_kind: str,
+    contract_hash: str,
+    meta_hash: str,
+    level: str,
+    description: str | None,
+    schema_summary: str | None,
+    operator_id: int | None,
+) -> None:
+    """版本表只增不改（E12）：version = 活跃行最大值 + 1，行内存变更时点完整形态。"""
+    last = session.exec(
+        select(AgentToolResourceVersion.version)
+        .where(
+            AgentToolResourceVersion.tool_name == tool_name,
+            AgentToolResourceVersion.delete_time == None,  # noqa: E711
+        )
+        .order_by(AgentToolResourceVersion.version.desc())  # type: ignore[attr-defined]
+        .limit(1)
+    ).first()
+    session.add(
+        AgentToolResourceVersion(
+            tool_name=tool_name,
+            version=(last or 0) + 1,
+            change_kind=change_kind,
+            contract_hash=contract_hash,
+            meta_hash=meta_hash,
+            level=level,
+            description=description,
+            schema_summary=schema_summary,
+            created_by=operator_id,
+        )
+    )
+
+
+def sync_resources(session: Session, operator_id: int | None = None) -> dict:
+    """注册表 → agent_tool_resource upsert + 版本表入册（E12 双哈希分类）。
+
+    只更新系统维护字段（display_name/description/category/schema_summary/level/哈希列/
     source_type），**绝不触碰 status**；新建工具默认启用。refresh 端点复用本函数（不重建注册表）。
+
+    版本入册规则（二批 3.13）：
+    - 新工具 / 存量行当前值列为 NULL（迁移 0032 前的旧行首次入体系）→ v1 change_kind=created；
+    - contract_hash 或 meta_hash 相对当前值列变化 → 按分类入新版本行（both/contract_change/
+      meta_change），当前值列同步维护；
+    - 双哈希均未变 → 不入版本（无变更空转）；兼容判定只看 contract_hash（meta 变更不触发）。
     """
     synced = []
     for name in sorted(_registry.keys()):
@@ -227,7 +286,10 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
             )
         ).first()
         schema_summary = json.dumps(parameters, ensure_ascii=False)
-        meta_hash = metadata_hash_of(tool.description, parameters, tool.level)
+        contract_hash = contract_hash_of(parameters, tool.level)
+        meta_hash = meta_hash_of(tool.description)
+        combined = metadata_hash_of(tool.description, parameters, tool.level)
+        version_added = None
         if row is None:
             row = AgentToolResource(
                 tool_name=name,
@@ -237,11 +299,25 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
                 level=tool.level,
                 status=True,  # 新建默认启用（D14：管理员随后可显式禁用）
                 schema_summary=schema_summary,
-                metadata_hash=meta_hash,
+                metadata_hash=combined,
+                contract_hash=contract_hash,
+                meta_hash=meta_hash,
                 created_by=operator_id,
                 updated_by=operator_id,
             )
             session.add(row)
+            _append_version_row(
+                session,
+                tool_name=name,
+                change_kind=AGENT_TOOL_CHANGE_CREATED,
+                contract_hash=contract_hash,
+                meta_hash=meta_hash,
+                level=tool.level,
+                description=tool.description,
+                schema_summary=schema_summary,
+                operator_id=operator_id,
+            )
+            version_added = AGENT_TOOL_CHANGE_CREATED
             synced.append((name, "created"))
         else:
             row.display_name = row.display_name or name
@@ -249,10 +325,41 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
             row.source_type = AGENT_TOOL_SOURCE_BUILTIN
             row.level = tool.level
             row.schema_summary = schema_summary
-            row.metadata_hash = meta_hash
+            row.metadata_hash = combined
             row.updated_by = operator_id
+            uninitialized = row.contract_hash is None or row.meta_hash is None
+            if uninitialized:
+                change_kind = AGENT_TOOL_CHANGE_CREATED  # 旧行首次入版本体系（视为 v1 基线）
+            else:
+                contract_changed = row.contract_hash != contract_hash
+                meta_changed = row.meta_hash != meta_hash
+                if contract_changed and meta_changed:
+                    change_kind = AGENT_TOOL_CHANGE_BOTH
+                elif contract_changed:
+                    change_kind = AGENT_TOOL_CHANGE_CONTRACT
+                elif meta_changed:
+                    change_kind = AGENT_TOOL_CHANGE_META
+                else:
+                    change_kind = None  # 无变更：不入版本（防空转版本线，对齐发布幂等纪律）
+            if change_kind is not None:
+                _append_version_row(
+                    session,
+                    tool_name=name,
+                    change_kind=change_kind,
+                    contract_hash=contract_hash,
+                    meta_hash=meta_hash,
+                    level=tool.level,
+                    description=tool.description,
+                    schema_summary=schema_summary,
+                    operator_id=operator_id,
+                )
+                version_added = change_kind
+            row.contract_hash = contract_hash
+            row.meta_hash = meta_hash
             session.add(row)
             synced.append((name, "updated"))
+        if version_added is not None:
+            logger.info("工具 %s 资源版本入册：%s", name, version_added)
     session.commit()
     return {"synced": synced, "count": len(synced)}
 

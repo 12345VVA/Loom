@@ -16,7 +16,7 @@ from helpers import make_test_engine
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from app.modules.agent.model.agent import AgentToolResource
+from app.modules.agent.model.agent import AgentToolResource, AgentToolResourceVersion
 from app.modules.agent.service import tool_registry
 from app.modules.agent.service.tool_registry import (
     RegisteredTool,
@@ -199,6 +199,7 @@ class ResourceSyncTestCase(unittest.TestCase):
         self.engine = make_test_engine(
             tables=[
                 AgentToolResource.__table__,
+                AgentToolResourceVersion.__table__,
                 AssetCharacter.__table__,
                 SysLog.__table__,
             ]
@@ -247,6 +248,127 @@ class ResourceSyncTestCase(unittest.TestCase):
         self.assertEqual(base, metadata_hash_of("d", {"type": "object"}, "readonly"))
         self.assertNotEqual(base, metadata_hash_of("d2", {"type": "object"}, "readonly"))
         self.assertNotEqual(base, metadata_hash_of("d", {"type": "object"}, "reversible_write"))
+
+
+class _ArgsWithKeyword(BaseModel):
+    keyword: str
+
+
+class ToolResourceVersionTestCase(unittest.TestCase):
+    """E12 工具资源版本表（二批 3.13）：双哈希分类入册 / 当前值列同步 / 无变更不入版本。"""
+
+    def setUp(self):
+        self.engine = make_test_engine(
+            tables=[
+                AgentToolResource.__table__,
+                AgentToolResourceVersion.__table__,
+                AssetCharacter.__table__,
+                SysLog.__table__,
+            ]
+        )
+        self.session = Session(self.engine)
+        tool_registry._registry.clear()
+        tool_registry._registry.update({"query_asset": _tool("query_asset")})
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+        bootstrap_registry()
+
+    def _row(self, tool_name: str = "query_asset") -> AgentToolResource:
+        return self.session.exec(select(AgentToolResource).where(AgentToolResource.tool_name == tool_name)).one()
+
+    def _versions(self, tool_name: str = "query_asset") -> list[AgentToolResourceVersion]:
+        return list(
+            self.session.exec(
+                select(AgentToolResourceVersion)
+                .where(AgentToolResourceVersion.tool_name == tool_name)
+                .order_by(AgentToolResourceVersion.version)
+            ).all()
+        )
+
+    def test_created_then_classified_versions_and_current_columns(self):
+        # v1：首次入册 created + 当前值列回填
+        sync_resources(self.session, operator_id=1)
+        self.session.expire_all()
+        row = self._row()
+        kinds = [v.change_kind for v in self._versions()]
+        self.assertEqual(kinds, ["created"])
+        self.assertIsNotNone(row.contract_hash)
+        self.assertIsNotNone(row.meta_hash)
+
+        # v2：仅元数据变（description）→ meta_change；契约哈希不变
+        old_contract = row.contract_hash
+        tool_registry._registry["query_asset"] = RegisteredTool(
+            name="query_asset",
+            description="全新的描述文案",
+            level="readonly",
+            args_model=_Args,
+            func=lambda a, c: "{}",
+            module="asset",
+        )
+        sync_resources(self.session, operator_id=1)
+        self.session.expire_all()
+        self.assertEqual([v.change_kind for v in self._versions()], ["created", "meta_change"])
+        self.assertEqual(self._row().contract_hash, old_contract)  # meta 变更不动契约态
+
+        # v3：契约变（schema 加字段）→ contract_change
+        tool_registry._registry["query_asset"] = RegisteredTool(
+            name="query_asset",
+            description="全新的描述文案",
+            level="readonly",
+            args_model=_ArgsWithKeyword,
+            func=lambda a, c: "{}",
+            module="asset",
+        )
+        sync_resources(self.session, operator_id=1)
+        self.session.expire_all()
+        self.assertEqual(
+            [v.change_kind for v in self._versions()],
+            ["created", "meta_change", "contract_change"],
+        )
+        self.assertNotEqual(self._row().contract_hash, old_contract)
+
+        # 无变更重复 sync → 不入新版本（防空转版本线）
+        sync_resources(self.session, operator_id=1)
+        self.session.expire_all()
+        self.assertEqual(len(self._versions()), 3)
+
+    def test_legacy_row_without_hashes_gets_created_baseline(self):
+        """迁移 0032 前的存量行（双哈希 NULL）：首次 sync 建 v1=created 并回填当前值列。"""
+        self.session.add(
+            AgentToolResource(
+                tool_name="query_asset",
+                display_name="query_asset",
+                description="存量描述",
+                source_type="builtin",
+                level="readonly",
+                status=False,  # 管理员已禁用——sync 不得触碰（D14）
+                metadata_hash="legacy",
+            )
+        )
+        self.session.commit()
+
+        sync_resources(self.session, operator_id=1)
+        self.session.expire_all()
+        row = self._row()
+        self.assertEqual([v.change_kind for v in self._versions()], ["created"])
+        self.assertEqual(self._versions()[0].version, 1)
+        self.assertIsNotNone(row.contract_hash)
+        self.assertIsNotNone(row.meta_hash)
+        self.assertFalse(row.status)  # 禁用态不被入册流程恢复
+
+    def test_meta_change_does_not_affect_contract_compatibility(self):
+        """兼容判定只看 contract_hash（meta 变更不触发 fail-close，二批 3.13）。"""
+        from app.modules.agent.service.tool_registry import contract_hash_of, meta_hash_of
+
+        params = {"type": "object", "properties": {"keyword": {"type": "string"}}}
+        c1 = contract_hash_of(params, "readonly")
+        # 元数据（description）与契约哈希正交
+        self.assertEqual(contract_hash_of(params, "readonly"), c1)
+        self.assertNotEqual(meta_hash_of("描述A"), meta_hash_of("描述B"))
+        # 判定入口本就只收 parameters：description 不进判定输入
+        self.assertTrue(is_contract_compatible(params, dict(params)))
 
 
 class ContractCompatibilityTestCase(unittest.TestCase):
@@ -298,7 +420,9 @@ class ExecutionSafetyTestCase(unittest.TestCase):
     """执行安全实时判定（独立于契约兼容）：绑定/允许列表/level 升级/资源层启停。"""
 
     def setUp(self):
-        self.engine = make_test_engine(tables=[AgentToolResource.__table__, SysLog.__table__])
+        self.engine = make_test_engine(
+            tables=[AgentToolResource.__table__, AgentToolResourceVersion.__table__, SysLog.__table__]
+        )
         self.session = Session(self.engine)
         tool_registry._registry.clear()
         tool_registry._registry.update({"query_asset": _tool("query_asset")})

@@ -23,6 +23,7 @@ from app.modules.agent.model.agent import (
     AgentProfileSnapshot,
     AgentProfileUpdateRequest,
     AgentToolResource,
+    AgentToolResourceVersion,
 )
 from app.modules.agent.service.profile_service import (
     AgentProfileService,
@@ -53,6 +54,7 @@ class PublishProfileTestCase(unittest.TestCase):
                 AgentProfilePublishRecord.__table__,
                 AgentProfileSnapshot.__table__,
                 AgentToolResource.__table__,
+                AgentToolResourceVersion.__table__,
                 *_AI_CHANNEL_TABLES,
                 Role.__table__,
                 UserRoleLink.__table__,
@@ -275,6 +277,7 @@ class ContextWindowPolicyTestCase(unittest.TestCase):
                 AgentProfilePublishRecord.__table__,
                 AgentProfileSnapshot.__table__,
                 AgentToolResource.__table__,
+                AgentToolResourceVersion.__table__,
                 *_AI_CHANNEL_TABLES,
                 Role.__table__,
                 UserRoleLink.__table__,
@@ -390,6 +393,7 @@ class ConcurrentPublishTestCase(unittest.TestCase):
                 AgentProfilePublishRecord.__table__,
                 AgentProfileSnapshot.__table__,
                 AgentToolResource.__table__,
+                AgentToolResourceVersion.__table__,
                 *_AI_CHANNEL_TABLES,
                 Role.__table__,
                 UserRoleLink.__table__,

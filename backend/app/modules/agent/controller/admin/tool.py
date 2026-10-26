@@ -18,7 +18,11 @@ from app.framework.controller_meta import (
     QueryFieldConfig,
 )
 from app.framework.router.route_meta import Get, Post
-from app.modules.agent.model.agent import AgentToolResourceRead, ToolToggleRequest
+from app.modules.agent.model.agent import (
+    AgentToolResourceRead,
+    AgentToolResourceVersionRead,
+    ToolToggleRequest,
+)
 from app.modules.agent.service.tool_registry import registry_status, sync_resources
 from app.modules.agent.service.tool_service import AgentToolResourceService
 from app.modules.base.model.auth import User
@@ -97,6 +101,24 @@ class AgentToolController(BaseController):
         _current_user: User = Depends(get_current_user),
     ) -> RegistryStatusResponse:
         return RegistryStatusResponse(**registry_status())
+
+    @Get("/versions", summary="工具资源版本历史（E12：双哈希分类变更线，倒序）", permission="agent:tool:list")
+    def versions(
+        self,
+        toolName: str,
+        _current_user: User = Depends(get_current_user),
+        session: Session = Depends(get_session),
+    ) -> list[AgentToolResourceVersionRead]:
+        from sqlmodel import select
+
+        from app.modules.agent.model.agent import AgentToolResourceVersion
+
+        rows = session.exec(
+            select(AgentToolResourceVersion)
+            .where(AgentToolResourceVersion.tool_name == toolName)
+            .order_by(AgentToolResourceVersion.version.desc())  # type: ignore[attr-defined]
+        ).all()
+        return [AgentToolResourceVersionRead.model_validate(r) for r in rows]
 
 
 router = AgentToolController.router

@@ -29,6 +29,7 @@ from app.modules.agent.model.agent import (
     AgentRunTrace,
     AgentSession,
     AgentToolResource,
+    AgentToolResourceVersion,
 )
 from app.modules.agent.service.profile_service import AgentProfileService
 from app.modules.agent.service.runtime.session_service import AgentSessionService
@@ -53,6 +54,7 @@ class AgentProfileCrudTestCase(unittest.TestCase):
             tables=[
                 AgentProfile.__table__,
                 AgentToolResource.__table__,
+                AgentToolResourceVersion.__table__,
                 AgentProfileDraft.__table__,
                 AgentProfilePublishRecord.__table__,
                 AgentProfileSnapshot.__table__,
