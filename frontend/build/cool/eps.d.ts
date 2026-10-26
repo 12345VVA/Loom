@@ -185,6 +185,11 @@ declare namespace Eps {
 		enabled?: boolean;
 
 		/**
+		 * write_tools_ack
+		 */
+		writeToolsAck?: boolean;
+
+		/**
 		 * status
 		 */
 		status?: string;
@@ -3289,6 +3294,7 @@ declare namespace Eps {
 		/** executionMode */ executionMode?: string;
 		/** workflowDefinitionId */ workflowDefinitionId?: number | null;
 		/** enabled */ enabled: boolean;
+		/** writeToolsAck */ writeToolsAck?: boolean;
 		/** status */ status: string;
 		/** createdBy */ createdBy?: number | null;
 		/** createTime */ createTime?: string | null;
@@ -3333,6 +3339,7 @@ declare namespace Eps {
 		/** executionMode */ executionMode?: string;
 		/** workflowDefinitionId */ workflowDefinitionId?: number | null;
 		/** enabled */ enabled: boolean;
+		/** writeToolsAck */ writeToolsAck?: boolean;
 		/** status */ status: string;
 		/** createdBy */ createdBy?: number | null;
 		/** createTime */ createTime?: string | null;
@@ -5249,6 +5256,7 @@ declare namespace Eps {
 				/** toolName */ toolName: string;
 				/** argsSummary */ argsSummary?: string | null;
 				/** resultSummary */ resultSummary?: string | null;
+				/** targetRef */ targetRef?: string | null;
 				/** durationMs */ durationMs?: number | null;
 				/** success */ success?: boolean | null;
 				/** error */ error?: string | null;

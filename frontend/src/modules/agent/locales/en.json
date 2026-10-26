@@ -154,5 +154,7 @@
   "agent.approval.retryTip": "Retry tool \"{name}\" as the original requester? Read-only tools only.",
   "agent.approval.retryOk": "Retry succeeded",
   "agent.approval.retryFail": "Retry failed (recorded)",
-  "agent.approval.menu": "Approvals"
+  "agent.approval.menu": "Approvals",
+  "agent.profile.writeToolsAck": "Write tools acknowledged",
+  "agent.profile.writeToolsAckHint": "Risks acknowledged"
 }

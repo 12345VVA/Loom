@@ -773,33 +773,35 @@ defineExpose({ refresh });
 	transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 
 	&.collapsed {
-		width: 48px;
+		width: 52px;
 	}
 
 	&__header {
-		padding: 10px 10px 8px;
+		padding: 12px 14px;
 		border-bottom: 1px solid var(--el-border-color-lighter);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 6px;
+		gap: 8px;
 
 		&.is-collapsed {
 			justify-content: center;
-			padding: 10px 0 8px;
+			padding: 12px 0;
 		}
 	}
 
 	&__collapsed-toggle {
-		width: 28px;
-		height: 28px;
+		width: 32px;
+		height: 32px;
 		padding: 0;
+		border-radius: 8px;
+		font-size: 14px;
 	}
 
 	&__agent-row {
 		display: flex;
 		align-items: center;
-		gap: 6px;
+		gap: 8px;
 		flex: 1;
 		min-width: 0;
 	}
@@ -811,22 +813,25 @@ defineExpose({ refresh });
 
 	&__in-session-tag {
 		flex-shrink: 0;
-		font-size: 11px;
-		height: 22px;
-		padding: 0 4px;
+		font-size: 12px;
+		height: 24px;
+		padding: 0 6px;
+		border-radius: 6px;
 	}
 
 	&__toolbar {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: 6px;
 		flex-shrink: 0;
 	}
 
 	&__tool-btn {
-		width: 26px;
-		height: 26px;
+		width: 28px;
+		height: 28px;
 		padding: 0;
+		border-radius: 8px;
+		font-size: 13px;
 	}
 
 	&__sessions {
@@ -834,20 +839,24 @@ defineExpose({ refresh });
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
-		padding: 8px 6px;
+		padding: 12px 14px 10px;
 	}
 
 	&__title {
 		font-size: 12px;
 		font-weight: 500;
 		color: var(--el-text-color-secondary);
-		margin-bottom: 6px;
-		padding: 0 6px;
+		margin-bottom: 10px;
+		padding: 0 2px;
+		line-height: 1;
 	}
 
 	&__list {
 		flex: 1;
 		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
 		padding-right: 2px;
 	}
 
@@ -855,21 +864,21 @@ defineExpose({ refresh });
 		color: var(--el-text-color-placeholder);
 		font-size: 13px;
 		text-align: center;
-		padding: 28px 0;
+		padding: 32px 0;
 	}
 
 	&__collapsed-body {
-		padding: 10px 0;
+		padding: 12px 0;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
 	}
 }
 
 .collapsed-session-dot {
-	width: 32px;
-	height: 32px;
+	width: 34px;
+	height: 34px;
 	border-radius: 8px;
 	background: var(--el-fill-color-light);
 	color: var(--el-text-color-secondary);
@@ -879,7 +888,7 @@ defineExpose({ refresh });
 	font-size: 12px;
 	font-weight: 600;
 	cursor: pointer;
-	transition: all 0.2s;
+	transition: all 0.2s ease;
 
 	&:hover {
 		background: var(--el-color-primary-light-8);
@@ -893,7 +902,7 @@ defineExpose({ refresh });
 }
 
 .ws-session-item {
-	padding: 6px 8px;
+	padding: 8px 10px;
 	border: 1px solid var(--el-border-color-lighter);
 	border-radius: 8px;
 	background: var(--el-fill-color-blank);
@@ -901,7 +910,8 @@ defineExpose({ refresh });
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	margin-bottom: 6px;
+	min-height: 52px;
+	box-sizing: border-box;
 	transition: all 0.2s ease;
 	position: relative;
 
@@ -923,14 +933,16 @@ defineExpose({ refresh });
 	&__main {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		justify-content: center;
+		gap: 4px;
 		flex: 1;
 		min-width: 0;
+		padding-right: 6px;
 	}
 
 	&__title {
-		font-size: 12px;
-		line-height: 1.3;
+		font-size: 13px;
+		line-height: 1.35;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -938,23 +950,23 @@ defineExpose({ refresh });
 	}
 
 	&__time {
-		font-size: 10px;
+		font-size: 11px;
 		color: var(--el-text-color-placeholder);
-		line-height: 1.1;
+		line-height: 1.2;
 	}
 
 	&__actions {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: 6px;
 		flex-shrink: 0;
-		margin-left: 6px;
 
 		.action-btn {
-			width: 22px;
-			height: 22px;
+			width: 26px;
+			height: 26px;
 			padding: 0;
-			font-size: 11px;
+			font-size: 12px;
+			border-radius: 6px;
 		}
 	}
 }

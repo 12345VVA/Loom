@@ -53,10 +53,17 @@ RUNTIME_ALLOWED_TOOLS = {
     "list_workflow_definitions",  # workflow：列出已发布工作流定义
     "system_info",  # agent 内置
     "current_time",  # agent 内置
+    # E3 可逆写首批（D11 二级；each 声明须带 safety 机制表，reversible_write 不走审批）
+    "create_asset_draft",  # asset：创建角色/场景/物件草稿（默认 draft 态，可软删）
+    "update_asset_draft",  # asset：编辑本人 draft 态资产字段（published 拒绝）
+    "rename_media",  # media：重命名媒体文件（expected_updated_at 乐观比对）
+    "tag_media",  # media：追加媒体标签（追加去重，expected_updated_at 乐观比对）
 }
 
 # 工具声明结构校验必需键（module 由收集器注入，声明方可不写）
 _REQUIRED_KEYS = ("name", "description", "level", "args_model", "func")
+# E3 安全机制表必需键（reversible_write 必须声明——逐项防线替代人工审批）
+_SAFETY_REQUIRED_KEYS = ("reversible_how", "concurrency", "audit_ref")
 
 # level 风险序（执行安全判定：当前代码 level 高于快照 level = 升级，拒绝执行）
 _LEVEL_ORDER = {
@@ -84,6 +91,7 @@ class RegisteredTool:
     args_model: type[BaseModel]
     func: Callable[[Any, Any], str]
     module: str
+    safety: dict | None = None  # E3 安全机制表（reversible_write 必填；只读工具为 None）
 
     @property
     def parameters(self) -> dict:
@@ -105,6 +113,12 @@ def get_registry() -> dict[str, RegisteredTool]:
 
 def get_tool(name: str) -> RegisteredTool | None:
     return _registry.get(name)
+
+
+def get_tool_safety(name: str) -> dict | None:
+    """E3：写工具的安全机制表（发布校验消费；只读/未注册返回 None）。"""
+    tool = _registry.get(name)
+    return tool.safety if tool is not None else None
 
 
 def degraded_error() -> str | None:
@@ -146,6 +160,16 @@ def _validate_entry(entry: Any, module: str) -> RegisteredTool:
         raise TypeError(f"[{module}] 工具 {name} 的 args_model 必须是 pydantic BaseModel 子类")
     if not callable(entry["func"]):
         raise TypeError(f"[{module}] 工具 {name} 的 func 必须可调用")
+    safety = entry.get("safety")
+    if entry["level"] == AGENT_TOOL_LEVEL_REVERSIBLE_WRITE:
+        # E3 逐项安全机制表：可逆写必须声明（收集期 fail-fast，发布校验复查）
+        if not isinstance(safety, dict):
+            raise ValueError(f"[{module}] 可逆写工具 {name} 必须声明 safety 安全机制表")
+        missing = [k for k in _SAFETY_REQUIRED_KEYS if k not in safety]
+        if missing:
+            raise ValueError(f"[{module}] 可逆写工具 {name} 的 safety 缺少必需键: {missing}")
+    elif safety is not None and not isinstance(safety, dict):
+        raise TypeError(f"[{module}] 工具 {name} 的 safety 必须是 dict")
     return RegisteredTool(
         name=name,
         description=str(entry["description"]),
@@ -153,6 +177,7 @@ def _validate_entry(entry: Any, module: str) -> RegisteredTool:
         args_model=entry["args_model"],
         func=entry["func"],
         module=module,
+        safety=safety if isinstance(safety, dict) else None,
     )
 
 
@@ -290,6 +315,8 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
         contract_hash = contract_hash_of(parameters, tool.level)
         meta_hash = meta_hash_of(tool.description)
         combined = metadata_hash_of(tool.description, parameters, tool.level)
+        # E3：安全机制表并入 prompt_metadata_json（管理面可见；只读工具保持 None 不动既有值）
+        safety_metadata = json.dumps({"safety": tool.safety}, ensure_ascii=False) if tool.safety else None
         version_added = None
         if row is None:
             row = AgentToolResource(
@@ -300,6 +327,7 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
                 level=tool.level,
                 status=True,  # 新建默认启用（D14：管理员随后可显式禁用）
                 schema_summary=schema_summary,
+                prompt_metadata_json=safety_metadata,
                 metadata_hash=combined,
                 contract_hash=contract_hash,
                 meta_hash=meta_hash,
@@ -326,6 +354,8 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
             row.source_type = AGENT_TOOL_SOURCE_BUILTIN
             row.level = tool.level
             row.schema_summary = schema_summary
+            if safety_metadata is not None or tool.level == AGENT_TOOL_LEVEL_READONLY:
+                row.prompt_metadata_json = safety_metadata  # 写工具同步机制表；只读不覆盖管理员/历史值
             row.metadata_hash = combined
             row.updated_by = operator_id
             uninitialized = row.contract_hash is None or row.meta_hash is None

@@ -154,5 +154,7 @@
   "agent.approval.retryTip": "以原請求者身份重試工具「{name}」？僅唯讀工具可重試。",
   "agent.approval.retryOk": "重試成功",
   "agent.approval.retryFail": "重試失敗（已記錄）",
-  "agent.approval.menu": "審批隊列"
+  "agent.approval.menu": "審批隊列",
+  "agent.profile.writeToolsAck": "寫工具知情確認",
+  "agent.profile.writeToolsAckHint": "已確認寫工具風險"
 }

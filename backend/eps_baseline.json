@@ -2203,6 +2203,11 @@
                             }
                           ],
                           "title": "Workflowdefinitionid"
+                        },
+                        "writeToolsAck": {
+                          "default": false,
+                          "title": "Writetoolsack",
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -2638,6 +2643,11 @@
                             }
                           ],
                           "title": "Workflowdefinitionid"
+                        },
+                        "writeToolsAck": {
+                          "default": false,
+                          "title": "Writetoolsack",
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -2919,6 +2929,11 @@
                               }
                             ],
                             "title": "Workflowdefinitionid"
+                          },
+                          "writeToolsAck": {
+                            "default": false,
+                            "title": "Writetoolsack",
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -3229,6 +3244,11 @@
                                   }
                                 ],
                                 "title": "Workflowdefinitionid"
+                              },
+                              "writeToolsAck": {
+                                "default": false,
+                                "title": "Writetoolsack",
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3820,6 +3840,11 @@
                             }
                           ],
                           "title": "Workflowdefinitionid"
+                        },
+                        "writeToolsAck": {
+                          "default": false,
+                          "title": "Writetoolsack",
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -4218,6 +4243,18 @@
           "validate": null
         },
         {
+          "comment": "write_tools_ack",
+          "dict": null,
+          "label": "writeToolsAck",
+          "nullable": true,
+          "prop": "writeToolsAck",
+          "propertyName": "writeToolsAck",
+          "required": false,
+          "source": "write_tools_ack",
+          "type": "boolean",
+          "validate": null
+        },
+        {
           "comment": "status",
           "dict": null,
           "label": "status",
@@ -4459,6 +4496,18 @@
             "value": true
           },
           "source": "enabled",
+          "type": "boolean",
+          "validate": null
+        },
+        {
+          "comment": "write_tools_ack",
+          "dict": null,
+          "label": "writeToolsAck",
+          "nullable": true,
+          "prop": "writeToolsAck",
+          "propertyName": "writeToolsAck",
+          "required": false,
+          "source": "write_tools_ack",
           "type": "boolean",
           "validate": null
         },
@@ -8114,6 +8163,17 @@
                               }
                             ],
                             "title": "Success"
+                          },
+                          "targetRef": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Targetref"
                           },
                           "toolName": {
                             "title": "Toolname",

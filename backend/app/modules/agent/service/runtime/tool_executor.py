@@ -92,6 +92,8 @@ class ToolExecutor:
 
     def _execute_single(self, call_id: str, name: str, args: dict) -> ToolCallOutcome:
         started = time.monotonic()
+        # E3：写工具经 ctx.audit_target_ref 上报目标引用——执行前清除防上一工具残留污染
+        self.context.audit_target_ref = None
         try:
             tool, validated_args = self._precheck(call_id, name, args)
         except ToolCallRefused as refused:
@@ -194,6 +196,7 @@ class ToolExecutor:
                 tool_name=outcome.name,
                 args_summary=json.dumps(args, ensure_ascii=False, default=str)[:500],
                 result_summary=truncate_tool_result(outcome.content),
+                target_ref=getattr(self.context, "audit_target_ref", None),  # E3 写操作目标审计
                 duration_ms=outcome.duration_ms or int((time.monotonic() - started) * 1000),
                 success=outcome.success if outcome.skipped_reason != "cancelled" else None,
                 error=outcome.content if not outcome.success else None,

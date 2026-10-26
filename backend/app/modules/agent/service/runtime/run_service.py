@@ -645,6 +645,7 @@ class AgentRunService:
         if approval_pending(self.session, session_row.id):
             raise HTTPException(status_code=409, detail="该会话存在待审批的工具调用，审批完成前不能发起新对话")
         payload = self._load_payload(profile, run_mode)
+        self._assert_write_tools_ack(profile, payload)
         # 附件发起线程同步校验（SSE 建流前 400/403/404，好于流中 error 帧）
         attachment_metas = _validate_attachments(self.session, attachments or [], current_user)
         trace = AgentRunTrace(
@@ -689,6 +690,20 @@ class AgentRunService:
             "payload": payload,
             "handle": handle,
         }
+
+    def _assert_write_tools_ack(self, profile: Any, payload: dict) -> None:
+        """E3 实时校验：载荷含可逆写工具 → write_tools_ack 必须在案（发布是第一道，发起是实时道；
+        恢复路径不重校——挂起发起时已过，执行时刻另有整链校验）。"""
+        from app.modules.agent.model.agent import AGENT_TOOL_LEVEL_REVERSIBLE_WRITE
+
+        has_write = any(
+            t.get("level") == AGENT_TOOL_LEVEL_REVERSIBLE_WRITE for t in (payload.get("snapshot_tools") or {}).values()
+        )
+        if has_write and not getattr(profile, "write_tools_ack", False):
+            raise HTTPException(
+                status_code=400,
+                detail="该智能体绑定了写工具但未确认写工具知情声明（writeToolsAck），无法发起对话",
+            )
 
     def _current_snapshot_id(self, profile_id: int, run_mode: str) -> int | None:
         if run_mode != AGENT_RUN_MODE_PUBLISHED:

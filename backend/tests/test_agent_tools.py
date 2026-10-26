@@ -84,12 +84,17 @@ class CollectAndAllowListTestCase(unittest.TestCase):
     """SPI 收集：真实模块冒烟 + 允许列表封闭性 + 冲突 fail-fast + 结构校验。"""
 
     def test_collect_real_modules_smoke(self):
-        """真实收集：首版封闭清单 5 工具全部注册（asset/media/workflow + agent 内置 ×2）。"""
+        """真实收集：封闭清单工具全部注册（首版 5 只读 + E3 可逆写首批 4）。"""
         registry = collect_agent_tools()
         self.assertEqual(set(registry.keys()), tool_registry.RUNTIME_ALLOWED_TOOLS)
         for tool in registry.values():
-            self.assertEqual(tool.level, "readonly")  # D11：首版全部只读
             self.assertTrue(issubclass(tool.args_model, BaseModel))
+            if tool.level == "readonly":
+                continue
+            # E3：可逆写必须带安全机制表三键（D11 二级治理）
+            self.assertEqual(tool.level, "reversible_write")
+            self.assertIsNotNone(tool.safety)
+            self.assertTrue({"reversible_how", "concurrency", "audit_ref"}.issubset(tool.safety.keys()))
 
     def test_allow_list_closes_registration(self):
         """允许列表封闭性（验收 13）：不在 RUNTIME_ALLOWED_TOOLS 的工具不进注册表。"""

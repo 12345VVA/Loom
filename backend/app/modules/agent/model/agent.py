@@ -155,6 +155,8 @@ class AgentProfile(BaseEntity, table=True):
     execution_mode: str = Field(default="chat", max_length=20)
     workflow_definition_id: int | None = Field(default=None)
     enabled: bool = Field(default=True, index=True)  # 独立启停（实时运行控制，不被快照冻结）
+    # E3：写工具知情确认——绑定 reversible_write 工具的智能体必须 ack 才可发布（D11 治理）
+    write_tools_ack: bool = Field(default=False)
     status: str = Field(default=AGENT_STATUS_DRAFT, index=True, max_length=50)
     created_by: int | None = Field(default=None, index=True)
 
@@ -317,6 +319,8 @@ class AgentToolCallLog(BaseEntity, table=True):
     tool_name: str = Field(max_length=150)
     args_summary: str | None = Field(default=None, sa_column=Column(Text))  # 脱敏截断
     result_summary: str | None = Field(default=None, sa_column=Column(Text))  # 截 200 字
+    # E3：写操作目标引用（"asset:3" / "media:7"）——审计可追溯「改了哪个目标」；只读工具恒空
+    target_ref: str | None = Field(default=None, max_length=100)
     duration_ms: int | None = Field(default=None)
     success: bool | None = Field(default=None)
     error: str | None = Field(default=None, sa_column=Column(Text))
@@ -400,6 +404,7 @@ class AgentProfileCreateRequest(BaseModel):
     enable_memory: bool = True
     execution_mode: str = "chat"  # chat | workflow（E17 编排模式）
     workflow_definition_id: int | None = None  # execution_mode=workflow 时必填（发布校验）
+    write_tools_ack: bool = False  # E3：写工具知情确认（绑定 reversible_write 工具时发布校验强制）
 
 
 class AgentProfileUpdateRequest(AgentProfileCreateRequest):
@@ -424,6 +429,7 @@ class AgentProfileRead(BaseModel):
     execution_mode: str = "chat"
     workflow_definition_id: int | None = None
     enabled: bool
+    write_tools_ack: bool = False
     status: str
     created_by: int | None = None
     created_at: datetime | None = None
@@ -465,6 +471,7 @@ class AgentToolCallLogRead(BaseModel):
     tool_name: str
     args_summary: str | None = None
     result_summary: str | None = None
+    target_ref: str | None = None
     duration_ms: int | None = None
     success: bool | None = None
     error: str | None = None

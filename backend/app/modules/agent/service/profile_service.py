@@ -22,7 +22,8 @@ from app.modules.agent.model.agent import (
     AGENT_PUBLISH_ACTION_ROLLBACK,
     AGENT_STATUS_DRAFT,
     AGENT_STATUS_PUBLISHED,
-    AGENT_TOOL_LEVEL_READONLY,
+    AGENT_TOOL_LEVEL_DANGEROUS_WRITE,
+    AGENT_TOOL_LEVEL_REVERSIBLE_WRITE,
     AgentProfileDraft,
     AgentProfilePublishRecord,
     AgentProfileSnapshot,
@@ -282,7 +283,7 @@ class AgentProfileService(BaseAdminCrudService):
         E17：execution 段承载编排模式与工作流绑定摘要（引用式绑定，D13 冻结边界）。"""
         from app.modules.agent.model.agent import AgentToolResource
         from app.modules.agent.service.runtime import prompt_render
-        from app.modules.agent.service.tool_registry import RUNTIME_ALLOWED_TOOLS, get_tool
+        from app.modules.agent.service.tool_registry import RUNTIME_ALLOWED_TOOLS, get_tool, get_tool_safety
 
         tool_names = json.loads(profile.tools or "[]")
         if not tool_names:
@@ -304,10 +305,25 @@ class AgentProfileService(BaseAdminCrudService):
                 raise HTTPException(status_code=400, detail=f"发布校验失败：工具 {name} 缺少资源层记录，请先刷新工具")
             if not row.status:
                 raise HTTPException(status_code=400, detail=f"发布校验失败：工具 {name} 已被禁用，无法发布")
-            if tool.level != AGENT_TOOL_LEVEL_READONLY:
+            if tool.level == AGENT_TOOL_LEVEL_DANGEROUS_WRITE:
+                # E3 边界：高风险写仍拒绝发布（D11 前置条件未全部落地的能力不开放）
                 raise HTTPException(
-                    status_code=400, detail=f"发布校验失败：首版仅允许只读工具（D11），{name} 为 {tool.level}"
+                    status_code=400,
+                    detail=f"发布校验失败：高风险写工具不可发布（D11），{name} 须单独定义授权与恢复机制",
                 )
+            if tool.level == AGENT_TOOL_LEVEL_REVERSIBLE_WRITE:
+                # E3：可逆写可发布——知情确认 + 安全机制表在案（逐项防线，替代人工审批）
+                if not getattr(profile, "write_tools_ack", False):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"发布校验失败：绑定写工具 {name} 需先确认写工具知情声明（writeToolsAck）",
+                    )
+                mechanism = get_tool_safety(name)
+                if mechanism is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"发布校验失败：写工具 {name} 缺少安全机制表（safety），收集契约要求 reversible_write 必须声明",
+                    )
             resource_snapshots.append(
                 {
                     "toolName": name,

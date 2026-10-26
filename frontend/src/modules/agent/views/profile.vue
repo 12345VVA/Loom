@@ -274,6 +274,16 @@ const Upsert = useUpsert({
 			}
 		},
 		{
+			// E3 写工具知情确认：绑定 reversible_write 工具时发布校验强制（D11 二级治理）
+			label: t('agent.profile.writeToolsAck'),
+			prop: 'writeToolsAck',
+			value: false,
+			component: {
+				name: 'el-switch',
+				props: { activeText: t('agent.profile.writeToolsAckHint') }
+			}
+		},
+		{
 			label: t('agent.profile.temperature'),
 			prop: 'temperature',
 			span: 12,

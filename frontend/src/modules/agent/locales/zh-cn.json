@@ -154,5 +154,7 @@
   "agent.approval.retryTip": "以原请求者身份重试工具「{name}」？仅只读工具可重试。",
   "agent.approval.retryOk": "重试成功",
   "agent.approval.retryFail": "重试失败（已记录）",
-  "agent.approval.menu": "审批队列"
+  "agent.approval.menu": "审批队列",
+  "agent.profile.writeToolsAck": "写工具知情确认",
+  "agent.profile.writeToolsAckHint": "已确认写工具风险"
 }
