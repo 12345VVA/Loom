@@ -57,6 +57,34 @@ class OllamaAdapter(BaseHttpAdapter):
                     }
                     yield {"event": "done", "raw": data, "usage": usage, "requestId": request_id}
 
+    async def stream_chat_async(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
+        """stream_chat 的异步通道（异步审查 P0-4）：NDJSON 解析逐条对齐，改任一侧必须
+        同步另一侧。"""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/api/chat",
+                json={"model": model, "messages": messages, "stream": True, "options": options},
+                headers=self._headers(),
+            ) as response:
+                response.raise_for_status()
+                # Ollama 服务端通常不下发请求标识头，读到 None 属预期，仅在有头时可供审计追溯
+                request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    data = _loads_line(line)
+                    content = (data.get("message") or {}).get("content")
+                    if content:
+                        yield {"event": "delta", "content": content, "raw": data, "requestId": request_id}
+                    if data.get("done"):
+                        usage = {
+                            "promptTokens": data.get("prompt_eval_count") or 0,
+                            "completionTokens": data.get("eval_count") or 0,
+                            "totalTokens": (data.get("prompt_eval_count") or 0) + (data.get("eval_count") or 0),
+                        }
+                        yield {"event": "done", "raw": data, "usage": usage, "requestId": request_id}
+
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         text = input if isinstance(input, str) else "\n".join(input)
         response = httpx.post(

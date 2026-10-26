@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import queue
 import threading
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 
 from sqlmodel import Session
 
@@ -55,6 +56,36 @@ def _with_heartbeat(events: Iterable[dict], interval: float = _STREAM_HEARTBEAT_
             yield item
     finally:
         stop.set()
+
+
+async def _with_heartbeat_async(
+    events: AsyncIterator[dict], interval: float = _STREAM_HEARTBEAT_INTERVAL_SECONDS
+) -> AsyncIterator[dict]:
+    """_with_heartbeat 的异步形态（异步审查 P0-4）：静默超过 interval 秒产出
+    _STREAM_HEARTBEAT，等待全程零线程占用。
+
+    ⚠️ 不得用 ``asyncio.wait_for(anext(aiter))`` 实现超时——超时会 cancel 对源
+    生成器的读取推进，源被中断后再 anext 直接 StopAsyncIteration，表现为流静默
+    截断。这里用非取消式 ``asyncio.wait``：超时仅产心跳，读取任务保持挂起、
+    下轮复用同一任务；退出时才取消。"""
+    aiter = events.__aiter__()
+    pending: asyncio.Task | None = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.ensure_future(anext(aiter))
+            done, _ = await asyncio.wait({pending}, timeout=interval)
+            if not done:
+                yield _STREAM_HEARTBEAT
+                continue
+            try:
+                yield pending.result()
+            except StopAsyncIteration:
+                return
+            pending = None
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
 
 
 def _independent_session(request_session: Session) -> Session:

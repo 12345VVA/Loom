@@ -5,7 +5,7 @@ AI 厂商适配器基础工具。
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from typing import Any
 
 import httpx
@@ -229,6 +229,31 @@ def iter_sse_events(lines: Iterable[str | bytes]) -> Iterable[dict[str, str | No
     event_name: str | None = None
     data_lines: list[str] = []
     for raw_line in lines:
+        line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+        line = line.rstrip("\r")
+        if not line:
+            if data_lines:
+                yield {"event": event_name, "data": "\n".join(data_lines)}
+            event_name = None
+            data_lines = []
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            event_name = line[6:].strip()
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    if data_lines:
+        yield {"event": event_name, "data": "\n".join(data_lines)}
+
+
+async def aiter_sse_events(lines) -> AsyncIterator[dict[str, str | None]]:
+    """iter_sse_events 的异步形态（异步审查 P0-4）：解析语义逐行对齐，供
+    stream_chat_async 消费 httpx 的 ``aiter_lines()``。改任一侧必须同步另一侧。"""
+    event_name: str | None = None
+    data_lines: list[str] = []
+    async for raw_line in lines:
         line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
         line = line.rstrip("\r")
         if not line:

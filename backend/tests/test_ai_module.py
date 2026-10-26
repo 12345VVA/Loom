@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 import time
@@ -365,6 +366,154 @@ class AiModuleTestCase(unittest.TestCase):
         self.assertEqual(log.status, "success")
         self.assertEqual(log.request_id, "stream-1")
         self.assertEqual(log.total_tokens, 3)
+
+    def test_runtime_stream_chat_async_outputs_events_and_logs_success(self):
+        """P0-4 异步通道：管线/审计口径与同步 stream_chat 一致（事件序/脱敏/落库）。"""
+        provider = AiProvider(
+            code="openai",
+            name="OpenAI",
+            adapter="openai-compatible",
+            api_key_cipher=encrypt_secret("sk-test"),
+            is_active=True,
+        )
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        model = AiModel(
+            provider_id=provider.id,
+            code="gpt-test",
+            name="GPT Test",
+            model_type="chat",
+            is_active=True,
+        )
+        self.session.add(model)
+        self.session.commit()
+        self.session.refresh(model)
+        profile = AiModelProfile(
+            code="default-chat",
+            name="Default",
+            model_id=model.id,
+            scenario="default",
+            is_default=True,
+            max_tokens=64,
+            is_active=True,
+        )
+        self.session.add(profile)
+        self.session.commit()
+
+        class FakeAsyncAdapter:
+            async def stream_chat_async(self, *, model, messages, options):
+                yield {"event": "delta", "content": "he"}
+                yield {"event": "delta", "content": "llo"}
+                yield {
+                    "event": "done",
+                    "usage": {"promptTokens": 1, "completionTokens": 2, "totalTokens": 3},
+                    "requestId": "async-1",
+                }
+
+        async def scenario():
+            with patch("app.modules.ai.service.runtime_service.build_adapter", return_value=FakeAsyncAdapter()):
+                chunks = []
+                async for chunk in AiModelRuntimeService(self.session).stream_chat_async(
+                    AiChatRequest(messages=[{"role": "user", "content": "hi"}])
+                ):
+                    chunks.append(chunk)
+            return chunks
+
+        chunks = asyncio.run(scenario())
+        events = _parse_sse_chunks(chunks)
+        self.assertEqual([item["event"] for item in events], ["start", "delta", "delta", "done"])
+        self.assertEqual(events[-1]["content"], "hello")
+        log = self.session.exec(select(AiModelCallLog)).one()
+        self.assertEqual(log.status, "success")
+        self.assertEqual(log.request_id, "async-1")
+        self.assertEqual(log.total_tokens, 3)
+
+    def test_with_heartbeat_async_yields_sentinel_on_silence(self):
+        """异步心跳：静默超间隔产 _STREAM_HEARTBEAT，且不 cancel 源读取（wait_for
+        方案会把源生成器打断成 StopAsyncIteration——防截断回归锚点）。"""
+        from app.modules.ai.service.runtime.heartbeat import (
+            _STREAM_HEARTBEAT,
+            _with_heartbeat_async,
+        )
+
+        async def slow_source():
+            yield {"n": 1}
+            await asyncio.sleep(0.05)
+            yield {"n": 2}
+
+        async def scenario():
+            seen = []
+            async for item in _with_heartbeat_async(slow_source(), interval=0.01):
+                seen.append(item)
+            return seen
+
+        seen = asyncio.run(scenario())
+        heartbeats = [item for item in seen if item is _STREAM_HEARTBEAT]
+        self.assertGreaterEqual(len(heartbeats), 1)
+        self.assertEqual([item for item in seen if item is not _STREAM_HEARTBEAT], [{"n": 1}, {"n": 2}])
+
+    def test_openai_http_stream_chat_async_parses_sse(self):
+        """openai_http 异步通道：SSE 解析/[DONE]/done 事件与同步通道一致。"""
+        from app.modules.ai.service.adapters.openai_http import OpenAIHttpAdapter
+
+        lines = [
+            'data: {"choices":[{"delta":{"content":"hi"}}]}',
+            "",
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":7}}',
+            "",
+            "data: [DONE]",
+            "",
+        ]
+
+        class FakeAsyncResponse:
+            is_error = False
+            headers: dict = {}
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            def raise_for_status(self):
+                return None
+
+            async def aiter_lines(self):
+                for line in lines:
+                    yield line
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            def stream(self, *args, **kwargs):
+                return FakeAsyncResponse()
+
+        adapter = OpenAIHttpAdapter.__new__(OpenAIHttpAdapter)
+        adapter.adapter_code = "openai-http"
+        adapter.provider_code = "p"
+        adapter.base_url = "https://up.test/v1"
+        adapter.api_key = "sk"
+        adapter.extra_config = {}
+        adapter.timeout = 5.0
+
+        async def scenario():
+            with patch("httpx.AsyncClient", FakeAsyncClient):
+                return [event async for event in adapter.stream_chat_async(model="m", messages=[], options={})]
+
+        events = asyncio.run(scenario())
+        self.assertEqual([item["event"] for item in events], ["delta", "done", "done"])
+        self.assertEqual(events[0]["content"], "hi")
+        self.assertEqual(events[1]["finishReason"], "stop")
+        self.assertEqual(events[1]["usage"]["totalTokens"], 7)
+        self.assertEqual(events[2], {"event": "done", "requestId": None})
 
     def test_runtime_stream_chat_client_close_releases_invocation(self):
         provider = AiProvider(code="openai", name="OpenAI", adapter="openai-compatible", is_active=True)

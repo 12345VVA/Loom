@@ -7,6 +7,7 @@ import httpx
 
 from app.modules.ai.service.adapters.base import (
     BaseHttpAdapter,
+    aiter_sse_events,
     iter_sse_events,
     loads_json,
     normalize_usage,
@@ -107,6 +108,93 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
                         "finishReason": finish_reason,
                         "requestId": request_id,
                     }
+
+    async def stream_chat_async(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
+        """stream_chat 的异步通道（异步审查 P0-4）：httpx.AsyncClient 流式，事件语义与
+        stream_chat 逐条对齐（含 stream_options 400/422 去字段重试）。改任一侧必须
+        同步另一侧。"""
+        options = dict(options or {})
+        stream_options = {"include_usage": True}
+        user_stream_options = options.pop("stream_options", None)
+        if isinstance(user_stream_options, dict):
+            stream_options.update(user_stream_options)
+        payload = {
+            "model": model,
+            "messages": messages,
+            **options,
+            "stream": True,
+            "stream_options": stream_options,
+        }
+        yielded = False
+        try:
+            async for event in self._aiter_stream_events(payload):
+                yielded = True
+                yield event
+        except Exception as exc:
+            # 白名单网关见到 stream_options 直接 400/422。此时尚未产出任何 delta，
+            # 去字段重试不会重复正文，代价仅是该条流失去 usage 计量
+            if yielded or not stream_options_unsupported(exc):
+                raise
+            logger.warning(
+                "上游拒绝 stream_options，已去字段重试（本条流不计 token）",
+                extra={
+                    "provider_adapter": self.adapter_code,
+                    "provider_code": self.provider_code,
+                    "base_url": self.base_url,
+                    "model": model,
+                    "user_supplied": isinstance(user_stream_options, dict),
+                    "error_message": str(exc)[:500],
+                },
+            )
+            payload.pop("stream_options", None)
+            async for event in self._aiter_stream_events(payload):
+                yield event
+
+    async def _aiter_stream_events(self, payload: dict[str, Any]):
+        # 与 _iter_stream_events 逐条对齐。AsyncClient 按调用临时创建（async with
+        # 即关），与同步通道 httpx.stream 每调用一连接的现行为一致——不驻留池化
+        # 适配器实例，遵守 factory 池化纪律
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}{self.chat_path}",
+                json=payload,
+                headers=self._headers(),
+            ) as response:
+                if getattr(response, "is_error", False):
+                    await response.aread()
+                self._raise_for_status(response)
+                request_id = response.headers.get("x-request-id")
+                async for event in aiter_sse_events(response.aiter_lines()):
+                    value = event.get("data")
+                    if value == "[DONE]":
+                        yield {"event": "done", "requestId": request_id}
+                        continue
+                    data = loads_json(value)
+                    choice = (data.get("choices") or [{}])[0]
+                    message_delta = choice.get("delta") or {}
+                    delta = message_delta.get("content")
+                    reasoning_delta = message_delta.get("reasoning_content") or message_delta.get("reasoning")
+                    finish_reason = choice.get("finish_reason")
+                    usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
+                    # DeepSeek 等思考模型的思维链增量，按 thinking_delta 事件透传（不混入正文）
+                    if reasoning_delta:
+                        yield {
+                            "event": "thinking_delta",
+                            "content": reasoning_delta,
+                            "raw": data,
+                            "requestId": request_id,
+                        }
+                    if delta:
+                        yield {"event": "delta", "content": delta, "raw": data, "requestId": request_id}
+                    if usage or finish_reason:
+                        yield {
+                            "event": "done",
+                            "raw": data,
+                            "usage": usage,
+                            "finishReason": finish_reason,
+                            "requestId": request_id,
+                        }
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         data, response = self._post(self.embeddings_path, {"model": model, "input": input, **options})

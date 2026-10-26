@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from app.modules.ai.model.ai import AiProvider
 from app.modules.ai.service.adapters.base import (
@@ -123,6 +123,101 @@ class OpenAICompatibleAdapter(BaseHttpAdapter):
         if stream_options is not None:
             kwargs["stream_options"] = stream_options
         return self.client.chat.completions.create(model=model, messages=messages, stream=True, **kwargs)
+
+    async def stream_chat_async(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
+        """stream_chat 的异步通道（异步审查 P0-4）：AsyncOpenAI 按调用临时创建
+        （async with 即关，超时取 extra_config.timeout），事件语义与 stream_chat 逐条
+        对齐（含 stream_options 400/422 去字段重试与 E1 tool_calls 增量聚合）。改任
+        一侧必须同步另一侧。"""
+        call_options = dict(options or {})
+        stream_options = {"include_usage": True}
+        user_stream_options = call_options.pop("stream_options", None)
+        if isinstance(user_stream_options, dict):
+            stream_options.update(user_stream_options)
+        max_retries = int(self.extra_config.get("max_retries", 0))
+
+        def _new_client() -> AsyncOpenAI:
+            return AsyncOpenAI(
+                api_key=self.api_key or "EMPTY",
+                base_url=self.base_url or None,
+                max_retries=max_retries,
+                timeout=self.timeout,
+            )
+
+        try:
+            client = _new_client()
+            stream = await self._acreate_stream(client, model, messages, call_options, stream_options)
+        except Exception as exc:
+            # 白名单网关见到 stream_options 直接 400/422（SDK 在首个 chunk 前抛出），
+            # 去字段重试不会重复正文，代价仅是该条流失去 usage 计量
+            if not stream_options_unsupported(exc):
+                raise
+            logger.warning(
+                "上游拒绝 stream_options，已去字段重试（本条流不计 token）",
+                extra={
+                    "provider_adapter": self.adapter_code,
+                    "provider_code": self.provider_code,
+                    "base_url": self.base_url,
+                    "model": model,
+                    "user_supplied": isinstance(user_stream_options, dict),
+                    "error_message": str(exc)[:500],
+                },
+            )
+            client = _new_client()
+            stream = await self._acreate_stream(client, model, messages, call_options, None)
+        request_id = extract_request_id(stream)
+        tool_call_slots: dict[int, dict[str, Any]] = {}
+        try:
+            async for chunk in stream:
+                data = chunk.model_dump(mode="json") if hasattr(chunk, "model_dump") else {}
+                choice = (data.get("choices") or [{}])[0]
+                message_delta = choice.get("delta") or {}
+                delta = message_delta.get("content")
+                reasoning_delta = message_delta.get("reasoning_content") or message_delta.get("reasoning")
+                finish_reason = choice.get("finish_reason")
+                usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
+                for tc in message_delta.get("tool_calls") or []:
+                    slot = tool_call_slots.setdefault(
+                        tc.get("index", 0), {"id": "", "function": {"name": "", "arguments": ""}}
+                    )
+                    if tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        slot["function"]["name"] += fn["name"]
+                    if fn.get("arguments"):
+                        slot["function"]["arguments"] += fn["arguments"]
+                if reasoning_delta:
+                    yield {"event": "thinking_delta", "content": reasoning_delta, "raw": data, "requestId": request_id}
+                if delta:
+                    yield {"event": "delta", "content": delta, "raw": data, "requestId": request_id}
+                if usage or finish_reason:
+                    aggregated = [tool_call_slots[i] for i in sorted(tool_call_slots)] if tool_call_slots else None
+                    yield {
+                        "event": "done",
+                        "raw": data,
+                        "usage": usage,
+                        "finishReason": finish_reason,
+                        "toolCalls": aggregated,
+                        "requestId": request_id,
+                    }
+        finally:
+            close = getattr(stream, "close", None)
+            if close is not None:
+                await close()
+
+    async def _acreate_stream(
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        messages: list[dict[str, Any]],
+        call_options: dict[str, Any],
+        stream_options: dict[str, Any] | None,
+    ):
+        kwargs = dict(call_options)
+        if stream_options is not None:
+            kwargs["stream_options"] = stream_options
+        return await client.chat.completions.create(model=model, messages=messages, stream=True, **kwargs)
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         response = self.client.embeddings.create(model=model, input=input, **options)

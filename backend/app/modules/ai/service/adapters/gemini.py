@@ -10,6 +10,7 @@ from app.framework.url_security import safe_stream, validate_remote_url
 from app.modules.ai.service.adapters.base import (
     BaseHttpAdapter,
     UnsupportedCapabilityError,
+    aiter_sse_events,
     iter_sse_events,
     loads_json,
     normalize_usage,
@@ -101,6 +102,53 @@ class GeminiAdapter(BaseHttpAdapter):
                         "finishReason": finish_reason,
                         "requestId": request_id,
                     }
+
+    async def stream_chat_async(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
+        """stream_chat 的异步通道（异步审查 P0-4）：payload 构造与事件解析逐条对齐，
+        改任一侧必须同步另一侧。"""
+        call_options = dict(options or {})
+        response_format = call_options.pop("response_format", None)
+        generation_config = call_options.pop("generationConfig", call_options.pop("generation_config", {}))
+        if not isinstance(generation_config, dict):
+            generation_config = {}
+        if response_format:
+            generation_config["responseMimeType"] = "application/json"
+
+        payload = {
+            "contents": [_gemini_content(item) for item in messages if item.get("role") != "system"],
+            **call_options,
+        }
+        if generation_config:
+            payload["generationConfig"] = generation_config
+
+        system_text = extract_system_text(messages)
+        if system_text:
+            payload["systemInstruction"] = {"parts": [{"text": system_text}]}
+        path = f"/models/{model}:streamGenerateContent?alt=sse"
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST", f"{self.base_url}{path}", json=payload, headers=self._headers()
+            ) as response:
+                response.raise_for_status()
+                request_id = response.headers.get("x-request-id")
+                async for event in aiter_sse_events(response.aiter_lines()):
+                    data = loads_json(event.get("data"))
+                    candidate = (data.get("candidates") or [{}])[0]
+                    parts = (candidate.get("content") or {}).get("parts") or []
+                    for part in parts:
+                        text = part.get("text")
+                        if text:
+                            yield {"event": "delta", "content": text, "raw": data, "requestId": request_id}
+                    usage = normalize_usage(data.get("usageMetadata"))
+                    finish_reason = candidate.get("finishReason")
+                    if usage or finish_reason:
+                        yield {
+                            "event": "done",
+                            "raw": data,
+                            "usage": usage,
+                            "finishReason": finish_reason,
+                            "requestId": request_id,
+                        }
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:
         texts = input if isinstance(input, list) else [input]

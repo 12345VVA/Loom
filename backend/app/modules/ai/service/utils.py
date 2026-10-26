@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from collections.abc import Iterable
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -333,4 +333,18 @@ def _adapter_timeout(adapter, timeout: int | None):
     client = getattr(adapter, "client", None)
     if client is not None and hasattr(client, "with_options"):
         call_adapter.client = client.with_options(timeout=float(timeout))
+    yield call_adapter
+
+
+@asynccontextmanager
+async def _adapter_timeout_async(adapter, timeout: int | None):
+    """_adapter_timeout 的异步通道版本（异步审查 P0-4）：副本纪律与 docstring 语义
+    完全一致（read timeout = 逐 chunk 静默间隔，非整条流时长上限）。openai SDK 的
+    异步客户端按调用临时创建并在构造期带超时（stream_chat_async），不经过 with_options
+    分支——异步客户端不驻留池化实例，无需副本共享顾虑。"""
+    if timeout is None:
+        yield adapter
+        return
+    call_adapter = copy.copy(adapter)
+    call_adapter.timeout = float(timeout)
     yield call_adapter

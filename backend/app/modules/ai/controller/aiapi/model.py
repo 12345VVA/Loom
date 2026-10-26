@@ -4,7 +4,6 @@
 
 import asyncio
 import logging
-from collections.abc import Iterable
 from functools import partial
 
 from fastapi import Depends, HTTPException, status
@@ -146,14 +145,14 @@ class AiRuntimeController(BaseController):
         payload: AiChatRequest,
         current_user: User = Depends(get_current_user),
     ):
-        """流式调用：权限校验与模型解析在短事务内完成后立即归还连接（异步审查 P0-2——
-        请求级 Session 的只读事务未提交会悬挂 DB 连接至流结束）；返回的生成器内部
-        自建独立会话（runtime_service._independent_session），不依赖请求级会话存活。"""
+        """流式调用（异步审查 P0-4 异步通道）：权限校验与模型解析在短事务内完成后
+        立即归还连接（P0-2）；流式等待全程零线程占用——生成器为 async（内部自建
+        独立会话），Starlette 原生异步迭代，不再经 iterate_in_threadpool 占线程。"""
 
-        def _prepare() -> Iterable[str]:
+        def _prepare():
             with Session(engine) as session:
                 check_ai_call_permission(session, current_user)
-                return AiModelRuntimeService(session).stream_chat(payload, current_user=current_user)
+                return AiModelRuntimeService(session).stream_chat_async(payload, current_user=current_user)
 
         generator = await asyncio.to_thread(_prepare)
         return StreamingResponse(

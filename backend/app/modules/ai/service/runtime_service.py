@@ -17,9 +17,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from typing import Any
 
 from sqlmodel import Session
@@ -51,12 +52,14 @@ from app.modules.ai.service.runtime.heartbeat import (
     _STREAM_HEARTBEAT_INTERVAL_SECONDS,
     _independent_session,
     _with_heartbeat,
+    _with_heartbeat_async,
 )
 from app.modules.ai.service.runtime.input_guard import _check_vision_capability
 from app.modules.ai.service.runtime.retry import _RETRY_DELAY_CAP_SECONDS, RetryMixin, _is_retryable
 from app.modules.ai.service.security_service import AiSecurityService
 from app.modules.ai.service.utils import (
     _adapter_timeout,
+    _adapter_timeout_async,
     _calculate_cost_micro_usd,
     _is_structured_response,
     _options_without_governance,
@@ -88,6 +91,22 @@ __all__ = [
     "_with_heartbeat",
     "make_absolute_url",
 ]
+
+# _aiter_sync 的迭代结束哨兵（模块级，保证对象身份唯一）
+_SYNC_ITER_DONE = object()
+
+
+async def _aiter_sync(gen):
+    """把同步生成器桥接为 async（异步审查 P0-4）：仅供 _stream_invoke_async 的降级
+    路径使用——fallback 链（fallback.py）递归的是同步 _stream_invoke，桥接避免为
+    降级路径再造一条平行实现。逐 chunk to_thread 占用线程，但降级是低频路径，
+    代价可接受；正常路径零线程。"""
+    iterator = iter(gen)
+    while True:
+        item = await asyncio.to_thread(next, iterator, _SYNC_ITER_DONE)
+        if item is _SYNC_ITER_DONE:
+            return
+        yield item
 
 
 class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
@@ -167,6 +186,266 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
             # E1：审计通道与 chat 同口径（task_id 落 AiModelCallLog 供归因）
             task_id=task_id,
         )
+
+    def stream_chat_async(
+        self,
+        payload: AiChatRequest,
+        current_user: User | None = None,
+        task_id: int | None = None,
+        min_context_window: int | None = None,
+        scan_system_messages: bool = True,
+    ):
+        """stream_chat 的异步通道入口（异步审查 P0-4）：管线/治理/审计口径与
+        stream_chat 完全一致，返回 async 生成器。aiapi streamChat 端点专用——
+        同步通道保留给 agent chat_iter 在 worker 线程内消费。"""
+        AiSecurityService.check_input_safety(payload.messages, include_system=scan_system_messages)
+        resolved, options, response_format_overridden = self._resolve_chat(payload)
+        messages = [item.model_dump() if hasattr(item, "model_dump") else item for item in payload.messages]
+        return self._stream_invoke_async(
+            resolved,
+            current_user=current_user,
+            messages=messages,
+            options=options,
+            request_options=payload.options,
+            structured_response=options.get("response_format"),
+            response_format_overridden=response_format_overridden,
+            skip_masking=settings.AI_ALLOW_SKIP_MASKING and payload.skip_masking,
+            min_context_window=min_context_window,
+            task_id=task_id,
+        )
+
+    async def _stream_invoke_async(
+        self,
+        resolved: dict,
+        *,
+        current_user: User | None = None,
+        messages: list[dict[str, Any]],
+        options: dict[str, Any],
+        request_options: dict[str, Any] | None = None,
+        structured_response: dict[str, Any] | None = None,
+        response_format_overridden: bool = False,
+        skip_masking: bool = False,
+        min_context_window: int | None = None,
+        task_id: int | None = None,
+    ) -> AsyncIterator[str]:
+        """_stream_invoke 的异步通道（异步审查 P0-4）：事件源为适配器 stream_chat_async，
+        等待全程零线程占用；DB/Redis 触点一律 to_thread 卸载。与 _stream_invoke 逐条
+        对齐——改任一侧必须同步检查另一侧（脱敏/审计/降级/异常分支语义）。"""
+        start = time.perf_counter()
+        session = _independent_session(self.session)
+        st = _InvocationState.from_resolved(session, resolved, start, task_id=task_id)
+        provider, model, profile = st.provider, st.model, st.profile
+        content_parts: list[str] = []
+        usage: dict[str, Any] = {}
+        request_id: str | None = None
+        emitted_delta = False
+        done_sent = False
+        tool_calls: list[dict[str, Any]] | None = None
+        request_options = request_options or {}
+
+        try:
+            await asyncio.to_thread(self._begin_invocation, st, current_user, task_id)
+            yield _sse_event(
+                {"event": "start", "provider": provider.code, "model": model.code, "profile": profile.code}
+            )
+            adapter = build_adapter(provider)
+            # 超时上下文产出的是本次调用专用副本（池化 adapter 不在原地改，并发不串扰）
+            async with _adapter_timeout_async(adapter, profile.timeout) as call_adapter:
+                stream_events = _with_heartbeat_async(
+                    call_adapter.stream_chat_async(
+                        model=model.code, messages=messages, options=_options_without_governance(options)
+                    )
+                )
+                async for event in stream_events:
+                    if event is _STREAM_HEARTBEAT:
+                        # SSE 注释帧保活：前端 parseSse 跳过 ':' 行，不影响业务事件解析
+                        yield ": heartbeat\n\n"
+                        continue
+                    request_id = event.get("requestId") or request_id
+                    usage = event.get("usage") or usage
+                    event_name = event.get("event")
+                    if event_name in {"delta", "thinking_delta", "tool_delta"}:
+                        text = event.get("content") or ""
+                        if event_name == "delta":
+                            content_parts.append(text)
+                            emitted_delta = True
+                        # 流式输出阶段跳过脱敏（保证实时性和不破坏思考片段），仅在 done 中做全量脱敏
+                        yield _sse_event({"event": event_name, "content": text})
+                        continue
+                    if event_name == "error":
+                        message = event.get("content") or "模型流式调用失败"
+                        await asyncio.to_thread(
+                            self._audit_failure,
+                            st,
+                            "error",
+                            usage,
+                            str(message),
+                            user=current_user,
+                            request_id=request_id,
+                            session=session,
+                        )
+                        yield _sse_event({"event": "error", "message": str(message), "status": 400})
+                        return
+                    if event_name == "done":
+                        if event.get("usage"):
+                            usage = event.get("usage") or usage
+                        if event.get("requestId"):
+                            request_id = event.get("requestId")
+                        tool_calls = event.get("toolCalls")  # E1：adapter 聚合结果（None 透传）
+            content = "".join(content_parts)
+            # 对流式完成后的完整内容进行脱敏（跳过结构化数据，或配置跳过）
+            if not skip_masking and not _is_structured_response(structured_response):
+                content = AiSecurityService.mask_sensitive_output(content)
+            done_payload = {"event": "done", "content": content, "usage": usage or {}}
+            if tool_calls is not None:
+                done_payload["toolCalls"] = tool_calls
+            if _is_structured_response(structured_response):
+                parsed = _parse_content(content)
+                done_payload.update(parsed)
+            cost_micro_usd = _calculate_cost_micro_usd(model, usage)
+            await asyncio.to_thread(
+                self._audit_success,
+                st,
+                usage,
+                user=current_user,
+                cost_micro_usd=cost_micro_usd,
+                request_id=request_id,
+                options=request_options,
+                session=session,
+            )
+            done_sent = True
+            yield _sse_event(done_payload)
+        except AiGovernanceUnavailable as exc:
+            # Redis 故障导致 cost 类并发规则无法判定：fail-closed 返回 503（P0-17）
+            await asyncio.to_thread(
+                self._block_invocation,
+                st,
+                "unavailable",
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+                options=request_options,
+                session=session,
+            )
+            yield _sse_event({"event": "error", "message": str(exc), "status": 503})
+        except AiGovernanceBlocked as exc:
+            await asyncio.to_thread(
+                self._block_invocation,
+                st,
+                "blocked",
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+                options=request_options,
+                session=session,
+            )
+            yield _sse_event({"event": "error", "message": str(exc), "status": 429})
+        except UnsupportedCapabilityError as exc:
+            await asyncio.to_thread(
+                self._audit_failure,
+                st,
+                "unsupported",
+                usage,
+                str(exc),
+                user=current_user,
+                request_id=request_id,
+                session=session,
+            )
+            yield _sse_event({"event": "error", "message": str(exc), "status": 501})
+        except AdapterInputError as exc:
+            # 适配器参数/配置错误：不降级，直接以 error 事件收尾（AI-009）。
+            # 流中途抛出时若静默返回，前端只收到半截正文（P2 静默截断）——显式标记 truncated
+            if not done_sent:
+                await asyncio.to_thread(
+                    self._audit_failure,
+                    st,
+                    "error",
+                    usage,
+                    str(exc),
+                    user=current_user,
+                    request_id=request_id,
+                    session=session,
+                )
+                payload: dict[str, Any] = {"event": "error", "message": str(exc), "status": 400}
+                if emitted_delta:
+                    payload["truncated"] = True
+                yield _sse_event(payload)
+        except Exception as exc:
+            # 先回滚再审计/降级：PG 下事务 aborted 时后续 commit 会抛 PendingRollbackError（AI-006）
+            await asyncio.to_thread(session.rollback)
+            logger.error(
+                "AI 模型调用失败",
+                extra={
+                    "method": "stream_chat_async",
+                    "provider": provider.code,
+                    "provider_adapter": provider.adapter,
+                    "model": model.code,
+                    "profile": profile.code,
+                    "scenario": profile.scenario,
+                    "latency_ms": int((time.perf_counter() - start) * 1000),
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    "request_id": request_id,
+                    "fallback_profile_id": profile.fallback_profile_id,
+                },
+                exc_info=exc,
+            )
+            if not emitted_delta:
+                fallback = await asyncio.to_thread(
+                    self._stream_fallback,
+                    profile,
+                    messages,
+                    request_options,
+                    structured_response,
+                    response_format_overridden,
+                    current_user=current_user,
+                    session=session,
+                    min_context_window=min_context_window,
+                    task_id=task_id,
+                )
+                if fallback is not None:
+                    await asyncio.to_thread(
+                        self._audit_failure,
+                        st,
+                        "error",
+                        usage,
+                        str(exc),
+                        user=current_user,
+                        request_id=request_id,
+                        session=session,
+                    )
+                    # 降级生成器是同步通道（fallback.py 递归 _stream_invoke），桥接为 async
+                    async for sse in _aiter_sync(fallback):
+                        yield sse
+                    return
+            if not done_sent:
+                await asyncio.to_thread(
+                    self._audit_failure,
+                    st,
+                    "error",
+                    usage,
+                    str(exc),
+                    user=current_user,
+                    request_id=request_id,
+                    session=session,
+                )
+                yield _sse_event({"event": "error", "message": f"模型调用失败: {exc}", "status": 400})
+        finally:
+            if st.invocation is not None and not st.closed:
+                await asyncio.to_thread(
+                    st.governance.finish,
+                    st.invocation,
+                    status_value="error",
+                    user=current_user,
+                    provider=provider,
+                    model=model,
+                    profile=profile,
+                    usage=usage,
+                    cost_micro_usd=0,
+                )
+            await asyncio.to_thread(session.close)
 
     def chat_iter(
         self,
