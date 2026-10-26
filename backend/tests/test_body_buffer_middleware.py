@@ -66,6 +66,11 @@ def _chunk(body: bytes, more: bool) -> dict:
 # 预投分片两段（正常读全）+ 错位残余（读全之后才到达）
 _FRAGMENTED_BODY = [_chunk(b'{"q": "he', True), _chunk(b'llo"}', False)]
 _RESIDUE = [_chunk(b'llo"}', False)]
+# SSE 场景桩：residue 放主队列末位而非 deferred——下游 body 读取在 more_body=False
+# 处确定停止，residue 必然滞留给响应期监听链；deferred 的投递时机与 Request.stream()
+# 循环存在调度竞争窗口（CI 慢机两度触发 ExceptionGroup 形态漂移致 assertRaises 落空），
+# 滞留队列在 ASGI 事件模型里与「晚到」等价且时序确定。
+_SSE_RECV_SCRIPT = _FRAGMENTED_BODY + _RESIDUE
 
 
 async def _sse_endpoint_app(scope, receive, send) -> None:
@@ -115,14 +120,14 @@ class BodyBufferSseTests(unittest.TestCase):
         （collapse_excgroups 会把单成员 ExceptionGroup 解包为裸 RuntimeError）。
         """
         app = _passthrough_basehttp(_sse_endpoint_app)
-        recv = _ScriptedReceive(_FRAGMENTED_BODY, deferred=_RESIDUE)
+        recv = _ScriptedReceive(_SSE_RECV_SCRIPT)
         with self.assertRaises(RuntimeError, msg="Unexpected message received: http.request"):
             asyncio.run(_drive(app, recv))
 
     def test_body_buffer_keeps_sse_alive_with_residue(self) -> None:
         """修复正向：Buffer 包裹后同一场景完整收流（残余分片被吞）。"""
         app = BodyBufferMiddleware(_passthrough_basehttp(_sse_endpoint_app))
-        recv = _ScriptedReceive(_FRAGMENTED_BODY, deferred=_RESIDUE)
+        recv = _ScriptedReceive(_SSE_RECV_SCRIPT)
         sent = asyncio.run(_drive(app, recv))
         recv.disconnect()
         body = _response_body(sent)
