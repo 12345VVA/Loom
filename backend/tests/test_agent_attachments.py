@@ -233,6 +233,22 @@ class MultimodalTokenTestCase(unittest.TestCase):
         self.assertIsInstance(msg, HumanMessage)
         self.assertEqual(msg.content, [{"type": "text", "text": "hi"}])
 
+    def test_build_model_messages_multimodal_input(self):
+        """回归：多模态 current_input 过预算组装不炸（ord() 只收字符串）。"""
+        from app.modules.agent.service.runtime.memory_service import build_model_messages
+
+        msgs = build_model_messages(
+            system_message="sys",
+            tool_schema_tokens=10,
+            injected_context="",
+            history=[],
+            current_input=[{"type": "text", "text": "看图"}, _image_part()],
+            token_budget=6000,
+        )
+        last = msgs[-1]
+        self.assertIsInstance(last.content, list)
+        self.assertEqual(last.content[0]["type"], "text")
+
 
 class MessageConvertTestCase(unittest.TestCase):
     """_message_to_openai_dict：多模态数组保真（此前 str() 化会污染 base64）。"""

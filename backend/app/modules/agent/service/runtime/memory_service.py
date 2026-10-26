@@ -167,7 +167,10 @@ def build_model_messages(
 
     remaining = token_budget - system_tokens - tool_schema_tokens
     if current_input is not None:
-        input_tokens = estimate_tokens(current_input)
+        # 当前输入可为 str | 多模态数组（附件）——数组按部件估算（base64 不入）
+        input_tokens = (
+            _content_part_tokens(current_input) if isinstance(current_input, list) else estimate_tokens(current_input)
+        )
         if input_tokens >= remaining:
             raise ContextBudgetError(
                 f"当前输入约 {input_tokens} tokens，超过剩余预算 {remaining}（请缩短内容或减少历史）"
