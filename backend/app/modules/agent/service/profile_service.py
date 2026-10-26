@@ -154,6 +154,8 @@ class AgentProfileService(BaseAdminCrudService):
         else:
             data["code"] = str(data["code"]).strip()
             self._assert_code_available(data["code"])
+        data["name"] = str(data.get("name") or "").strip()
+        self._assert_name_available(data["name"])
         entity = super().add(data)
         upsert_draft(self.session, entity)  # 同步建草稿：调试台永远最新（评审 P1-1）
         # add 出口与 page/info 同构：tools 还原数组（Read 契约 list[str]，ORM 内是 JSON 文本——
@@ -171,6 +173,8 @@ class AgentProfileService(BaseAdminCrudService):
         data.pop("enabled", None)
         if "code" in data:
             self._assert_code_available(data.get("code"), exclude_id=data.get("id"))
+        if "name" in data:
+            self._assert_name_available(data.get("name"), exclude_id=data.get("id"))
         if "tools" in data:
             tools = data.get("tools")
             data["tools"] = json.dumps(tools, ensure_ascii=False) if tools is not None else None
@@ -249,6 +253,19 @@ class AgentProfileService(BaseAdminCrudService):
             statement = statement.where(self.model.id != exclude_id)
         if self.session.exec(statement).first() is not None:
             raise HTTPException(status_code=400, detail=f"标识「{code}」已存在")
+
+    def _assert_name_available(self, name: Any, exclude_id: int | None = None) -> None:
+        """名称唯一（走查反馈）：活跃行内查重，exclude_id 排除自身（不改名直存不误伤）。"""
+        if not name or not str(name).strip():
+            return
+        statement = select(self.model).where(
+            self.model.name == str(name).strip(),
+            self.model.delete_time == None,  # noqa: E711
+        )
+        if exclude_id is not None:
+            statement = statement.where(self.model.id != exclude_id)
+        if self.session.exec(statement).first() is not None:
+            raise HTTPException(status_code=400, detail=f"名称「{name}」已存在")
 
     # --- 发布快照体系（设计 3.5，D13；锁前移四步）---
 

@@ -81,7 +81,10 @@ class AgentProfile(BaseEntity, table=True):
     """智能体定义（活表）：配置编辑面；发布后生成不可变快照供运行时消费。"""
 
     __tablename__ = "agent_profile"
-    __table_args__ = (_partial_unique_index("uq_agent_profile_code", "code", "delete_time IS NULL"),)
+    __table_args__ = (
+        _partial_unique_index("uq_agent_profile_code", "code", "delete_time IS NULL"),
+        _partial_unique_index("uq_agent_profile_name", "name", "delete_time IS NULL"),
+    )
 
     code: str = Field(index=True, max_length=100)
     name: str = Field(index=True, max_length=150)

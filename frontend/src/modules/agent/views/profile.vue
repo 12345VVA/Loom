@@ -57,7 +57,16 @@
 			<cl-pagination />
 		</cl-row>
 
-		<cl-upsert ref="Upsert" />
+		<cl-upsert ref="Upsert">
+			<!-- 走查反馈：编号编辑态只读（新增可留空自动生成）；列表编号列已隐藏 -->
+			<template #slot-code="{ scope }">
+				<el-input
+					:model-value="scope.code"
+					:disabled="Upsert?.mode === 'update'"
+					:placeholder="t('agent.profile.codePlaceholder')"
+				/>
+			</template>
+		</cl-upsert>
 
 		<!-- 调试台 drawer（draft 试聊，复用会话工作台 embedded 模式） -->
 		<el-drawer v-model="debugVisible" :title="t('agent.debug.title')" size="55%" destroy-on-close>
@@ -176,7 +185,6 @@ const Table = useTable({
 		{ type: 'selection', width: 60 },
 		{ type: 'index', label: '#', width: 50 },
 		{ label: t('agent.profile.name'), prop: 'name', minWidth: 140 },
-		{ label: t('agent.profile.code'), prop: 'code', minWidth: 130, showOverflowTooltip: true },
 		{ label: t('agent.profile.description'), prop: 'description', minWidth: 180, showOverflowTooltip: true },
 		{ label: t('agent.profile.modelProfile'), prop: 'modelProfileCode', minWidth: 120 },
 		{
@@ -220,13 +228,16 @@ const Upsert = useUpsert({
 			label: t('agent.profile.name'),
 			prop: 'name',
 			required: true,
-			span: 12
+			span: 12,
+			// cool-vue 表单项无 component 时整个不渲染（isLoaded = e.component && ...）——
+			// 名称输入框此前从未出现在新增/编辑弹窗（走查反馈「名称应该可以修改」的根源）
+			component: { name: 'el-input', props: { maxlength: 150 } }
 		},
 		{
 			label: t('agent.profile.code'),
 			prop: 'code',
 			span: 12,
-			component: { name: 'el-input', props: { placeholder: t('agent.profile.codePlaceholder') } }
+			component: { name: 'slot-code' }
 		},
 		{
 			label: t('agent.profile.modelProfile'),

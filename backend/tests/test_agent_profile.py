@@ -238,6 +238,31 @@ class PublishProfileTestCase(unittest.TestCase):
         entity = self.session.get(AgentProfile, self.profile.id)
         self.assertFalse(entity.enabled)  # 未被变更
 
+    def test_name_uniqueness(self):
+        """走查反馈：名称活跃行内唯一——add 撞名 400 / 改名撞他人 400 / 不改名直存排除自身 / 软删后可重建。"""
+        with self.assertRaises(HTTPException) as ctx:
+            self._create(name="测试智能体")
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("名称", str(ctx.exception.detail))
+
+        second = self._create(name="另一个智能体")
+        with self.assertRaises(HTTPException) as ctx:
+            self.service.update(
+                AgentProfileUpdateRequest(id=second.id, name="测试智能体", model_profile_code="deepseek-chat"),
+                current_user=self.owner,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        # 不改名直存：exclude_id 排除自身，不误伤
+        self.service.update(
+            AgentProfileUpdateRequest(id=second.id, name="另一个智能体", model_profile_code="deepseek-chat"),
+            current_user=self.owner,
+        )
+
+        # 软删后同名可重建（partial unique 语义，与 code 一致）
+        self.service.delete([second.id], current_user=self.owner)
+        revived = self._create(name="另一个智能体")
+        self.assertEqual(revived.name, "另一个智能体")
+
 
 class ContextWindowPolicyTestCase(unittest.TestCase):
     """E15 渠道窗口动态化（A27）：齐备取最小 / 缺失拒绝 / 覆盖值生效 / 回退超预算拒绝。"""
