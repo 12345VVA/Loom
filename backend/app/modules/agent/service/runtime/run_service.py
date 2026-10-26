@@ -977,6 +977,7 @@ class AgentRunService:
 
             terminal = {"success", "failed", "cancelled"}
             deadline_notified = False
+            poll_round = 0
             while True:
                 if is_cancel_requested(handle.trace_token, handle):
                     try:
@@ -1003,7 +1004,11 @@ class AgentRunService:
                 if current.status in terminal:
                     instance = current
                     break
-                time.sleep(0.5)
+                # 指数退避（异步审查 P1-6）：0.5s 起步、×2 封顶 2s——60s run 的状态查询
+                # 从 120 次降至 ~35 次。事件唤醒（订阅 workflow 终态事件）收益/复杂度比
+                # 不合算，不做；退避只影响取消/超时的响应粒度（上限 2s，远小于预算粒度）
+                time.sleep(min(2.0, 0.5 * (2**poll_round)))
+                poll_round += 1
 
             if instance.status == "success":
                 answer = self._workflow_output_answer(instance)

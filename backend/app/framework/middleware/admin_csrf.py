@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
+from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.config import settings
 from app.framework.api.response import FORBIDDEN_CODE, error
@@ -41,31 +41,51 @@ def assert_cors_configuration(*, allow_credentials: bool, allow_origins: list[st
         )
 
 
-class AdminCsrfOriginMiddleware(BaseHTTPMiddleware):
-    """对管理端变更请求做可选同源校验。"""
+class AdminCsrfOriginMiddleware:
+    """对管理端变更请求做可选同源校验。
 
-    async def dispatch(self, request: Request, call_next):
+    纯 ASGI（异步审查 P1-1，样板 operation_log/body_buffer/exception_guard）；
+    校验语义与原 BaseHTTPMiddleware 版逐条对齐。
+    """
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         if (
             not settings.ADMIN_CSRF_ORIGIN_CHECK_ENABLED
-            or request.method in SAFE_METHODS
-            or not request.url.path.startswith("/admin")
+            or scope["method"] in SAFE_METHODS
+            or not scope.get("path", "").startswith("/admin")
         ):
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
-        origin = request.headers.get("origin")
-        referer = request.headers.get("referer")
+        headers = Headers(scope=scope)
+        origin = headers.get("origin")
+        referer = headers.get("referer")
         source = origin or referer
         if not source:
-            return JSONResponse(status_code=403, content=error("缺少来源校验信息", code=FORBIDDEN_CODE))
+            await JSONResponse(status_code=403, content=error("缺少来源校验信息", code=FORBIDDEN_CODE))(
+                scope, receive, send
+            )
+            return
 
         allowed = {_normalize_origin(item) for item in settings.cors_origins_list}
         if "*" in allowed:
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
         if _normalize_origin(source) not in allowed:
-            return JSONResponse(status_code=403, content=error("非法请求来源", code=FORBIDDEN_CODE))
+            await JSONResponse(status_code=403, content=error("非法请求来源", code=FORBIDDEN_CODE))(
+                scope, receive, send
+            )
+            return
 
-        return await call_next(request)
+        await self.app(scope, receive, send)
 
 
 def _normalize_origin(value: str) -> str:

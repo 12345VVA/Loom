@@ -34,12 +34,19 @@ class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
         if content_length and content_length.isdigit() and int(content_length) > settings.RESPONSE_ENVELOPE_MAX_BYTES:
             return response
 
-        raw_body = b""
+        # 逐块累积后一次性 join（异步审查 P1-2）：bytes += bytes 是 O(n²) 拷贝，
+        # 大响应下拼接中间态放大内存峰值。仍全量读尽 body_iterator——超限透传
+        # 语义要求完整原文
+        chunks: list[bytes] = []
+        total = 0
         body_too_large = False
         async for chunk in response.body_iterator:
-            raw_body += chunk
-            if len(raw_body) > settings.RESPONSE_ENVELOPE_MAX_BYTES:
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > settings.RESPONSE_ENVELOPE_MAX_BYTES:
                 body_too_large = True
+
+        raw_body = b"".join(chunks)
 
         if body_too_large:
             return Response(
@@ -110,16 +117,26 @@ async def _normalize_error_response(response: Response) -> Response:
     if content_length and content_length.isdigit() and int(content_length) > settings.RESPONSE_ENVELOPE_MAX_BYTES:
         return response
 
-    raw_body = b""
+    chunks: list[bytes] = []
+    total = 0
+    overflow = False
     async for chunk in response.body_iterator:
-        raw_body += chunk
-        if len(raw_body) > settings.RESPONSE_ENVELOPE_MAX_BYTES:
-            return Response(
-                content=raw_body,
-                status_code=response.status_code,
-                headers=headers,
-                media_type=response.media_type,
-            )
+        chunks.append(chunk)
+        total += len(chunk)
+        if total > settings.RESPONSE_ENVELOPE_MAX_BYTES:
+            overflow = True
+            break
+
+    if overflow:
+        # 超限早退：与原行为一致，返回已读部分原样透传（错误响应体超 20MB 属异常形态）
+        return Response(
+            content=b"".join(chunks),
+            status_code=response.status_code,
+            headers=headers,
+            media_type=response.media_type,
+        )
+
+    raw_body = b"".join(chunks)
 
     status_code = response.status_code
     fallback = {

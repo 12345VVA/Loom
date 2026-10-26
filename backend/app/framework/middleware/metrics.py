@@ -8,8 +8,7 @@ import threading
 import time
 from collections import defaultdict
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.config import settings
 
@@ -21,29 +20,47 @@ _latency_count: dict[tuple[str, str], int] = defaultdict(int)
 _events: dict[tuple[str, tuple[tuple[str, str], ...]], int] = defaultdict(int)
 
 
-class MetricsMiddleware(BaseHTTPMiddleware):
-    """记录最小请求量和延迟统计，供 /metrics 输出。"""
+class MetricsMiddleware:
+    """记录最小请求量和延迟统计，供 /metrics 输出。
 
-    async def dispatch(self, request: Request, call_next):
-        if not settings.METRICS_ENABLED:
-            return await call_next(request)
+    纯 ASGI（异步审查 P1-1，样板 operation_log/body_buffer/exception_guard）。
+    """
 
-        start = time.perf_counter()
-        response = await call_next(request)
-        elapsed = time.perf_counter() - start
-        path = request.url.path
-        method = request.method
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not settings.METRICS_ENABLED:
+            await self.app(scope, receive, send)
+            return
+
+        started = time.perf_counter()
+        holder = {"status": 0, "elapsed": 0.0}
+
+        async def send_capture(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                holder["status"] = message.get("status", 0)
+                # 计时口径与原 BaseHTTPMiddleware 版对齐：到 response.start 为止，
+                # 不含流式 body 的传输时长
+                holder["elapsed"] = time.perf_counter() - started
+            await send(message)
+
+        await self.app(scope, receive, send_capture)
+
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+        status_code = holder["status"]
+        elapsed = holder["elapsed"] or (time.perf_counter() - started)
         with _lock:
-            _requests[(method, path, response.status_code)] += 1
-            if response.status_code >= 400:
+            _requests[(method, path, status_code)] += 1
+            if status_code >= 400:
                 # 错误维度（按状态族聚合，供错误率告警）。已知边界：SSE 流内失败
                 # 的响应状态恒为 200（异常发生在流体阶段），此维度测不到——流内
                 # 失败由 ExceptionGuard 的规范化日志与 agent/workflow 终态事件覆盖
-                status_class = "5xx" if response.status_code >= 500 else "4xx"
+                status_class = "5xx" if status_code >= 500 else "4xx"
                 _errors[(method, path, status_class)] += 1
             _latency_total[(method, path)] += elapsed
             _latency_count[(method, path)] += 1
-        return response
 
 
 def record_metric_event(name: str, **labels: str | int | None) -> None:

@@ -6,8 +6,10 @@ import warnings
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlmodel import Field, Session, SQLModel, select
+from starlette.requests import Request
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from helpers import make_test_engine  # noqa: E402
@@ -29,7 +31,7 @@ from app.modules.base.model.sys import (  # noqa: E402
 from app.modules.base.service.authority_service import register_session  # noqa: E402
 from app.modules.base.service.cache_service import cache_delete_pattern  # noqa: E402
 from app.modules.base.service.data_scope_service import DataScopeContext  # noqa: E402
-from app.modules.base.service.security_service import create_access_token  # noqa: E402
+from app.modules.base.service.security_service import create_access_token, get_current_user  # noqa: E402
 from main import app  # noqa: E402
 
 
@@ -251,6 +253,41 @@ class FrameworkAlignmentTests(unittest.TestCase):
             json={"ids": [999999]},
         )
         self.assertEqual(forbidden.status_code, 403)
+
+    def test_authority_state_cache_short_circuits_get_current_user(self):
+        """P1-4（异步审查）：authorize_request 已写 request.state.current_user，
+        get_current_user 缓存命中直接返回——请求级 Session 因此不产生连接 checkout
+        （SSE 悬挂解除与每请求双 Session 借还的收敛都依赖此通道）。
+
+        固化语义：缓存命中时即使完全不携带凭证也放行（走 token 解析路径会 401），
+        即「缓存优先」而非「缓存旁路」。"""
+        user = User(id=424242, username="state-cache-probe", is_active=True, is_super_admin=False)
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [],
+                "query_string": b"",
+                "state": {"current_user": user},
+            }
+        )
+        resolved = get_current_user(request, credentials=None, session=None)  # noqa: S106
+        self.assertIs(resolved, user)
+
+        cache_miss = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [],
+                "query_string": b"",
+                "state": {},
+            }
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            get_current_user(cache_miss, credentials=None, session=None)
+        self.assertEqual(ctx.exception.status_code, 401)
 
     def test_sys_models_accept_and_serialize_camel_case(self):
         param = SysParamCreateRequest.model_validate({"name": "站点", "keyName": "siteName", "dataType": 1})
