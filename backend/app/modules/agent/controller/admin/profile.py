@@ -3,7 +3,7 @@
 from typing import Any
 
 from fastapi import Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 from app.core.database import get_session
@@ -46,6 +46,8 @@ class DebugChatRequest(BaseModel):
     profile_id: int
     session_id: int | None = None
     question: str
+    # 附件 media id 列表（与 chatStream 同构；≤4 个，后端逐条校验）
+    attachments: list[int] = Field(default=[], max_length=4)
 
 
 class ProfilePublishResponse(BaseModel):
@@ -157,6 +159,7 @@ class AgentProfileController(BaseController):
             profile_id=payload.profile_id,
             session_id=payload.session_id,
             question=payload.question,
+            attachments=payload.attachments,
             run_mode="draft",
             current_user=current_user,
         )

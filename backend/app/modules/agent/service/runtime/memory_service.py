@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 # 模块常量（设计 3.4.4 三层预算之二；二期接模型上下文上限元数据动态化）
@@ -36,8 +38,30 @@ def estimate_tokens(text: str) -> int:
 def _message_text(message: BaseMessage) -> str:
     content = message.content
     if isinstance(content, list):
-        return "\n".join(str(part) for part in content)
+        # 多模态 Content Parts：只拼文本部件——base64 图片数据严禁进入（token 估算会爆炸）
+        return "\n".join(
+            str(part.get("text") or "") for part in content if isinstance(part, dict) and part.get("type") == "text"
+        )
     return str(content)
+
+
+# 图片部件 token 估算常数（base64 不入估算；对齐常见视觉模型单图量级）
+IMAGE_PART_TOKEN_ESTIMATE = 800
+
+
+def _content_part_tokens(content: Any) -> int:
+    """多模态 content 的 token 估算：text 部件正常估算，image 部件按常数。"""
+    if not isinstance(content, list):
+        return estimate_tokens(str(content))
+    total = 0
+    for part in content:
+        if isinstance(part, dict) and part.get("type") == "image_url":
+            total += IMAGE_PART_TOKEN_ESTIMATE
+        elif isinstance(part, dict):
+            total += estimate_tokens(str(part.get("text") or ""))
+        else:
+            total += estimate_tokens(str(part))
+    return total
 
 
 def _message_tokens(message: BaseMessage) -> int:
@@ -46,7 +70,12 @@ def _message_tokens(message: BaseMessage) -> int:
         extra = str(message.tool_calls)
     if isinstance(message, ToolMessage):
         extra = message.tool_call_id or ""
-    return estimate_tokens(_message_text(message) + extra)
+    content_tokens = (
+        _content_part_tokens(message.content)
+        if isinstance(message.content, list)
+        else estimate_tokens(_message_text(message))
+    )
+    return content_tokens + estimate_tokens(extra)
 
 
 def truncate_tool_result(result: str, limit: int = TOOL_RESULT_INJECT_LIMIT) -> str:
@@ -198,7 +227,8 @@ def build_model_messages(
     return messages
 
 
-def _as_user_message(text: str) -> BaseMessage:
+def _as_user_message(content: str | list) -> BaseMessage:
+    """当前输入消息：content 保真透传（str | 多模态 Content Parts 数组）。"""
     from langchain_core.messages import HumanMessage
 
-    return HumanMessage(content=text)
+    return HumanMessage(content=content)

@@ -398,7 +398,16 @@ class AgentRunService:
 
     # --- stream（SSE）---
 
-    def stream_run(self, *, profile_id: int, session_id: int | None, question: str, run_mode: str, current_user: Any):
+    def stream_run(
+        self,
+        *,
+        profile_id: int,
+        session_id: int | None,
+        question: str,
+        attachments: list[int] | None = None,
+        run_mode: str,
+        current_user: Any,
+    ):
         """发起 run 并返回 SSE StreamingResponse（受控事件队列 + 工作线程，评审 9）。"""
         from fastapi.responses import StreamingResponse
 
@@ -425,6 +434,7 @@ class AgentRunService:
                     profile=profile,
                     session_row=session_row,
                     question=question,
+                    attachments=attachments or [],
                     run_mode=run_mode,
                     current_user=current_user,
                     handle=handle,
@@ -474,7 +484,14 @@ class AgentRunService:
     # --- invoke（调试台同步；内部同执行路径）---
 
     def invoke_run(
-        self, *, profile_id: int, session_id: int | None, question: str, run_mode: str, current_user: Any
+        self,
+        *,
+        profile_id: int,
+        session_id: int | None,
+        question: str,
+        attachments: list[int] | None = None,
+        run_mode: str,
+        current_user: Any,
     ) -> dict:
         profile = self._load_profile_checked(profile_id, run_mode)
         session_row = self._resolve_session(
@@ -495,6 +512,7 @@ class AgentRunService:
                 profile=profile,
                 session_row=session_row,
                 question=question,
+                attachments=attachments or [],
                 run_mode=run_mode,
                 current_user=current_user,
                 handle=handle,
@@ -546,10 +564,13 @@ class AgentRunService:
         run_mode: str,
         current_user: Any,
         handle: RunHandle,
+        attachments: list[int] | None = None,
         stream_answer: bool = False,  # E1：SSE 会话启用最终答案 token 流式；invoke 保持整段
     ) -> dict:
-        """请求线程收尾：校验链（载荷/窗口）→ trace 落库 + 用户消息 → 工作线程任务包。"""
+        """请求线程收尾：校验链（载荷/窗口/附件）→ trace 落库 + 用户消息 → 工作线程任务包。"""
         payload = self._load_payload(profile, run_mode)
+        # 附件发起线程同步校验（SSE 建流前 400/403/404，好于流中 error 帧）
+        attachment_metas = _validate_attachments(self.session, attachments or [], current_user)
         trace = AgentRunTrace(
             profile_id=profile.id,
             run_mode=run_mode,
@@ -565,6 +586,9 @@ class AgentRunService:
         self.session.commit()
         self.session.refresh(trace)
         user_message = AgentMessage(session_id=session_row.id, role="user", content=question)
+        if attachment_metas:
+            # 附件引用仅落 meta 供前端渲染回显；content 保持纯文本（对齐「持久化历史≠模型上下文」）
+            user_message.meta = json.dumps({"attachments": attachment_metas}, ensure_ascii=False)
         self.session.add(user_message)
         self.session.commit()
         handle.trace_id = trace.id
@@ -572,6 +596,7 @@ class AgentRunService:
             "trace_id": trace.id,
             "session_id": session_row.id,
             "question": question,
+            "attachment_metas": attachment_metas,
             "run_mode": run_mode,
             "stream_answer": stream_answer,
             "engine": self.session.get_bind(),  # 请求线程的引擎（工作线程自建 Session 用；非 Session）
@@ -722,8 +747,12 @@ class AgentRunService:
                         trace_token=handle.trace_token,
                         message="agent graph 执行总耗时（含全部 LLM/工具轮）",
                     ):
+                        # 附件 parts 在 worker 线程组装（请求线程只校验引用，文件读取不占请求线程）
+                        initial_content = _build_initial_content(
+                            job["question"], _build_attachment_parts(job.get("attachment_metas") or [])
+                        )
                         state = graph.invoke(
-                            {"messages": [_HumanMessage(content=job["question"])], "model_calls": 0, "tool_rounds": 0}
+                            {"messages": [_HumanMessage(content=initial_content)], "model_calls": 0, "tool_rounds": 0}
                         )
                     # 终态判定（正常完成路径同样检查取消/超时——should_cancel 使图软停止自然走完，
                     # 终态不得误标 completed，验收 19/取消语义）
@@ -993,6 +1022,127 @@ class AgentRunService:
             "modelCalls": int(state.get("model_calls") or 0),
             "toolRounds": int(state.get("tool_rounds") or 0),
         }
+
+
+# --- 附件（走查反馈：图片走视觉通道，文本文件解码注入）---
+
+_ATTACHMENT_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+_ATTACHMENT_TEXT_MIMES = {
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/json",
+    "text/html",
+    "text/xml",
+}
+_ATTACHMENT_TEXT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".json",
+    ".log",
+    ".py",
+    ".js",
+    ".ts",
+    ".sql",
+    ".yaml",
+    ".yml",
+    ".xml",
+    ".html",
+}
+_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024  # 对齐 ai 对话测试页前端口径（chat-images.ts）
+_ATTACHMENT_TEXT_TRUNCATE = 8000
+
+
+def _attachment_kind(mime: str | None, filename: str | None) -> str | None:
+    """附件归类：image（视觉）/ text（解码注入）/ None（不支持）。mime 缺失按扩展名兜底。"""
+    mime = (mime or "").split(";")[0].strip().lower()
+    if mime in _ATTACHMENT_IMAGE_MIMES:
+        return "image"
+    if mime in _ATTACHMENT_TEXT_MIMES:
+        return "text"
+    ext = ("." + (filename or "").rsplit(".", 1)[-1].lower()) if "." in (filename or "") else ""
+    if ext in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        return "image"
+    if ext in _ATTACHMENT_TEXT_EXTENSIONS:
+        return "text"
+    return None
+
+
+def _validate_attachments(session: Any, ids: list[int], user: Any) -> list[dict]:
+    """发起线程同步校验（SSE 建流前 400/403/404，好于流中 error 帧）；返回 meta 供落库。"""
+    from app.modules.media.model.media import MediaAsset
+
+    metas: list[dict] = []
+    for aid in ids:
+        row = session.get(MediaAsset, aid)
+        if row is None or row.delete_time is not None:
+            raise HTTPException(status_code=404, detail=f"附件不存在（id={aid}）")
+        if row.created_by not in (None, user.id) and not getattr(user, "is_super_admin", False):
+            raise HTTPException(status_code=403, detail=f"附件不可访问（id={aid}）")
+        kind = _attachment_kind(row.mime_type, row.file_name)
+        if kind is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持的附件类型：{row.file_name or row.mime_type}（支持图片 png/jpeg/webp/gif 与文本类文件）",
+            )
+        if (row.size_bytes or 0) > _ATTACHMENT_MAX_BYTES:
+            raise HTTPException(status_code=400, detail=f"附件过大：{row.file_name}（上限 5MB）")
+        metas.append(
+            {
+                "id": row.id,
+                "name": row.file_name or "",
+                "mime": row.mime_type or "",
+                "size": row.size_bytes or 0,
+                "url": row.storage_url or "",
+                "kind": kind,
+            }
+        )
+    return metas
+
+
+def _build_attachment_parts(metas: list[dict]) -> list[dict]:
+    """工作线程读文件组装多模态 content parts。data URI 是唯一畅通形态（SSRF 防御拒
+    /uploads 回环 URL，见 ai chat-images.ts 头注）；读取失败的附件降级为提示文本不炸 run。"""
+    import base64
+
+    from app.framework.storage import StorageService
+
+    parts: list[dict] = []
+    for meta in metas:
+        try:
+            content = StorageService.get_instance().read(meta["url"]) if meta.get("url") else b""
+            if not content:
+                raise ValueError("附件内容为空")
+            if meta["kind"] == "image":
+                mime = meta["mime"] or "image/png"
+                parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{base64.b64encode(content).decode()}"},
+                    }
+                )
+            else:
+                text = content.decode("utf-8", errors="replace")
+                if len(text) > _ATTACHMENT_TEXT_TRUNCATE:
+                    text = text[:_ATTACHMENT_TEXT_TRUNCATE] + f"…（已截断，原文 {len(text)} 字符）"
+                parts.append({"type": "text", "text": f"[附件文件 {meta['name']}]\n{text}"})
+        except Exception:
+            logger.warning("附件读取失败，降级为提示文本 meta=%s", meta, exc_info=True)
+            parts.append({"type": "text", "text": f"[附件文件 {meta['name']} 读取失败，无法提供其内容]"})
+    return parts
+
+
+def _build_initial_content(question: str, parts: list[dict]) -> Any:
+    """初始用户消息 content：无附件维持纯 str（零变化）；有附件组多模态数组。"""
+    if not parts:
+        return question
+    content: list[dict] = []
+    if question.strip():
+        content.append({"type": "text", "text": question})
+    content.extend(parts)
+    return content
 
 
 # --- 进程内句柄注册表 ---

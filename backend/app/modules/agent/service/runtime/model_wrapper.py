@@ -35,7 +35,8 @@ def _message_to_openai_dict(message: BaseMessage) -> dict:
         role = "user"
     item: dict[str, Any] = {
         "role": role,
-        "content": message.content if isinstance(message.content, str) else str(message.content),
+        # str | list（多模态 Content Parts，WFI-2a）原样透传——str() 化会把图片 base64 变成文本污染
+        "content": message.content,
     }
     if role == "assistant":
         tool_calls = getattr(message, "tool_calls", None)

@@ -6,7 +6,7 @@ SSE 端点不声明 response_model（StreamingResponse；响应包装中间件�
 from typing import Any
 
 from fastapi import Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 from app.core.database import get_session
@@ -28,6 +28,8 @@ class ChatStreamRequest(BaseModel):
     profile_id: int
     session_id: int | None = None
     question: str
+    # 附件 media id 列表（走查反馈：图片走视觉、文本文件解码注入；≤4 个，后端逐条校验）
+    attachments: list[int] = Field(default=[], max_length=4)
 
 
 class ChatStopRequest(BaseModel):
@@ -71,6 +73,7 @@ class AgentChatController(BaseController):
             profile_id=payload.profile_id,
             session_id=payload.session_id,
             question=payload.question,
+            attachments=payload.attachments,
             run_mode="published",
             current_user=current_user,
         )

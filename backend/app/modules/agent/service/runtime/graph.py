@@ -126,7 +126,8 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
             current_input = None  # 工具循环继续轮：无新用户输入
             history = messages
         else:
-            current_input = str(messages[-1].content) if messages else ""
+            # 当前输入 content 保真透传（str | 多模态数组——str() 化会把图片 parts 变成字符串污染）
+            current_input = messages[-1].content if messages else ""
             history = messages[:-1] if messages else []
         assembled = build_model_messages(
             system_message=deps.system_message,
