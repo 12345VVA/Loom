@@ -2,7 +2,9 @@
 统一 AI API 调用入口。
 """
 
+import asyncio
 import logging
+from collections.abc import Iterable
 from functools import partial
 
 from fastapi import Depends, HTTPException, status
@@ -90,16 +92,25 @@ def _ingest_media_result(
         )
 
 
+def check_ai_call_permission(session: Session, current_user: User) -> None:
+    """校验当前用户是否拥有 AI 调用权限，未授权抛 403。
+
+    同步 def：依赖入口（require_ai_call_permission）与 streamChat 的短事务
+    （异步审查 P0-2）共用同一套判定。
+    """
+    if is_super_admin(session, current_user):
+        return
+    permissions = get_cached_user_permissions(session, current_user)
+    if AI_INVOKE_PERMISSION not in permissions:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无 AI 调用权限")
+
+
 def require_ai_call_permission(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> User:
     """校验当前用户是否拥有 AI 调用权限，未授权返回 403。"""
-    if is_super_admin(session, current_user):
-        return current_user
-    permissions = get_cached_user_permissions(session, current_user)
-    if AI_INVOKE_PERMISSION not in permissions:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无 AI 调用权限")
+    check_ai_call_permission(session, current_user)
     return current_user
 
 
@@ -133,11 +144,20 @@ class AiRuntimeController(BaseController):
     async def stream_chat(
         self,
         payload: AiChatRequest,
-        current_user: User = Depends(require_ai_call_permission),
-        session: Session = Depends(get_session),
+        current_user: User = Depends(get_current_user),
     ):
+        """流式调用：权限校验与模型解析在短事务内完成后立即归还连接（异步审查 P0-2——
+        请求级 Session 的只读事务未提交会悬挂 DB 连接至流结束）；返回的生成器内部
+        自建独立会话（runtime_service._independent_session），不依赖请求级会话存活。"""
+
+        def _prepare() -> Iterable[str]:
+            with Session(engine) as session:
+                check_ai_call_permission(session, current_user)
+                return AiModelRuntimeService(session).stream_chat(payload, current_user=current_user)
+
+        generator = await asyncio.to_thread(_prepare)
         return StreamingResponse(
-            AiModelRuntimeService(session).stream_chat(payload, current_user=current_user),
+            generator,
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

@@ -10,7 +10,7 @@ from fastapi import Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
-from app.core.database import get_session
+from app.core.database import engine, get_session
 from app.framework.controller_meta import (
     BaseController,
     CoolController,
@@ -229,16 +229,24 @@ class WorkflowInstanceController(BaseController):
         self,
         instance_id: int = Query(..., alias="instanceId"),
         current_user: User = Depends(get_current_user),
-        session: Session = Depends(get_session),
     ):
         """
         开启 SSE 长连接，通过 Redis pub/sub 实时推送节点状态迁移事件。
         无 Redis 时降级为心跳保活 + 进程内事件推送。
+
+        进流前数据用短事务获取并立即归还连接（异步审查 P0-2：请求级 Session 的
+        只读事务未提交会悬挂 DB 连接至流结束——此前 15 条并发 SSE 即打满连接池）；
+        生成器阶段只操作纯数据/异步 pubsub，零 DB 占用。
         """
-        instance = session.get(WorkflowInstance, instance_id)
-        if not instance:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工作流实例不存在")
-        assert_workflow_owner(session, instance, current_user)
+
+        def _load_instance() -> None:
+            with Session(engine) as session:
+                instance = session.get(WorkflowInstance, instance_id)
+                if not instance:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工作流实例不存在")
+                assert_workflow_owner(session, instance, current_user)
+
+        await asyncio.to_thread(_load_instance)
         from app.modules.workflow.service.event_bus import subscribe_events
 
         async def event_generator():
