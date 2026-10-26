@@ -36,6 +36,7 @@ from app.modules.agent.model.agent import (
 from app.modules.agent.service import approval_service
 from app.modules.agent.service import tool_registry as registry_module
 from app.modules.agent.service.runtime import model_wrapper as model_wrapper_module
+from app.modules.agent.service.runtime import run_service as run_service_module
 from app.modules.agent.service.runtime.run_service import AgentRunService
 from app.modules.agent.service.tool_registry import (
     RUNTIME_ALLOWED_TOOLS,
@@ -456,6 +457,22 @@ class ApprovalFlowTestCase(unittest.TestCase):
         tool_msgs = [m for m in messages if m.role == "tool"]
         self.assertEqual(len(tool_msgs), 1)
         self.assertIn("未执行", tool_msgs[0].content)
+
+    def test_stop_without_local_handle_writes_cancel_token(self):
+        """P0-8 前置#1（异步审查）：本进程无 handle（跨 worker/已结束）时，stop 仍必须
+        写入取消令牌——那是执行侧唯一的跨进程取消信号，此前该分支静默漏写且返回
+        「令牌将生效于执行侧」的假话。测试环境无 Redis → 断言走内存降级路径（同语义）。"""
+        token = "cross-worker-token"
+        result = AgentRunService(self.session).stop_run(token, self.owner)
+        self.assertFalse(result["stopped"])
+        self.assertIn("取消令牌已写入", result["message"])
+
+        from app.modules.base.service.cache_service import cache_get
+
+        self.assertEqual(
+            cache_get(f"{run_service_module.CANCEL_KEY_PREFIX}{token}"),
+            "1",
+        )
 
     def test_args_cleanup_after_retention(self):
         """终局行超保留期 → args_json 清理（仅留摘要与 hash）。"""

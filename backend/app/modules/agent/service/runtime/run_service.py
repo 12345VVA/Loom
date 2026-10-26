@@ -199,6 +199,9 @@ from app.modules.agent.model.agent import (
 CANCEL_KEY_PREFIX = "agent:cancel:"
 HEARTBEAT_INTERVAL_SECONDS = 15  # SSE 心跳注释帧（长时模型调用保活，parseSse 跳 ':' 行）
 FINAL_EVENT_TYPES = {"final", "error", "cancelled", "timed_out"}  # 一次 run 恰一个终态事件
+# 无本进程 handle 时 stop_run 的取消令牌兜底 TTL（异步审查 P0-8 前置#1：handle 是
+# 进程内注册表，多进程部署下 stop 请求可能落到无 handle 的 worker）
+AGENT_CANCEL_TOKEN_DEFAULT_TTL_SECONDS = 300
 
 
 @dataclass
@@ -573,14 +576,20 @@ class AgentRunService:
     # --- 停止（取消三层语义之一：令牌置位）---
 
     def stop_run(self, trace_token: str, current_user: Any) -> dict:
+        # P0-8 前置#1（异步审查）：取消令牌无条件前置写入。handle 是进程内注册表——
+        # 多进程部署下 stop 请求可能落到无 handle 的 worker，而 Redis 令牌是执行侧
+        # （任意进程）唯一的取消信号，此前仅在命中本进程 handle 时才写（跨进程停止
+        # 静默失效）。令牌值是 128 位随机 hex，仅 run 发起者可见，伪造风险可忽略。
+        set_cancel_token(trace_token, AGENT_CANCEL_TOKEN_DEFAULT_TTL_SECONDS)
         handle = _get_handle(trace_token)
         if handle is None:
-            # E4：挂起态 run（线程已结束、句柄已注销）——按 token 定位 waiting trace 直接取消
+            # E4：挂起态 run（线程已结束、句柄已注销）或跨进程运行——按 token 定位 waiting trace
             return self._cancel_suspended_run(trace_token, current_user)
         trace = self.session.get(AgentRunTrace, handle.trace_id) if handle.trace_id else None
         if trace is not None and trace.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="仅可停止本人发起的运行")
         handle.cancel_event.set()  # 本地快速路径
+        # 以实际剩余时限覆盖默认 TTL，更精确
         set_cancel_token(trace_token, max(60, int(handle.deadline.remaining()) + 30))  # 跨 worker
         return {"stopped": True, "message": "取消请求已收到（停止调度待执行侧确认）"}
 
@@ -599,7 +608,13 @@ class AgentRunService:
             )
         ).first()
         if trace is None:
-            return {"stopped": False, "message": "运行不存在或已结束（可能属其他实例，取消令牌将生效于执行侧）"}
+            # 取消令牌已在 stop_run 入口无条件写入（跨进程语义）；本分支 = 本进程无
+            # handle 且 DB 无 waiting trace——可能运行在其他 worker（令牌将被其消费）
+            # 或已结束。stopped=False 保留「本进程无可停对象」的既有语义（回归测试锚点）
+            return {
+                "stopped": False,
+                "message": "取消令牌已写入，执行侧将于下个调度点确认取消（本进程无可停对象）",
+            }
         if trace.user_id != current_user.id and not getattr(current_user, "is_super_admin", False):
             raise HTTPException(status_code=403, detail="仅可停止本人发起的运行")
         live = approval_service.suspended_group_of(self.session, trace.id)
