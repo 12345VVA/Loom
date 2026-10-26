@@ -173,6 +173,7 @@ _ = AGENT_RUN_TIMED_OUT
 
 # ============ P5：会话运行编排（设计 3.4.4 stream/invoke + 评审 9 受控事件队列） ============
 
+import asyncio
 import queue as queue_mod
 import threading
 import uuid
@@ -484,13 +485,34 @@ class AgentRunService:
             },
         )
 
-        def generator():
+        async def generator():
+            # 异步生成器消费（异步审查 P0-3）：原同步生成器经 Starlette
+            # iterate_in_threadpool 驱动，queue.get(timeout=15) 满占（占空比≈100%）
+            # 一个 anyio 线程——100 条并发对话即吃满线程池、全站同步接口排队。
+            # 现以泵线程桥接：worker 生产端（handle.event_queue 的同步 put 契约，
+            # invoke_run/_execute_run 依赖）零改动；泵线程阻塞 get 后经
+            # call_soon_threadsafe 转投 asyncio 队列，SSE 消费全程零线程池占用。
+            loop = asyncio.get_running_loop()
+            bridge: asyncio.Queue[RunEvent | None] = asyncio.Queue()
+
+            def _pump() -> None:
+                while True:
+                    item = handle.event_queue.get()  # 阻塞裸线程（不占 anyio 池）
+                    try:
+                        loop.call_soon_threadsafe(bridge.put_nowait, item)
+                    except RuntimeError:
+                        return  # 事件循环已关闭（应用停机），静默退出
+                    if item is None:
+                        return
+
+            pump_thread = threading.Thread(target=_pump, name=f"agent-sse-pump-{trace_token[:8]}", daemon=True)
+            pump_thread.start()
             try:
                 yield sse_frame("run_started", {"traceToken": trace_token, "sessionId": session_row.id})
                 while True:
                     try:
-                        event = handle.event_queue.get(timeout=HEARTBEAT_INTERVAL_SECONDS)
-                    except queue_mod.Empty:
+                        event = await asyncio.wait_for(bridge.get(), timeout=HEARTBEAT_INTERVAL_SECONDS)
+                    except TimeoutError:
                         yield HEARTBEAT_FRAME  # 心跳保活（长时模型调用，R2）
                         continue
                     if event is None:
@@ -500,6 +522,9 @@ class AgentRunService:
                 # 客户端断开（GeneratorExit）/流异常中断也必须注销，否则 handle
                 # 泄漏——stop_run 的注册表将长期残留已死连接的令牌
                 _unregister_handle(handle)
+                # 停泵：向源队列注入哨兵唤醒阻塞中的 get（泵线程见 None 即退出）；
+                # 若泵已因 worker 的 close 哨兵退出，此处多投的 None 滞留在无界队列中，无副作用
+                handle.event_queue.put(None)
 
         return StreamingResponse(generator(), media_type="text/event-stream")
 

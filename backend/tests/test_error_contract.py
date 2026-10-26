@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 import unittest
 from types import SimpleNamespace
 
@@ -223,7 +225,7 @@ class CeleryLogContextTests(unittest.TestCase):
 
 class SseGeneratorCleanupTests(unittest.TestCase):
     def test_generator_close_unregisters_handle(self) -> None:
-        """客户端断开（generator close）时 handle 必须被注销，不再泄漏。"""
+        """客户端断开（async generator aclose）时 handle 必须被注销、泵线程被唤醒，不再泄漏。"""
 
         from app.modules.agent.service.runtime import run_service
         from app.modules.agent.service.runtime.run_service import (
@@ -237,18 +239,38 @@ class SseGeneratorCleanupTests(unittest.TestCase):
         _register_handle(handle)
         self.assertIsNotNone(_get_handle("leak-test-token"))
 
-        # 与 stream_run 相同形态的 generator：yield 后挂起在 event_queue.get 上
-        def generator():
-            try:
-                yield "started"
-                while True:
-                    handle.event_queue.get(timeout=5)  # 挂起等待（close 时由此注入中断）
-            finally:
-                run_service._unregister_handle(handle)  # noqa: SLF001 —— 单测装配
+        # 与 stream_run 相同形态的 async generator（异步审查 P0-3 桥接）：首帧后挂起
+        # 在 bridge.get 上，aclose（客户端断开 → GeneratorExit）进入 finally 注销 + 停泵
+        async def scenario() -> None:
+            loop = asyncio.get_running_loop()
+            bridge: asyncio.Queue = asyncio.Queue()
 
-        gen = generator()
-        next(gen)
-        gen.close()  # 模拟客户端断开 → GeneratorExit 进入 finally
+            def pump() -> None:
+                while True:
+                    item = handle.event_queue.get()
+                    try:
+                        loop.call_soon_threadsafe(bridge.put_nowait, item)
+                    except RuntimeError:
+                        return
+                    if item is None:
+                        return
+
+            threading.Thread(target=pump, daemon=True).start()
+
+            async def generator():
+                try:
+                    yield "started"
+                    while True:
+                        await asyncio.wait_for(bridge.get(), timeout=5)  # 挂起等待
+                finally:
+                    run_service._unregister_handle(handle)  # noqa: SLF001 —— 单测装配
+                    handle.event_queue.put(None)  # 哨兵唤醒阻塞中的泵线程
+
+            gen = generator()
+            await gen.__anext__()
+            await gen.aclose()
+
+        asyncio.run(scenario())
         self.assertIsNone(_get_handle("leak-test-token"))
 
 
