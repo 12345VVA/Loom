@@ -251,6 +251,7 @@ celery_app.conf.beat_schedule = {
 
 # --- 队列覆盖校验（P0-9 部署哨兵）---
 
+
 def _queue_coverage_gaps(consumed: set[str], declared: set[str], routed: set[str]) -> list[str]:
     """计算「已声明或被路由指向、但本 worker 未消费」的队列（排序返回）。
 
