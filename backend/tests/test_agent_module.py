@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 
 from fastapi import HTTPException
@@ -104,9 +105,13 @@ class AgentProfileCrudTestCase(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_tools_json_roundtrip(self):
-        """tools 传数组 → Text JSON 存储 → finalize 出口还原数组。"""
+        """tools 传数组 → Text JSON 存储 → add 出口与 page/info 同构还原数组。"""
         entity = self._create(code="t1", tools=["query_asset", "current_time"])
-        self.assertIsInstance(entity.tools, str)
+        # add 出口已改为脱管后还原数组（走查实测响应序列化 500）；存储层仍是 JSON 文本
+        self.assertEqual(entity.tools, ["query_asset", "current_time"])
+        stored = self.session.get(AgentProfile, entity.id)
+        self.assertIsInstance(stored.tools, str)
+        self.assertEqual(json.loads(stored.tools), ["query_asset", "current_time"])
         rows = self.service.list(current_user=self.owner)
         row = next(r for r in rows if r["id"] == entity.id)
         self.assertEqual(row["tools"], ["query_asset", "current_time"])
