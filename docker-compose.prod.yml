@@ -68,7 +68,9 @@ services:
       redis:
         condition: service_healthy
     # baseline squash 使空库 upgrade head 即正统从零部署路径
-    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    # ⚠️ WEB_WORKERS 与 DB 池参数联动（连接预算）：WEB_WORKERS × (DB_POOL_SIZE+DB_MAX_OVERFLOW)
+    # + Celery worker 侧连接 < PG max_connections（异步审查 P0-8，详见 .env.prod.example）
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WEB_WORKERS:-2}"
     restart: unless-stopped
     networks:
       - loom-network

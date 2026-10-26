@@ -473,5 +473,44 @@ class RedisClientTimeoutConfigTestCase(unittest.TestCase):
         self.assertEqual(kwargs["socket_connect_timeout"], settings.REDIS_CONNECT_TIMEOUT)
 
 
+class WorkerThreadPoolConfigTestCase(unittest.TestCase):
+    """P0-5（异步审查）：worker 进程 anyio 线程池与批处理并发联动。"""
+
+    def test_worker_thread_pool_defaults(self):
+        self.assertEqual(settings.WORKER_THREAD_POOL_SIZE, 100)
+        self.assertEqual(settings.WORKER_CONCURRENCY, 0)
+
+    def test_batch_concurrency_ceiling_divides_pool_by_concurrency(self):
+        from app.modules.workflow.service.node_executors import _batch_concurrency_ceiling
+
+        class _S:
+            WORKER_THREAD_POOL_SIZE = 100
+            WORKER_CONCURRENCY = 4
+
+        self.assertEqual(_batch_concurrency_ceiling(_S), 25)
+
+    def test_batch_concurrency_ceiling_floor_is_one(self):
+        from app.modules.workflow.service.node_executors import _batch_concurrency_ceiling
+
+        class _S:
+            WORKER_THREAD_POOL_SIZE = 3
+            WORKER_CONCURRENCY = 8
+
+        self.assertEqual(_batch_concurrency_ceiling(_S), 1)
+
+    def test_batch_concurrency_ceiling_zero_concurrency_falls_back_to_cpu_count(self):
+        """WORKER_CONCURRENCY=0 按 prefork 默认（CPU 核数）估分母；只验证边界不验证具体值。"""
+        import os
+
+        from app.modules.workflow.service.node_executors import _batch_concurrency_ceiling
+
+        class _S:
+            WORKER_THREAD_POOL_SIZE = 40
+            WORKER_CONCURRENCY = 0
+
+        expected = max(1, 40 // max(1, os.cpu_count() or 1))
+        self.assertEqual(_batch_concurrency_ceiling(_S), expected)
+
+
 if __name__ == "__main__":
     unittest.main()

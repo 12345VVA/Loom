@@ -426,6 +426,16 @@ async def execute_loop_controller_node(variables: dict[str, Any], config: dict[s
     return result
 
 
+def _batch_concurrency_ceiling(settings) -> int:
+    """批处理并发上限 = worker 线程池 // 并发 workflow 数（异步审查 P0-5 联动公式）。
+
+    WORKER_CONCURRENCY=0 按 prefork 默认（CPU 核数）估算分母；结果不低于 1。"""
+    import os
+
+    concurrency = settings.WORKER_CONCURRENCY or (os.cpu_count() or 1)
+    return max(1, settings.WORKER_THREAD_POOL_SIZE // max(1, concurrency))
+
+
 async def execute_batch_processor_node(variables: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """
     批处理并发节点执行逻辑（子图模式：并发遍历列表，每项独立调用体子图）。
@@ -451,6 +461,9 @@ async def execute_batch_processor_node(variables: dict[str, Any], config: dict[s
     globals_ = _globals_from(config, variables)
     output_var = config.get("output_variable", "batch_results")
     concurrency_limit = min(max(int(config.get("concurrency_limit", 5) or 5), 1), 20)
+    # 与 worker 线程池联动（异步审查 P0-5）：满负荷并发 workflow 时，全部批处理的
+    # 在飞 to_thread 不得超卖 WORKER_THREAD_POOL_SIZE——单图批处理并发上限 = 池大小 // 并发数
+    concurrency_limit = min(concurrency_limit, _batch_concurrency_ceiling(settings))
     subgraph_timeout = float(config.get("timeout_seconds") or settings.WORKFLOW_SUBGRAPH_TIMEOUT)
     collect_keys_raw = config.get("collect_keys")
     collect_keys = (

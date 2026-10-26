@@ -230,6 +230,13 @@ class Settings(BaseSettings):
     # anyio 线程池上限：承载 offload 到线程池的同步阻塞调用（同步 DB/HTTP service、同步 def 路由）。
     # Starlette 默认 40，调大以支撑更多并发慢请求；超出此值的请求会排队而非挂起事件循环。
     ASYNC_THREAD_POOL_SIZE: int = 100
+    # Celery worker 进程侧 anyio 线程池（异步审查 P0-5）：worker 没有 FastAPI lifespan，
+    # 此前沿用 anyio 默认 40——而 worker 才是真跑 AI 的地方（AI 节点 to_thread + 批处理
+    # 并发），满负荷时节点在 to_thread 排队、上层节点超时先到。经 worker_process_init 生效
+    WORKER_THREAD_POOL_SIZE: int = 100
+    # prefork 并发数（0 = 跟随 Celery 默认 = CPU 核数）：批处理并发上限联动公式的分母。
+    # 若用 --concurrency 显式启动 worker，须同步设置本变量保持一致
+    WORKER_CONCURRENCY: int = 0
 
     @field_validator("DEBUG", mode="before")
     @classmethod

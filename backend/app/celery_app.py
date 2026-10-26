@@ -4,6 +4,7 @@ Celery 应用配置
 
 import logging
 
+import anyio
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import (
@@ -13,6 +14,7 @@ from celery.signals import (
     task_postrun,
     task_prerun,
     task_retry,
+    worker_process_init,
     worker_ready,
 )
 from kombu import Queue
@@ -122,6 +124,18 @@ def _clear_log_context(task=None, **kwargs):
     if tokens:
         for var, token in reversed(tokens):
             var.reset(token)
+
+
+@worker_process_init.connect
+def _tune_worker_thread_pool(**_kwargs):
+    """worker 进程 anyio 线程池上限（异步审查 P0-5）。
+
+    Web 进程在 lifespan 中设置（main.py），worker 没有 lifespan——此前沿用 anyio
+    默认 40，而 worker 才是真跑 AI 的地方（AI 节点 asyncio.to_thread、批处理并发
+    单图上限 20）：满负荷时节点在 to_thread 排队、上层 WORKFLOW_NODE_TIMEOUT(600s)
+    先到，表现为「节点莫名超时失败但线程还在跑」。prefork 每个子进程独立执行本钩子。
+    """
+    anyio.to_thread.current_default_thread_limiter().total_tokens = settings.WORKER_THREAD_POOL_SIZE
 
 
 celery_app = Celery(
