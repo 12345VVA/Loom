@@ -180,8 +180,7 @@ def _is_page_result_dict(payload: dict) -> bool:
     if not isinstance(payload["items"], list):
         return False
     return all(
-        isinstance(payload[key], int) and not isinstance(payload[key], bool)
-        for key in ("total", "page", "page_size")
+        isinstance(payload[key], int) and not isinstance(payload[key], bool) for key in ("total", "page", "page_size")
     )
 
 
