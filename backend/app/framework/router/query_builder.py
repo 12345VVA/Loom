@@ -174,8 +174,10 @@ class QueryBuilder:
             # fail-closed（评审 F7）：未配置白名单时忽略显式排序、落 fallback——
             # 原实现「空即全放行」，漏配控制器即敞开任意 hasattr 列排序
             # （盲侧信道/全表排序 DoS）。全库 39 个带分页控制器均已配置，零回归面。
-            if self.query.order_fields and self.query.order in self.query.order_fields and hasattr(
-                self.model, self.query.order
+            if (
+                self.query.order_fields
+                and self.query.order in self.query.order_fields
+                and hasattr(self.model, self.query.order)
             ):
                 column = getattr(self.model, self.query.order)
                 return statement.order_by(asc(column) if self.query.sort == "asc" else desc(column))

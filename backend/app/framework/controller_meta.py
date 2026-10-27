@@ -742,7 +742,7 @@ def _tag_generated_endpoint(endpoint, scope: str) -> None:
     cool_tag(f"{TagTypes.SCOPE}:{scope}")(endpoint)
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _signature_param_names(func) -> frozenset[str]:
     """缓存函数签名参数名（评审 F11）。
 
