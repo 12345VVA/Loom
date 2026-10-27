@@ -7,6 +7,14 @@ globs: app/modules/**/controller/*.py,app/modules/**/controller/**/*.py
 
 后端管理接口优先使用 `app.framework.controller_meta.CoolController` 和 `CoolControllerMeta` 注册。URL、权限、EPS service 描述都从控制器元数据派生。
 
+## 生命周期边界（评审 F14 审计约定）
+
+控制器实例在 `@CoolController` 装饰期（import 时）创建一次，**进程级单例、跨请求共享**；请求态一律走 service 每请求实例（框架经 `meta.service(session)` 注入）。因此：
+
+- **禁止在控制器上持有实例可变状态**（如 `self.cache = {}`、`self.counter = 0`）——即成跨请求串号；
+- **禁止覆写带参 `__init__`**——导入期直接炸（全库 50 个控制器审计：零覆写、零实例状态，保持此纪律）；
+- 需要缓存/计数等状态时放模块级（自管并发）或 service 层。
+
 ## 基本结构
 
 ```py
