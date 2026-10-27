@@ -165,8 +165,28 @@ async def _normalize_error_response(response: Response) -> Response:
     return JSONResponse(status_code=status_code, content=fallback, headers=headers)
 
 
+def _is_page_result_dict(payload: dict) -> bool:
+    """PageResult 序列化形态判定（评审 F12：显式类型门槛，非裸四键子集）。
+
+    PageResult（pydantic BaseModel）经 FastAPI 序列化后恰四键且类型恒定：
+    items 为 list、total/page/page_size 为 int。业务 dict 恰好凑齐四键但类型
+    不符（如 items 为 str、total 为 str）不再被误转。
+
+    不采用 scope["route"].response_model 判定：page_item_model=None 时
+    response_model 为 None（controller_meta 漏斗），同形态仍需类型探测兜底。
+    """
+    if not {"items", "total", "page", "page_size"}.issubset(payload.keys()):
+        return False
+    if not isinstance(payload["items"], list):
+        return False
+    return all(
+        isinstance(payload[key], int) and not isinstance(payload[key], bool)
+        for key in ("total", "page", "page_size")
+    )
+
+
 def _normalize_payload(payload):
-    if isinstance(payload, dict) and {"items", "total", "page", "page_size"}.issubset(payload.keys()):
+    if isinstance(payload, dict) and _is_page_result_dict(payload):
         return {
             "list": payload["items"],
             "pagination": {

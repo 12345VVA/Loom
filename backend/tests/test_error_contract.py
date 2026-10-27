@@ -24,7 +24,7 @@ from app.celery_app import (
 from app.core.logging import request_id_ctx
 from app.framework.api.exception_handlers import register_exception_handlers
 from app.framework.middleware.request_id import RequestIdMiddleware
-from app.framework.middleware.response_envelope import ResponseEnvelopeMiddleware
+from app.framework.middleware.response_envelope import ResponseEnvelopeMiddleware, _normalize_payload
 
 
 def _build_app() -> FastAPI:
@@ -272,6 +272,35 @@ class SseGeneratorCleanupTests(unittest.TestCase):
 
         asyncio.run(scenario())
         self.assertIsNone(_get_handle("leak-test-token"))
+
+
+class PageResultDetectionTests(unittest.TestCase):
+    """PageResult 序列化形态判定（评审 F12）：四键子集 + 类型门槛。
+
+    FastAPI 序列化 PageResult 后 items 恒 list、total/page/page_size 恒 int；
+    类型不符的业务 dict 不再被误转分页形态。
+    """
+
+    def test_valid_page_result_normalized(self):
+        payload = {"items": [{"id": 1}], "total": 10, "page": 1, "page_size": 20}
+        normalized = _normalize_payload(payload)
+        self.assertEqual(normalized["list"], [{"id": 1}])
+        self.assertEqual(normalized["pagination"], {"page": 1, "size": 20, "total": 10})
+
+    def test_wrong_types_not_normalized(self):
+        payload = {"items": "not-a-list", "total": "10", "page": "1", "page_size": "20"}
+        self.assertIs(_normalize_payload(payload), payload)
+
+    def test_bool_rejected(self):
+        payload = {"items": [], "total": True, "page": 1, "page_size": 20}
+        self.assertIs(_normalize_payload(payload), payload)
+
+    def test_missing_key_not_normalized(self):
+        payload = {"items": [], "total": 1, "page": 1}
+        self.assertIs(_normalize_payload(payload), payload)
+
+    def test_non_dict_passthrough(self):
+        self.assertEqual(_normalize_payload([1, 2]), [1, 2])
 
 
 class RequestIdSanitizationTests(unittest.TestCase):
