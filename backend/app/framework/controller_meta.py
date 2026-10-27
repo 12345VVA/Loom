@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import threading
 from dataclasses import dataclass, field
@@ -108,8 +109,18 @@ class CrudQuery:
 
     @classmethod
     def from_request(cls, request: Request, config: QueryConfig | None = None) -> CrudQuery:
-        """从 FastAPI Request 对象解析并创建 CrudQuery"""
-        return _build_crud_query(request=request, config=config)
+        """从 FastAPI Request 对象解析并创建 CrudQuery。
+
+        page/size 须显式从查询参数提取后传入——它们在 reserved 集内，URL 收集阶段被
+        跳过，不传则恒 None（曾致 /admin/task/info/log 分页恒第 1 页，旁路 bug1）。
+        钳制由 _build_crud_query 统一处理（与 page 端点 body 路径同口径）。
+        """
+        return _build_crud_query(
+            request=request,
+            config=config,
+            page=request.query_params.get("page"),
+            size=request.query_params.get("size") or request.query_params.get("pageSize"),
+        )
 
     @property
     def params(self) -> dict[str, Any]:
@@ -731,10 +742,21 @@ def _tag_generated_endpoint(endpoint, scope: str) -> None:
     cool_tag(f"{TagTypes.SCOPE}:{scope}")(endpoint)
 
 
+@functools.lru_cache(maxsize=None)
+def _signature_param_names(func) -> frozenset[str]:
+    """缓存函数签名参数名（评审 F11）。
+
+    键必须是 `method.__func__`（类级函数）：`meta.service(session)` 每请求新建实例，
+    绑定方法对象每请求都是新的，直接缓存 method 永不命中且持引用。缓存持函数级
+    引用 = 类级生命周期，无泄漏。
+    """
+    return frozenset(inspect.signature(func).parameters)
+
+
 def _invoke_service(method, **available_kwargs):
-    signature = inspect.signature(method)
-    kwargs = {name: value for name, value in available_kwargs.items() if name in signature.parameters}
-    return method(**kwargs)
+    func = getattr(method, "__func__", method)
+    names = _signature_param_names(func)
+    return method(**{name: value for name, value in available_kwargs.items() if name in names})
 
 
 def _run_action_sync(service, hooks, action_name, method, kwargs):

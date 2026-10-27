@@ -11,7 +11,7 @@ import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.framework.controller_meta import QueryConfig, _build_crud_query  # noqa: E402
+from app.framework.controller_meta import CrudQuery, QueryConfig, _build_crud_query  # noqa: E402
 
 
 def _build_page_query(body: dict) -> "object":
@@ -142,6 +142,39 @@ class PageClampTests(unittest.TestCase):
 
     def test_page_list_value_becomes_none(self):
         self.assertIsNone(_build_page_query({"page": [1, 2]}).page)
+
+
+class FromRequestPaginationTests(unittest.TestCase):
+    """CrudQuery.from_request 分页修复（旁路 bug1）。
+
+    page/size 在 reserved 集内、URL 收集阶段被跳过，from_request 此前不传则恒 None
+    ——/admin/task/info/log 分页曾恒第 1 页。修复后显式提取，钳制与 page 端点同口径。
+    """
+
+    @staticmethod
+    def _request(query_string: bytes):
+        from starlette.requests import Request
+
+        return Request({"type": "http", "method": "GET", "path": "/", "query_string": query_string, "headers": []})
+
+    def test_page_size_extracted(self):
+        query = CrudQuery.from_request(self._request(b"page=2&size=50"))
+        self.assertEqual(query.page, 2)
+        self.assertEqual(query.size, 50)
+
+    def test_alias_and_clamp(self):
+        query = CrudQuery.from_request(self._request(b"page=-5&pageSize=1000000"))
+        self.assertEqual(query.page, 1)
+        self.assertEqual(query.size, 100)
+
+    def test_invalid_page_falls_back(self):
+        query = CrudQuery.from_request(self._request(b"page=abc"))
+        self.assertIsNone(query.page)
+
+    def test_missing_remains_none(self):
+        query = CrudQuery.from_request(self._request(b"keyword=x"))
+        self.assertIsNone(query.page)
+        self.assertIsNone(query.size)
 
 
 if __name__ == "__main__":
