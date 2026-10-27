@@ -830,6 +830,14 @@ def _build_crud_query(
         except (TypeError, ValueError):
             size = None
 
+    # 钳制 page 到 [1, 100000]（与 Query 层 le=100000 对齐），堵住 body 覆盖路径的另一半缺口：
+    # 字符串在消费侧 offset 计算触发 TypeError、负数产生负 OFFSET、超大值构造大 offset 慢查询
+    if page is not None:
+        try:
+            page = max(1, min(int(page), 100000))
+        except (TypeError, ValueError):
+            page = None
+
     return CrudQuery(
         page=page,
         size=size,
