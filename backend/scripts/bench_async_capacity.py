@@ -50,10 +50,7 @@ def _build_slider_verify(target_x: float) -> str:
     duration - 末点 t ≤ MAX_RELEASE_GAP_MS(5000)。"""
     import json
 
-    track = [
-        {"x": round(target_x * i / 7, 2), "t": round(800 * i / 7)}
-        for i in range(8)
-    ]
+    track = [{"x": round(target_x * i / 7, 2), "t": round(800 * i / 7)} for i in range(8)]
     track[-1]["x"] = target_x
     track[-1]["t"] = 800
     return json.dumps({"x": target_x, "duration": 800, "track": track})
@@ -110,7 +107,9 @@ def _summary(latencies: list[float], errors: int, wall: float) -> dict:
     }
 
 
-async def crud_worker(client: httpx.AsyncClient, headers: dict, deadline: float, latencies: list[float], errors: list) -> None:
+async def crud_worker(
+    client: httpx.AsyncClient, headers: dict, deadline: float, latencies: list[float], errors: list
+) -> None:
     while time.monotonic() < deadline:
         start = time.perf_counter()
         try:
@@ -206,9 +205,7 @@ async def run(args: argparse.Namespace) -> None:
         if args.curve in ("sse", "mixed"):
             sse_count = args.concurrency if args.curve == "sse" else 30
             tasks += [
-                asyncio.create_task(
-                    sse_worker(client, headers, args.instance_id, deadline, latencies, errors)
-                )
+                asyncio.create_task(sse_worker(client, headers, args.instance_id, deadline, latencies, errors))
                 for _ in range(sse_count)
             ]
 
@@ -228,7 +225,12 @@ async def run(args: argparse.Namespace) -> None:
                 print(json.dumps(snapshot, ensure_ascii=False))
         if args.json:
             with open(args.json, "w", encoding="utf-8") as f:
-                json.dump({"summary": _summary(latencies, len(errors), wall), "snapshots": snapshots}, f, ensure_ascii=False, indent=2)
+                json.dump(
+                    {"summary": _summary(latencies, len(errors), wall), "snapshots": snapshots},
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
             print(f"\n快照已写 {args.json}")
 
 
