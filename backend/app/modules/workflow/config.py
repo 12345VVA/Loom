@@ -6,7 +6,6 @@ import logging
 
 from sqlmodel import Session, select
 
-from app.framework.middleware.module_access import ModuleAccessMiddleware
 from app.modules.module_config import ModuleConfig
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,6 @@ MODULE_CONFIG = ModuleConfig(
     description="可视化 Agent 工作流，集成 LangGraph 运行时",
     order=8,
     scopes=("admin",),
-    middlewares=(ModuleAccessMiddleware,),
     config_namespace="WORKFLOW",
     bootstrap="app.modules.workflow.config.bootstrap",
     init_menu_file="menu.json",

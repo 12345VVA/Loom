@@ -27,7 +27,6 @@ app/modules/{module}/
 模块必须通过 `app.modules.module_config.ModuleConfig` 声明元信息：
 
 ```py
-from app.framework.middleware.module_access import ModuleAccessMiddleware
 from app.modules.module_config import ModuleConfig
 
 MODULE_CONFIG = ModuleConfig(
@@ -36,7 +35,6 @@ MODULE_CONFIG = ModuleConfig(
     description="示例模块说明",
     order=5,
     scopes=("admin",),
-    middlewares=(ModuleAccessMiddleware,),
     config_namespace="DEMO",
     init_db_file="init_db.py",
     init_menu_file="menu.json",

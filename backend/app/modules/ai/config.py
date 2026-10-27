@@ -6,7 +6,6 @@ import logging
 
 from sqlmodel import Session, select
 
-from app.framework.middleware.module_access import ModuleAccessMiddleware
 from app.modules.module_config import ModuleConfig
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,6 @@ MODULE_CONFIG = ModuleConfig(
     description="AI 厂商、模型、调用配置与统一运行时",
     order=7,
     scopes=("admin", "aiapi"),
-    middlewares=(ModuleAccessMiddleware,),
     config_namespace="AI",
     bootstrap="app.modules.ai.config.bootstrap",
     init_menu_file="menu.json",

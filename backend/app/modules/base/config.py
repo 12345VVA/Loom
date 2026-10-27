@@ -6,7 +6,6 @@ from sqlmodel import Session
 
 from app.framework.middleware.admin_csrf import AdminCsrfOriginMiddleware
 from app.framework.middleware.metrics import MetricsMiddleware
-from app.framework.middleware.module_access import ModuleAccessMiddleware
 from app.framework.middleware.operation_log import OperationLogMiddleware
 from app.framework.middleware.rate_limit import RateLimitMiddleware
 from app.framework.middleware.request_id import RequestIdMiddleware
@@ -26,7 +25,6 @@ MODULE_CONFIG = ModuleConfig(
     order=10,
     scopes=("admin",),
     bootstrap="app.modules.base.config.bootstrap",
-    middlewares=(ModuleAccessMiddleware,),
     global_middlewares=(
         RequestIdMiddleware,
         MetricsMiddleware,

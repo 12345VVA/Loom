@@ -2,7 +2,6 @@
 
 from sqlmodel import Session, select
 
-from app.framework.middleware.module_access import ModuleAccessMiddleware
 from app.modules.module_config import ModuleConfig
 
 MODULE_CONFIG = ModuleConfig(
@@ -11,7 +10,6 @@ MODULE_CONFIG = ModuleConfig(
     description="角色 / 场景 / 风格资产沉淀与组装协议（AssetPromptComposer）",
     order=10,
     scopes=("admin",),
-    middlewares=(ModuleAccessMiddleware,),
     config_namespace="ASSET",
     init_db_file="init_db.py",
     init_menu_file="menu.json",
