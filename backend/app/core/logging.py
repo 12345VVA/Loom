@@ -4,12 +4,14 @@
 
 from __future__ import annotations
 
+import atexit
 import contextvars
 import json
 import logging
+import queue
 import sys
 import traceback
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import QueueHandler, QueueListener, TimedRotatingFileHandler
 from pathlib import Path
 
 request_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
@@ -288,6 +290,73 @@ class SafeTimedRotatingFileHandler(TimedRotatingFileHandler):
             self.stream = self._open()
 
 
+class _DropCountingQueueHandler(QueueHandler):
+    """有界队列 handler：队列满时丢弃并计数。
+
+    基类的 queue.Full 会走 handleError 往 stderr 刷堆栈——磁盘故障导致积压时
+    最不该雪上加霜。丢弃属预期降级，计数留给观测（评审 F3）。
+    """
+
+    def __init__(self, maxsize: int):
+        super().__init__(queue.Queue(maxsize=maxsize))
+        self.dropped = 0
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self.enqueue(self.prepare(record))
+        except queue.Full:
+            self.dropped += 1
+
+
+class _FileLogQueueListener(QueueListener):
+    """stop() 加固：哨兵投递失败（队列满）时腾位重试防 join 挂死；停后关闭文件 handler。
+
+    3.11 的 QueueListener.stop 不关 handler，且 enqueue_sentinel 是裸 put_nowait——
+    队列满时（磁盘故障积压恰是它最可能的时刻）哨兵进不去会 join 挂死。
+    """
+
+    def stop(self) -> None:
+        for _ in range(1000):
+            try:
+                self.enqueue_sentinel()
+                break
+            except queue.Full:
+                try:
+                    self.queue.get_nowait()  # 腾位（丢弃一条积压记录，退出路径属预期）
+                except queue.Empty:
+                    break
+        if self._thread is not None:
+            self._thread.join()
+            self._thread = None
+        for handler in self.handlers:
+            handler.close()
+
+
+# 文件日志的后台写盘装配（评审 F3）：模块级引用供重复 configure 时停旧、atexit 收尾
+# 与测试触达。多进程各自实例化（uvicorn worker spawn/import、celery prefork 子进程经
+# worker_process_init 重建），互不共享。
+_file_log_listener: _FileLogQueueListener | None = None
+_file_queue_handler: _DropCountingQueueHandler | None = None
+
+
+def _stop_file_log_listener() -> None:
+    """停掉文件日志监听线程并关闭文件 handler（幂等；atexit 与测试收尾共用）。"""
+    global _file_log_listener
+    previous = _file_log_listener
+    _file_log_listener = None
+    if previous is not None:
+        try:
+            previous.stop()
+        except RuntimeError:
+            # fork 子进程继承的 listener 线程在本进程不存在（worker_process_init 重建
+            # 场景）：join 会炸，直接关闭其继承的文件 handler 即可
+            for handler in previous.handlers:
+                handler.close()
+
+
+atexit.register(_stop_file_log_listener)
+
+
 def _ensure_utf8_stderr() -> None:
     """确保控制台 stderr 以 UTF-8 输出。
 
@@ -328,11 +397,15 @@ def configure_logging(
     console.setFormatter(console_formatter)
     root.addHandler(console)
 
-    # 按天轮转的文件输出
+    # 按天轮转的文件输出：经有界队列由后台线程写盘（评审 F3）。日志是全站最高频的
+    # 同步 IO，磁盘抖动（云盘 IOPS 打满、日志暴涨）会直接表现为事件循环上的全站
+    # 延迟尖刺，且此时异常日志反而写不出去。队列满丢弃计数；控制台保持同步
+    # （stderr 快，且人类调试需要即时性）。
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
     prefix = f"{file_prefix}_" if file_prefix else ""
+    file_handlers: list[logging.Handler] = []
     for filename, min_level in _LOG_FILES.items():
         handler = SafeTimedRotatingFileHandler(
             str(log_path / f"{prefix}{filename}"),
@@ -344,7 +417,14 @@ def configure_logging(
         handler.setFormatter(json_formatter)
         if min_level is not None:
             handler.addFilter(_MinLevelFilter(min_level))
-        root.addHandler(handler)
+        file_handlers.append(handler)
+
+    global _file_log_listener, _file_queue_handler
+    _stop_file_log_listener()  # 重复 configure（测试/worker 重建）：先停旧装配，关旧文件句柄
+    _file_queue_handler = _DropCountingQueueHandler(maxsize=5000)
+    root.addHandler(_file_queue_handler)
+    _file_log_listener = _FileLogQueueListener(_file_queue_handler.queue, *file_handlers, respect_handler_level=True)
+    _file_log_listener.start()
 
     # 第三方库日志级别封顶
     for name, ceiling in _THIRD_PARTY_LOG_LEVELS.items():

@@ -127,14 +127,25 @@ def _clear_log_context(task=None, **kwargs):
 
 
 @worker_process_init.connect
-def _tune_worker_thread_pool(**_kwargs):
-    """worker 进程 anyio 线程池上限（异步审查 P0-5）。
+def _worker_process_bootstrap(**_kwargs):
+    """worker 子进程引导：日志重建（评审 F3）+ anyio 线程池上限（异步审查 P0-5）。
 
-    Web 进程在 lifespan 中设置（main.py），worker 没有 lifespan——此前沿用 anyio
+    prefork 下 setup_logging 在 fork 前的父进程触发，父进程启动的 QueueListener
+    线程不会被子进程继承——子进程只剩无消费者的队列，塞满后 worker 日志静默丢失。
+    每个子进程必须重建日志装配（各自的队列 + 监听线程；_stop_file_log_listener 对
+    fork 继承的僵尸 listener 有 RuntimeError 防御）。
+
+    Web 进程在 lifespan 中设置 anyio 上限，worker 没有 lifespan——此前沿用 anyio
     默认 40，而 worker 才是真跑 AI 的地方（AI 节点 asyncio.to_thread、批处理并发
     单图上限 20）：满负荷时节点在 to_thread 排队、上层 WORKFLOW_NODE_TIMEOUT(600s)
     先到，表现为「节点莫名超时失败但线程还在跑」。prefork 每个子进程独立执行本钩子。
     """
+    configure_logging(
+        log_level=settings.effective_log_level,
+        log_dir=settings.LOG_DIR,
+        retention_days=settings.LOG_RETENTION_DAYS,
+        file_prefix="celery",
+    )
     anyio.to_thread.current_default_thread_limiter().total_tokens = settings.WORKER_THREAD_POOL_SIZE
 
 

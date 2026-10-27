@@ -14,7 +14,7 @@ import tempfile
 import threading
 import unittest
 
-from app.core.logging import configure_logging
+from app.core.logging import _stop_file_log_listener, configure_logging
 from app.framework.middleware.exception_guard import (
     ExceptionGuardMiddleware,
     install_process_exception_hooks,
@@ -184,6 +184,9 @@ class UvicornLoggerAdoptionTests(unittest.TestCase):
                     self.assertEqual(lg.handlers, [])
                     self.assertTrue(lg.propagate)
             finally:
+                # 文件 handler 由后台 listener 持有（评审 F3），不停掉则句柄挂死
+                # 临时目录、Windows 下 TemporaryDirectory 清理报错
+                _stop_file_log_listener()
                 root.handlers[:] = saved_handlers
                 root.setLevel(saved_level)
                 for lg, (handlers, propagate, level) in zip(uv_loggers, saved):
