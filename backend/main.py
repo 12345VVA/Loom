@@ -345,22 +345,23 @@ async def health():
 _KOMBU_PRI_SUFFIXES = ("", "\x06\x163", "\x06\x166", "\x06\x169")
 
 
-def _collect_runtime_gauges() -> None:
+def _collect_runtime_gauges(limiter) -> None:
     """采集进程内运行时 gauge（异步审查·可观测性）：池水位/线程池水位/队列积压。
 
     纯内存读取或单次 Redis pipeline（无逐键 RTT），由 /metrics 路由经 to_thread
-    调用。队列积压口径 = ΣLLEN(优先级键) + unacked——acks_late 下已投递在跑的任务
-    在 unacked hash 里（跨队列共享），单列一条不摊入各队列。Redis 不可用时跳过
-    （复用 cache_service 降级语义）。"""
-    from anyio.to_thread import current_default_thread_limiter
-
+    调用。``limiter`` 必须在事件循环上取好再传入——anyio 的
+    ``current_default_thread_limiter()`` 在工作线程内会抛 NoEventLoopError（负载
+    测试首触发现）。队列积压口径 = ΣLLEN(优先级键) + unacked——acks_late 下已投递
+    在跑的任务在 unacked hash 里（跨队列共享），单列一条不摊入各队列。Redis 不可用
+    时跳过（复用 cache_service 降级语义）。"""
     from app.framework.middleware.metrics import set_gauge
 
     pool = engine.pool
     set_gauge("db_pool_checkedout", pool.checkedout())
-    set_gauge("db_pool_overflow", pool.overflow())
+    # QueuePool._overflow 是有符号计数：检出低于 pool_size 时归还连接会把
+    # overflow 减成负数（SQLAlchemy 已知行为），gauge 取非负语义
+    set_gauge("db_pool_overflow", max(0, pool.overflow()))
 
-    limiter = current_default_thread_limiter()
     set_gauge("thread_pool_total", float(limiter.total_tokens))
     set_gauge("thread_pool_borrowed", float(limiter.borrowed_tokens))
     set_gauge("thread_pool_tasks_waiting", limiter.statistics().tasks_waiting)
@@ -410,7 +411,11 @@ async def metrics():
     """Prometheus 文本指标（通过 METRICS_ENABLED 控制记录）。"""
     if not settings.METRICS_ENABLED:
         return PlainTextResponse("# metrics disabled\n", media_type="text/plain")
-    await asyncio.to_thread(_collect_runtime_gauges)
+    # anyio limiter 绑定事件循环，必须在本协程取好再传入工作线程
+    from anyio.to_thread import current_default_thread_limiter
+
+    limiter = current_default_thread_limiter()
+    await asyncio.to_thread(_collect_runtime_gauges, limiter)
     return PlainTextResponse(render_metrics(), media_type="text/plain")
 
 
