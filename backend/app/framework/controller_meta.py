@@ -8,7 +8,7 @@ import functools
 import inspect
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, runtime_checkable
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
@@ -239,10 +239,19 @@ def get_registered_exported_routes() -> list[ExportedRouteMeta]:
 def _register_permission_config(config: PermissionConfig) -> None:
     key = config.permission or config.code
     with _registry_lock:
-        if key in _registered_permission_keys:
+        if key not in _registered_permission_keys:
+            _registered_permission_keys.add(key)
+            _registered_permission_configs.append(config)
             return
-        _registered_permission_keys.add(key)
-        _registered_permission_configs.append(config)
+        # F10：同键不再静默丢弃——同 permission 不同路径（如 media:asset:update 的
+        # retry/retryFailed/mirror/mirrorBackfill 四条路由）时合并 admin_patterns，
+        # URL 鉴权兜底（has_url_permission）才能覆盖全部路径。frozen 经 replace 重建。
+        for index, existing in enumerate(_registered_permission_configs):
+            if (existing.permission or existing.code) == key:
+                merged = tuple(dict.fromkeys((*existing.admin_patterns, *config.admin_patterns)))
+                if merged != existing.admin_patterns:
+                    _registered_permission_configs[index] = replace(existing, admin_patterns=merged)
+                return
 
 
 def _register_exported_route(route: ExportedRouteMeta) -> None:

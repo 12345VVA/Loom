@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from dataclasses import replace
 from importlib import import_module
 from pathlib import Path
 
@@ -105,10 +106,18 @@ def load_permission_configs() -> list[PermissionConfig]:
                         role_codes=action.role_codes,
                     )
                 )
+    # 同键合并 admin_patterns（F10）：原 last-wins 会丢掉同 permission 其他路径的
+    # 兜底鉴权 patterns，且与注册层的 first-wins 语义互相打架
     unique_permissions: dict[str, PermissionConfig] = {}
     for permission in permissions:
         key = permission.permission or permission.code
-        unique_permissions[key] = permission
+        existing = unique_permissions.get(key)
+        if existing is None:
+            unique_permissions[key] = permission
+            continue
+        merged = tuple(dict.fromkeys((*existing.admin_patterns, *permission.admin_patterns)))
+        if merged != existing.admin_patterns:
+            unique_permissions[key] = replace(existing, admin_patterns=merged)
     return list(unique_permissions.values())
 
 

@@ -437,6 +437,61 @@ class FrameworkAlignmentTests(unittest.TestCase):
         self.assertIn("typeId", dict_info["pageQueryOp"]["fieldEq"])
 
 
+class PermissionRegistryMergeTests(unittest.TestCase):
+    """同 permission 不同路径的 admin_patterns 合并（评审 F10）。"""
+
+    def test_same_permission_patterns_merged_in_registry(self):
+        from app.framework.controller_meta import (
+            _register_permission_config,
+            get_registered_permission_configs,
+        )
+        from app.framework.module_config import PermissionConfig
+
+        perm = "test:pattern:merge"
+        _register_permission_config(
+            PermissionConfig(
+                name="merge-a",
+                code="test_pattern_merge_a",
+                permission=perm,
+                admin_patterns=("POST /admin/__merge_test__/a",),
+            )
+        )
+        _register_permission_config(
+            PermissionConfig(
+                name="merge-b",
+                code="test_pattern_merge_b",
+                permission=perm,
+                admin_patterns=("POST /admin/__merge_test__/b",),
+            )
+        )
+        matched = [config for config in get_registered_permission_configs() if config.permission == perm]
+        self.assertEqual(len(matched), 1)
+        # 第二条不再被静默丢弃：两条路径的兜底鉴权 patterns 全量保留
+        self.assertEqual(
+            matched[0].admin_patterns,
+            ("POST /admin/__merge_test__/a", "POST /admin/__merge_test__/b"),
+        )
+
+    def test_real_duplicate_permission_patterns_merged(self):
+        """真实重复案例端到端：media:asset:update = CRUD update 本体 + 4 条自定义路由。
+
+        修复前注册层 first-wins 仅剩 CRUD 本体一条（4 条自定义被静默丢弃）。
+        """
+        from app.modules.base.service.authority_service import get_permission_pattern_map
+
+        patterns = set(get_permission_pattern_map().get("media:asset:update", ()))
+        self.assertEqual(
+            patterns,
+            {
+                "POST /admin/media/asset/update",
+                "POST /admin/media/asset/retry",
+                "POST /admin/media/asset/retryFailed",
+                "POST /admin/media/asset/mirror",
+                "POST /admin/media/asset/mirrorBackfill",
+            },
+        )
+
+
 class AnonymousUserTests(unittest.TestCase):
     """匿名当前用户去 ORM 化（评审 F15）。"""
 
