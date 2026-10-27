@@ -23,6 +23,7 @@ import app.modules.workflow.service.workflow_service as _workflow_service  # noq
 from app.celery_app import celery_app
 from app.core.database import Session, engine
 from app.core.logging import workflow_instance_id_ctx
+from app.core.worker_runtime import run_with_sized_executor
 from app.framework.storage import resolve_payload
 from app.modules.ai.service.security_service import AiSecurityService
 from app.modules.workflow.model.workflow import (
@@ -387,7 +388,7 @@ def execute_workflow(
         _mark_instance_failed(instance_id, f"初始参数解析失败: {e}")
         logger.error("工作流 %d 参数 JSON 解析失败: %s", instance_id, e, exc_info=True)
         return
-    asyncio.run(async_execute(instance_id, definition_id, initial_vars, resume_val))
+    run_with_sized_executor(async_execute(instance_id, definition_id, initial_vars, resume_val))
 
 
 @celery_app.task(name="workflow.version.sweep_archived")

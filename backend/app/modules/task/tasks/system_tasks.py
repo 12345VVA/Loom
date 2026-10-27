@@ -262,22 +262,16 @@ _KOMBU_PRI_SUFFIXES = ("", "\x06\x163", "\x06\x166", "\x06\x169")
 def report_worker_runtime() -> dict:
     """worker 进程运行时水位上报（异步审查·可观测性，beat 每 60s）。
 
-    worker 没有 /metrics HTTP 面，水位以 INFO 日志输出供采集/巡检：本进程 anyio
-    线程池（AI 节点 to_thread 与批处理并发共占）+ broker 队列积压（ΣLLEN 优先级键；
-    unacked = acks_late 下已投递在跑的任务，跨队列共享，单列不摊入）。"""
-    from anyio.to_thread import current_default_thread_limiter
+    worker 没有 /metrics HTTP 面，水位以 INFO 日志输出供采集/巡检：本进程
+    ``threading.active_count()``（真实在跑线程数——to_thread 执行器/批处理并发
+    的直接体现；注意 anyio limiter 在 worker 的事件循环外不可读且对 stdlib
+    asyncio.to_thread 不生效）+ broker 队列积压（ΣLLEN 优先级键；unacked =
+    acks_late 下已投递在跑的任务，跨队列共享，单列不摊入）。"""
+    import threading
 
     from app.modules.base.service.cache_service import get_redis_client
 
-    limiter = current_default_thread_limiter()
-    stats = limiter.statistics()
-    summary: dict = {
-        "threadPool": {
-            "total": int(limiter.total_tokens),
-            "borrowed": limiter.borrowed_tokens,
-            "tasksWaiting": stats.tasks_waiting,
-        }
-    }
+    summary: dict = {"activeThreads": threading.active_count()}
     client = get_redis_client()
     if client is None:
         logger.info("worker 运行时水位（Redis 不可用，跳过队列深度）：%s", summary)

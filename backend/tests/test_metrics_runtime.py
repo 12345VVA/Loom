@@ -117,7 +117,10 @@ class GaugeRenderTestCase(unittest.TestCase):
 
 class QueueDepthGaugeTestCase(unittest.TestCase):
     def test_collect_runtime_gauges_sets_pool_anyio_queue_depth(self):
-        """采集口径：ΣLLEN(优先级键) 按队列聚合 + unacked 单列 + 池/线程池水位。"""
+        """采集口径：ΣLLEN(优先级键) 按队列聚合 + unacked 单列 + 池/线程池水位。
+
+        limiter 由 /metrics 路由在事件循环上取好后作为参数传入（工作线程内
+        anyio.current_default_thread_limiter 会抛 NoEventLoopError——压测首触发现）。"""
         from main import _collect_runtime_gauges
 
         queue_count = 12
@@ -146,12 +149,11 @@ class QueueDepthGaugeTestCase(unittest.TestCase):
         self.addCleanup(metrics_module._gauges.clear)
         with (
             patch("main.engine") as fake_engine,
-            patch("anyio.to_thread.current_default_thread_limiter", return_value=limiter),
             patch("app.celery_app.celery_app", fake_app),
             patch("app.modules.base.service.cache_service.get_redis_client", return_value=fake_client),
         ):
             fake_engine.pool = pool
-            _collect_runtime_gauges()
+            _collect_runtime_gauges(limiter)
 
         self.assertEqual(metrics_module._gauges[("db_pool_checkedout", ())], 4)
         self.assertEqual(metrics_module._gauges[("db_pool_overflow", ())], 1)

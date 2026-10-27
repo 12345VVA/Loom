@@ -21,6 +21,7 @@ if sys.platform == "win32":
 from app.celery_app import celery_app
 from app.core.config import settings
 from app.core.logging import workflow_instance_id_ctx
+from app.core.worker_runtime import run_with_sized_executor
 from app.modules.workflow.tasks.workflow_tasks import async_execute
 from app.modules.workflow_eval.model.enum import CaseResultStatus
 from app.modules.workflow_eval.service.eval_orchestrator import (
@@ -62,7 +63,7 @@ def run_eval_task(self, eval_run_id: int, evaluator_type: str = "rule_match"):
     DB 异常等），把 run CAS 为 failed 并写 error_message，避免永久 running。
     """
     try:
-        asyncio.run(_async_run_eval(eval_run_id, self.request.id, evaluator_type))
+        run_with_sized_executor(_async_run_eval(eval_run_id, self.request.id, evaluator_type))
     except Exception as exc:
         logger.error("评估任务 run_id=%d 异常终止: %s", eval_run_id, exc, exc_info=True)
         try:

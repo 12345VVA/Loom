@@ -17,6 +17,7 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.database import engine
+from app.core.worker_runtime import run_with_sized_executor
 
 logger = logging.getLogger(__name__)
 
@@ -206,17 +207,17 @@ class TaskInvoker:
 
 
 def _run_coroutine_sync(coro):
-    """在同步任务入口里安全执行协程。"""
+    """在同步任务入口里安全执行协程（显式执行器上限，见 core.worker_runtime）。"""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        return run_with_sized_executor(coro)
 
     result: dict[str, Any] = {}
 
     def runner():
         try:
-            result["value"] = asyncio.run(coro)
+            result["value"] = run_with_sized_executor(coro)
         except BaseException as exc:
             result["error"] = exc
 
