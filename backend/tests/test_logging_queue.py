@@ -23,7 +23,6 @@ from app.core.logging import _stop_file_log_listener, configure_logging  # noqa:
 # configure_logging 重新赋值模块全局后看不到新 listener
 
 
-
 def _make_record(msg: str) -> logging.LogRecord:
     return logging.LogRecord("test.queue", logging.INFO, __file__, 1, msg, None, None)
 

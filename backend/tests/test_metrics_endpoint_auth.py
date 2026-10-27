@@ -16,11 +16,11 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from main import app  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.startup_checks import validate_startup_settings  # noqa: E402
+from main import app  # noqa: E402
 
 _DISABLED_MARK = "# metrics disabled"
 
