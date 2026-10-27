@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import unittest
 
+from fastapi import Depends, FastAPI, Request
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.testclient import TestClient
 
 from app.framework.middleware.body_buffer import BodyBufferMiddleware
 from app.framework.middleware.exception_guard import ExceptionGuardMiddleware
@@ -27,6 +30,10 @@ from app.framework.middleware.scope_authority import (
     AppAuthorityMiddleware,
 )
 from main import app  # noqa: E402 —— 导入期副作用（路由注册/EPS）为既有测试接受的形态
+
+# 注意：本文件有 `from __future__ import annotations`，端点注解以字符串延迟解析——
+# FastAPI 解析 "Request" 走模块全局命名空间，fastapi 系 import 必须放模块级，
+# 放函数局部会退化为必填 query 参数（422）。
 
 
 class MiddlewareTopologyTests(unittest.TestCase):
@@ -92,6 +99,72 @@ class MiddlewareTopologyTests(unittest.TestCase):
         from app.framework.middleware.operation_log import OperationLogMiddleware
 
         self.assertFalse(issubclass(OperationLogMiddleware, BaseHTTPMiddleware))
+
+    def test_prefix_scoped_is_pure_asgi(self) -> None:
+        """PrefixScoped 必须保持纯 ASGI（评审 F8）。
+
+        旧实现继承 BaseHTTPMiddleware 且手动调 ``inner.dispatch``——绕开内层的
+        异常处理/响应封装链，外壳自身每请求多一层 task-group。重构后前缀命中走
+        内层完整 ``__call__``。
+        """
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        from app.framework.middleware.module_runtime import PrefixScopedMiddleware
+
+        self.assertFalse(issubclass(PrefixScopedMiddleware, BaseHTTPMiddleware))
+
+
+class PrefixScopedBehaviorTests(unittest.TestCase):
+    """前缀桥接行为：命中走内层完整链 / 未命中直通 / module_name 注入（评审 F8）。"""
+
+    def _build(self, prefixes: tuple[str, ...]):
+        calls: list[str] = []
+        state_holder: dict = {}
+
+        class StubModuleMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                calls.append("inner-dispatch")
+                response = await call_next(request)
+                response.headers["x-inner-ran"] = "1"
+                return response
+
+        def _capture(request: Request):
+            state_holder.update({"module_name": getattr(request.state, "module_name", None)})
+
+        app = FastAPI()
+
+        @app.get("/admin/base/user/page")
+        def inside_dep(request: Request, _c=Depends(_capture)):  # noqa: ARG001
+            return {"ok": True}
+
+        @app.get("/open/ping")
+        def outside_dep(request: Request, _c=Depends(_capture)):  # noqa: ARG001
+            return {"ok": True}
+
+        app.add_middleware(
+            PrefixScopedMiddleware,
+            middleware_cls=StubModuleMiddleware,
+            prefixes=prefixes,
+            module_name="demo",
+        )
+        return TestClient(app), calls, state_holder
+
+    def test_hit_runs_full_inner_chain_and_injects_module_name(self):
+        client, calls, state = self._build(prefixes=("/admin/base",))
+        resp = client.get("/admin/base/user/page")
+        self.assertEqual(resp.status_code, 200)
+        # 内层完整 __call__ 被走通：dispatch 执行 + 响应经内层回写 header
+        self.assertIn("inner-dispatch", calls)
+        self.assertEqual(resp.headers.get("x-inner-ran"), "1")
+        self.assertEqual(state.get("module_name"), "demo")
+
+    def test_miss_bypasses_inner(self):
+        client, calls, state = self._build(prefixes=("/admin/base",))
+        resp = client.get("/open/ping")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(calls, [])
+        self.assertIsNone(state.get("module_name"))
+        self.assertNotIn("x-inner-ran", resp.headers)
 
 
 if __name__ == "__main__":
