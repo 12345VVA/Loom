@@ -77,6 +77,16 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
             )
         )
 
+    if is_prod and not config.SKIP_INDEX_ENSURE:
+        results.append(
+            StartupCheckResult(
+                "warning",
+                "SKIP_INDEX_ENSURE",
+                "生产环境启动期建索引（裸 CREATE INDEX）可能对大表持写锁阻塞写入，"
+                "建议 SKIP_INDEX_ENSURE=True 并由 DBA 在维护窗口用 CREATE INDEX CONCURRENTLY 建立",
+            )
+        )
+
     return results
 
 

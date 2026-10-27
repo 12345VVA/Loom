@@ -84,6 +84,7 @@ class ProductionHardeningTests(unittest.TestCase):
                 "REDIS_URL": "",
                 "CELERY_BROKER_URL": "",
                 "ADMIN_CSRF_ORIGIN_CHECK_ENABLED": False,
+                "SKIP_INDEX_ENSURE": False,
             }
         )
         results = validate_startup_settings(prod)
@@ -92,6 +93,15 @@ class ProductionHardeningTests(unittest.TestCase):
         self.assertIn("DEFAULT_ADMIN_PASSWORD", keys)
         self.assertIn("CORS_ORIGINS", keys)
         self.assertIn("ADMIN_CSRF_ORIGIN_CHECK_ENABLED", keys)
+        # 评审 F5：生产未跳过启动期建索引 → warning（/health degraded，不阻断）
+        warnings_keys = {item.key for item in results if item.level == "warning"}
+        self.assertIn("SKIP_INDEX_ENSURE", warnings_keys)
+
+    def test_dev_config_no_index_ensure_warning(self):
+        """开发环境（DEBUG=True）不开告警——自动补建索引是开发预期行为。"""
+        dev = settings.model_copy(update={"DEBUG": True, "SKIP_INDEX_ENSURE": False})
+        results = validate_startup_settings(dev)
+        self.assertNotIn("SKIP_INDEX_ENSURE", {item.key for item in results})
 
     def test_production_config_forces_csrf_enabled(self):
         """生产环境（DEBUG=False）model_validator 强制 ADMIN_CSRF_ORIGIN_CHECK_ENABLED=True。"""

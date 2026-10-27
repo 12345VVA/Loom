@@ -31,7 +31,11 @@ class EnsureIndexesTestCase(unittest.TestCase):
         return {ix["name"] for ix in inspect(self.engine).get_indexes(table) if ix.get("name")}
 
     def test_creates_missing_indexes(self):
-        with patch.object(db_module, "engine", self.engine):
+        # SKIP_INDEX_ENSURE 默认已翻转为 True（评审 F5），补建行为须显式打开
+        with (
+            patch.object(db_module.settings, "SKIP_INDEX_ENSURE", False),
+            patch.object(db_module, "engine", self.engine),
+        ):
             _ensure_indexes()
         ai_names = self._index_names("ai_model_call_log")
         # created_at 单列 + 三个复合索引均建立（统计聚合主路径）
@@ -47,7 +51,10 @@ class EnsureIndexesTestCase(unittest.TestCase):
 
     def test_idempotent(self):
         """连续两次调用不报错，索引不重复创建。"""
-        with patch.object(db_module, "engine", self.engine):
+        with (
+            patch.object(db_module.settings, "SKIP_INDEX_ENSURE", False),
+            patch.object(db_module, "engine", self.engine),
+        ):
             _ensure_indexes()
             _ensure_indexes()
         self.assertIn("ix_ai_model_call_log_created_at", self._index_names("ai_model_call_log"))
@@ -67,9 +74,22 @@ class EnsureIndexesTestCase(unittest.TestCase):
             _ensure_indexes()
         self.assertNotIn("ix_ai_model_call_log_created_at", self._index_names("ai_model_call_log"))
         # 对照：关闭 SKIP 后被 drop 的索引补回（开关确实控制补建行为）
-        with patch.object(db_module, "engine", self.engine):
+        with (
+            patch.object(db_module.settings, "SKIP_INDEX_ENSURE", False),
+            patch.object(db_module, "engine", self.engine),
+        ):
             _ensure_indexes()
         self.assertIn("ix_ai_model_call_log_created_at", self._index_names("ai_model_call_log"))
+
+    def test_default_is_skip(self):
+        """类默认值必须停在安全侧（不建索引）；.env 显式打开属开发环境选择。
+
+        直接断言字段类默认值：CI 直接 cp .env.example .env（含 SKIP_INDEX_ENSURE=False），
+        实例值受环境文件影响，断言默认值须绕开环境。
+        """
+        from app.core.config import Settings
+
+        self.assertTrue(Settings.model_fields["SKIP_INDEX_ENSURE"].default)
 
     def test_definitions_use_if_not_exists_pattern(self):
         """所有索引定义命名规范，列片段非空。"""

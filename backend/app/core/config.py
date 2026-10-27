@@ -224,9 +224,10 @@ class Settings(BaseSettings):
     DB_POOL_PRE_PING: bool = True
     DB_POOL_TIMEOUT: int = 5
     # 跳过启动时自动补建索引（CREATE INDEX IF NOT EXISTS）。
-    # Field(index=True) 仅对 create_all 新建表生效，现有库不会自动补索引；_ensure_indexes 为现有库补齐查询关键索引。
-    # 生产 PostgreSQL 大表建议由 DBA 在维护窗口用 CREATE INDEX CONCURRENTLY 建立后置 True，避免启动时锁表。
-    SKIP_INDEX_ENSURE: bool = False
+    # 默认 True（安全侧）：启动期裸 CREATE INDEX 会持写锁阻塞大表写入，生产索引应由 DBA
+    # 在维护窗口用 CREATE INDEX CONCURRENTLY 建立（生产误配由 startup_checks 告警）。
+    # 开发/CI 在 .env 显式设 False 自动补齐查询关键索引（.env.example 已带）。
+    SKIP_INDEX_ENSURE: bool = True
     # anyio 线程池上限：承载 offload 到线程池的同步阻塞调用（同步 DB/HTTP service、同步 def 路由）。
     # Starlette 默认 40，调大以支撑更多并发慢请求；超出此值的请求会排队而非挂起事件循环。
     ASYNC_THREAD_POOL_SIZE: int = 100
