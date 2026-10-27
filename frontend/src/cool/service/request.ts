@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import NProgress from 'nprogress';
 import 'nprogress/nprogress.css';
 import { endsWith } from 'lodash-es';
@@ -8,6 +8,7 @@ import { getDeviceId } from '/@/cool/utils/device';
 import { useBase } from '/$/base';
 import { router } from '../router';
 import { config, isDev } from '/@/config';
+import { createGate } from '/@/cool/utils/concurrency';
 
 // 创建 axios 实例
 const request = axios.create({
@@ -15,6 +16,25 @@ const request = axios.create({
 	// 携带凭证：refreshToken 通过 HttpOnly cookie 传递，需开启跨域凭证
 	withCredentials: true
 });
+
+declare module 'axios' {
+	export interface AxiosRequestConfig {
+		/** 并发闸门豁免位：true 时该请求不排队（EPS 元数据/令牌续期等关键路径用） */
+		skipGate?: boolean;
+	}
+}
+
+// 全站并发闸门（异步审查 P2-3）：在 adapter 层（最接近 socket）排队而非请求拦截器，
+// 避免与下方 token 刷新队列嵌套互等；VITE_MAX_CONCURRENT_REQUESTS 可调，缺省 16
+const requestGate = createGate(Number(import.meta.env.VITE_MAX_CONCURRENT_REQUESTS) || 16);
+const rawAdapter = axios.getAdapter(axios.defaults.adapter);
+
+request.defaults.adapter = async (config): Promise<AxiosResponse> => {
+	if (config.skipGate === true) {
+		return rawAdapter(config);
+	}
+	return requestGate.run(() => rawAdapter(config));
+};
 
 // 配置 NProgress
 NProgress.configure({
@@ -84,8 +104,9 @@ request.interceptors.request.use(
 				req.headers['Authorization'] = user.token;
 			}
 
-			// 忽略特定请求
+			// 忽略特定请求（EPS 元数据/令牌续期为关键路径：跳过 token 校验并豁免并发闸门）
 			if (['eps', 'refreshToken', 'refresh'].some(e => endsWith(req.url, e))) {
+				req.skipGate = true;
 				return req;
 			}
 

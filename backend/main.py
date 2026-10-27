@@ -3,6 +3,7 @@ Loom API - FastAPI 主入口
 """
 
 import asyncio
+import logging
 import os
 import re
 import sys
@@ -70,6 +71,8 @@ configure_logging(
     retention_days=settings.LOG_RETENTION_DAYS,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -110,7 +113,9 @@ async def lifespan(app: FastAPI):
         print(f"\n[启动失败] 模块引导异常：{exc}\n完整堆栈见 logs/error.log\n", file=sys.stderr, flush=True)
         sys.exit(1)
     print(f"{settings.APP_NAME} v{settings.APP_VERSION} 启动中...")
+    watchdog = asyncio.create_task(_event_loop_watchdog(), name="event-loop-watchdog")
     yield
+    watchdog.cancel()
     # 关闭时执行：释放 checkpointer 持有的底层 DB 连接（sqlite3 / psycopg 单例）
     from app.modules.workflow.service.checkpointer import close_checkpointer
 
@@ -196,12 +201,19 @@ def _resolve_upload_access(session: Session, token: str, file_path: str) -> tupl
 
     headers: dict[str, str] = {"X-Content-Type-Options": "nosniff"}
 
-    # IDOR 防护：非超管须为资源归属者。本地存储 storage_url 形如 /uploads/<file_path>，
-    # file_path 已通过 isfile 校验为真实文件（UUID 命名，不含 SQL LIKE 通配符 % _）。
+    # IDOR 防护：非超管须为资源归属者。归属查询等值化（异步审查第二轮 C1）：
+    # 本地 storage_url 恒为 "/uploads/<file_path>"（storage.py _save_with_ext），
+    # S3 开公网域时为 "<S3_PUBLIC_BASE_URL>/uploads/<file_path>"——原 endswith 的
+    # LIKE '%…' 前导通配用不上索引，等值 + in_ 直接吃 storage_url 索引。
+    # fail-closed：存量非规范 storage_url 的合法属主会 403（上库前先跑压测方案
+    # 文档附录的存量核查 SQL）。
+    candidate_urls = {f"/uploads/{file_path}"}
+    if settings.S3_PUBLIC_BASE_URL:
+        candidate_urls.add(f"{settings.S3_PUBLIC_BASE_URL.rstrip('/')}/uploads/{file_path}")
     if not is_super_admin(session, current_user):
         owned = session.exec(
             select(MediaAsset).where(
-                MediaAsset.storage_url.endswith("/" + file_path),
+                MediaAsset.storage_url.in_(candidate_urls),
                 MediaAsset.created_by == current_user.id,
                 MediaAsset.delete_time.is_(None),
             )
@@ -211,7 +223,7 @@ def _resolve_upload_access(session: Session, token: str, file_path: str) -> tupl
 
             art_owned = session.exec(
                 select(WorkflowArtifact).where(
-                    WorkflowArtifact.storage_url.endswith("/" + file_path),
+                    WorkflowArtifact.storage_url == f"/uploads/{file_path}",
                     WorkflowArtifact.user_id == current_user.id,
                 )
             ).first()
@@ -328,11 +340,77 @@ async def health():
     return {"status": status_value, "checks": checks}
 
 
+# kombu redis transport 的优先级队列键后缀（kombu/transport/redis.py：pri 0 用裸队列名，
+# 3/6/9 追加 \x06\x16 分隔）；本项目未设 task_default_priority，消息全部落裸名键
+_KOMBU_PRI_SUFFIXES = ("", "\x06\x163", "\x06\x166", "\x06\x169")
+
+
+def _collect_runtime_gauges() -> None:
+    """采集进程内运行时 gauge（异步审查·可观测性）：池水位/线程池水位/队列积压。
+
+    纯内存读取或单次 Redis pipeline（无逐键 RTT），由 /metrics 路由经 to_thread
+    调用。队列积压口径 = ΣLLEN(优先级键) + unacked——acks_late 下已投递在跑的任务
+    在 unacked hash 里（跨队列共享），单列一条不摊入各队列。Redis 不可用时跳过
+    （复用 cache_service 降级语义）。"""
+    from anyio.to_thread import current_default_thread_limiter
+
+    from app.framework.middleware.metrics import set_gauge
+
+    pool = engine.pool
+    set_gauge("db_pool_checkedout", pool.checkedout())
+    set_gauge("db_pool_overflow", pool.overflow())
+
+    limiter = current_default_thread_limiter()
+    set_gauge("thread_pool_total", float(limiter.total_tokens))
+    set_gauge("thread_pool_borrowed", float(limiter.borrowed_tokens))
+    set_gauge("thread_pool_tasks_waiting", limiter.statistics().tasks_waiting)
+
+    from app.celery_app import celery_app
+    from app.modules.base.service.cache_service import get_redis_client
+
+    client = get_redis_client()
+    if client is None:
+        return
+    queue_names = [queue.name for queue in celery_app.conf.task_queues]
+    pipe = client.pipeline(transaction=False)
+    for name in queue_names:
+        for suffix in _KOMBU_PRI_SUFFIXES:
+            pipe.llen(f"{name}{suffix}")
+    pipe.hlen("unacked")
+    results = pipe.execute()
+    width = len(_KOMBU_PRI_SUFFIXES)
+    for index, name in enumerate(queue_names):
+        depth = sum(results[index * width : (index + 1) * width])
+        set_gauge("celery_queue_depth", depth, queue=name)
+    set_gauge("celery_unacked_total", float(results[-1]))
+
+
+async def _event_loop_watchdog(interval: float = 1.0, threshold: float = 0.5) -> None:
+    """事件循环阻塞看门狗（异步审查·可观测性）：每 interval 秒醒一次，sleep 实际
+    迟超 threshold 即说明 loop 被同步阻塞——uvicorn 单 loop 曾是全站单点（P0-8 已
+    多进程化缓解），该信号是「全站变卡」的最直接证据。gauge 记录最近一次滞后秒数。"""
+    loop = asyncio.get_running_loop()
+    from app.framework.middleware.metrics import set_gauge
+
+    while True:
+        start = loop.time()
+        await asyncio.sleep(interval)
+        lag = (loop.time() - start) - interval
+        if lag > threshold:
+            logger.warning(
+                "事件循环疑似阻塞：sleep(%0.0fms) 实际迟滞 %0.0fms（同步 IO 直跑 loop / CPU 密集任务？）",
+                interval * 1000,
+                lag * 1000,
+            )
+        set_gauge("event_loop_lag_seconds", max(0.0, lag))
+
+
 @app.get("/metrics")
 async def metrics():
     """Prometheus 文本指标（通过 METRICS_ENABLED 控制记录）。"""
     if not settings.METRICS_ENABLED:
         return PlainTextResponse("# metrics disabled\n", media_type="text/plain")
+    await asyncio.to_thread(_collect_runtime_gauges)
     return PlainTextResponse(render_metrics(), media_type="text/plain")
 
 

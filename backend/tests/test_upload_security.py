@@ -12,10 +12,12 @@ import sys
 import unittest
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from helpers import make_test_engine
+from sqlmodel import Session, SQLModel
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -118,6 +120,71 @@ class MagicBytesValidationTests(unittest.TestCase):
 
     def test_json_file_skips_magic_check(self):
         self.assertEqual(validate_upload(b'{"key": "value"}', "data.json"), ".json")
+
+
+class UploadsOwnershipEqualityTests(unittest.TestCase):
+    """C1（异步审查第二轮）：归属查询等值化——本地/S3 公网形态命中、脏数据 fail-closed 403。
+
+    只测归属查询语义（本批改动面）：鉴权与文件 stat 全部打桩。
+    """
+
+    def setUp(self):
+        import app.modules.media.model.media as media_models  # noqa: F401 注册表收录
+
+        self.engine = make_test_engine()
+        SQLModel.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+        # addCleanup LIFO：先注册 dispose（后跑）、后注册 close（先跑），
+        # 避免 dispose 先关 StaticPool 底层连接、session.close 回滚时报 closed database
+        self.addCleanup(self.engine.dispose)
+        self.addCleanup(self.session.close)
+
+    def _seed_asset(self, storage_url: str, owner_id: int) -> None:
+        from app.modules.media.model.media import MediaAsset
+
+        self.session.add(MediaAsset(storage_url=storage_url, created_by=owner_id, status="success"))
+        self.session.commit()
+
+    def _call(self, owner_id: int, file_path: str):
+        from main import _resolve_upload_access
+
+        owner = SimpleNamespace(id=owner_id, is_active=True, is_super_admin=False)
+        with (
+            patch("main.get_user_from_download_token", return_value=owner),
+            patch("main.is_super_admin", return_value=False),
+            patch("os.path.isfile", return_value=True),
+        ):
+            return _resolve_upload_access(self.session, "token", file_path)
+
+    def test_local_exact_match_owned(self):
+        """属主 + 本地规范 URL 等值命中（200 语义，返回文件路径与 nosniff 头）。"""
+        self._seed_asset("/uploads/20261027/abc.png", owner_id=1)
+        full_path, headers = self._call(owner_id=1, file_path="20261027/abc.png")
+        # Windows abspath 产生反斜杠，归一后断言
+        self.assertTrue(full_path.replace("\\", "/").endswith("20261027/abc.png"))
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+
+    def test_s3_public_variant_match_when_configured(self):
+        """S3 公网域配置时，公网 URL 形态同样等值命中（in_ 双分支）。"""
+        from app.core.config import settings
+
+        self._seed_asset("https://cdn.test/uploads/20261027/s3.png", owner_id=1)
+        with patch.object(settings, "S3_PUBLIC_BASE_URL", "https://cdn.test"):
+            full_path, _ = self._call(owner_id=1, file_path="20261027/s3.png")
+        self.assertTrue(full_path.replace("\\", "/").endswith("20261027/s3.png"))
+
+    def test_dirty_legacy_url_fails_closed(self):
+        """存量非规范 storage_url：等值未命中 → 403（fail-closed，不放大权限）。"""
+        self._seed_asset("/legacy/old-storage/abc.png", owner_id=1)
+        with self.assertRaises(HTTPException) as ctx:
+            self._call(owner_id=1, file_path="20261027/abc.png")
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_non_owner_403(self):
+        self._seed_asset("/uploads/20261027/abc.png", owner_id=2)
+        with self.assertRaises(HTTPException) as ctx:
+            self._call(owner_id=1, file_path="20261027/abc.png")
+        self.assertEqual(ctx.exception.status_code, 403)
 
 
 class UploadsAuthRouteTests(unittest.TestCase):
