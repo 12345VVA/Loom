@@ -281,6 +281,13 @@ class FrameworkAlignmentTests(unittest.TestCase):
         self.assertEqual(get_page.json()["data"]["pagination"]["size"], post_page.json()["data"]["pagination"]["size"])
         self.assertIn("list", get_page.json()["data"])
 
+        # camelCase 排序冒烟（观察项修复）：前端列 prop 形态的 order 参数归一到白名单
+        camel_page = self.client.get(
+            "/admin/dict/type/page", headers=headers, params={"page": 1, "size": 5, "order": "createTime", "sort": "asc"}
+        )
+        self.assertEqual(camel_page.status_code, 200)
+        self.assertIn("list", camel_page.json()["data"])
+
         get_list = self.client.get("/admin/dict/type/list", headers=headers)
         post_list = self.client.post("/admin/dict/type/list", headers=headers, json={})
         self.assertEqual(get_list.status_code, 200)

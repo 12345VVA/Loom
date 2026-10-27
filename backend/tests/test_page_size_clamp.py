@@ -11,7 +11,53 @@ import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.framework.controller_meta import CrudQuery, QueryConfig, _build_crud_query  # noqa: E402
+from app.framework.controller_meta import (  # noqa: E402
+    CrudQuery,
+    QueryConfig,
+    _build_crud_query,
+    _camel_to_snake,
+    _normalize_order_param,
+)
+
+
+class OrderParamNormalizationTests(unittest.TestCase):
+    """排序参数三级归一（观察项修复）：camelCase 列 prop → snake 白名单成员。
+
+    直配优先（语义别名歧义自动消解）→ 全局语义别名反查 → 机械 camel→snake；
+    都不中原样返回（F7 fail-closed 语义不变，落 fallback）。
+    """
+
+    def test_direct_snake_match_passthrough(self):
+        self.assertEqual(_normalize_order_param("created_at", ("created_at", "updated_at")), "created_at")
+
+    def test_semantic_alias_resolved(self):
+        self.assertEqual(_normalize_order_param("createTime", ("created_at",)), "created_at")
+
+    def test_semantic_alias_order_num(self):
+        self.assertEqual(_normalize_order_param("orderNum", ("sort_order",)), "sort_order")
+
+    def test_mechanical_camel_to_snake(self):
+        self.assertEqual(_normalize_order_param("sortOrder", ("sort_order",)), "sort_order")
+
+    def test_unknown_kept_fallback_semantics(self):
+        """白名单外原样返回：apply_sort 匹配失败落 fallback（不抛不误配）。"""
+        self.assertEqual(_normalize_order_param("hacker_col", ("created_at",)), "hacker_col")
+
+    def test_empty_order_fields_passthrough(self):
+        """F7：未配置白名单时归一不介入（apply_sort 忽略显式排序）。"""
+        self.assertEqual(_normalize_order_param("createTime", ()), "createTime")
+
+    def test_camel_to_snake(self):
+        self.assertEqual(_camel_to_snake("createTime"), "create_time")
+        self.assertEqual(_camel_to_snake("created_at"), "created_at")
+
+    def test_build_crud_query_integrates_normalization(self):
+        query = _build_crud_query(
+            request=None,
+            config=QueryConfig(default_order="created_at", order_fields=("created_at", "name")),
+            order="createTime",
+        )
+        self.assertEqual(query.order, "created_at")
 
 
 def _build_page_query(body: dict) -> "object":

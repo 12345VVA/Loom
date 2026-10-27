@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import re
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -15,6 +16,7 @@ from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_session
+from app.framework.api.naming import FIELD_ALIASES
 from app.framework.models.schemas import DeleteRequest, PageResult
 from app.framework.module_config import PermissionConfig
 from app.framework.router.route_meta import CoolRouteMeta, TagTypes, cool_tag, get_route_meta
@@ -798,6 +800,41 @@ def _build_service_kwargs(meta: CoolControllerMeta, action_name: str, **availabl
     return kwargs
 
 
+@functools.cache
+def _reverse_alias_map() -> dict[str, str]:
+    """前端字段名 → 数据库列名的反查表（camelCase 排序归一用）。
+
+    setdefault 先到先得：语义别名互撞时保留首个（FIELD_ALIASES 声明序即权威序）。
+    """
+    reverse: dict[str, str] = {}
+    for snake, front in FIELD_ALIASES.items():
+        reverse.setdefault(front, snake)
+    return reverse
+
+
+def _camel_to_snake(name: str) -> str:
+    """camelCase → snake_case 机械逆变换（to_camel 的逆，处理非语义别名）。"""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def _normalize_order_param(order: str | None, order_fields: tuple[str, ...]) -> str | None:
+    """排序参数归一（观察项：前端列 prop 为 camelCase，列名是 snake_case）。
+
+    三级解析，白名单（F7）约束不变——归一只改变「白名单成员如何被匹配」，
+    不扩大可排序列集合：
+    1. snake 直配（语义别名歧义自动消解：真实列直配先命中）；
+    2. 全局语义别名反查（createTime→created_at / orderNum→sort_order）；
+    3. 机械 camel→snake；
+    都不中则原样返回，apply_sort 白名单不匹配 → 落 fallback（fail-closed 语义不变）。
+    """
+    if not order or not order_fields or order in order_fields:
+        return order
+    for candidate in (_reverse_alias_map().get(order), _camel_to_snake(order)):
+        if candidate and candidate in order_fields:
+            return candidate
+    return order
+
+
 def _build_crud_query(
     *,
     request: Request | None,
@@ -873,7 +910,7 @@ def _build_crud_query(
         page=page,
         size=size,
         keyword=keyword,
-        order=order or config.default_order,
+        order=_normalize_order_param(order or config.default_order, config.order_fields),
         sort=(sort or config.default_sort or "desc").lower(),
         keyword_fields=config.keyword_like_fields or config.keyword_fields,
         order_fields=config.order_fields,
