@@ -41,7 +41,9 @@ class H1RecursionDegradeTestCase(unittest.TestCase):
         """H1 性能防护：连续方括号病态输入不得长时间占住 worker，应快速返回 None。
 
         修复前该路径对每个位置都 raw_decode、每次递归到上限才抛，'['*100000 需数十秒；
-        加尝试上限后应稳定在毫秒级（此断言用 2s 宽限，只防防护被移除导致的量级回归）。
+        加尝试上限后应稳定在毫秒级。断言阈值按「量级护栏」取 10s：只防防护被移除
+        （届时为数十秒，必然击穿），不锁定精确耗时——CI 共享 runner 抖动实测可达
+        2.3s（本地毫秒级），2s 宽限在 CI 属环境噪音（2026-10-27 排障）。
         """
         import time
 
@@ -52,7 +54,7 @@ class H1RecursionDegradeTestCase(unittest.TestCase):
                 result = ws._extract_first_json(raw)
                 elapsed = time.perf_counter() - start
                 self.assertIsNone(result)
-                self.assertLess(elapsed, 2.0, f"n={n} 耗时 {elapsed:.2f}s，性能防护可能被移除")
+                self.assertLess(elapsed, 10.0, f"n={n} 耗时 {elapsed:.2f}s，性能防护可能被移除")
 
 
 class M1ExtractCandidateTestCase(unittest.TestCase):
