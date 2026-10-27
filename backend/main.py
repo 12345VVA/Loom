@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import secrets
 import sys
 import warnings
 
@@ -407,9 +408,18 @@ async def _event_loop_watchdog(interval: float = 1.0, threshold: float = 0.5) ->
 
 
 @app.get("/metrics")
-async def metrics():
-    """Prometheus 文本指标（通过 METRICS_ENABLED 控制记录）。"""
-    if not settings.METRICS_ENABLED:
+async def metrics(request: Request):
+    """Prometheus 文本指标（METRICS_ENABLED 控制记录，METRICS_TOKEN 控制访问）。
+
+    令牌 fail-closed（评审 F4）：未配置令牌时恒 404——端点会暴露全站接口清单、
+    调用量与延迟，是攻击者的免费侦察面，不允许"开了开关就裸奔"。未授权与令牌错误
+    返回同一 404，不区分"端点存在但没权限"。
+    """
+    if not settings.METRICS_ENABLED or not settings.METRICS_TOKEN:
+        return PlainTextResponse("# metrics disabled\n", media_type="text/plain")
+    auth_header = request.headers.get("authorization", "")
+    provided = auth_header[7:] if auth_header.startswith("Bearer ") else request.query_params.get("token", "")
+    if not secrets.compare_digest(provided, settings.METRICS_TOKEN):
         return PlainTextResponse("# metrics disabled\n", media_type="text/plain")
     # anyio limiter 绑定事件循环，必须在本协程取好再传入工作线程
     from anyio.to_thread import current_default_thread_limiter

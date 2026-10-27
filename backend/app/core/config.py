@@ -209,6 +209,10 @@ class Settings(BaseSettings):
     RESPONSE_ENVELOPE_MAX_BYTES: int = 20 * 1024 * 1024
     MODULE_LOAD_STRICT: bool = True
     METRICS_ENABLED: bool = False
+    # /metrics 访问令牌（评审 F4）：端点无独立鉴权体系，靠本令牌 fail-closed——
+    # 未配置时即使 METRICS_ENABLED=True 也恒 404（不暴露端点存在）；配置后请求须带
+    # Authorization: Bearer <token>。供 Prometheus 等 scrape 端配置同名 token。
+    METRICS_TOKEN: str = ""
     API_VERSION_PREFIX_ENABLED: bool = False
     API_VERSION_PREFIX: str = "/api/v1"
 

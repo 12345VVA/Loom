@@ -87,6 +87,16 @@ def validate_startup_settings(config: Settings = settings) -> list[StartupCheckR
             )
         )
 
+    if config.METRICS_ENABLED and not config.METRICS_TOKEN:
+        results.append(
+            StartupCheckResult(
+                "warning",
+                "METRICS_TOKEN",
+                "METRICS_ENABLED=True 但未配置 METRICS_TOKEN，/metrics 将恒返回 404（令牌 fail-closed），"
+                "监控侧将无法抓取指标",
+            )
+        )
+
     return results
 
 
