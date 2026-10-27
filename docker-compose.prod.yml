@@ -92,7 +92,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c 'celery -A app.celery_app worker --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,workflow,workflow.eval,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video,media.mirror,agent.approval'
+    # WORKER_CONCURRENCY 留空/0 = Celery 默认（CPU 核数）；设置时同时作为
+    # --concurrency 与批处理并发联动公式（settings.WORKER_CONCURRENCY）的分母——
+    # 单一环境变量双消费，保证一致性（异步审查 P0-5/P2-5）
+    command: sh -c 'CONC=""; if [ -n "$$WORKER_CONCURRENCY" ] && [ "$$WORKER_CONCURRENCY" != "0" ]; then CONC="--concurrency=$$WORKER_CONCURRENCY"; fi; exec celery -A app.celery_app worker $CONC --loglevel="$${LOG_LEVEL:-info}" -Q celery,default,workflow,workflow.eval,ai.chat,ai.image,ai.embedding,ai.rerank,ai.audio,ai.video,media.mirror,agent.approval'
     # 镜像内置 HEALTHCHECK 打的是 uvicorn /health，对 worker 无意义——
     # 覆盖为 celery 自身的 worker 存活探针
     healthcheck:

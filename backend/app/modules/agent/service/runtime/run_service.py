@@ -183,6 +183,7 @@ from datetime import datetime as _dt
 from langchain_core.messages import HumanMessage as _HumanMessage
 from langchain_core.messages import ToolMessage as _ToolMessage
 
+from app.framework.middleware.metrics import sse_connection_closed, sse_connection_opened
 from app.modules.agent.model.agent import (
     AGENT_EXECUTION_MODE_WORKFLOW,
     AGENT_RUN_CANCELLED,
@@ -507,6 +508,8 @@ class AgentRunService:
 
             pump_thread = threading.Thread(target=_pump, name=f"agent-sse-pump-{trace_token[:8]}", daemon=True)
             pump_thread.start()
+            # SSE 活跃连接计数（异步审查·可观测性）：入口 +1 / finally -1 严格配对
+            sse_connection_opened("agent")
             try:
                 yield sse_frame("run_started", {"traceToken": trace_token, "sessionId": session_row.id})
                 while True:
@@ -522,6 +525,7 @@ class AgentRunService:
                 # 客户端断开（GeneratorExit）/流异常中断也必须注销，否则 handle
                 # 泄漏——stop_run 的注册表将长期残留已死连接的令牌
                 _unregister_handle(handle)
+                sse_connection_closed("agent")
                 # 停泵：向源队列注入哨兵唤醒阻塞中的 get（泵线程见 None 即退出）；
                 # 若泵已因 worker 的 close 哨兵退出，此处多投的 None 滞留在无界队列中，无副作用
                 handle.event_queue.put(None)

@@ -192,6 +192,7 @@ celery_app.conf.update(
         "task.dispatch_due_tasks": {"queue": "default"},
         "task.execute_system_task": {"queue": "default"},
         "task.clean_expired_logs": {"queue": "default"},
+        "task.report_worker_runtime": {"queue": "default"},
         # E4 HITL 审批巡检（设计附录 task-celery 对齐：agent.approval 队列）
         "agent.approval.sweep_expiry": {"queue": "agent.approval"},
     },
@@ -202,6 +203,12 @@ celery_app.conf.beat_schedule = {
     # 每分钟扫描启用且到期的数据库任务
     "dispatch-due-system-tasks": {
         "task": "task.dispatch_due_tasks",
+        "schedule": 60.0,
+    },
+    # 每分钟 worker 运行时水位上报（异步审查·可观测性）：worker 无 /metrics，
+    # 以 INFO 日志输出本进程 anyio 线程池水位 + broker 队列积压（含 unacked）
+    "report-worker-runtime": {
+        "task": "task.report_worker_runtime",
         "schedule": 60.0,
     },
     # 每天凌晨2点清理过期日志

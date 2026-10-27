@@ -26,6 +26,7 @@ from typing import Any
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.framework.middleware.metrics import sse_connection_closed, sse_connection_opened
 from app.modules.ai.model.ai import (
     AiAudioRequest,
     AiChatRequest,
@@ -243,6 +244,8 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
         tool_calls: list[dict[str, Any]] | None = None
         request_options = request_options or {}
 
+        # SSE 活跃连接计数（异步审查·可观测性）：入口 +1 / finally -1 严格配对
+        sse_connection_opened("aiapi")
         try:
             await asyncio.to_thread(self._begin_invocation, st, current_user, task_id)
             yield _sse_event(
@@ -433,6 +436,7 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
                 )
                 yield _sse_event({"event": "error", "message": f"模型调用失败: {exc}", "status": 400})
         finally:
+            sse_connection_closed("aiapi")
             if st.invocation is not None and not st.closed:
                 await asyncio.to_thread(
                     st.governance.finish,

@@ -19,6 +19,7 @@ from app.framework.controller_meta import (
     QueryConfig,
     QueryFieldConfig,
 )
+from app.framework.middleware.metrics import sse_connection_closed, sse_connection_opened
 from app.framework.router.route_meta import Get, Post
 from app.modules.base.model.auth import User
 from app.modules.base.service.security_service import get_current_user
@@ -250,6 +251,9 @@ class WorkflowInstanceController(BaseController):
         from app.modules.workflow.service.event_bus import subscribe_events
 
         async def event_generator():
+            # SSE 活跃连接计数（异步审查·可观测性）：入口 +1 / finally -1 严格配对，
+            # 覆盖 CancelledError（客户端断开）与异常收流路径
+            sse_connection_opened("workflow")
             try:
                 yield f"event: connect\ndata: {json.dumps({'status': 'connected'})}\n\n"
 
@@ -273,6 +277,8 @@ class WorkflowInstanceController(BaseController):
                 # return——流正常 EOF，前端走既有指数退避重连 + info/logs 轮询对齐状态
                 frame = json.dumps({"type": "stream_error", "message": str(exc)[:300]}, ensure_ascii=False)
                 yield "event: stream_error" + chr(10) + "data: " + frame + chr(10) + chr(10)
+            finally:
+                sse_connection_closed("workflow")
 
         # 反代理防缓冲三件套与 AI 侧 model.py 对齐：Nginx 默认 proxy_buffering on，
         # 缺 X-Accel-Buffering: no 时节点状态事件会攒到缓冲满才刷出（prod compose 拓扑必现）

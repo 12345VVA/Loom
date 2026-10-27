@@ -252,3 +252,47 @@ def clean_expired_logs():
     except Exception as exc:
         logger.error("日志清理任务执行失败", exc_info=exc)
         return {"success": False, "error": str(exc)}
+
+
+# kombu redis transport 优先级键后缀（同 main.py 口径；pri 0 裸名，3/6/9 加 \x06\x16 分隔）
+_KOMBU_PRI_SUFFIXES = ("", "\x06\x163", "\x06\x166", "\x06\x169")
+
+
+@celery_app.task(name="task.report_worker_runtime")
+def report_worker_runtime() -> dict:
+    """worker 进程运行时水位上报（异步审查·可观测性，beat 每 60s）。
+
+    worker 没有 /metrics HTTP 面，水位以 INFO 日志输出供采集/巡检：本进程 anyio
+    线程池（AI 节点 to_thread 与批处理并发共占）+ broker 队列积压（ΣLLEN 优先级键；
+    unacked = acks_late 下已投递在跑的任务，跨队列共享，单列不摊入）。"""
+    from anyio.to_thread import current_default_thread_limiter
+
+    from app.modules.base.service.cache_service import get_redis_client
+
+    limiter = current_default_thread_limiter()
+    stats = limiter.statistics()
+    summary: dict = {
+        "threadPool": {
+            "total": int(limiter.total_tokens),
+            "borrowed": limiter.borrowed_tokens,
+            "tasksWaiting": stats.tasks_waiting,
+        }
+    }
+    client = get_redis_client()
+    if client is None:
+        logger.info("worker 运行时水位（Redis 不可用，跳过队列深度）：%s", summary)
+        return summary
+    queue_names = [queue.name for queue in celery_app.conf.task_queues]
+    pipe = client.pipeline(transaction=False)
+    for name in queue_names:
+        for suffix in _KOMBU_PRI_SUFFIXES:
+            pipe.llen(f"{name}{suffix}")
+    pipe.hlen("unacked")
+    results = pipe.execute()
+    width = len(_KOMBU_PRI_SUFFIXES)
+    summary["queueDepth"] = {
+        name: sum(results[index * width : (index + 1) * width]) for index, name in enumerate(queue_names)
+    }
+    summary["unacked"] = results[-1]
+    logger.info("worker 运行时水位：%s", summary)
+    return summary
