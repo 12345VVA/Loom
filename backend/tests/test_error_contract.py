@@ -274,5 +274,58 @@ class SseGeneratorCleanupTests(unittest.TestCase):
         self.assertIsNone(_get_handle("leak-test-token"))
 
 
+class RequestIdSanitizationTests(unittest.TestCase):
+    """X-Request-ID 采信门槛（评审 F13）：可打印 ASCII、限长 64，否则重新生成。
+
+    单点收敛四个下游问题：exception_guard ascii 编码崩溃、500 追踪号原样反射、
+    控制台 log injection、sys_security_log（无长度列）落库失败。
+    直接 ASGI 调用注入原始头字节（httpx 客户端会拒非 ASCII 头值，测不到）。
+    """
+
+    def _run(self, header_value: bytes) -> str:
+        captured: dict = {}
+
+        async def inner_app(scope, receive, send):
+            captured["rid"] = scope["state"]["request_id"]
+
+        async def receive():
+            return {"type": "http.request"}
+
+        async def send(message):
+            pass
+
+        scope = {"type": "http", "path": "/", "method": "GET", "headers": [(b"x-request-id", header_value)]}
+        asyncio.run(RequestIdMiddleware(inner_app)(scope, receive, send))
+        return captured["rid"]
+
+    def test_valid_uuid_passthrough(self):
+        rid = "3f9d2c8e5a1b4c7d9e0f1a2b3c4d5e6f"
+        self.assertEqual(self._run(rid.encode()), rid)
+
+    def test_gateway_trace_shape_allowed(self):
+        rid = "gw.trace-01_2026"
+        self.assertEqual(self._run(rid.encode()), rid)
+
+    def test_oversized_regenerated(self):
+        out = self._run(b"a" * 200)
+        self.assertNotEqual(out, "a" * 200)
+        self.assertLessEqual(len(out), 64)
+
+    def test_non_ascii_regenerated_and_always_ascii(self):
+        out = self._run("ÿ-latin1".encode("latin-1"))
+        out.encode("ascii")  # 生成值恒 ASCII（exception_guard 的 ascii 编码不再崩）
+        self.assertNotEqual(out, "ÿ-latin1")
+
+    def test_newline_injection_regenerated(self):
+        out = self._run(b"abc\n2026-01-01 INFO fake-log-line")
+        self.assertNotIn("\n", out)
+        self.assertNotIn("fake", out)
+
+    def test_missing_generates(self):
+        out = self._run(b"")
+        self.assertTrue(out)
+        self.assertLessEqual(len(out), 64)
+
+
 if __name__ == "__main__":
     unittest.main()

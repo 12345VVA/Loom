@@ -4,11 +4,18 @@
 
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.logging import request_id_ctx, request_method_ctx, request_path_ctx
+
+# 采信客户端 X-Request-ID 的门槛（评审 F13）：可打印 ASCII、限长 64。
+# 全 ASCII 消 exception_guard 的 ascii 编码崩溃与响应头回显风险；禁换行封
+# 控制台 log injection；限长防日志膨胀与 sys_security_log（无长度列）落库失败。
+# 不匹配一律重新生成——「透传合法上游 id」契约仅对 uuid/网关 trace 形态开放。
+_REQUEST_ID_RE = re.compile(r"^[0-9a-zA-Z._~-]{1,64}$")
 
 
 def _header_value(scope: Scope, name: bytes) -> str:
@@ -38,7 +45,8 @@ class RequestIdMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request_id = _header_value(scope, b"x-request-id") or uuid4().hex
+        raw_request_id = _header_value(scope, b"x-request-id")
+        request_id = raw_request_id if _REQUEST_ID_RE.fullmatch(raw_request_id) else uuid4().hex
         state = scope.setdefault("state", {})
         state["request_id"] = request_id
         token_id = request_id_ctx.set(request_id)
