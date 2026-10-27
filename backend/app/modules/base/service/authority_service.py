@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+from dataclasses import dataclass
 from fnmatch import fnmatch
 from typing import Any
 
@@ -698,9 +699,27 @@ def canonicalize_admin_path(request_path: str) -> str:
     return normalized
 
 
-def _cache_anonymous_user(request: Request) -> User:
+@dataclass(frozen=True)
+class AnonymousUser:
+    """匿名请求的轻量当前用户（评审 F15）：不实例化 ORM。
+
+    匿名对象仅存在于 request.state（`get_current_user` 对 id in (None, 0) 一律
+    401，永不进入 DI 返回值）。此前用 ``User(id=0)`` 伪造 ORM——若被下游当真实
+    归属写入/查询会产生脏数据，且 ORM 实例携带 session 语义。
+    """
+
+    id: int = 0
+    username: str = "anonymous"
+    full_name: str = "anonymous"
+    password_hash: str = ""
+    is_active: bool = True
+    is_super_admin: bool = False
+    department_id: int | None = None
+
+
+def _cache_anonymous_user(request: Request) -> AnonymousUser:
     anonymous = getattr(request.state, "current_user", None)
     if anonymous is None:
-        anonymous = User(id=0, username="anonymous", full_name="anonymous", password_hash="", is_active=True)
+        anonymous = AnonymousUser()
         request.state.current_user = anonymous
     return anonymous

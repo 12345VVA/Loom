@@ -8,7 +8,7 @@ import functools
 import inspect
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request
 from sqlmodel import Session
@@ -21,8 +21,17 @@ from app.framework.router.route_meta import CoolRouteMeta, TagTypes, cool_tag, g
 from app.framework.runtime import get_current_user
 
 
+@runtime_checkable
 class CurrentUserProtocol(Protocol):
-    """当前用户对象的鸭子形态（DI 委托注入，具体属性由 base 的 User ORM 满足）。"""
+    """当前用户对象的鸭子形态（DI 委托注入，具体属性由 base 的 User ORM 满足）。
+
+    runtime_checkable：非 ORM 的轻量实现（如 AnonymousUser）可结构化校验（评审 F15）。
+    """
+
+    id: int
+    username: str
+    is_super_admin: bool
+    department_id: int | None
 
     id: int
     username: str

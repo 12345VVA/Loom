@@ -430,5 +430,23 @@ class FrameworkAlignmentTests(unittest.TestCase):
         self.assertIn("typeId", dict_info["pageQueryOp"]["fieldEq"])
 
 
+class AnonymousUserTests(unittest.TestCase):
+    """匿名当前用户去 ORM 化（评审 F15）。"""
+
+    def test_anonymous_is_lightweight_and_protocol_complete(self):
+        from app.framework.controller_meta import CurrentUserProtocol
+        from app.modules.base.model.auth import User
+        from app.modules.base.service.authority_service import AnonymousUser
+
+        anon = AnonymousUser()
+        self.assertNotIsInstance(anon, User)  # 不再伪造 ORM 实体
+        # CurrentUserProtocol 四字段齐备（CRUD endpoint 注解依赖）
+        for field in ("id", "username", "is_super_admin", "department_id"):
+            self.assertTrue(hasattr(anon, field), field)
+        self.assertEqual(anon.id, 0)  # get_current_user 闸门依赖 id in (None, 0) → 401
+        self.assertFalse(anon.is_super_admin)
+        self.assertIsInstance(anon, CurrentUserProtocol)  # Protocol 运行时可 isinstance（结构化）
+
+
 if __name__ == "__main__":
     unittest.main()
