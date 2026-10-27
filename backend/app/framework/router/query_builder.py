@@ -219,11 +219,15 @@ class QueryBuilder:
             # 使用 OR 连接：既能看自己的，也能看拥有权限的部门的
             return statement.where(or_(*filters))
 
-        # 兜底：如果没有任何确定的过滤条件但模型有字段，可能需要返回空集或默认隔离到本人
-        if current_user_id is not None and user_id_col is not None:
-            return statement.where(user_id_col == current_user_id)
-
-        return statement
+        # fail-closed（评审 F6）：模型有归属列却无法落地任何过滤（典型：只有
+        # department_id 且 self_only 部门集为空——sys_user 正是这种模型，修复前
+        # 受限用户打开用户管理页即看到全量用户），必须炸响而非静默全量。
+        # 两列皆无的「非隔离资源」模型已在上方提前放行，不在此列。
+        raise RuntimeError(
+            f"数据权限无法落地：模型 {self.model.__name__} 无 user_id 列且 allowed_department_ids 为空"
+            f"（self_only={getattr(data_scope, 'self_only', '?')}），拒绝返回全量；"
+            "请为模型补归属列或调整 DataScope 配置"
+        )
 
     def _coerce_value(self, column, value):
         """尝试将字符串值转换为列对应的 Python 类型"""

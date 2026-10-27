@@ -53,12 +53,22 @@ class PlainRow(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class DeptOnlyRow(SQLModel, table=True):
+    """只有 department_id 的模型（sys_user 同构，评审 F6 fail-closed 专用夹具）。"""
+
+    __tablename__ = "test_framework_dept_only_row"
+
+    id: int | None = Field(default=None, primary_key=True)
+    department_id: int | None = Field(default=None, index=True)
+    name: str
+
+
 # 夹具表仅供 query builder 单元测试在隔离 engine 上使用，从全局 metadata 摘除，
 # 避免被 app lifespan 的 init_db()（真实数据库如 PG 上的 create_all）带建到生产库。
 # 注：MetaData.remove 在 SQLAlchemy 2.0 已 deprecated，但用于测试夹具隔离仍是最简方式。
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
-    for _fixture_table in (ScopedRow.__table__, PlainRow.__table__):
+    for _fixture_table in (ScopedRow.__table__, PlainRow.__table__, DeptOnlyRow.__table__):
         SQLModel.metadata.remove(_fixture_table)
 
 
@@ -159,6 +169,35 @@ class FrameworkAlignmentTests(unittest.TestCase):
 
             self.assertEqual(len(session.exec(super_statement).all()), 2)
             self.assertEqual(len(session.exec(plain_statement).all()), 2)
+
+    def test_query_builder_data_scope_fail_closed_on_dept_only_model(self):
+        """评审 F6：模型只有 department_id 且 self_only（部门集为空）必须炸响，不得静默全量。
+
+        sys_user 正是这种模型——修复前受限用户（无 all/department 角色部门）打开
+        用户管理页即可看到全量用户，是现网越权而非潜伏缺陷。
+        """
+        engine = make_test_engine()
+        SQLModel.metadata.create_all(engine, tables=[DeptOnlyRow.__table__])
+        with Session(engine) as session:
+            session.add_all([DeptOnlyRow(department_id=10, name="a"), DeptOnlyRow(department_id=20, name="b")])
+            session.commit()
+
+            with self.assertRaises(RuntimeError):
+                QueryBuilder(DeptOnlyRow).apply_all(
+                    select(DeptOnlyRow),
+                    data_scope=DataScopeContext(allowed_department_ids=frozenset(), self_only=True),
+                    current_user_id=1,
+                )
+
+            # 部门级角色（部门集非空）不受影响：照常按部门过滤
+            dept_statement = QueryBuilder(DeptOnlyRow).apply_all(
+                select(DeptOnlyRow),
+                data_scope=DataScopeContext(allowed_department_ids=frozenset({10}), self_only=False),
+                current_user_id=1,
+            )
+            names = {row.name for row in session.exec(dept_statement).all()}
+
+        self.assertEqual(names, {"a"})
 
     def test_query_builder_keyword_filters_sort_and_page_boundaries(self):
         engine = make_test_engine()
