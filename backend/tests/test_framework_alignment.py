@@ -248,6 +248,29 @@ class FrameworkAlignmentTests(unittest.TestCase):
 
         self.assertEqual([row.name for row in rows], ["new", "old"])
 
+    def test_query_builder_empty_order_fields_ignores_explicit_order(self):
+        """评审 F7 fail-closed：未配置 order_fields 时显式 order 不生效、落 created_at fallback。
+
+        原实现「空即全放行」，漏配控制器即敞开任意列排序（盲侧信道/全表排序 DoS）。
+        """
+        engine = make_test_engine()
+        SQLModel.metadata.create_all(engine, tables=[PlainRow.__table__])
+        now = datetime.now(UTC)
+        with Session(engine) as session:
+            session.add_all(
+                [
+                    PlainRow(name="old", created_at=now - timedelta(days=1)),
+                    PlainRow(name="new", created_at=now),
+                ]
+            )
+            session.commit()
+
+            query = CrudQuery(order="name", sort="asc", order_fields=())
+            rows = session.exec(QueryBuilder(PlainRow, query).apply_all(select(PlainRow))).all()
+
+        # 未按 name asc 排序：落 created_at desc 兜底
+        self.assertEqual([row.name for row in rows], ["new", "old"])
+
     def test_crud_page_and_list_support_get_and_post(self):
         headers = self._login_headers()
 
