@@ -75,5 +75,32 @@ curl -fsS "$BASE_URL/api/admin/base/comm/person" \
   || fail "person 接口异常"
 echo "OK   /admin/base/comm/person → 鉴权链路通"
 
+# 6. 容器健康矩阵（异步审查第二轮）：prod compose 固定 container_name；
+#    backend/worker/beat 有 healthcheck 断言 healthy，web 无 healthcheck 断言 running
+if command -v docker >/dev/null 2>&1; then
+  for c in loom-prod-backend loom-prod-celery-worker loom-prod-celery-beat; do
+    state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$c" 2>/dev/null) \
+      || fail "容器 $c 不存在（docker inspect；本步骤面向 prod compose 部署）"
+    [ "$state" = "healthy" ] || fail "容器 $c 健康状态异常: $state"
+  done
+  web_state=$(docker inspect -f '{{.State.Status}}' loom-prod-web 2>/dev/null) || fail "容器 loom-prod-web 不存在"
+  [ "$web_state" = "running" ] || fail "容器 loom-prod-web 状态异常: $web_state"
+  echo "OK   容器健康矩阵 → backend/worker/beat healthy，web running"
+fi
+
+# 7. metrics 采样（可选：传入 --with-metrics；需服务端 METRICS_ENABLED=true，
+#    异步审查·可观测性的七组指标键必须齐备，防止「开关开了但指标没接上」的假绿）
+WITH_METRICS=0
+for arg in "$@"; do [ "$arg" = "--with-metrics" ] && WITH_METRICS=1; done
+if [ "$WITH_METRICS" = "1" ]; then
+  metrics=$(curl -fsS "$BASE_URL/api/metrics") || fail "/api/metrics 不可达（检查服务端 METRICS_ENABLED 与 nginx /api/ 路由）"
+  for key in loom_db_pool_checkedout loom_thread_pool_borrowed loom_sse_connections_active \
+    loom_celery_queue_depth loom_celery_unacked_total loom_event_loop_lag_seconds \
+    loom_metric_series_overflow_total; do
+    echo "$metrics" | grep -q "^$key" || fail "metrics 缺少 $key（服务端代码与本脚本版本不匹配？）"
+  done
+  echo "OK   metrics → 七组指标键齐备"
+fi
+
 echo
 echo "=== 部署冒烟全部通过：$BASE_URL ==="
