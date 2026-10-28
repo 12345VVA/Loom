@@ -395,7 +395,7 @@ class ContextBudgetTestCase(unittest.TestCase):
                 tool_schema_tokens=100,
                 injected_context="",
                 history=[],
-                current_input="字" * 20000,  # 远超 6000 预算
+                current_input="字" * 20000,  # 远超 16000 预算
             )
 
     def test_truncates_oldest_units_first(self):
