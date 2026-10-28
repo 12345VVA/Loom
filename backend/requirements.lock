@@ -19,7 +19,7 @@ colorama==0.4.6
 coverage==7.16.2
 cryptography==50.0.2
 distro==1.9.0
-dnspython==2.8.0
+dnspython==2.9.0
 email-validator==2.3.0
 fastapi==0.142.2
 greenlet==3.5.6
