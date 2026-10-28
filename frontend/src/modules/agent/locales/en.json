@@ -11,7 +11,7 @@
   "agent.profile.description": "Description",
   "agent.profile.disable": "Disable",
   "agent.profile.enable": "Enable",
-  "agent.profile.enableMemory": "Enable Context Memory",
+  "agent.profile.enableMemory": "Enable Context Memory (injects recent in-session dialogue)",
   "agent.profile.enabled": "Enabled",
   "agent.profile.enabledOff": "Disabled",
   "agent.profile.enabledOn": "Enabled",

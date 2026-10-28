@@ -11,7 +11,7 @@
   "agent.profile.description": "描述",
   "agent.profile.disable": "停用",
   "agent.profile.enable": "启用",
-  "agent.profile.enableMemory": "启用上下文记忆",
+  "agent.profile.enableMemory": "启用上下文记忆（注入本会话近期对话）",
   "agent.profile.enabled": "启停",
   "agent.profile.enabledOff": "已停用",
   "agent.profile.enabledOn": "已启用",
