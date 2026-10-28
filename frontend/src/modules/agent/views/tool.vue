@@ -55,7 +55,12 @@
 				<el-table-column :label="t('agent.tool.contractHash')" width="110">
 					<template #default="{ row }">{{ (row.contractHash || '').slice(0, 8) }}</template>
 				</el-table-column>
-				<el-table-column prop="createTime" :label="t('agent.profile.createTime')" width="165" />
+				<el-table-column
+					prop="createTime"
+					:label="t('agent.profile.createTime')"
+					width="165"
+					:formatter="(row: ToolVersionRow) => fmtTime(row.createTime)"
+				/>
 			</el-table>
 		</el-drawer>
 	</cl-crud>
@@ -65,6 +70,7 @@
 import { onMounted, ref } from 'vue';
 import { useCrud, useTable } from '@cool-vue/crud';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import { useCool } from '/@/cool';
 
@@ -77,6 +83,7 @@ type ToolRow = {
 	id: number;
 	toolName: string;
 	displayName?: string;
+	description?: string;
 	level?: string;
 	status?: boolean;
 	sourceType?: string;
@@ -96,6 +103,17 @@ const levelOptions = [
 	{ label: t('agent.tool.levelReversibleWrite'), value: 'reversible_write', type: 'warning' },
 	{ label: t('agent.tool.levelDangerousWrite'), value: 'dangerous_write', type: 'danger' }
 ];
+
+// 来源（声明枚举）：builtin=代码内置收集；mcp 预留（E5 MCP 立项后接入）
+const sourceOptions = [
+	{ label: t('agent.tool.sourceBuiltin'), value: 'builtin', type: 'success' },
+	{ label: t('agent.tool.sourceMcp'), value: 'mcp', type: 'warning' }
+];
+
+// 时间列统一格式化（后端出 ISO 8601 原始串）
+function fmtTime(value?: string) {
+	return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-';
+}
 
 // 注册表状态（degraded 可见性）：启动收集失败时置位；sync 失败只 warning 不置位
 const registry = ref<{ degraded: boolean; error?: string; toolCount: number }>({
@@ -128,7 +146,13 @@ const Table = useTable({
 	columns: [
 		{ type: 'index', label: '#', width: 50 },
 		{ prop: 'toolName', label: t('agent.tool.toolName'), minWidth: 170 },
-		{ prop: 'displayName', label: t('agent.tool.displayName'), minWidth: 140 },
+		{ prop: 'displayName', label: t('agent.tool.displayName'), width: 120, flex: false },
+		{
+			prop: 'description',
+			label: t('agent.tool.description'),
+			minWidth: 220,
+			showOverflowTooltip: true
+		},
 		{
 			prop: 'level',
 			label: t('agent.tool.level'),
@@ -143,8 +167,21 @@ const Table = useTable({
 			width: 90,
 			flex: false
 		},
-		{ prop: 'sourceType', label: t('agent.tool.sourceType'), width: 100, flex: false },
-		{ prop: 'createTime', label: t('agent.profile.createTime'), width: 165, flex: false },
+		{
+			prop: 'sourceType',
+			label: t('agent.tool.sourceType'),
+			width: 100,
+			flex: false,
+			dict: sourceOptions,
+			dictColor: true
+		},
+		{
+			prop: 'createTime',
+			label: t('agent.profile.createTime'),
+			width: 165,
+			flex: false,
+			formatter: (row: ToolRow) => fmtTime(row.createTime)
+		},
 		{
 			type: 'op',
 			width: 100,
