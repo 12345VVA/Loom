@@ -54,7 +54,7 @@ const Table = useTable({
 			dictColor: true
 		},
 		{ label: t('标注人'), prop: 'annotatorUserId', width: 100 },
-		{ label: t('创建时间'), prop: 'createTime', minWidth: 170, sortable: 'desc' }
+		{ label: t('创建时间'), prop: 'createTime', minWidth: 170, sortable: 'desc', component: { name: 'cl-date-text' } }
 	]
 });
 

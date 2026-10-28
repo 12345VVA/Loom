@@ -252,10 +252,10 @@
 				{{ detail.row.lastAccessedAt || '-' }}
 			</el-descriptions-item>
 			<el-descriptions-item :label="$t('写入时间')">
-				{{ detail.row.createTime }}
+				<cl-date-text :model-value="detail.row.createTime" />
 			</el-descriptions-item>
 			<el-descriptions-item :label="$t('更新时间')">
-				{{ detail.row.updateTime }}
+				<cl-date-text :model-value="detail.row.updateTime" />
 			</el-descriptions-item>
 			<el-descriptions-item v-if="detail.row.credentialHits?.length" :span="2">
 				<template #label>

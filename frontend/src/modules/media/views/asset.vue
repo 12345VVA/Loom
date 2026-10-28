@@ -486,7 +486,7 @@ const Table = useTable<Eps.asset>({
 		{ label: t('大小'), prop: 'sizeBytes', minWidth: 100 },
 		{ label: 'MD5', prop: 'md5', minWidth: 220, showOverflowTooltip: true },
 		{ label: t('提示词'), prop: 'prompt', minWidth: 220, showOverflowTooltip: true },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{ type: 'op', width: 350, buttons: ['slot-op'] }
 	]
 });

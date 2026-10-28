@@ -213,7 +213,7 @@ const Table = useTable({
 		{ label: t('来源模块'), prop: 'sourceModule', width: 130 },
 		{ label: t('发送状态'), prop: 'sendStatus', width: 110 },
 		{ label: t('撤回'), prop: 'isRecalled', width: 90 },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
 			width: 250,

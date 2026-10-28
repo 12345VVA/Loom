@@ -108,7 +108,8 @@ const Table = useTable({
 			prop: 'createTime',
 			label: t('请求时间'),
 			minWidth: 170,
-			sortable: 'desc'
+			sortable: 'desc',
+			component: { name: 'cl-date-text' }
 		}
 	]
 });

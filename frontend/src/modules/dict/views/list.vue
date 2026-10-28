@@ -221,13 +221,15 @@ const Table = useTable({
 			label: t('创建时间'),
 			prop: 'createTime',
 			sortable: 'custom',
-			minWidth: 170
+			minWidth: 170,
+			component: { name: 'cl-date-text' }
 		},
 		{
 			label: t('更新时间'),
 			prop: 'updateTime',
 			sortable: 'custom',
-			minWidth: 170
+			minWidth: 170,
+			component: { name: 'cl-date-text' }
 		},
 		{
 			type: 'op',

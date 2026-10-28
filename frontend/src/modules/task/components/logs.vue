@@ -82,7 +82,8 @@ const Table = useTable({
 		{
 			label: t('执行时间'),
 			prop: 'createTime',
-			minWidth: 170
+			minWidth: 170,
+			component: { name: 'cl-date-text' }
 		}
 	]
 });

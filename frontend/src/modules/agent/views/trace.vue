@@ -121,7 +121,7 @@ const Table = useTable({
 		{ prop: 'modelCalls', label: t('agent.trace.modelCalls'), width: 90, flex: false },
 		{ prop: 'toolRounds', label: t('agent.trace.toolRounds'), width: 90, flex: false },
 		{ prop: 'durationMs', label: t('agent.trace.duration'), width: 100, flex: false },
-		{ prop: 'createTime', label: t('agent.profile.createTime'), width: 165, flex: false },
+		{ prop: 'createTime', label: t('agent.profile.createTime'), width: 165, flex: false, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
 			width: 90,

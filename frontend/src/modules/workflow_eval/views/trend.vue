@@ -20,7 +20,11 @@
 		<el-card v-if="runs.length" style="margin-top: 12px">
 			<el-table :data="runs" border size="small">
 				<el-table-column prop="versionLabel" :label="$t('版本号')" min-width="120" />
-				<el-table-column prop="createTime" :label="$t('创建时间')" min-width="160" />
+				<el-table-column prop="createTime" :label="$t('创建时间')" min-width="160">
+				<template #default="{ row }">
+					<cl-date-text :model-value="row.createTime" />
+				</template>
+			</el-table-column>
 				<el-table-column prop="passRate" :label="$t('通过率')" width="100">
 					<template #default="{ row }">{{ ((row.passRate ?? 0) * 100).toFixed(1) }}%</template>
 				</el-table-column>

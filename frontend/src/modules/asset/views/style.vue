@@ -84,7 +84,7 @@ const Table = useTable({
 			dict: statusOptions.map((o) => ({ ...o, type: statusColors[o.value] })),
 			dictColor: true
 		},
-		{ label: t('创建时间'), prop: 'createTime', minWidth: 160, sortable: 'desc' },
+		{ label: t('创建时间'), prop: 'createTime', minWidth: 160, sortable: 'desc', component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
 			width: 300,

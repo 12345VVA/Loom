@@ -112,7 +112,7 @@ const Table = useTable({
 		{ label: t('名称'), prop: 'name', minWidth: 160 },
 		{ label: t('默认级别'), prop: 'defaultLevel', width: 120 },
 		{ label: t('启用'), prop: 'isActive', width: 100 },
-		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170 },
+		{ label: t('创建时间'), prop: 'createTime', sortable: 'desc', minWidth: 170, component: { name: 'cl-date-text' } },
 		{ type: 'op', buttons: ['edit', 'delete'] }
 	]
 });

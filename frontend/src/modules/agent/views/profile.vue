@@ -84,7 +84,11 @@
 		<el-drawer v-model="versionVisible" :title="t('agent.version.title')" size="45%" destroy-on-close>
 			<el-table :data="versions" size="small">
 				<el-table-column prop="version" :label="t('agent.version.no')" width="70" />
-				<el-table-column prop="createTime" :label="t('agent.version.time')" width="170" />
+				<el-table-column prop="createTime" :label="t('agent.version.time')" width="170">
+					<template #default="{ row }">
+						<cl-date-text :model-value="row.createTime" />
+					</template>
+				</el-table-column>
 				<el-table-column prop="snapshotHash" :label="t('agent.version.hash')">
 					<template #default="{ row }">
 						<span class="hash-text">{{ (row.snapshotHash || '').slice(0, 12) }}</span>
@@ -212,7 +216,7 @@ const Table = useTable({
 			dictColor: true,
 			flex: false
 		},
-		{ label: t('agent.profile.createTime'), prop: 'createTime', width: 160, flex: false },
+		{ label: t('agent.profile.createTime'), prop: 'createTime', width: 160, flex: false, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
 			width: 320,

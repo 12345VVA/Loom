@@ -65,7 +65,7 @@ const Table = useTable({
 		{ label: t('描述'), prop: 'description', minWidth: 200, showOverflowTooltip: true },
 		{ label: t('用例数'), prop: 'itemsCount', width: 90 },
 		{ label: t('标签'), prop: 'tags', minWidth: 120, showOverflowTooltip: true },
-		{ label: t('创建时间'), prop: 'createTime', minWidth: 170, sortable: 'desc' },
+		{ label: t('创建时间'), prop: 'createTime', minWidth: 170, sortable: 'desc', component: { name: 'cl-date-text' } },
 		{ type: 'op', buttons: ['edit', 'delete', 'slot-import'], width: 220 }
 	]
 });

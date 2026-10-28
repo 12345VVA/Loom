@@ -122,7 +122,7 @@ const Table = useTable({
 		{ prop: 'approver', label: t('agent.approval.approver'), width: 90, flex: false },
 		{ prop: 'expiresAt', label: t('agent.approval.expiresAt'), width: 165, flex: false },
 		{ prop: 'resultSummary', label: t('agent.approval.result'), minWidth: 160, showOverflowTooltip: true },
-		{ prop: 'createTime', label: t('agent.profile.createTime'), width: 165, flex: false },
+		{ prop: 'createTime', label: t('agent.profile.createTime'), width: 165, flex: false, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
 			width: 170,

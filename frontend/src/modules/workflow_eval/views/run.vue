@@ -334,7 +334,7 @@ const Table = useTable({
 		{ label: t('平均分'), prop: 'avgScore', width: 90 },
 		{ label: t('P95(ms)'), prop: 'p95LatencyMs', width: 90 },
 		{ label: t('总数'), prop: 'total', width: 70 },
-		{ label: t('创建时间'), prop: 'createTime', minWidth: 170, sortable: 'desc' },
+		{ label: t('创建时间'), prop: 'createTime', minWidth: 170, sortable: 'desc', component: { name: 'cl-date-text' } },
 		{ type: 'op', buttons: ['slot-detail', 'slot-cancel'], width: 140 }
 	]
 });

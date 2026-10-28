@@ -149,13 +149,15 @@ const Table = useTable({
 			prop: 'createTime',
 			label: t('创建时间'),
 			sortable: 'desc',
-			minWidth: 170
+			minWidth: 170,
+			component: { name: 'cl-date-text' }
 		},
 		{
 			prop: 'updateTime',
 			label: t('更新时间'),
 			sortable: 'custom',
-			minWidth: 170
+			minWidth: 170,
+			component: { name: 'cl-date-text' }
 		},
 		{
 			type: 'op'
