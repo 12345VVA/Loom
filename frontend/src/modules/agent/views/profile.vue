@@ -3,16 +3,47 @@
 		<cl-row>
 			<cl-refresh-btn />
 			<cl-add-btn :label="t('agent.profile.add')" />
-			<cl-multi-delete-btn />
 			<cl-filter :label="t('agent.profile.status')">
 				<cl-select :options="statusOptions" prop="status" :width="120" clearable />
 			</cl-filter>
 			<cl-flex1 />
+			<!-- 批量删除降权：智能体低频删除，后移出主操作梯队（靠右与搜索区同侧） -->
+			<cl-multi-delete-btn />
 			<cl-search-key :placeholder="t('agent.profile.searchPlaceholder')" />
 		</cl-row>
 
 		<cl-row>
 			<cl-table ref="Table">
+				<!-- 名称 + 描述合并（描述灰色副文本，省一列） -->
+				<template #column-name="{ scope }">
+					<div class="name-cell">
+						<div class="cell-main">{{ scope.row.name }}</div>
+						<div v-if="scope.row.description" class="cell-sub">{{ scope.row.description }}</div>
+					</div>
+				</template>
+				<!-- 渠道显示名（code 灰色副文本） -->
+				<template #column-modelProfileCode="{ scope }">
+					<div class="name-cell">
+						<div class="cell-main">{{ channelLabelOf(scope.row.modelProfileCode) }}</div>
+						<div v-if="scope.row.modelProfileCode" class="cell-sub">{{ scope.row.modelProfileCode }}</div>
+					</div>
+				</template>
+				<!-- 工具白名单：数量徽标 + 悬停明细（全量铺开曾把行高撑爆） -->
+				<template #column-tools="{ scope }">
+					<el-popover v-if="(scope.row.tools || []).length" placement="top" trigger="hover" width="300">
+						<template #reference>
+							<el-tag type="info" effect="plain" class="tools-badge">
+								{{ t('agent.profile.toolsCount', { n: scope.row.tools.length }) }}
+							</el-tag>
+						</template>
+						<div class="tools-list">
+							<div v-for="tool in scope.row.tools" :key="tool" class="tools-item">
+								{{ tool }}
+							</div>
+						</div>
+					</el-popover>
+					<span v-else>-</span>
+				</template>
 				<template #slot-op="{ scope }">
 					<el-button
 						v-permission="serviceAgent.permission?.debugChat"
@@ -32,15 +63,6 @@
 						{{ t('agent.profile.publish') }}
 					</el-button>
 					<el-button
-						v-if="scope.row.status === 'published'"
-						v-permission="serviceAgent.permission?.rollback"
-						text
-						type="info"
-						@click="openVersions(scope.row)"
-					>
-						{{ t('agent.profile.versions') }}
-					</el-button>
-					<el-button
 						v-permission="serviceAgent.permission?.update"
 						text
 						:type="scope.row.enabled ? 'danger' : 'primary'"
@@ -48,6 +70,40 @@
 					>
 						{{ scope.row.enabled ? t('agent.profile.disable') : t('agent.profile.enable') }}
 					</el-button>
+					<!-- 低频操作收敛进「更多」（版本/编辑/删除），操作列不再换行 -->
+					<el-dropdown
+						v-permission="{
+							or: [
+								serviceAgent.permission?.rollback,
+								serviceAgent.permission?.update,
+								serviceAgent.permission?.delete
+							]
+						}"
+						trigger="click"
+						@command="(cmd: string) => onMore(cmd, scope.row)"
+					>
+						<el-button text type="info">
+							{{ t('agent.profile.more') }}
+							<el-icon class="el-icon--right"><arrow-down /></el-icon>
+						</el-button>
+						<template #dropdown>
+							<el-dropdown-menu>
+								<el-dropdown-item
+									v-if="scope.row.status === 'published'"
+									v-permission="serviceAgent.permission?.rollback"
+									command="versions"
+								>
+									{{ t('agent.profile.versions') }}
+								</el-dropdown-item>
+								<el-dropdown-item v-permission="serviceAgent.permission?.update" command="edit">
+									{{ t('agent.profile.edit') }}
+								</el-dropdown-item>
+								<el-dropdown-item v-permission="serviceAgent.permission?.delete" command="delete">
+									{{ t('agent.profile.delete') }}
+								</el-dropdown-item>
+							</el-dropdown-menu>
+						</template>
+					</el-dropdown>
 				</template>
 			</cl-table>
 		</cl-row>
@@ -117,7 +173,7 @@ import { h, onMounted, ref } from 'vue';
 import { useCrud, useTable, useUpsert } from '@cool-vue/crud';
 import { useI18n } from 'vue-i18n';
 import { ElIcon, ElMessage, ElMessageBox, ElTooltip } from 'element-plus';
-import { InfoFilled } from '@element-plus/icons-vue';
+import { InfoFilled, ArrowDown } from '@element-plus/icons-vue';
 import { useCool } from '/@/cool';
 import ChatWorkspace from '../components/chat-workspace.vue';
 
@@ -176,6 +232,33 @@ onMounted(async () => {
 const debugVisible = ref(false);
 const debugProfileId = ref<number | null>(null);
 
+// 渠道显示名（渠道选项异步加载，未命中回落 code）
+type ChannelOption = { label?: string; value?: string };
+type ProfileRow = {
+	id: number;
+	name: string;
+	status?: string;
+	description?: string;
+	modelProfileCode?: string;
+	tools?: string[];
+};
+
+function channelLabelOf(code?: string) {
+	if (!code) return '-';
+	return channelOptions.value.find((c: ChannelOption) => c.value === code)?.label || code;
+}
+
+// 「更多」下拉：版本/编辑/删除（edit/delete 走 crud 实侧行方法，自带确认）
+function onMore(cmd: string, row: ProfileRow) {
+	if (cmd === 'versions') {
+		openVersions(row);
+	} else if (cmd === 'edit') {
+		Crud.value?.rowEdit(row);
+	} else if (cmd === 'delete') {
+		Crud.value?.rowDelete(row);
+	}
+}
+
 // 版本列表
 const versionVisible = ref(false);
 const versions = ref<any[]>([]);
@@ -191,15 +274,9 @@ const Table = useTable({
 	columns: [
 		{ type: 'selection', width: 60 },
 		{ type: 'index', label: '#', width: 50 },
-		{ label: t('agent.profile.name'), prop: 'name', minWidth: 140 },
-		{ label: t('agent.profile.description'), prop: 'description', minWidth: 180, showOverflowTooltip: true },
-		{ label: t('agent.profile.modelProfile'), prop: 'modelProfileCode', minWidth: 120 },
-		{
-			label: t('agent.profile.tools'),
-			prop: 'tools',
-			minWidth: 150,
-			formatter: (row: any) => (Array.isArray(row.tools) ? row.tools.join('、') : row.tools || '-')
-		},
+		{ label: t('agent.profile.name'), prop: 'name', minWidth: 220 },
+		{ label: t('agent.profile.modelProfile'), prop: 'modelProfileCode', width: 170, flex: false },
+		{ label: t('agent.profile.tools'), prop: 'tools', width: 120, flex: false },
 		{
 			label: t('agent.profile.status'),
 			prop: 'status',
@@ -219,9 +296,9 @@ const Table = useTable({
 		{ label: t('agent.profile.createTime'), prop: 'createTime', width: 160, flex: false, component: { name: 'cl-date-text' } },
 		{
 			type: 'op',
-			width: 320,
+			width: 230,
 			fixed: 'right',
-			buttons: ['slot-op', 'edit', 'delete']
+			buttons: ['slot-op']
 		}
 	],
 	contextMenu: ['refresh', 'check', 'edit', 'delete']
@@ -432,5 +509,34 @@ async function onToggle(row: any) {
 .hash-text {
 	font-family: monospace;
 	font-size: 12px;
+}
+
+.name-cell {
+	.cell-main {
+		line-height: 20px;
+	}
+
+	.cell-sub {
+		font-size: 12px;
+		color: var(--el-text-color-secondary);
+		line-height: 18px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+}
+
+.tools-badge {
+	cursor: default;
+}
+
+.tools-list {
+	max-height: 220px;
+	overflow: auto;
+
+	.tools-item {
+		line-height: 22px;
+		font-size: 12px;
+	}
 }
 </style>

@@ -71,7 +71,7 @@
   },
   "src/modules/agent/views/profile.vue": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 16
+      "count": 15
     }
   },
   "src/modules/agent/views/trace.vue": {
