@@ -73,6 +73,10 @@ class _ScriptedChatModel:
         self.kwargs = kwargs
         self._runtime_service = None
 
+    def bind_tools(self, tools, **kwargs):
+        # 生产装配无条件接线（工具 schema 下发）；桩无需绑定状态，适配为透传
+        return self
+
     def generate(self, messages, **kwargs):
         msgs = messages[0] if messages and isinstance(messages[0], list) else messages
         last = msgs[-1] if msgs else None

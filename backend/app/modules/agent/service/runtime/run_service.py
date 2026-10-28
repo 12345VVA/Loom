@@ -242,7 +242,7 @@ class AgentRunService:
             tool = get_tool(name)
             if tool is None:
                 raise HTTPException(status_code=400, detail=f"调试台：工具 {name} 未注册")
-            snapshot_tools[name] = {"level": tool.level, "parameters": tool.parameters}
+            snapshot_tools[name] = {"level": tool.level, "parameters": tool.parameters, "description": tool.description}
         return {
             "model_profile_code": profile.model_profile_code,
             "system_prompt": profile_fields.get("systemPrompt"),
@@ -265,7 +265,16 @@ class AgentRunService:
         execution = payload.get("execution") or {}
         execution_mode = execution.get("mode") or "chat"
         tools = payload.get("toolResourceSnapshots") or []
-        snapshot_tools = {t["toolName"]: {"level": t["level"], "parameters": t["parameters"]} for t in tools}
+        # description 随快照下发模型（工具链路专题 P0-1 伴随修复：无描述的工具选择准确率大幅下降）；
+        # 旧快照（E12 前）无该键，.get 容错为空串
+        snapshot_tools = {
+            t["toolName"]: {
+                "level": t["level"],
+                "parameters": t["parameters"],
+                "description": t.get("description") or "",
+            }
+            for t in tools
+        }
         max_tokens = int((payload.get("profile") or {}).get("maxTokens") or 4000)
         # E15 动态重校验：解析链最小窗口未知或不足预算 → run 拒绝（渠道档案可能发布后被修改）。
         # 编排模式（E17）不参与模型执行——跳过窗口断言（渠道仅作标识）。
@@ -671,14 +680,8 @@ class AgentRunService:
         from sqlmodel import Session as SqlSession
 
         from app.core.database import engine as app_engine
-        from app.modules.agent.service.runtime import prompt_render
-        from app.modules.agent.service.runtime.graph import ApprovalSuspension, GraphDeps, build_agent_graph
-        from app.modules.agent.service.runtime.memory_service import (
-            ContextBudgetError,
-            estimate_tokens,
-        )
-        from app.modules.agent.service.runtime.model_wrapper import LoomChatModel
-        from app.modules.ai.service.runtime_service import AiModelRuntimeService
+        from app.modules.agent.service.runtime.graph import ApprovalSuspension
+        from app.modules.agent.service.runtime.memory_service import ContextBudgetError
 
         handle: RunHandle = job["handle"]
         payload = job["payload"]
@@ -712,77 +715,19 @@ class AgentRunService:
                         release_run_lock(job["session_id"], handle.trace_token)
                     return
                 try:
-                    with timed("worker.wiring", trace_token=handle.trace_token):
-                        runtime = AiModelRuntimeService(db)
-                        budget = RunBudget(max_tool_rounds=int(payload["max_tool_rounds"]))
-                        job["_budget"] = budget  # 终态落库读 tool_calls 累计
-                        model = LoomChatModel(
-                            model_profile_code=_profile_code_of(job),
-                            temperature=payload["temperature"],
-                            max_tokens=payload["max_tokens"],
-                            profile_source=job["run_mode"],
-                            timeout_seconds=handle.deadline.per_request_timeout(payload["timeout_seconds"]),
-                            min_context_window=payload.get("context_window_min"),  # E15：回退路径窗口约束
-                        )
-                        model._runtime_service = runtime  # noqa: SLF001 —— 单 run 装配（实例纪律）
-                        model._caller = _SimpleUser(job["user"])  # noqa: SLF001
-                        model._task_id = trace.id  # noqa: SLF001 —— R5 task_id 审计通道
-
-                        tool_ctx = _ToolCtx(
-                            db=db,
-                            user_id=job["user"]["id"],
-                            user_name=job["user"]["name"],
-                            is_super_admin=job["user"]["is_super_admin"],
-                            trace_id=trace.id,
-                            run_mode=job["run_mode"],
-                        )
-
-                        def log_tool_call(**kwargs):
-                            db.add(AgentToolCallLog(trace_id=trace.id, **kwargs))
-                            db.commit()
-
-                        executor = ToolExecutor(
-                            snapshot_tools=payload["snapshot_tools"],
-                            bound_names=payload["bound_names"],
-                            context=tool_ctx,
-                            should_cancel=should_cancel,
-                            log_tool_call=log_tool_call,
-                            on_event=handle.emit,
-                        )
-                    with timed("worker.prompt_render", trace_token=handle.trace_token):
-                        system_message = prompt_render.render(
-                            payload["system_prompt"], {"user_name": job["user"]["name"]}
-                        )
-
-                    def validate_guardrails(messages):
-                        from langchain_core.messages import SystemMessage as _Sys
-
-                        if (
-                            not messages
-                            or not isinstance(messages[0], _Sys)
-                            or not prompt_render.is_guardrails_intact(messages[0].content)
-                        ):
-                            raise RuntimeError("护栏完整性校验失败（fail-close）")
-
-                    with timed("worker.graph_build", trace_token=handle.trace_token):
-                        deps = GraphDeps(
-                            model=model,
-                            tool_executor=executor,
-                            budget=budget,
-                            system_message=system_message,
-                            tool_schema_tokens=estimate_tokens(
-                                json.dumps(list(payload["snapshot_tools"].values()), ensure_ascii=False)
-                            ),
-                            max_tool_rounds=int(payload["max_tool_rounds"]),
-                            context_token_budget=int(payload.get("context_token_budget") or 0)
-                            or None,  # E15 动态输入预算（None 走常数下限）
-                            stream_answer=bool(job.get("stream_answer")),  # E1：仅 SSE 会话启用
-                            guardrails_validator=validate_guardrails,
-                            on_event=handle.emit,
-                            should_cancel=should_cancel,
-                            trace_token=handle.trace_token,
-                        )
-                        graph = build_agent_graph(deps)
+                    bundle = _build_runtime(
+                        db=db,
+                        job=job,
+                        payload=payload,
+                        trace=trace,
+                        handle=handle,
+                        budget=RunBudget(max_tool_rounds=int(payload["max_tool_rounds"])),
+                        should_cancel=should_cancel,
+                        model_profile_code=_profile_code_of(job),
+                        render_user_name=job["user"].get("name") or "",
+                        stream_answer=bool(job.get("stream_answer")),  # E1：仅 SSE 会话启用
+                    )
+                    graph = bundle.graph
                     with timed(
                         "worker.graph_invoke",
                         level=logging.INFO,
@@ -1185,10 +1130,7 @@ class AgentRunService:
         from app.core.database import engine as app_engine
         from app.modules.agent.model.agent import AGENT_APPROVAL_EXPIRED
         from app.modules.agent.service import approval_service
-        from app.modules.agent.service.runtime.graph import GraphDeps, build_agent_graph
         from app.modules.agent.service.runtime.memory_service import ContextBudgetError, truncate_tool_result
-        from app.modules.agent.service.runtime.model_wrapper import LoomChatModel
-        from app.modules.ai.service.runtime_service import AiModelRuntimeService
 
         handle = RunHandle(
             trace_id=job["trace_id"],
@@ -1210,75 +1152,23 @@ class AgentRunService:
                 trace: AgentRunTrace = db.get(AgentRunTrace, job["trace_id"])
                 session_row: AgentSession = db.get(AgentSession, job["session_id"])
                 try:
-                    runtime = AiModelRuntimeService(db)
                     budget = RunBudget(max_tool_rounds=int(payload["max_tool_rounds"]))
                     budget.model_calls = 1  # 挂起前产生 tool_calls 的那次模型调用已消耗
                     budget.tool_rounds = 0  # 挂起轮未执行（预检先于计数）；组处置随本轮执行计
-                    job["_budget"] = budget
-                    model = LoomChatModel(
-                        model_profile_code=payload.get("model_profile_code") or "",
-                        temperature=payload["temperature"],
-                        max_tokens=payload["max_tokens"],
-                        profile_source=job["run_mode"],
-                        timeout_seconds=handle.deadline.per_request_timeout(payload["timeout_seconds"]),
-                        min_context_window=payload.get("context_window_min"),
-                    )
-                    model._runtime_service = runtime  # noqa: SLF001
-                    model._caller = _SimpleUser(job["user"])  # noqa: SLF001
-                    model._task_id = trace.id  # noqa: SLF001
-
-                    tool_ctx = _ToolCtx(
+                    bundle = _build_runtime(
                         db=db,
-                        user_id=job["user"]["id"],
-                        user_name=job["user"].get("name") or "",
-                        is_super_admin=bool(job["user"].get("is_super_admin")),
-                        trace_id=trace.id,
-                        run_mode=job["run_mode"],
-                    )
-
-                    def log_tool_call(**kwargs):
-                        db.add(AgentToolCallLog(trace_id=trace.id, **kwargs))
-                        db.commit()
-
-                    executor = ToolExecutor(
-                        snapshot_tools=payload["snapshot_tools"],
-                        bound_names=payload["bound_names"],
-                        context=tool_ctx,
-                        should_cancel=should_cancel,
-                        log_tool_call=log_tool_call,
-                        on_event=handle.emit,
-                    )
-
-                    def validate_guardrails(messages):
-                        from langchain_core.messages import SystemMessage as _Sys
-
-                        from app.modules.agent.service.runtime import prompt_render
-
-                        if (
-                            not messages
-                            or not isinstance(messages[0], _Sys)
-                            or not prompt_render.is_guardrails_intact(messages[0].content)
-                        ):
-                            raise RuntimeError("护栏完整性校验失败（fail-close）")
-
-                    from app.modules.agent.service.runtime import prompt_render
-
-                    system_message = prompt_render.render(payload["system_prompt"], {"user_name": ""})
-                    deps = GraphDeps(
-                        model=model,
-                        tool_executor=executor,
+                        job=job,
+                        payload=payload,
+                        trace=trace,
+                        handle=handle,
                         budget=budget,
-                        system_message=system_message,
-                        tool_schema_tokens=_estimate_schema_tokens(payload),
-                        max_tool_rounds=int(payload["max_tool_rounds"]),
-                        context_token_budget=int(payload.get("context_token_budget") or 0) or None,
-                        stream_answer=False,  # 恢复轮非 SSE 直连，最终答案整段下发
-                        guardrails_validator=validate_guardrails,
-                        on_event=handle.emit,
                         should_cancel=should_cancel,
-                        trace_token=handle.trace_token,
+                        model_profile_code=payload.get("model_profile_code") or "",
+                        render_user_name="",  # 恢复轮非交互上下文（历史口径）
+                        stream_answer=False,  # 恢复轮非 SSE 直连，最终答案整段下发
                     )
-                    graph = build_agent_graph(deps)
+                    executor = bundle.executor
+                    graph = bundle.graph
 
                     group_id = job["group_id"]
                     rows = {r.tool_call_id: r for r in approval_service.group_rows(db, trace.id, group_id)}
@@ -1651,6 +1541,123 @@ def _estimate_schema_tokens(payload: dict) -> int:
     from app.modules.agent.service.runtime.memory_service import estimate_tokens
 
     return estimate_tokens(json.dumps(list(payload["snapshot_tools"].values()), ensure_ascii=False))
+
+
+@dataclass
+class RuntimeBundle:
+    """_build_runtime 的装配产物（run / E4 恢复轮共用；架构审查批 1 收口装配重复）。"""
+
+    model: Any
+    executor: Any
+    budget: RunBudget
+    graph: Any
+
+
+def _build_runtime(
+    *,
+    db: Any,
+    job: dict,
+    payload: dict,
+    trace: AgentRunTrace,
+    handle: RunHandle,
+    budget: RunBudget,
+    should_cancel: Callable[[], bool],
+    model_profile_code: str,
+    render_user_name: str,
+    stream_answer: bool,
+) -> RuntimeBundle:
+    """装配模型执行运行时（架构审查 P0-1：_execute_run 与 _execute_resume 两段 ~90 行
+    逐字重复收口；8 处路径差异经参数化收敛——budget 覆写、profile code、渲染用户名、
+    stream_answer 由调用方传入，should_cancel 双语义由调用方构造后注入）。
+
+    bind_tools 在此接线（工具链路专题 P0-1）：工具 schema 从 payload["snapshot_tools"]
+    构造 envelope 下发模型——快照是 D13 冻结语义的数据源，非当前注册表；envelope 形态经
+    convert_to_openai_tool 幂等透传（well-known type 直接 return）。生产路径无条件调用；
+    测试桩须自行适配 bind_tools（no-op），不加 getattr 守卫以免掩盖断线回归。
+    """
+    from app.modules.agent.service.runtime import prompt_render
+    from app.modules.agent.service.runtime.graph import GraphDeps, build_agent_graph
+    from app.modules.agent.service.runtime.model_wrapper import LoomChatModel
+    from app.modules.ai.service.runtime_service import AiModelRuntimeService
+
+    with timed("worker.wiring", trace_token=handle.trace_token):
+        runtime = AiModelRuntimeService(db)
+        job["_budget"] = budget  # 终态落库读 tool_calls 累计
+        model = LoomChatModel(
+            model_profile_code=model_profile_code,
+            temperature=payload["temperature"],
+            max_tokens=payload["max_tokens"],
+            profile_source=job["run_mode"],
+            timeout_seconds=handle.deadline.per_request_timeout(payload["timeout_seconds"]),
+            min_context_window=payload.get("context_window_min"),  # E15：回退路径窗口约束
+        )
+        model._runtime_service = runtime  # noqa: SLF001 —— 单 run 装配（实例纪律）
+        model._caller = _SimpleUser(job["user"])  # noqa: SLF001
+        model._task_id = trace.id  # noqa: SLF001 —— R5 task_id 审计通道
+        bound_schemas = [
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": t.get("description") or "",
+                    "parameters": t.get("parameters") or {"type": "object", "properties": {}},
+                },
+            }
+            for name, t in payload["snapshot_tools"].items()
+        ]
+        model.bind_tools(bound_schemas)
+
+        tool_ctx = _ToolCtx(
+            db=db,
+            user_id=job["user"]["id"],
+            user_name=job["user"].get("name") or "",
+            is_super_admin=bool(job["user"].get("is_super_admin")),
+            trace_id=trace.id,
+            run_mode=job["run_mode"],
+        )
+
+        def log_tool_call(**kwargs):
+            db.add(AgentToolCallLog(trace_id=trace.id, **kwargs))
+            db.commit()
+
+        executor = ToolExecutor(
+            snapshot_tools=payload["snapshot_tools"],
+            bound_names=payload["bound_names"],
+            context=tool_ctx,
+            should_cancel=should_cancel,
+            log_tool_call=log_tool_call,
+            on_event=handle.emit,
+        )
+    with timed("worker.prompt_render", trace_token=handle.trace_token):
+        system_message = prompt_render.render(payload["system_prompt"], {"user_name": render_user_name})
+
+    def validate_guardrails(messages):
+        from langchain_core.messages import SystemMessage as _Sys
+
+        if (
+            not messages
+            or not isinstance(messages[0], _Sys)
+            or not prompt_render.is_guardrails_intact(messages[0].content)
+        ):
+            raise RuntimeError("护栏完整性校验失败（fail-close）")
+
+    with timed("worker.graph_build", trace_token=handle.trace_token):
+        deps = GraphDeps(
+            model=model,
+            tool_executor=executor,
+            budget=budget,
+            system_message=system_message,
+            tool_schema_tokens=_estimate_schema_tokens(payload),
+            max_tool_rounds=int(payload["max_tool_rounds"]),
+            context_token_budget=int(payload.get("context_token_budget") or 0) or None,  # E15 动态输入预算
+            stream_answer=stream_answer,
+            guardrails_validator=validate_guardrails,
+            on_event=handle.emit,
+            should_cancel=should_cancel,
+            trace_token=handle.trace_token,
+        )
+        graph = build_agent_graph(deps)
+    return RuntimeBundle(model=model, executor=executor, budget=budget, graph=graph)
 
 
 def _suspended_ai_of(db: Any, session_id: int, group_id: str) -> tuple[Any | None, list[dict]]:

@@ -52,11 +52,18 @@ class _FakeUser:
 
 
 class _FakeChatModel:
-    """执行线程内的模型桩（构造参数兼容 LoomChatModel；generate 返回固定回答）。"""
+    """执行线程内的模型桩（构造参数兼容 LoomChatModel；generate 返回固定回答）。
+
+    bind_tools 记录入参（装配态断言用）——生产路径无条件调用，桩必须适配而非守卫跳过。"""
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self._runtime_service = None
+        self.bound_schemas: list = []
+
+    def bind_tools(self, tools, **kwargs):
+        self.bound_schemas = tools
+        return self
 
     def generate(self, messages, **kwargs):
         return LLMResult(
@@ -198,6 +205,75 @@ class RunFlowTestCase(unittest.TestCase):
 
             release_run_lock(self.profile.id, "other-token")
 
+    def test_build_runtime_binds_tools_from_snapshot(self):
+        """装配态断言（工具链路专题 P0-1 唯一防回归层）：_build_runtime 无条件
+        bind_tools，schema envelope 来自快照（D13 冻结语义）而非当前注册表；
+        description 随快照下发。真实 LoomChatModel，不走 Fake。"""
+        trace = AgentRunTrace(profile_id=self.profile.id, run_mode="published", user_id=1, session_id=1)
+        self.session.add(trace)
+        self.session.commit()
+        self.session.refresh(trace)
+
+        handle = run_service_module.RunHandle(
+            trace_id=trace.id, trace_token="tok-build-1", session_id=1, deadline=run_service_module.RunDeadline(60)
+        )
+        snapshot_tools = {
+            "current_time": {
+                "level": "readonly",
+                "parameters": {"type": "object", "properties": {"tz": {"type": "string"}}},
+                "description": "获取当前时间",
+            }
+        }
+        payload = {
+            "snapshot_tools": snapshot_tools,
+            "bound_names": ["current_time"],
+            "temperature": 0.5,
+            "max_tokens": 1000,
+            "max_tool_rounds": 3,
+            "timeout_seconds": 60,
+            "system_prompt": "你是测试智能体",
+            "context_token_budget": 0,
+            "context_window_min": None,
+            "enable_memory": False,
+        }
+        job = {
+            "trace_id": trace.id,
+            "session_id": 1,
+            "run_mode": "published",
+            "user": {"id": 1, "name": "u1", "is_super_admin": False},
+            "payload": payload,
+            "stream_answer": False,
+        }
+        budget = run_service_module.RunBudget(max_tool_rounds=3)
+        bundle = run_service_module._build_runtime(
+            db=self.session,
+            job=job,
+            payload=payload,
+            trace=trace,
+            handle=handle,
+            budget=budget,
+            should_cancel=lambda: False,
+            model_profile_code="deepseek-chat",
+            render_user_name="u1",
+            stream_answer=False,
+        )
+        # 绑定态：长度 == 绑定工具数；envelope 形态与内容逐字段来自快照
+        self.assertEqual(len(bundle.model._bound_schemas), len(payload["bound_names"]))
+        schema = bundle.model._bound_schemas[0]
+        self.assertEqual(schema["type"], "function")
+        self.assertEqual(schema["function"]["name"], "current_time")
+        self.assertEqual(schema["function"]["description"], "获取当前时间")
+        self.assertEqual(schema["function"]["parameters"], snapshot_tools["current_time"]["parameters"])
+        # 装配产物完整性
+        self.assertIsNotNone(bundle.graph)
+        self.assertIs(bundle.budget, budget)
+        self.assertIs(job["_budget"], budget)
+        self.assertEqual(
+            sorted(bundle.executor.bound_names),
+            ["current_time"],
+        )
+        self.assertEqual(list(bundle.executor.snapshot_tools), ["current_time"])
+
     def test_debug_chat_draft_flow(self):
         """debugChat（draft）：草稿载荷直接运行（调试台永远最新草稿，评审 P1-1）。"""
         result = self._invoke(run_mode="draft")
@@ -248,6 +324,10 @@ class _StreamingRunFakeChatModel:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self._runtime_service = None
+
+    def bind_tools(self, tools, **kwargs):
+        # 生产装配无条件接线（工具 schema 下发）；桩无需绑定状态，适配为透传
+        return self
 
     def generate(self, messages, **kwargs):
         raise AssertionError("stream 会话不应走 _generate")

@@ -42,6 +42,10 @@ class _StreamingFakeModel:
         self.script = list(script)
         self.calls: list[list] = []
 
+    def bind_tools(self, tools, **kwargs):
+        # 生产装配无条件调用（工具 schema 下发接线）；桩无需绑定状态，适配为透传
+        return self
+
     def generate(self, messages, **kwargs):  # 非流式路径不在此测试出现
         raise AssertionError("stream_answer 启用时不应走 _generate")
 
@@ -102,8 +106,15 @@ class _FakeRuntimeService:
         }
 
 
+class _ScriptFakeModel(GenericFakeChatModel):
+    """脚本桩：补 bind_tools 透传（生产装配无条件接线；Fake 本身不消费绑定状态）。"""
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+
 def _fake_model(script: list[AIMessage]):
-    return GenericFakeChatModel(messages=iter(script))
+    return _ScriptFakeModel(messages=iter(script))
 
 
 def _time_tool_snapshot() -> dict:
