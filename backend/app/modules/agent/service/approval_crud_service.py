@@ -5,6 +5,8 @@ args_json 不出列的治理在 Read DTO（面上只有摘要与 hash）；列�
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlmodel import Session
 
 from app.modules.base.service.admin_service import BaseAdminCrudService
@@ -18,8 +20,15 @@ class ApprovalCrudService(BaseAdminCrudService):
 
         super().__init__(session, model or AgentToolApproval)
 
-    def _finalize_data(self, data: dict) -> dict:
-        """出口治理：args_json 永不出管理面（仅摘要与 hash；原文只服务执行链）。"""
-        data.pop("argsJson", None)
-        data.pop("args_json", None)
-        return data
+    def _finalize_data(self, data: Any) -> Any:
+        """出口治理：args_json 永不出管理面（仅摘要与 hash；原文只服务执行链）。
+
+        page 传入的是 list[dict]、info 是单 dict（真机 500 根因：原实现按单 dict pop）；
+        尾调 super 保留基类 camelCase 出口转换（对齐 profile_service 先例）。
+        """
+        rows = data if isinstance(data, list) else [data]
+        for item in rows:
+            if isinstance(item, dict):
+                item.pop("argsJson", None)
+                item.pop("args_json", None)
+        return super()._finalize_data(data)

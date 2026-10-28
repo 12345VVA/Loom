@@ -577,3 +577,36 @@ class FrozenChainTestCase(unittest.TestCase):
                 requested_by=1,
             )
         self.assertEqual(ctx.exception.status_code, 409)
+
+
+class ApprovalCrudExitTestCase(unittest.TestCase):
+    """审批管理面出口治理（真机 500 回归：_finalize_data 误按单 dict 处理 page 的 list 入参）。"""
+
+    def setUp(self):
+        self.engine = make_test_engine(tables=[AgentToolApproval.__table__])
+        self.session = Session(self.engine)
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def test_page_list_entry_strips_args_and_keeps_camel(self):
+        """page 路径（list 入参）：args 双键剔除 + 基类 camelCase 出口保留（super 链不断）。"""
+        from app.modules.agent.service.approval_crud_service import ApprovalCrudService
+
+        rows = ApprovalCrudService(self.session)._finalize_data(
+            [{"id": 1, "args_json": "secret", "tool_name": "current_time"}]
+        )
+        self.assertIsInstance(rows, list)
+        self.assertNotIn("args_json", rows[0])
+        self.assertNotIn("argsJson", rows[0])
+        self.assertIn("toolName", rows[0])
+
+    def test_info_dict_entry_strips_args(self):
+        """info 路径（单 dict 入参）：归一处理不炸，治理语义一致。"""
+        from app.modules.agent.service.approval_crud_service import ApprovalCrudService
+
+        row = ApprovalCrudService(self.session)._finalize_data({"id": 1, "args_json": "secret"})
+        self.assertIsInstance(row, dict)
+        self.assertNotIn("args_json", row)
+        self.assertNotIn("argsJson", row)
