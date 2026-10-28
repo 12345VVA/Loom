@@ -161,6 +161,7 @@ celery_app = Celery(
         "app.modules.media.tasks.mirror_tasks",
         "app.modules.media.tasks.ingest_tasks",
         "app.modules.agent.tasks.approval_tasks",
+        "app.modules.agent.tasks.maintenance_tasks",
     ],
 )
 
@@ -206,6 +207,8 @@ celery_app.conf.update(
         "task.report_worker_runtime": {"queue": "default"},
         # E4 HITL 审批巡检（设计附录 task-celery 对齐：agent.approval 队列）
         "agent.approval.sweep_expiry": {"queue": "agent.approval"},
+        # agent run 假死兜底（调用追踪审计 B3）：超时 running trace 终态化
+        "agent.maintenance.sweep_stuck_traces": {"queue": "default"},
     },
 )
 
@@ -267,6 +270,12 @@ celery_app.conf.beat_schedule = {
     #     "schedule": 60.0,
     #     "options": {"queue": "agent.approval"},
     # },
+    # agent run 假死兜底（调用追踪审计 B3）：超时 running trace 终态化（worker 线程/进程
+    # 挂死无终态必达）；宽限 SysParam agentStuckTraceGraceMinutes 默认 30 分钟
+    "sweep-agent-stuck-traces": {
+        "task": "agent.maintenance.sweep_stuck_traces",
+        "schedule": 900.0,
+    },
 }
 
 
