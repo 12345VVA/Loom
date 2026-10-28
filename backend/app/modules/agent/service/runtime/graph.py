@@ -223,8 +223,9 @@ def _call_model_streaming(deps: GraphDeps, assembled) -> tuple[AIMessage, dict]:
 def _execute_tools(state: AgentState, deps: GraphDeps) -> dict:
     """工具执行节点：进入即计 1 轮（评审 P0-1 递增时机）；顺序执行 + 超限同构处置。
 
-    E4 整组预检（在计数后）：本轮任一调用需审批 → raise ApprovalSuspension（整轮零执行，
-    挂起轮的 tool_round 已计 1——恢复侧预置对齐，不重复计）。
+    E4 整组预检（先于计数，工具链路专题 P2-1 勘误）：本轮任一调用需审批 →
+    raise ApprovalSuspension（整轮零执行，挂起轮 tool_round 不累加——恢复侧
+    budget.tool_rounds = 0 依赖的正是该语义）。
     """
     messages = list(state.get("messages") or [])
     last = messages[-1] if messages else None

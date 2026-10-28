@@ -27,6 +27,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.modules.agent.model.agent import (
@@ -264,29 +265,45 @@ def _append_version_row(
     schema_summary: str | None,
     operator_id: int | None,
 ) -> None:
-    """版本表只增不改（E12）：version = 活跃行最大值 + 1，行内存变更时点完整形态。"""
-    last = session.exec(
-        select(AgentToolResourceVersion.version)
-        .where(
-            AgentToolResourceVersion.tool_name == tool_name,
-            AgentToolResourceVersion.delete_time == None,  # noqa: E711
-        )
-        .order_by(AgentToolResourceVersion.version.desc())  # type: ignore[attr-defined]
-        .limit(1)
-    ).first()
-    session.add(
-        AgentToolResourceVersion(
-            tool_name=tool_name,
-            version=(last or 0) + 1,
-            change_kind=change_kind,
-            contract_hash=contract_hash,
-            meta_hash=meta_hash,
-            level=level,
-            description=description,
-            schema_summary=schema_summary,
-            created_by=operator_id,
-        )
-    )
+    """版本表只增不改（E12）：version = 活跃行最大值 + 1，行内存变更时点完整形态。
+
+    多副本启动并发（工具链路专题 P1-4）：读-算-插三步无锁，两个进程可能算出同一
+    version → partial unique（uq_agent_tool_version）冲突。对齐 workflow_memory_service
+    的 IntegrityError-rollback-retry 先例：插入包 begin_nested() savepoint，冲突仅回滚
+    savepoint、重读 max(version) 重插一次（不回滚外层 sync 事务、不引入 ON CONFLICT 新风格）。
+    """
+    for attempt in (1, 2):
+        last = session.exec(
+            select(AgentToolResourceVersion.version)
+            .where(
+                AgentToolResourceVersion.tool_name == tool_name,
+                AgentToolResourceVersion.delete_time == None,  # noqa: E711
+            )
+            .order_by(AgentToolResourceVersion.version.desc())  # type: ignore[attr-defined]
+            .limit(1)
+        ).first()
+        try:
+            with session.begin_nested():
+                session.add(
+                    AgentToolResourceVersion(
+                        tool_name=tool_name,
+                        version=(last or 0) + 1,
+                        change_kind=change_kind,
+                        contract_hash=contract_hash,
+                        meta_hash=meta_hash,
+                        level=level,
+                        description=description,
+                        schema_summary=schema_summary,
+                        created_by=operator_id,
+                    )
+                )
+                session.flush()  # savepoint 内 flush：唯一索引冲突当场抛，with 退出自动 ROLLBACK TO SAVEPOINT
+            return
+        except IntegrityError:
+            # 外层 sync 已写行不受影响（仅回滚到 savepoint）；二次仍冲突则放弃本次版本行
+            if attempt == 2:
+                logger.warning("agent tool 版本行并发冲突重试仍失败 tool=%s（下次 refresh 可恢复）", tool_name)
+                raise
 
 
 def sync_resources(session: Session, operator_id: int | None = None) -> dict:
@@ -354,8 +371,11 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
             row.source_type = AGENT_TOOL_SOURCE_BUILTIN
             row.level = tool.level
             row.schema_summary = schema_summary
-            if safety_metadata is not None or tool.level == AGENT_TOOL_LEVEL_READONLY:
-                row.prompt_metadata_json = safety_metadata  # 写工具同步机制表；只读不覆盖管理员/历史值
+            if safety_metadata is not None:
+                # 仅写工具有 safety 表（收集契约强制声明）→ 恒非 None；只读工具恒 None → 不覆盖
+                # （工具链路专题 P2-9：原条件 `or level == READONLY` 使只读工具每次 sync 被清空，
+                # 与"只读不覆盖管理员/历史值"的注释相反）
+                row.prompt_metadata_json = safety_metadata
             row.metadata_hash = combined
             row.updated_by = operator_id
             uninitialized = row.contract_hash is None or row.meta_hash is None

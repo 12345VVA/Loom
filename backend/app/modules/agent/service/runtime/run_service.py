@@ -200,7 +200,7 @@ class AgentRunService:
 
     # --- 发起校验链（评审 v1.4 五项 + 对象级权限）---
 
-    def _load_profile_checked(self, profile_id: int, run_mode: str) -> Any:
+    def _load_profile_checked(self, profile_id: int) -> Any:
         from app.modules.agent.service.tool_registry import degraded_error
 
         if degraded_error():
@@ -348,7 +348,7 @@ class AgentRunService:
         trace_token = uuid.uuid4().hex
 
         with timed("req.profile", trace_token=trace_token):
-            profile = self._load_profile_checked(profile_id, run_mode)
+            profile = self._load_profile_checked(profile_id)
         with timed("req.session", trace_token=trace_token):
             session_row = self._resolve_session(
                 profile=profile, session_id=session_id, question=question, run_mode=run_mode, current_user=current_user
@@ -453,7 +453,7 @@ class AgentRunService:
         run_mode: str,
         current_user: Any,
     ) -> dict:
-        profile = self._load_profile_checked(profile_id, run_mode)
+        profile = self._load_profile_checked(profile_id)
         session_row = self._resolve_session(
             profile=profile, session_id=session_id, question=question, run_mode=run_mode, current_user=current_user
         )
@@ -514,18 +514,28 @@ class AgentRunService:
     # --- 停止（取消三层语义之一：令牌置位）---
 
     def stop_run(self, trace_token: str, current_user: Any) -> dict:
-        # P0-8 前置#1（异步审查）：取消令牌无条件前置写入。handle 是进程内注册表——
-        # 多进程部署下 stop 请求可能落到无 handle 的 worker，而 Redis 令牌是执行侧
-        # （任意进程）唯一的取消信号，此前仅在命中本进程 handle 时才写（跨进程停止
-        # 静默失效）。令牌值是 128 位随机 hex，仅 run 发起者可见，伪造风险可忽略。
-        set_cancel_token(trace_token, AGENT_CANCEL_TOKEN_DEFAULT_TTL_SECONDS)
+        # 鉴权前置（工具链路专题 P1-2 升级项）：任何副作用（Redis 取消键）必须先过属主校验。
+        # 原实现令牌无条件前置写入（异步审查 P0-8 跨进程取消语义），但执行侧 should_cancel
+        # 每轮轮询该键——越权请求在收到 403 前已实际取消目标 run，"副作用先于鉴权"。
+        # 存活 trace 的 error 列持有 token（running/waiting 期间写入，终态被真实错误覆写），
+        # 等值查询天然只命中存活 run；不建独立列/索引（避免动三处读点），若 trace 体量
+        # 成为查询瓶颈再立项。超管豁免对齐 _cancel_suspended_run 既有口径（原 handle
+        # 路径无豁免，两路径不一致收敛为一致）。
         handle = _get_handle(trace_token)
-        if handle is None:
-            # E4：挂起态 run（线程已结束、句柄已注销）或跨进程运行——按 token 定位 waiting trace
-            return self._cancel_suspended_run(trace_token, current_user)
-        trace = self.session.get(AgentRunTrace, handle.trace_id) if handle.trace_id else None
-        if trace is not None and trace.user_id != current_user.id:
+        trace = (
+            self.session.get(AgentRunTrace, handle.trace_id)
+            if handle is not None and handle.trace_id
+            else self.session.exec(select(AgentRunTrace).where(AgentRunTrace.error == f"token:{trace_token}")).first()
+        )
+        if trace is not None and trace.user_id != current_user.id and not getattr(current_user, "is_super_admin", False):
             raise HTTPException(status_code=403, detail="仅可停止本人发起的运行")
+        # 鉴权通过后才写取消令牌（P0-8 跨进程取消语义保留：Redis 令牌是任意进程执行侧
+        # 唯一的取消信号；令牌值 128 位随机 hex 仅 run 发起者可见）
+        set_cancel_token(trace_token, AGENT_CANCEL_TOKEN_DEFAULT_TTL_SECONDS)
+        if handle is None:
+            # E4：挂起态 run（线程已结束、句柄已注销）——按 token 定位 waiting trace 处置；
+            # 跨进程运行中（trace 在他进程执行）令牌由持有方执行侧消费
+            return self._cancel_suspended_run(trace_token, current_user)
         handle.cancel_event.set()  # 本地快速路径
         # 以实际剩余时限覆盖默认 TTL，更精确
         set_cancel_token(trace_token, max(60, int(handle.deadline.remaining()) + 30))  # 跨 worker
@@ -686,13 +696,6 @@ class AgentRunService:
         payload = job.payload
         started = time.monotonic()
 
-        def should_cancel() -> bool:
-            return (
-                is_cancel_requested(handle.trace_token, handle)
-                or handle.deadline.expired()
-                or not owns_run_lock(session_row.id, handle.trace_token)  # 锁所有权丢失自停（P0-3）
-            )
-
         # ── 终态必达外圈：前置段（engine/Session/db.get）异常、_finish_run commit 抛错、
         # BaseException 不被内层 except Exception 覆盖——三类路径统一收口，保证
         # handle.close 必达（generator 否则无限心跳、前端永等终态）+ 锁必释放。
@@ -704,6 +707,13 @@ class AgentRunService:
             ):  # 工作线程自建独立 Session
                 trace: AgentRunTrace = db.get(AgentRunTrace, job.trace_id)
                 session_row: AgentSession = db.get(AgentSession, job.session_id)
+
+                def should_cancel() -> bool:
+                    return (
+                        is_cancel_requested(handle.trace_token, handle)
+                        or handle.deadline.expired()
+                        or not owns_run_lock(session_row.id, handle.trace_token)  # 锁所有权丢失自停（P0-3）
+                    )
                 # E17 编排模式分流：绑定工作流实例化执行（不经 graph/工具链；E1 流式/审批/预算不涉及）。
                 # 锁释放必须随行（graph 分支在 finally 释放，一期锁残留缺陷的同构教训）——
                 # 分支提前 return 前自行释放，防进程内降级锁 TTL 残留锁死同会话后续 run。
@@ -1063,7 +1073,6 @@ class AgentRunService:
         if live is None:
             self._revert_claim(trace_id)
             return {"resumed": False, "reason": "无待恢复的审批组"}
-        group_id, _rows = live
         group_id, _rows = live
         if not approval_service.gate_satisfied(self.session, trace_id, group_id):
             self._revert_claim(trace_id)

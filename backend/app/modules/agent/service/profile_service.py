@@ -410,65 +410,70 @@ class AgentProfileService(BaseAdminCrudService):
 
         # ① 锁定 profile 行（SQLite 开发库退化为整库锁，可接受 R3；CI/生产 PG 正确）
         profile = self.session.exec(select(self.model).where(self.model.id == profile_id).with_for_update()).one()
-        # ② 锁内读取草稿、组装、校验、哈希
-        draft = upsert_draft(self.session, profile)
-        workflow_summary = (
-            self._validate_workflow_binding(profile)
-            if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW
-            else None
-        )
-        payload = self._build_publish_payload(profile, workflow_summary=workflow_summary)
-        self._validate_window(profile)
-        snapshot_hash = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+        try:
+            # ② 锁内读取草稿、组装、校验、哈希
+            draft = upsert_draft(self.session, profile)
+            workflow_summary = (
+                self._validate_workflow_binding(profile)
+                if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW
+                else None
+            )
+            payload = self._build_publish_payload(profile, workflow_summary=workflow_summary)
+            self._validate_window(profile)
+            snapshot_hash = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
-        latest = self.session.exec(
-            select(AgentProfileSnapshot)
-            .where(AgentProfileSnapshot.profile_id == profile_id)
-            .order_by(AgentProfileSnapshot.version.desc())  # type: ignore[attr-defined]
-        ).first()
-        current_record = self._current_record(profile_id)
-        if current_record is not None:
-            current_snapshot = self.session.get(AgentProfileSnapshot, current_record.snapshot_id)
-            if current_snapshot is not None and current_snapshot.snapshot_hash == snapshot_hash:
-                # 幂等：内容相同不新建版本（评审 v1.4 P1）；状态迁移照常生效
-                # （历史库可能存在「已发布但 status 残留 draft」的行——真机修复时踩中）
-                if profile.status != AGENT_STATUS_PUBLISHED:
-                    profile.status = AGENT_STATUS_PUBLISHED
-                    self.session.add(profile)
-                    self.session.commit()
-                return current_snapshot
+            latest = self.session.exec(
+                select(AgentProfileSnapshot)
+                .where(AgentProfileSnapshot.profile_id == profile_id)
+                .order_by(AgentProfileSnapshot.version.desc())  # type: ignore[attr-defined]
+            ).first()
+            current_record = self._current_record(profile_id)
+            if current_record is not None:
+                current_snapshot = self.session.get(AgentProfileSnapshot, current_record.snapshot_id)
+                if current_snapshot is not None and current_snapshot.snapshot_hash == snapshot_hash:
+                    # 幂等：内容相同不新建版本（评审 v1.4 P1）；状态迁移照常生效
+                    # （历史库可能存在「已发布但 status 残留 draft」的行——真机修复时踩中）
+                    if profile.status != AGENT_STATUS_PUBLISHED:
+                        profile.status = AGENT_STATUS_PUBLISHED
+                        self.session.add(profile)
+                        self.session.commit()
+                    return current_snapshot
 
-        # ③ 写不可变快照 → 先清 is_current 再插入新 record（顺序不可颠倒，设计 3.5）
-        snapshot = AgentProfileSnapshot(
-            profile_id=profile_id,
-            version=(latest.version if latest else 0) + 1,
-            source_draft_version=draft.draft_version,
-            snapshot_hash=snapshot_hash,
-            agent_name=profile.name,
-            agent_code=profile.code,
-            snapshot_json=json.dumps(payload, ensure_ascii=False),
-            created_by=current_user.id if current_user else None,
-        )
-        self.session.add(snapshot)
-        self.session.flush()  # 取 snapshot.id
-        if current_record is not None:
-            current_record.is_current = False
-            self.session.add(current_record)
-        record = AgentProfilePublishRecord(
-            profile_id=profile_id,
-            snapshot_id=snapshot.id,
-            action=AGENT_PUBLISH_ACTION_PUBLISH,
-            is_current=True,
-            operated_by=current_user.id if current_user else None,
-            published_at=datetime.now(UTC),
-        )
-        self.session.add(record)
-        # ④ 状态迁移 + 单事务提交；提交后事务外失效运行时快照缓存
-        # （走查实测缺陷修复：此前漏迁 status，前端 publishedProfiles 过滤恒空——
-        #   单测只断言快照/记录未断言状态字段，盲区由真机暴露）
-        profile.status = AGENT_STATUS_PUBLISHED
-        self.session.add(profile)
-        self.session.commit()
+            # ③ 写不可变快照 → 先清 is_current 再插入新 record（顺序不可颠倒，设计 3.5）
+            snapshot = AgentProfileSnapshot(
+                profile_id=profile_id,
+                version=(latest.version if latest else 0) + 1,
+                source_draft_version=draft.draft_version,
+                snapshot_hash=snapshot_hash,
+                agent_name=profile.name,
+                agent_code=profile.code,
+                snapshot_json=json.dumps(payload, ensure_ascii=False),
+                created_by=current_user.id if current_user else None,
+            )
+            self.session.add(snapshot)
+            self.session.flush()  # 取 snapshot.id
+            if current_record is not None:
+                current_record.is_current = False
+                self.session.add(current_record)
+            record = AgentProfilePublishRecord(
+                profile_id=profile_id,
+                snapshot_id=snapshot.id,
+                action=AGENT_PUBLISH_ACTION_PUBLISH,
+                is_current=True,
+                operated_by=current_user.id if current_user else None,
+                published_at=datetime.now(UTC),
+            )
+            self.session.add(record)
+            # ④ 状态迁移 + 单事务提交；提交后事务外失效运行时快照缓存
+            # （走查实测缺陷修复：此前漏迁 status，前端 publishedProfiles 过滤恒空——
+            #   单测只断言快照/记录未断言状态字段，盲区由真机暴露）
+            profile.status = AGENT_STATUS_PUBLISHED
+            self.session.add(profile)
+            self.session.commit()
+        except Exception:
+            # 自持行锁的事务自行收口（架构审查 P2-3）：锁内任何 400/异常不留悬挂事务给框架层
+            self.session.rollback()
+            raise
         self._invalidate_snapshot_cache()
         self.session.refresh(snapshot)
         return snapshot
@@ -482,27 +487,31 @@ class AgentProfileService(BaseAdminCrudService):
 
         # 持锁查询（回滚全程与发布切换互斥；行内容不需要读出）
         self.session.exec(select(self.model).where(self.model.id == profile_id).with_for_update()).one()
-        target = self.session.get(AgentProfileSnapshot, snapshot_id)
-        if target is None or target.profile_id != profile_id:
-            raise HTTPException(status_code=404, detail="目标快照不存在或不属于该智能体")
-        current_record = self._current_record(profile_id)
-        if current_record is not None and current_record.snapshot_id == snapshot_id:
-            return target  # 已是当前版本，幂等返回
+        try:
+            target = self.session.get(AgentProfileSnapshot, snapshot_id)
+            if target is None or target.profile_id != profile_id:
+                raise HTTPException(status_code=404, detail="目标快照不存在或不属于该智能体")
+            current_record = self._current_record(profile_id)
+            if current_record is not None and current_record.snapshot_id == snapshot_id:
+                return target  # 已是当前版本，幂等返回
 
-        if current_record is not None:
-            current_record.is_current = False
-            self.session.add(current_record)
-        record = AgentProfilePublishRecord(
-            profile_id=profile_id,
-            snapshot_id=snapshot_id,
-            action=AGENT_PUBLISH_ACTION_ROLLBACK,
-            is_current=True,
-            rollback_from_snapshot_id=current_record.snapshot_id if current_record else None,
-            operated_by=current_user.id if current_user else None,
-            published_at=datetime.now(UTC),
-        )
-        self.session.add(record)
-        self.session.commit()
+            if current_record is not None:
+                current_record.is_current = False
+                self.session.add(current_record)
+            record = AgentProfilePublishRecord(
+                profile_id=profile_id,
+                snapshot_id=snapshot_id,
+                action=AGENT_PUBLISH_ACTION_ROLLBACK,
+                is_current=True,
+                rollback_from_snapshot_id=current_record.snapshot_id if current_record else None,
+                operated_by=current_user.id if current_user else None,
+                published_at=datetime.now(UTC),
+            )
+            self.session.add(record)
+            self.session.commit()
+        except Exception:  # 同 publish：自持行锁的事务自行收口（架构审查 P2-3）
+            self.session.rollback()
+            raise
         self._invalidate_snapshot_cache()
         return target
 
