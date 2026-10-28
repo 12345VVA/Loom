@@ -260,7 +260,9 @@ class AgentRunTrace(BaseEntity, table=True):
     # 编排型 run 不经 LLM 护栏，记 None）
     guardrails_version: str | None = Field(default=None, max_length=20)
     status: str = Field(default=AGENT_RUN_RUNNING, index=True, max_length=20)
-    # 备注性错误信息（取消区分「已请求/确认终止」+ 残留清单 + 预算触发项等）
+    # 备注性错误信息（取消区分「已请求/确认终止」+ 残留清单 + 预算触发项等）。
+    # 借存语义（复核 N-2）：running/waiting 期间本列持有 f"token:{trace_token}" 取消标记
+    # （stop_run 跨进程/挂起态反查用）——错误率统计须排除非终态行；终态覆写为真实错误或 None。
     error: str | None = Field(default=None, sa_column=Column(Text))
     # E4：跨审批挂起的执行时长累计（D27——duration 不含审批等待；挂起时累积，终态时 duration_ms = execution_ms + 恢复段）
     execution_ms: int = Field(default=0)

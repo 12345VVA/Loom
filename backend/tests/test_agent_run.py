@@ -263,6 +263,8 @@ class RunFlowTestCase(unittest.TestCase):
         self.assertEqual(schema["function"]["name"], "current_time")
         self.assertEqual(schema["function"]["description"], "获取当前时间")
         self.assertEqual(schema["function"]["parameters"], snapshot_tools["current_time"]["parameters"])
+        # N-4：断到最终请求参数——_bound_schemas 非空但 _build_options 漏装 tools 时仍能暴露
+        self.assertIn("tools", bundle.model._build_options())
         # 装配产物完整性
         self.assertIsNotNone(bundle.graph)
         self.assertIs(bundle.budget, budget)

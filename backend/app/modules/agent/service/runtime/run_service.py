@@ -930,7 +930,7 @@ class AgentRunService:
     def _finish_workflow_run(
         self,
         db: Any,
-        job: dict,
+        job: RunJob,
         trace: AgentRunTrace,
         session_row: AgentSession,
         started: float,
@@ -950,7 +950,7 @@ class AgentRunService:
     def _finish_workflow_run_inner(
         self,
         db: Any,
-        job: dict,
+        job: RunJob,
         trace: AgentRunTrace,
         session_row: AgentSession,
         started: float,
@@ -1546,11 +1546,26 @@ _handles_guard = threading.Lock()
 # --- E4 恢复辅助 ---
 
 
+def _bound_tool_envelopes(payload: RunPayload) -> list[dict]:
+    """快照 → openai function envelope：bind_tools 下发与 token 估算共用单一来源（N-6 口径归真）。"""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": t.get("description") or "",
+                "parameters": t.get("parameters") or {"type": "object", "properties": {}},
+            },
+        }
+        for name, t in payload.snapshot_tools.items()
+    ]
+
+
 def _estimate_schema_tokens(payload: RunPayload) -> int:
-    """工具 schema token 估算（_execute_run / _execute_resume 共用口径）。"""
+    """工具 schema token 估算（_execute_run / _execute_resume 共用口径；按实际下发的 envelope 计）。"""
     from app.modules.agent.service.runtime.memory_service import estimate_tokens
 
-    return estimate_tokens(json.dumps(list(payload.snapshot_tools.values()), ensure_ascii=False))
+    return estimate_tokens(json.dumps(_bound_tool_envelopes(payload), ensure_ascii=False))
 
 
 @dataclass
@@ -1610,18 +1625,7 @@ def _build_runtime(
         model._runtime_service = runtime  # noqa: SLF001 —— 单 run 装配（实例纪律）
         model._caller = _SimpleUser(job.user)  # noqa: SLF001
         model._task_id = trace.id  # noqa: SLF001 —— R5 task_id 审计通道
-        bound_schemas = [
-            {
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": t.get("description") or "",
-                    "parameters": t.get("parameters") or {"type": "object", "properties": {}},
-                },
-            }
-            for name, t in payload.snapshot_tools.items()
-        ]
-        model.bind_tools(bound_schemas)
+        model.bind_tools(_bound_tool_envelopes(payload))
 
         tool_ctx = _ToolCtx(
             db=db,
