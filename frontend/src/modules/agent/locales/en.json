@@ -178,5 +178,6 @@
   "agent.tool.toggleOn": "Enabled",
   "agent.tool.toolName": "Tool",
   "agent.tool.versions": "Versions",
-  "agent.tool.disabled": "Disabled"
+  "agent.tool.disabled": "Disabled",
+  "agent.approval.experimental": "Experimental (frozen): current publish policy disallows dangerous-write tools, so this queue has no trigger source yet; unfreezes with the first dangerous-write tool"
 }

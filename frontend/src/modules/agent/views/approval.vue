@@ -1,5 +1,14 @@
 <template>
 	<cl-crud ref="Crud">
+		<!-- E4 冻结标注（D11 预置未解冻）：发布校验禁止 dangerous_write 与审批门槛互斥，
+		     审批链当前永无触发可能；service/表/巡检任务实现保留，解冻随第一个 dangerous_write 工具立项 -->
+		<el-alert
+			:title="t('agent.approval.experimental')"
+			type="info"
+			show-icon
+			:closable="false"
+			style="margin-bottom: 8px"
+		/>
 		<cl-row>
 			<cl-refresh-btn />
 			<cl-filter :label="t('agent.approval.status')">

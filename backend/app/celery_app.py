@@ -257,13 +257,15 @@ celery_app.conf.beat_schedule = {
         "task": "media.ingest.sweep_uningested",
         "schedule": 3600.0,
     },
-    # 每分钟巡检 HITL 审批：pending 过期（SLA 默认 7 天）→ expired + 组终局触发恢复；
-    # executing 租约残留检测与 args 保留期清理同任务（E4，条件更新幂等，多 worker 安全）
-    "sweep-agent-approval-expiry": {
-        "task": "agent.approval.sweep_expiry",
-        "schedule": 60.0,
-        "options": {"queue": "agent.approval"},
-    },
+    # E4 HITL 审批巡检【已冻结，D11 预置未解冻】：发布校验禁止 dangerous_write
+    # （profile_service 六关第 5 关）与 APPROVAL_REQUIRED_LEVELS 互斥——审批链当前
+    # 永无触发可能，巡检空转无收益。任务注册与 sweep_expiry 实现保留（含表/测试/
+    # 前端页），第一个 dangerous_write 工具立项时解冻本调度项即可。
+    # "sweep-agent-approval-expiry": {
+    #     "task": "agent.approval.sweep_expiry",
+    #     "schedule": 60.0,
+    #     "options": {"queue": "agent.approval"},
+    # },
 }
 
 

@@ -178,5 +178,6 @@
   "agent.tool.toggleOn": "已啟用",
   "agent.tool.toolName": "工具名",
   "agent.tool.versions": "版本歷史",
-  "agent.tool.disabled": "已停用"
+  "agent.tool.disabled": "已停用",
+  "agent.approval.experimental": "實驗功能（已凍結）：當前發布策略不允許高風險寫工具綁定，審批佇列暫無觸發來源；解凍隨首個高風險寫工具立項"
 }
