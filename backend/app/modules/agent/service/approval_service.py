@@ -45,6 +45,12 @@ APPROVAL_ARGS_RETENTION_DAYS = 7
 # 需审批的风险等级（D11：高风险写必须人工确认；按当前注册 level 实时判定，D14）
 APPROVAL_REQUIRED_LEVELS = {AGENT_TOOL_LEVEL_DANGEROUS_WRITE}
 
+# E4 冻结总开关（复核 N-1）：发布六关禁 dangerous_write → 审批链天然不可达；但发起段
+# has_pending 409 仍活跃——遗留 pending 行在巡检停跑后无自愈路径，会话永久锁死。
+# False = 一个开关控四端（approval_required_for / has_pending / sweep_approvals /
+# create_group），解冻 = 改这一处 + 恢复 celery beat 的 sweep-agent-approval-expiry 项。
+APPROVAL_CHAIN_ENABLED = False
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -57,6 +63,8 @@ def args_hash_of(args: dict) -> str:
 
 def approval_required_for(tool_name: str) -> bool:
     """实时判定该工具是否需要审批（当前注册 level；未注册工具不触发审批——走常规拒绝链）。"""
+    if not APPROVAL_CHAIN_ENABLED:
+        return False  # 冻结态同时控死产生链：_approval_calls 恒空 → ApprovalSuspension 永不 raise
     from app.modules.agent.service.tool_registry import get_tool
 
     tool = get_tool(tool_name)
@@ -78,6 +86,8 @@ def create_group(
     返回 group_id；普通调用不建行（恢复处置时按组上下文生成「未执行」结果）。
     组合唯一冲突（同 trace 同轮同 call_id 已有行）属异常态——fail-fast 暴露。
     """
+    if not APPROVAL_CHAIN_ENABLED:  # 防御性 fail-fast：当前经 approval_required_for 已不可达，防直调绕过
+        raise HTTPException(status_code=409, detail="审批链已冻结")
     import uuid
 
     group_id = uuid.uuid4().hex
@@ -145,6 +155,8 @@ def suspended_group_of(session: Session, trace_id: int) -> tuple[str, list[Agent
 
 def has_pending(session: Session, session_id: int) -> bool:
     """会话阻塞检查（发起段）：存在 pending 审批 → 拒绝新 run（解锁=组终局，自然解除）。"""
+    if not APPROVAL_CHAIN_ENABLED:
+        return False  # 冻结态阻塞端解除：遗留 pending 行不再让会话 409 锁死（复核 N-1）
     row = session.exec(
         select(AgentToolApproval)
         .where(
@@ -248,6 +260,8 @@ def sweep_approvals(session: Session) -> dict:
     3. 终局行超 args 保留期 → args_json 置 NULL（仅留摘要与 hash）。
     返回需要尝试恢复的 trace_id 列表（由调用方触发 resume_trace）。
     """
+    if not APPROVAL_CHAIN_ENABLED:  # 任务注册保留（beat 已停），防手工触发在冻结态流转行状态
+        return {"expired": 0, "staleExecuting": [], "argsCleaned": 0, "resumeTraceIds": []}
     now = utcnow()
     expired_traces: set[int] = set()
     expired_count = 0

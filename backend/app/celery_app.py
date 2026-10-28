@@ -260,7 +260,8 @@ celery_app.conf.beat_schedule = {
     # E4 HITL 审批巡检【已冻结，D11 预置未解冻】：发布校验禁止 dangerous_write
     # （profile_service 六关第 5 关）与 APPROVAL_REQUIRED_LEVELS 互斥——审批链当前
     # 永无触发可能，巡检空转无收益。任务注册与 sweep_expiry 实现保留（含表/测试/
-    # 前端页），第一个 dangerous_write 工具立项时解冻本调度项即可。
+    # 前端页），第一个 dangerous_write 工具立项时解冻本调度项，并改
+    # approval_service.APPROVAL_CHAIN_ENABLED = True（冻结总开关，控审批链四端）。
     # "sweep-agent-approval-expiry": {
     #     "task": "agent.approval.sweep_expiry",
     #     "schedule": 60.0,

@@ -106,6 +106,11 @@ class ApprovalFlowTestCase(unittest.TestCase):
     """挂起 → 决定 → 恢复的整链路（A24 三概念分离的机制层）。"""
 
     def setUp(self):
+        # 测试显式解冻：生产默认 APPROVAL_CHAIN_ENABLED=False（冻结，见 FrozenChainTestCase），
+        # 本用例族验证的是状态机机制本身
+        patcher = patch.object(approval_service, "APPROVAL_CHAIN_ENABLED", True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.engine = make_test_engine(
             tables=[
                 AgentProfile.__table__,
@@ -511,3 +516,64 @@ class ApprovalFlowTestCase(unittest.TestCase):
         self.session.expire_all()
         row2 = self.session.exec(select(AgentToolApproval)).one()
         self.assertEqual(row2.status, "executing")  # 不自动改状态——人工核对收口
+
+
+class FrozenChainTestCase(unittest.TestCase):
+    """E4 冻结总开关默认态（复核 N-1）：APPROVAL_CHAIN_ENABLED=False 下四端行为。"""
+
+    def setUp(self):
+        self.engine = make_test_engine(tables=[AgentToolApproval.__table__])
+        self.session = Session(self.engine)
+        bootstrap_registry()
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def _seed_pending_row(self) -> None:
+        self.session.add(
+            AgentToolApproval(
+                session_id=1,
+                trace_id=1,
+                tool_call_group_id="g1",
+                tool_round=1,
+                tool_call_id="c1",
+                tool_name="current_time",
+                args_hash="h",
+                status="pending",
+                requested_by=1,
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+        self.session.commit()
+
+    def test_has_pending_false_despite_pending_row(self):
+        """阻塞端解除：遗留 pending 行不再让发起段 409 锁死会话（巡检停跑后无自愈路径）。"""
+        self._seed_pending_row()
+        self.assertFalse(approval_service.has_pending(self.session, 1))
+
+    def test_required_false_and_sweep_noop(self):
+        """产生端与巡检端短路：判定恒 False、巡检空转返回全零。"""
+        self.assertFalse(approval_service.approval_required_for("current_time"))
+        self.assertEqual(
+            approval_service.sweep_approvals(self.session),
+            {"expired": 0, "staleExecuting": [], "argsCleaned": 0, "resumeTraceIds": []},
+        )
+        # 冻结短路不误伤存量行：pending 行原样保留（解冻后语义不变）
+        self._seed_pending_row()
+        row = self.session.exec(select(AgentToolApproval)).one()
+        self.assertEqual(row.status, "pending")
+
+    def test_create_group_fail_fast(self):
+        """防御性 fail-fast：绕过 approval_required_for 直调时显式拒绝，不静默零行挂起。"""
+        with self.assertRaises(HTTPException) as ctx:
+            approval_service.create_group(
+                self.session,
+                trace_id=1,
+                session_id=1,
+                tool_round=1,
+                ai_message=AIMessage(content=""),
+                snapshot_id=None,
+                requested_by=1,
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
