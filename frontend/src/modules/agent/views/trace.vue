@@ -148,8 +148,13 @@ async function openDetail(row: any) {
 		toolBlocks.value = ((logs || []) as any[]).map((log: any) => ({
 			toolCallId: String(log.id),
 			toolName: log.toolName,
-			status: log.success === false ? ('failed' as const) : ('done' as const),
-			duration: log.durationMs ?? undefined
+			// skipped（cancelled 等 success=NULL 但有原因）与 failed（success=false）分开展示
+			status: log.success === false ? ('failed' as const) : log.skippedReason ? ('skipped' as const) : ('done' as const),
+			duration: log.durationMs ?? undefined,
+			skippedReason: log.skippedReason ?? undefined,
+			argsSummary: log.argsSummary ?? undefined,
+			resultSummary: log.resultSummary ?? undefined,
+			error: log.error ?? undefined
 		}));
 	} catch {
 		toolBlocks.value = []; // 越权/无明细时留空（消息轨迹仍在）
