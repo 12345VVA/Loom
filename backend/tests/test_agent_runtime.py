@@ -21,10 +21,7 @@ from app.modules.agent.service.runtime.memory_service import (
     estimate_tokens,
     truncate_tool_result,
 )
-from app.modules.agent.service.runtime.middleware import (
-    GuardrailsMiddleware,
-    apply_pre_model_hooks,
-)
+from app.modules.agent.service.runtime.middleware import apply_pre_model_hooks
 from app.modules.agent.service.runtime.model_wrapper import LoomChatModel, _message_to_openai_dict
 from app.modules.agent.service.runtime.run_service import (
     PendingToolCall,
@@ -122,14 +119,8 @@ def _time_tool_snapshot() -> dict:
     return {"current_time": {"level": tool.level, "parameters": tool.parameters}}
 
 
-def _validate_guardrails(messages: list) -> None:
-    """校验型钩子：组装后 messages 的首条 system 必须护栏完整（fail-close）。"""
-    if (
-        not messages
-        or not isinstance(messages[0], SystemMessage)
-        or not prompt_render.is_guardrails_intact(messages[0].content)
-    ):
-        raise RuntimeError("护栏完整性校验失败：system 消息缺少安全边界前置（fail-close）")
+# 护栏校验权威实现收敛至 prompt_render（架构审查 P0-1：原手工拷贝闭包与生产双份口径合并）
+_validate_guardrails = prompt_render.validate_guardrails_messages
 
 
 def _build(script: list[AIMessage], *, max_tool_rounds: int = 3, with_guardrails: bool = True):
@@ -277,15 +268,11 @@ class GuardrailsTestCase(unittest.TestCase):
         self.assertFalse(prompt_render.is_guardrails_intact("只是一个普通 system"))
         self.assertFalse(prompt_render.is_guardrails_intact(None))
 
-    def test_pre_model_hook_fail_closed_on_tampered_system(self):
-        """模板内容篡改/移除护栏 → fail-close 拒绝本次调用。"""
-        middleware = GuardrailsMiddleware()
+    def test_guardrails_validator_fail_closed_on_tampered_system(self):
+        """模板内容篡改/移除护栏 → fail-close 拒绝本次调用（validate_guardrails_messages）。"""
         with self.assertRaises(RuntimeError):
-            middleware.pre_model({"messages": [SystemMessage(content="护栏被删了")]}, None)  # type: ignore[arg-type]
-        middleware.pre_model(
-            {"messages": [SystemMessage(content=prompt_render.render("正常"))]},
-            None,  # type: ignore[arg-type]
-        )
+            prompt_render.validate_guardrails_messages([SystemMessage(content="护栏被删了")])
+        prompt_render.validate_guardrails_messages([SystemMessage(content=prompt_render.render("正常"))])
 
 
 class ContextBudgetTestCase(unittest.TestCase):

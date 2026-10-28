@@ -1582,6 +1582,7 @@ def _build_runtime(
     """
     from app.modules.agent.service.runtime import prompt_render
     from app.modules.agent.service.runtime.graph import GraphDeps, build_agent_graph
+    from app.modules.agent.service.runtime.middleware import RunContext
     from app.modules.agent.service.runtime.model_wrapper import LoomChatModel
     from app.modules.ai.service.runtime_service import AiModelRuntimeService
 
@@ -1636,15 +1637,17 @@ def _build_runtime(
     with timed("worker.prompt_render", trace_token=handle.trace_token):
         system_message = prompt_render.render(payload.system_prompt, {"user_name": render_user_name})
 
-    def validate_guardrails(messages):
-        from langchain_core.messages import SystemMessage as _Sys
-
-        if (
-            not messages
-            or not isinstance(messages[0], _Sys)
-            or not prompt_render.is_guardrails_intact(messages[0].content)
-        ):
-            raise RuntimeError("护栏完整性校验失败（fail-close）")
+    # 五钩子 ctx（设计 3.4.3）：护栏/授权/计时有各自权威通道，pre_model 钩子（记忆注入）
+    # 是 RunContext 当前的唯一消费者（原 graph 硬编码传 None，钩子拿不到身份信息）
+    run_ctx = RunContext(
+        user_id=job.user.id,
+        user_name=job.user.name,
+        is_super_admin=job.user.is_super_admin,
+        run_mode=job.run_mode,
+        profile_id=trace.profile_id,
+        session_id=job.session_id,
+        trace_id=trace.id,
+    )
 
     with timed("worker.graph_build", trace_token=handle.trace_token):
         deps = GraphDeps(
@@ -1656,7 +1659,8 @@ def _build_runtime(
             max_tool_rounds=payload.max_tool_rounds,
             context_token_budget=payload.context_token_budget,  # E15 动态输入预算（None 走常数下限）
             stream_answer=stream_answer,
-            guardrails_validator=validate_guardrails,
+            guardrails_validator=prompt_render.validate_guardrails_messages,
+            run_ctx=run_ctx,
             on_event=handle.emit,
             should_cancel=should_cancel,
             trace_token=handle.trace_token,

@@ -73,5 +73,18 @@ def is_guardrails_intact(system_message_content: str | None) -> bool:
     )
 
 
+def validate_guardrails_messages(messages: list) -> None:
+    """组装后 messages 的护栏 fail-close 校验（GraphDeps.guardrails_validator 权威实现）。
+
+    要求 messages[0] 为 SystemMessage 且护栏完整；校验对象是 build_model_messages
+    的产物（system 只在组装时注入、不回写 state——按原始 state 校验会恒 fail-close）。
+    原 _execute_run/_execute_resume 两份闭包拷贝收敛至此（架构审查 P0-1 伴随）。
+    """
+    from langchain_core.messages import SystemMessage
+
+    if not messages or not isinstance(messages[0], SystemMessage) or not is_guardrails_intact(messages[0].content):
+        raise RuntimeError("护栏完整性校验失败（fail-close）")
+
+
 def guardrails_version() -> str:
     return GUARDRAILS_VERSION

@@ -14,7 +14,7 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, Any
 
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
@@ -84,6 +84,7 @@ class GraphDeps:
         pre_model_hooks: list | None = None,  # 产出型中间件（MemoryInjection 等，返回 state delta）
         apply_hooks: Callable | None = None,  # apply_pre_model_hooks
         guardrails_validator: Callable[[list], None] = None,  # type: ignore[assignment] —— 校验型（护栏完整性，对组装后 messages）
+        run_ctx: Any = None,  # 五钩子 RunContext（pre_model 钩子消费者；None = 测试桩直构）
         on_event: Callable[[str, dict], None] | None = None,  # 受控事件队列出口（SSE，P5）
         should_cancel: Callable[[], bool] | None = None,
         should_stop_scheduling: Callable[[], bool] | None = None,  # 锁所有权校验（P5 注入）
@@ -101,6 +102,7 @@ class GraphDeps:
         self.stream_answer = stream_answer
         self.pre_model_hooks = pre_model_hooks or []
         self.apply_hooks = apply_hooks
+        self.run_ctx = run_ctx
         self.guardrails_validator = guardrails_validator
         self.on_event = on_event
         self.should_cancel = should_cancel or (lambda: False)
@@ -134,7 +136,7 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
     probe_state = {"messages": messages}
     injected = ""
     if deps.apply_hooks is not None and deps.pre_model_hooks:
-        delta = deps.apply_hooks(deps.pre_model_hooks, probe_state, None) or {}
+        delta = deps.apply_hooks(deps.pre_model_hooks, probe_state, deps.run_ctx) or {}
         injected = delta.get("injected_context") or ""
 
     # ② 上下文组装（system 消息在此前置——护栏唯一注入点在 prompt_render.render）
