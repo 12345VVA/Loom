@@ -23,17 +23,17 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-from app.modules.agent.service.runtime.memory_service import (
-    AGENT_CONTEXT_TOKEN_BUDGET,
-    build_model_messages,
-)
-from app.modules.agent.service.runtime.model_wrapper import LoomChatModel
-from app.modules.agent.service.runtime.run_service import (
+from app.modules.agent.service.runtime.budget import (
     PendingToolCall,
     RunBudget,
     dispose_pending_tool_calls,
     fallback_reply,
 )
+from app.modules.agent.service.runtime.memory_service import (
+    AGENT_CONTEXT_TOKEN_BUDGET,
+    build_model_messages,
+)
+from app.modules.agent.service.runtime.model_wrapper import LoomChatModel
 from app.modules.agent.service.runtime.timing import timed
 from app.modules.agent.service.runtime.tool_executor import ToolExecutor
 
