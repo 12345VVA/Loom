@@ -1582,7 +1582,12 @@ def _build_runtime(
     """
     from app.modules.agent.service.runtime import prompt_render
     from app.modules.agent.service.runtime.graph import GraphDeps, build_agent_graph
-    from app.modules.agent.service.runtime.middleware import RunContext
+    from app.modules.agent.service.runtime.memory_provider import make_session_history_provider
+    from app.modules.agent.service.runtime.middleware import (
+        MemoryInjectionMiddleware,
+        RunContext,
+        apply_pre_model_hooks,
+    )
     from app.modules.agent.service.runtime.model_wrapper import LoomChatModel
     from app.modules.ai.service.runtime_service import AiModelRuntimeService
 
@@ -1649,6 +1654,13 @@ def _build_runtime(
         trace_id=trace.id,
     )
 
+    # 记忆注入接线（批 C3）：enable_memory 是 enable_memory 字段的执行期消费者落点——
+    # 此前它走完存储→快照→载荷三段后无人读取（"有开关但无效"）。v1 源 = 会话历史
+    # （memory_provider 模块 docstring），workflow 语义记忆留待 agent 记忆专项
+    pre_model_hooks = []
+    if payload.enable_memory:
+        pre_model_hooks = [MemoryInjectionMiddleware(context_provider=make_session_history_provider(db))]
+
     with timed("worker.graph_build", trace_token=handle.trace_token):
         deps = GraphDeps(
             model=model,
@@ -1660,6 +1672,8 @@ def _build_runtime(
             context_token_budget=payload.context_token_budget,  # E15 动态输入预算（None 走常数下限）
             stream_answer=stream_answer,
             guardrails_validator=prompt_render.validate_guardrails_messages,
+            pre_model_hooks=pre_model_hooks,
+            apply_hooks=apply_pre_model_hooks if pre_model_hooks else None,
             run_ctx=run_ctx,
             on_event=handle.emit,
             should_cancel=should_cancel,

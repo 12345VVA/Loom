@@ -8,12 +8,17 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any
 
+from helpers import make_test_engine
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from sqlmodel import Session
 
+from app.modules.agent.model.agent import AgentMessage
 from app.modules.agent.service.runtime import prompt_render
 from app.modules.agent.service.runtime.graph import AgentState, GraphDeps, build_agent_graph
+from app.modules.agent.service.runtime.memory_provider import make_session_history_provider
 from app.modules.agent.service.runtime.memory_service import (
     ContextBudgetError,
     _atomic_units,
@@ -21,7 +26,11 @@ from app.modules.agent.service.runtime.memory_service import (
     estimate_tokens,
     truncate_tool_result,
 )
-from app.modules.agent.service.runtime.middleware import apply_pre_model_hooks
+from app.modules.agent.service.runtime.middleware import (
+    MemoryInjectionMiddleware,
+    RunContext,
+    apply_pre_model_hooks,
+)
 from app.modules.agent.service.runtime.model_wrapper import LoomChatModel, _message_to_openai_dict
 from app.modules.agent.service.runtime.run_service import (
     PendingToolCall,
@@ -123,14 +132,22 @@ def _time_tool_snapshot() -> dict:
 _validate_guardrails = prompt_render.validate_guardrails_messages
 
 
-def _build(script: list[AIMessage], *, max_tool_rounds: int = 3, with_guardrails: bool = True):
+def _build(
+    script: list[AIMessage],
+    *,
+    max_tool_rounds: int = 3,
+    with_guardrails: bool = True,
+    pre_model_hooks: list | None = None,
+    run_ctx: Any = None,
+):
     bootstrap_registry()
     executor = ToolExecutor(
         snapshot_tools=_time_tool_snapshot(),
         bound_names={"current_time"},
         context=_FakeCtx(),
     )
-    model = _fake_model(iter(script))  # Fake 桩无需 bind_tools（绑定状态是 LoomChatModel 字段）
+    model = _fake_model(iter(script))
+    hooks = pre_model_hooks or []
     deps = GraphDeps(
         model=model,
         tool_executor=executor,
@@ -138,8 +155,9 @@ def _build(script: list[AIMessage], *, max_tool_rounds: int = 3, with_guardrails
         system_message=prompt_render.render("你是测试智能体", {"user_name": "tester"}),
         tool_schema_tokens=estimate_tokens('{"type":"object"}'),
         max_tool_rounds=max_tool_rounds,
-        pre_model_hooks=[],
-        apply_hooks=apply_pre_model_hooks,
+        pre_model_hooks=hooks,
+        apply_hooks=apply_pre_model_hooks if hooks else None,
+        run_ctx=run_ctx,
         guardrails_validator=_validate_guardrails if with_guardrails else None,
     )
     return deps
@@ -273,6 +291,86 @@ class GuardrailsTestCase(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             prompt_render.validate_guardrails_messages([SystemMessage(content="护栏被删了")])
         prompt_render.validate_guardrails_messages([SystemMessage(content=prompt_render.render("正常"))])
+
+
+class _RecordingModel:
+    """记录 generate 入参的脚本桩（注入断言用：组装后 messages 逐轮留痕）。"""
+
+    def __init__(self, script: list[AIMessage]):
+        self._inner = _ScriptFakeModel(messages=iter(script))
+        self.calls: list[list] = []
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def generate(self, messages, **kwargs):
+        self.calls.append(list(messages[0]) if messages and isinstance(messages[0], list) else list(messages))
+        return self._inner.generate(messages, **kwargs)
+
+
+class MemoryInjectionTestCase(unittest.TestCase):
+    """批 C3/C4：enable_memory 的执行期消费者（provider / middleware / 图级注入）。"""
+
+    def test_provider_returns_history_excluding_latest_user(self):
+        """会话历史拼接：倒序取近 N 条；最新 user = 当前输入不注入（裁剪器优先级②已保留）。"""
+        engine = make_test_engine(tables=[AgentMessage.__table__])
+        try:
+            with Session(engine) as session:
+                session.add(AgentMessage(session_id=7, role="user", content="第一问"))
+                session.add(AgentMessage(session_id=7, role="assistant", content="第一答"))
+                session.add(AgentMessage(session_id=7, role="user", content="当前输入"))
+                session.commit()
+                provider = make_session_history_provider(session)
+                text = provider(RunContext(user_id=1, session_id=7))
+            self.assertIn("第一问", text)
+            self.assertIn("第一答", text)
+            self.assertNotIn("当前输入", text)
+        finally:
+            engine.dispose()
+
+    def test_provider_degrades_to_empty_on_error(self):
+        """检索故障降级为空串（apply_pre_model_hooks 不捕异常——外抛会把 run 打成 failed）。"""
+
+        class _Broken:
+            def exec(self, *args, **kwargs):
+                raise RuntimeError("db down")
+
+        self.assertEqual(make_session_history_provider(_Broken())(RunContext(user_id=1, session_id=7)), "")
+
+    def test_provider_no_ctx_returns_empty(self):
+        self.assertEqual(make_session_history_provider(None)(None), "")
+        self.assertEqual(make_session_history_provider(None)(RunContext(user_id=1)), "")
+
+    def test_middleware_produces_injected_context_delta(self):
+        mw = MemoryInjectionMiddleware(context_provider=lambda ctx: "记忆内容")
+        self.assertEqual(mw.pre_model({}, RunContext(user_id=1, session_id=7)), {"injected_context": "记忆内容"})
+        self.assertIsNone(MemoryInjectionMiddleware(context_provider=lambda ctx: "").pre_model({}, None))
+
+    def test_graph_injects_reference_context_when_enabled(self):
+        """接线形态（图级）：injected_context → 组装消息第二条 system（[参考上下文]）。"""
+        model = _RecordingModel([AIMessage(content="好的。")])
+        deps = _build(
+            [],
+            pre_model_hooks=[MemoryInjectionMiddleware(context_provider=lambda ctx: "上一轮历史内容")],
+            run_ctx=RunContext(user_id=1, session_id=7),
+        )
+        deps.model = model
+        build_agent_graph(deps).invoke({"messages": [HumanMessage("hi")], "model_calls": 0, "tool_rounds": 0})
+        assembled = model.calls[0]
+        self.assertEqual(len(assembled) >= 2, True)
+        second = assembled[1]
+        self.assertIsInstance(second, SystemMessage)
+        self.assertIn("[参考上下文]", second.content)
+        self.assertIn("上一轮历史内容", second.content)
+
+    def test_memory_disabled_no_injection(self):
+        """enable_memory=False 装配形态（hooks 空）：组装消息不含注入段。"""
+        model = _RecordingModel([AIMessage(content="好的。")])
+        deps = _build([])
+        deps.model = model
+        build_agent_graph(deps).invoke({"messages": [HumanMessage("hi")], "model_calls": 0, "tool_rounds": 0})
+        for m in model.calls[0]:
+            self.assertNotIn("[参考上下文]", m.content)
 
 
 class ContextBudgetTestCase(unittest.TestCase):
