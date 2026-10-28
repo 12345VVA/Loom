@@ -67,7 +67,7 @@
 						{{ t('agent.profile.debug') }}
 					</el-button>
 					<el-button
-						v-if="scope.row.status === 'draft'"
+						v-if="scope.row.status === 'draft' || scope.row.hasPendingChanges"
 						v-permission="serviceAgent.permission?.publish"
 						text
 						type="success"
