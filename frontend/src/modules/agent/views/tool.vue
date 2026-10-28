@@ -72,6 +72,24 @@ const { service } = useCool();
 const { t } = useI18n();
 const serviceTool = service.agent.tool;
 
+// 行形态（对齐 eps.d.ts interface tool / version：resolve_alias camelCase 出口）
+type ToolRow = {
+	id: number;
+	toolName: string;
+	displayName?: string;
+	level?: string;
+	status?: boolean;
+	sourceType?: string;
+	createTime?: string;
+};
+type ToolVersionRow = {
+	version: number;
+	changeKind?: string;
+	level?: string;
+	contractHash?: string;
+	createTime?: string;
+};
+
 // 工具等级（三级枚举，D11 语义）：dangerous_write 当前不可发布（D11 前置），仅展示
 const levelOptions = [
 	{ label: t('agent.tool.levelReadonly'), value: 'readonly', type: 'info' },
@@ -89,7 +107,7 @@ const refreshing = ref(false);
 onMounted(async () => {
 	try {
 		const status = await serviceTool.registryStatus();
-		registry.value = (status || {}) as any;
+		registry.value = (status || {}) as { degraded: boolean; error?: string; toolCount: number };
 	} catch {
 		registry.value = { degraded: false, toolCount: 0 };
 	}
@@ -139,7 +157,7 @@ const Table = useTable({
 
 // D14 紧急启停：实时生效（执行链 assert_execution_allowed 实时查库）；
 // 停用影响所有运行中智能体，二次确认；失败不更新行值
-async function onToggle(row: any, val: boolean) {
+async function onToggle(row: ToolRow, val: boolean) {
 	if (!val) {
 		try {
 			await ElMessageBox.confirm(
@@ -152,8 +170,8 @@ async function onToggle(row: any, val: boolean) {
 		}
 	}
 	try {
-		const updated = await serviceTool.toggleEnabled({ id: row.id, status: val });
-		row.status = (updated as any)?.status ?? val;
+		const updated = (await serviceTool.toggleEnabled({ id: row.id, status: val })) as ToolRow | undefined;
+		row.status = updated?.status ?? val;
 		ElMessage.success(t(val ? 'agent.tool.toggleOn' : 'agent.tool.toggleOff'));
 	} catch (e) {
 		ElMessage.error(t('agent.tool.toggleFailed') + (e instanceof Error ? e.message : String(e)));
@@ -164,7 +182,7 @@ async function onToggle(row: any, val: boolean) {
 async function onRefresh() {
 	refreshing.value = true;
 	try {
-		const res = (await serviceTool.refresh()) as any;
+		const res = (await serviceTool.refresh()) as { ok?: boolean; count?: number } | undefined;
 		ElMessage.success(t('agent.tool.refreshSuccess', { count: res?.count ?? 0 }));
 		Crud.value?.refresh();
 	} catch (e) {
@@ -176,13 +194,13 @@ async function onRefresh() {
 
 const versionsVisible = ref(false);
 const versionsTitle = ref('');
-const versions = ref<any[]>([]);
+const versions = ref<ToolVersionRow[]>([]);
 
-async function openVersions(row: any) {
+async function openVersions(row: ToolRow) {
 	versionsTitle.value = `${row.displayName || row.toolName} · ${t('agent.tool.versions')}`;
 	try {
 		const list = await serviceTool.versions({ toolName: row.toolName });
-		versions.value = (list || []) as any[];
+		versions.value = (list || []) as ToolVersionRow[];
 	} catch {
 		versions.value = [];
 	}
