@@ -81,7 +81,10 @@ class ToolExecutor:
             name = call.get("name") or ""
             args = call.get("args") or {}
             if self.should_cancel():
-                outcomes.append(self._refuse(call_id, name, "已取消，未执行", "cancelled"))
+                outcome = self._refuse(call_id, name, "已取消，未执行", "cancelled")
+                # A1（调用追踪审计）：取消吞掉的调用也落审计——「模型发起了调用但未执行」必须可查
+                self._write_log(outcome, args, time.monotonic())
+                outcomes.append(outcome)
                 continue
             if self.on_event is not None:
                 self.on_event("tool_started", {"toolCallId": call_id, "toolName": name})
@@ -108,12 +111,22 @@ class ToolExecutor:
 
         try:
             result = tool.func(validated_args, self.context)
+            content = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+            # B2 软失败契约识别：工具按约定返回 {"ok": false, ...} → 审计记失败而非成功。
+            # parse 失败按纯文本成功处理；ok 非 False（缺省/True）不影响
+            soft_failure = False
+            try:
+                parsed = json.loads(content)
+                soft_failure = isinstance(parsed, dict) and parsed.get("ok") is False
+            except (ValueError, TypeError):
+                pass
             outcome = ToolCallOutcome(
                 call_id=call_id,
                 name=name,
-                content=result if isinstance(result, str) else json.dumps(result, ensure_ascii=False),
-                success=True,
+                content=content,
+                success=not soft_failure,
                 duration_ms=int((time.monotonic() - started) * 1000),
+                skipped_reason="soft_failure" if soft_failure else None,
             )
         except ToolDenied as exc:
             outcome = ToolCallOutcome(
@@ -204,6 +217,7 @@ class ToolExecutor:
                 target_ref=getattr(self.context, "audit_target_ref", None),  # E3 写操作目标审计
                 duration_ms=outcome.duration_ms or int((time.monotonic() - started) * 1000),
                 success=outcome.success if outcome.skipped_reason != "cancelled" else None,
+                skipped_reason=outcome.skipped_reason,  # A3：拒绝/未执行原因结构化落库
                 error=outcome.content if not outcome.success else None,
             )
         except Exception:  # noqa: BLE001 —— 日志失败不影响执行流

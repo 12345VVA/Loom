@@ -325,6 +325,10 @@ class AgentToolCallLog(BaseEntity, table=True):
     target_ref: str | None = Field(default=None, max_length=100)
     duration_ms: int | None = Field(default=None)
     success: bool | None = Field(default=None)
+    # 拒绝/未执行原因结构化列（调用追踪审计 A3）：cancelled/soft_failure/invalid_args/denied/
+    # not_bound/contract_incompatible/budget_exhausted/error——NULL=正常执行成功；
+    # 此前列只在 error 文本里间接体现，不可按原因统计
+    skipped_reason: str | None = Field(default=None, max_length=30)
     error: str | None = Field(default=None, sa_column=Column(Text))
 
 

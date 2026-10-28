@@ -24,9 +24,16 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 
-def tool_result(payload: dict) -> str:
-    """工具返回值统一序列化（给 LLM 消费的 JSON 字符串，不套响应信封）。"""
-    return json.dumps(payload, ensure_ascii=False, default=str)
+def tool_result(payload: dict, *, ok: bool = True) -> str:
+    """工具返回值统一序列化（给 LLM 消费的 JSON 字符串，不套响应信封）。
+
+    软失败契约（B2）：工具内业务失败必须抛异常（HTTPException/ValueError——执行器
+    归类审计）或 `tool_result(payload, ok=False)`（执行器识别为 success=False +
+    skipped_reason='soft_failure'）；**禁止吞异常返回普通结果串**——那会在审计面
+    记成「成功」。ok=True 时不注入 ok 键（返回形态与历史零变化）。"""
+    if ok:
+        return json.dumps(payload, ensure_ascii=False, default=str)
+    return json.dumps({"ok": False, **payload}, ensure_ascii=False, default=str)
 
 
 @dataclass

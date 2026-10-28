@@ -617,5 +617,104 @@ class StreamingAnswerTestCase(_StreamingCaseBase):
         self.assertFalse([t for t, _ in events if t.startswith("answer_")])
 
 
+class ExecutorAuditTestCase(unittest.TestCase):
+    """工具执行审计（调用追踪专项 B2/A1）：软失败契约识别 / 取消路径落审计。"""
+
+    def setUp(self):
+        from unittest.mock import patch
+
+        bootstrap_registry()
+        # 资源层实时校验整类 patch（查库拒绝 fake 工具）；资源层全链路由 approval/trace 用例覆盖
+        patcher = patch("app.modules.agent.service.runtime.tool_executor.assert_execution_allowed")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _executor(self, logs: list[dict], should_cancel=lambda: False) -> ToolExecutor:
+        return ToolExecutor(
+            snapshot_tools={"fake_soft": {"level": "readonly", "parameters": {"type": "object", "properties": {}}}},
+            bound_names={"fake_soft"},
+            context=_FakeCtx(),
+            should_cancel=should_cancel,
+            log_tool_call=lambda **kw: logs.append(kw),
+        )
+
+    def _register_soft_tool(self, result_fn):
+        from pydantic import BaseModel
+
+        from app.modules.agent.service import tool_registry as registry_module
+        from app.modules.agent.service.tool_registry import RegisteredTool
+
+        class _Empty(BaseModel):
+            pass
+
+        registry_module._registry["fake_soft"] = RegisteredTool(
+            name="fake_soft",
+            description="软失败契约测试工具",
+            level="readonly",
+            args_model=_Empty,
+            func=result_fn,
+            module="test",
+        )
+
+    def _execute(self, logs: list[dict], result_fn, **executor_kwargs) -> ToolExecutor:
+        """注册 fake 工具 + patch 资源层实时校验（单测聚焦软失败/取消语义，资源层链由
+        test_agent_approval/trace 的全链路用例覆盖）。返回 executor 供调用方选择入口。"""
+
+        from app.modules.agent.service.runtime import tool_executor as executor_module
+
+        self._register_soft_tool(result_fn)
+        _ = executor_module  # import 保留（语义：本用例族 patch 的是本模块引用）
+        return self._executor(logs, **executor_kwargs)
+
+    def test_soft_failure_contract_marks_failed(self):
+        """B2：工具返回 {"ok": false} → success=False + skipped_reason='soft_failure'，
+        error 落库、content 原样回填模型；审计行完整。"""
+        import json as _json
+
+        def _soft_fail(args, ctx):
+            return _json.dumps({"ok": False, "error": "业务校验未通过"}, ensure_ascii=False)
+
+        logs: list[dict] = []
+        outcome = self._execute(logs, _soft_fail)._execute_single("call_1", "fake_soft", {})
+        self.assertFalse(outcome.success)
+        self.assertEqual(outcome.skipped_reason, "soft_failure")
+        self.assertIn("业务校验未通过", outcome.content)  # content 原样（模型可读错误）
+        self.assertEqual(len(logs), 1)
+        self.assertFalse(logs[0]["success"])
+        self.assertEqual(logs[0]["skipped_reason"], "soft_failure")
+        self.assertIn("ok", logs[0]["error"])
+
+    def test_normal_result_has_no_ok_key_and_reason_null(self):
+        """正常返回（无 ok 键）→ success=True、skipped_reason=None——内置工具零影响。"""
+
+        def _normal(args, ctx):
+            return "普通文本结果"
+
+        logs: list[dict] = []
+        outcome = self._execute(logs, _normal)._execute_single("call_1", "fake_soft", {})
+        self.assertTrue(outcome.success)
+        self.assertIsNone(outcome.skipped_reason)
+        self.assertTrue(logs[0]["success"])
+        self.assertIsNone(logs[0]["skipped_reason"])
+
+    def test_cancelled_call_writes_audit_row(self):
+        """A1：取消吞掉的调用也落审计行（success=None + skipped_reason='cancelled'）——
+        「模型发起了调用但未执行」必须可查。"""
+        logs: list[dict] = []
+        executor = self._execute(logs, lambda args, ctx: "不应被执行", should_cancel=lambda: True)
+        outcomes = executor.execute_round(
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "fake_soft", "args": {"k": "v"}, "id": "call_9", "type": "tool_call"}],
+            )
+        )
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0].skipped_reason, "cancelled")
+        self.assertEqual(len(logs), 1)  # A1 修复前：取消分支不落行
+        self.assertIsNone(logs[0]["success"])
+        self.assertEqual(logs[0]["skipped_reason"], "cancelled")
+        self.assertEqual(logs[0]["tool_name"], "fake_soft")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,9 @@
 - 预算覆盖全部输入（护栏/system + 工具 schema + 注入上下文 + 历史 + 当前输入），
   分配采用优先级预留模型（必需项 → 当前输入完整 → 注入截断 → 历史拿剩余）；
 - 当前输入超限显式报错（不静默截断——与资产 Composer 同哲学）；
-- 工具结果注入历史前截 200 字（外部工程先例），完整结果仅存 agent_message 与 tool_call_log。
+- 工具结果三层截断（A4 修正注释——原「完整结果仅存 agent_message 与 tool_call_log」失实）：
+  state 回填截 4000 字（agent_message 即此形态，>4000 字不留全量）、tool_call_log 摘要 200 字、
+  历史注入 200 字——全量仅存在于执行瞬间。
 """
 
 from __future__ import annotations

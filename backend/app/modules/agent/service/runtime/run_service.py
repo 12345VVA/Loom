@@ -1316,6 +1316,21 @@ class AgentRunService:
                     if getattr(m, "type", "") == "ai"
                     else ("tool" if isinstance(m, _ToolMessage) else "user")
                 )
+                # A2（调用追踪审计）：工具决策轮的 tool_calls 落 meta——此前普通轮不落，
+                # 「模型当时调了什么、传什么参数」只能看 args_summary（500 字截断）。
+                # 形态对齐 E4 挂起轮 meta.toolCalls（_suspend_run）
+                meta = None
+                tool_calls = getattr(m, "tool_calls", None) or []
+                if tool_calls:
+                    meta = json.dumps(
+                        {
+                            "toolCalls": [
+                                {"id": c.get("id"), "name": c.get("name"), "args": c.get("args")} for c in tool_calls
+                            ]
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )
                 db.add(
                     AgentMessage(
                         session_id=session_row.id,
@@ -1323,6 +1338,7 @@ class AgentRunService:
                         content=m.content if isinstance(m.content, str) else str(m.content),
                         name=getattr(m, "name", None),
                         tool_call_id=getattr(m, "tool_call_id", None),
+                        meta=meta,
                     )
                 )
             budget: RunBudget = job.budget or RunBudget(max_tool_rounds=1)
