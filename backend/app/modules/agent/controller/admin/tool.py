@@ -67,7 +67,11 @@ class ToolSyncResponse(BaseModel):
     )
 )
 class AgentToolController(BaseController):
-    @Post("/toggleEnabled", summary="工具启停（实时运行控制，D14 紧急禁用立即生效）", permission="agent:tool:toggle")
+    @Post(
+        "/toggleEnabled",
+        summary="工具启停（实时运行控制，D14 紧急禁用立即生效）",
+        permission="agent:tool:toggleEnabled",
+    )
     def toggle_enabled(
         self,
         payload: ToolToggleRequest,
@@ -102,7 +106,7 @@ class AgentToolController(BaseController):
     ) -> RegistryStatusResponse:
         return RegistryStatusResponse(**registry_status())
 
-    @Get("/versions", summary="工具资源版本历史（E12：双哈希分类变更线，倒序）", permission="agent:tool:list")
+    @Get("/versions", summary="工具资源版本历史（E12：双哈希分类变更线，倒序）", permission="agent:tool:versions")
     def versions(
         self,
         toolName: str,

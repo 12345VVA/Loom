@@ -159,6 +159,7 @@ def get_agent_tools() -> list[dict]:
     return [
         {
             "name": "search_media",
+            "display_name": "搜索媒体",
             "description": "按关键词搜索媒体库（文件名/生成提示词），返回媒体资产元信息列表",
             "level": "readonly",
             "args_model": SearchMediaArgs,
@@ -166,6 +167,7 @@ def get_agent_tools() -> list[dict]:
         },
         {
             "name": "rename_media",
+            "display_name": "重命名媒体",
             "description": "重命名媒体资产的显示文件名（需提供读取时的 updatedAt 做并发校验；仅属主可操作）",
             "level": "reversible_write",
             "args_model": RenameMediaArgs,
@@ -178,6 +180,7 @@ def get_agent_tools() -> list[dict]:
         },
         {
             "name": "tag_media",
+            "display_name": "媒体打标",
             "description": "为媒体资产追加标签（追加去重，不覆盖既有标签；需 updatedAt 并发校验；仅属主可操作）",
             "level": "reversible_write",
             "args_model": TagMediaArgs,

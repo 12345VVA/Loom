@@ -93,6 +93,7 @@ class RegisteredTool:
     func: Callable[[Any, Any], str]
     module: str
     safety: dict | None = None  # E3 安全机制表（reversible_write 必填；只读工具为 None）
+    display_name: str | None = None  # 管理面人类可读名（缺省回落 tool_name）
 
     @property
     def parameters(self) -> dict:
@@ -171,6 +172,9 @@ def _validate_entry(entry: Any, module: str) -> RegisteredTool:
             raise ValueError(f"[{module}] 可逆写工具 {name} 的 safety 缺少必需键: {missing}")
     elif safety is not None and not isinstance(safety, dict):
         raise TypeError(f"[{module}] 工具 {name} 的 safety 必须是 dict")
+    display_name = entry.get("display_name")
+    if display_name is not None and (not isinstance(display_name, str) or not display_name.strip()):
+        raise ValueError(f"[{module}] 工具 {name} 的 display_name 声明时必须为非空字符串")
     return RegisteredTool(
         name=name,
         description=str(entry["description"]),
@@ -179,6 +183,7 @@ def _validate_entry(entry: Any, module: str) -> RegisteredTool:
         func=entry["func"],
         module=module,
         safety=safety if isinstance(safety, dict) else None,
+        display_name=display_name,
     )
 
 
@@ -338,7 +343,7 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
         if row is None:
             row = AgentToolResource(
                 tool_name=name,
-                display_name=name,
+                display_name=tool.display_name or name,
                 description=tool.description,
                 source_type=AGENT_TOOL_SOURCE_BUILTIN,
                 level=tool.level,
@@ -366,7 +371,9 @@ def sync_resources(session: Session, operator_id: int | None = None) -> dict:
             version_added = AGENT_TOOL_CHANGE_CREATED
             synced.append((name, "created"))
         else:
-            row.display_name = row.display_name or name
+            # 声明补了 display_name 时接管展示名；管理员已定制（≠工具名）的值不覆盖
+            if not row.display_name or row.display_name == name:
+                row.display_name = tool.display_name or name
             row.description = tool.description
             row.source_type = AGENT_TOOL_SOURCE_BUILTIN
             row.level = tool.level

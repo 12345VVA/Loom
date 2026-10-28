@@ -58,6 +58,7 @@ def get_agent_tools() -> list[dict]:
     return [
         {
             "name": "list_workflow_definitions",
+            "display_name": "工作流列表",
             "description": "列出系统中已发布且启用的工作流定义（名称/描述），供后续引用或答疑",
             "level": "readonly",
             "args_model": ListWorkflowDefinitionsArgs,

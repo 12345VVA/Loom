@@ -143,6 +143,8 @@ class CollectAndAllowListTestCase(unittest.TestCase):
                                  "args_model": dict, "func": _f}]""",
             "pkg_no_func": """[{"name": "current_time", "description": "d", "level": "readonly",
                                "args_model": _A}]""",
+            "pkg_bad_display_name": """[{"name": "current_time", "description": "d", "level": "readonly",
+                                         "args_model": _A, "func": _f, "display_name": "  "}]""",
         }
         mod_dirs = {name: _write_tool_module(root, name, entries) for name, entries in cases.items()}
         try:
@@ -247,6 +249,28 @@ class ResourceSyncTestCase(unittest.TestCase):
         self.assertEqual(row2.description, "更新后的描述")
         self.assertNotEqual(row2.metadata_hash, old_hash)
         self.assertFalse(row2.status)  # 禁用态不被代码刷新恢复
+
+    def test_sync_display_name_declared_takes_over_admin_value_kept(self):
+        """display_name（管理面展示名）：声明接管「未定制」行（原值=工具名）；管理员定制值不覆盖。"""
+        tool_registry._registry["query_asset"] = RegisteredTool(
+            name="query_asset",
+            description="d",
+            level="readonly",
+            args_model=_Args,
+            func=lambda a, c: "{}",
+            module="asset",
+            display_name="查询资产",
+        )
+        sync_resources(self.session, operator_id=1)
+        self.assertEqual(self._row("query_asset").display_name, "查询资产")
+
+        row = self._row("query_asset")
+        row.display_name = "资产查询（管理员定制）"
+        self.session.add(row)
+        self.session.commit()
+        sync_resources(self.session, operator_id=1)
+        self.session.expire_all()
+        self.assertEqual(self._row("query_asset").display_name, "资产查询（管理员定制）")
 
     def test_metadata_hash_changes_with_inputs(self):
         base = metadata_hash_of("d", {"type": "object"}, "readonly")

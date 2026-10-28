@@ -5,6 +5,7 @@
 
     { "name": str（全局唯一，对外契约不可改名）,
       "description": str（进 LLM schema）,
+      "display_name": str（可选，管理面人类可读名；缺省回落 tool_name）,
       "level": "readonly" | "reversible_write" | "dangerous_write"（必填，D11）,
       "args_model": type[pydantic.BaseModel]（生成 JSON schema + 服务端参数校验）,
       "func": def func(args: BaseModel, ctx: ToolContext) -> str }
@@ -72,6 +73,7 @@ def get_agent_tools() -> list[dict]:
     return [
         {
             "name": "system_info",
+            "display_name": "系统信息",
             "description": "查询当前系统的运行环境概要（应用名/Python 版本/平台/服务器时间）",
             "level": "readonly",
             "args_model": SystemInfoArgs,
@@ -79,6 +81,7 @@ def get_agent_tools() -> list[dict]:
         },
         {
             "name": "current_time",
+            "display_name": "当前时间",
             "description": "获取服务器当前时间（ISO 8601 带时区），用于回答时间相关问题",
             "level": "readonly",
             "args_model": CurrentTimeArgs,

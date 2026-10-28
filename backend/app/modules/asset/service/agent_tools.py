@@ -168,6 +168,7 @@ def get_agent_tools() -> list[dict]:
     return [
         {
             "name": "query_asset",
+            "display_name": "查询资产",
             "description": "按 id 或编号查询 IP 资产（角色/场景/风格）的档案信息，仅返回调用者有权查看的资产",
             "level": "readonly",
             "args_model": QueryAssetArgs,
@@ -175,6 +176,7 @@ def get_agent_tools() -> list[dict]:
         },
         {
             "name": "create_asset_draft",
+            "display_name": "创建资产草稿",
             "description": "创建 IP 资产草稿（角色/场景/风格），初始为草稿态不进入发布流程；仅创建可见的草稿底稿",
             "level": "reversible_write",
             "args_model": CreateAssetDraftArgs,
@@ -187,6 +189,7 @@ def get_agent_tools() -> list[dict]:
         },
         {
             "name": "update_asset_draft",
+            "display_name": "更新资产草稿",
             "description": "编辑调用者本人的 draft 态资产字段（名称/类别/外貌与负面提示词/标签）；已发布或归档资产不可改",
             "level": "reversible_write",
             "args_model": UpdateAssetDraftArgs,

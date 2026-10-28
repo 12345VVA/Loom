@@ -228,7 +228,7 @@
       "code": "agent_tool_toggle",
       "name": "工具启停",
       "type": "button",
-      "permission": "agent:tool:toggle",
+      "permission": "agent:tool:toggleEnabled",
       "role_codes": [
        "admin"
       ]
@@ -238,6 +238,15 @@
       "name": "工具刷新",
       "type": "button",
       "permission": "agent:tool:refresh",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_tool_versions",
+      "name": "版本历史",
+      "type": "button",
+      "permission": "agent:tool:versions",
       "role_codes": [
        "admin"
       ]
