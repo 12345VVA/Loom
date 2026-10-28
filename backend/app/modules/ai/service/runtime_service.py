@@ -294,7 +294,8 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
                             usage = event.get("usage") or usage
                         if event.get("requestId"):
                             request_id = event.get("requestId")
-                        tool_calls = event.get("toolCalls")  # E1：adapter 聚合结果（None 透传）
+                        if event.get("toolCalls") is not None:
+                            tool_calls = event["toolCalls"]  # E1：仅非 None 覆盖——[DONE] 帧无该键，防覆写聚合值
             content = "".join(content_parts)
             # 对流式完成后的完整内容进行脱敏（跳过结构化数据，或配置跳过）
             if not skip_masking and not _is_structured_response(structured_response):
@@ -782,7 +783,8 @@ class AiModelRuntimeService(FallbackMixin, RetryMixin, AuditMixin):
                             usage = event.get("usage") or usage
                         if event.get("requestId"):
                             request_id = event.get("requestId")
-                        tool_calls = event.get("toolCalls")  # E1：adapter 聚合结果（None 透传）
+                        if event.get("toolCalls") is not None:
+                            tool_calls = event["toolCalls"]  # E1：仅非 None 覆盖——[DONE] 帧无该键，防覆写聚合值
             content = "".join(content_parts)
             # 对流式完成后的完整内容进行脱敏（跳过结构化数据，或配置跳过）
             if not skip_masking and not _is_structured_response(structured_response):

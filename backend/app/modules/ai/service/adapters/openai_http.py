@@ -71,6 +71,11 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
             yield from self._iter_stream_events(payload)
 
     def _iter_stream_events(self, payload: dict[str, Any]):
+        # E1：流式 tool_calls 增量聚合（openai 协议按 index 分片：id/function.name/arguments
+        # 分帧到达），聚合结果随 done 事件下发——agent 流式轮据此判定「工具决策响应」。
+        # 与 openai_compatible 同构；此前本通道未聚合，DeepSeek 等走本类的渠道在模型
+        # 决定调工具时 done 无 toolCalls → agent 收到空正文且工具轮不执行（真机走查实锤）
+        tool_call_slots: dict[int, dict[str, Any]] = {}
         with httpx.stream(
             "POST",
             f"{self.base_url}{self.chat_path}",
@@ -95,6 +100,17 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
                 reasoning_delta = message_delta.get("reasoning_content") or message_delta.get("reasoning")
                 finish_reason = choice.get("finish_reason")
                 usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
+                for tc in message_delta.get("tool_calls") or []:
+                    slot = tool_call_slots.setdefault(
+                        tc.get("index", 0), {"id": "", "function": {"name": "", "arguments": ""}}
+                    )
+                    if tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        slot["function"]["name"] += fn["name"]
+                    if fn.get("arguments"):
+                        slot["function"]["arguments"] += fn["arguments"]
                 # DeepSeek 等思考模型的思维链增量，按 thinking_delta 事件透传（不混入正文）
                 if reasoning_delta:
                     yield {"event": "thinking_delta", "content": reasoning_delta, "raw": data, "requestId": request_id}
@@ -107,6 +123,7 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
                         "usage": usage,
                         "finishReason": finish_reason,
                         "requestId": request_id,
+                        "toolCalls": [tool_call_slots[i] for i in sorted(tool_call_slots)] if tool_call_slots else None,
                     }
 
     async def stream_chat_async(self, *, model: str, messages: list[dict[str, Any]], options: dict[str, Any]):
@@ -154,6 +171,7 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
         # 与 _iter_stream_events 逐条对齐。AsyncClient 按调用临时创建（async with
         # 即关），与同步通道 httpx.stream 每调用一连接的现行为一致——不驻留池化
         # 适配器实例，遵守 factory 池化纪律
+        tool_call_slots: dict[int, dict[str, Any]] = {}
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
@@ -177,6 +195,17 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
                     reasoning_delta = message_delta.get("reasoning_content") or message_delta.get("reasoning")
                     finish_reason = choice.get("finish_reason")
                     usage = normalize_usage(data.get("usage")) if data.get("usage") else {}
+                    for tc in message_delta.get("tool_calls") or []:
+                        slot = tool_call_slots.setdefault(
+                            tc.get("index", 0), {"id": "", "function": {"name": "", "arguments": ""}}
+                        )
+                        if tc.get("id"):
+                            slot["id"] = tc["id"]
+                        fn = tc.get("function") or {}
+                        if fn.get("name"):
+                            slot["function"]["name"] += fn["name"]
+                        if fn.get("arguments"):
+                            slot["function"]["arguments"] += fn["arguments"]
                     # DeepSeek 等思考模型的思维链增量，按 thinking_delta 事件透传（不混入正文）
                     if reasoning_delta:
                         yield {
@@ -194,6 +223,9 @@ class OpenAIHttpAdapter(BaseHttpAdapter):
                             "usage": usage,
                             "finishReason": finish_reason,
                             "requestId": request_id,
+                            "toolCalls": (
+                                [tool_call_slots[i] for i in sorted(tool_call_slots)] if tool_call_slots else None
+                            ),
                         }
 
     def embedding(self, *, model: str, input: str | list[str], options: dict[str, Any]) -> dict:

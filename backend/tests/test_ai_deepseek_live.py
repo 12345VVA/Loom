@@ -67,6 +67,79 @@ def _parse_sse_chunks(chunks: list[str]) -> list[dict]:
     return events
 
 
+_SSE_LINES = [
+    'data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"list_workflow_definitions","arguments":""}}]}}]}',
+    "",
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}',
+    "",
+    'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+    "",
+    'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}',
+    "",
+    "data: [DONE]",
+    "",
+]
+
+
+class _FakeStreamResponse:
+    is_error = False
+    headers = {"x-request-id": "req-test-1"}
+
+    def read(self):
+        return None
+
+    def raise_for_status(self):
+        return None
+
+    def iter_lines(self):
+        return iter(_SSE_LINES)
+
+
+class _FakeStreamCtx:
+    def __enter__(self):
+        return _FakeStreamResponse()
+
+    def __exit__(self, *args):
+        return False
+
+
+class ToolCallAggregationTestCase(unittest.TestCase):
+    """OpenAIHttpAdapter E1 流式 tool_calls 增量聚合。
+
+    背景（真机走查实锤）：本通道此前未聚合——DeepSeek 等走本类的渠道，模型决定调
+    工具时 done 帧无 toolCalls → agent 流式轮收到空正文且工具轮不执行（空回复落库）。
+    与 openai_compatible 同构；[DONE] 帧不带 toolCalls 键（runtime 侧仅非 None 覆盖）。
+    """
+
+    def test_stream_aggregates_tool_calls_into_done_frame(self):
+        from unittest.mock import patch
+
+        from app.modules.ai.service.adapters import openai_http
+
+        adapter = DeepSeekAdapter(_live_provider())
+        with patch.object(openai_http.httpx, "stream", return_value=_FakeStreamCtx()):
+            events = list(
+                adapter.stream_chat(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": "q"}],
+                    options={"max_tokens": 64, "temperature": 0.1},
+                )
+            )
+        dones = [e for e in events if e.get("event") == "done"]
+        with_tools = [e for e in dones if e.get("toolCalls")]
+        self.assertTrue(with_tools)
+        call = with_tools[0]["toolCalls"][0]
+        self.assertEqual(call["id"], "call_1")
+        self.assertEqual(call["function"]["name"], "list_workflow_definitions")
+        self.assertEqual(call["function"]["arguments"], "{}")
+        # [DONE] 帧（无 usage/finishReason）不带 toolCalls 键——runtime 仅非 None 覆盖
+        done_frame = [e for e in dones if not e.get("usage") and not e.get("finishReason")]
+        self.assertTrue(done_frame)
+        self.assertNotIn("toolCalls", done_frame[0])
+        # 全程无正文 delta（模型输出全为调用分片）
+        self.assertFalse(any(e.get("event") == "delta" and e.get("content") for e in events))
+
+
 class DeepSeekLiveTestCase(unittest.TestCase):
     def setUp(self):
         if not _deepseek_api_key():
