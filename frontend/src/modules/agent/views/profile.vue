@@ -146,9 +146,12 @@ onMounted(async () => {
 	}
 	try {
 		const tools = await service.agent.tool.list();
+		// 禁用态灰显（工具链路专题 P1-5：发现层体现状态，不让用户配完发布才被拒）；
+		// 不过滤以保留历史 profile 已选项的显示，发布校验仍兜底
 		toolOptions.value = (tools || []).map((tool: any) => ({
-			label: `${tool.displayName || tool.toolName}（${tool.level}）`,
-			value: tool.toolName
+			label: `${tool.displayName || tool.toolName}（${tool.level}）${tool.status ? '' : `（${t('agent.tool.disabled')}）`}`,
+			value: tool.toolName,
+			disabled: !tool.status
 		}));
 	} catch {
 		toolOptions.value = [];

@@ -180,6 +180,40 @@
       "role_codes": [
        "admin"
       ]
+     }
+    ]
+   },
+   {
+    "code": "nav_agent_tool",
+    "name": "工具管理",
+    "type": "menu",
+    "module": "agent",
+    "resource": "tool",
+    "path": "/agent/tool",
+    "component": "modules/agent/views/tool.vue",
+    "icon": "icon-agent-tool",
+    "sort_order": 5,
+    "role_codes": [
+     "admin"
+    ],
+    "children": [
+     {
+      "code": "agent_tool_page",
+      "name": "分页",
+      "type": "button",
+      "permission": "agent:tool:page",
+      "role_codes": [
+       "admin"
+      ]
+     },
+     {
+      "code": "agent_tool_info",
+      "name": "详情",
+      "type": "button",
+      "permission": "agent:tool:info",
+      "role_codes": [
+       "admin"
+      ]
      },
      {
       "code": "agent_tool_list",
