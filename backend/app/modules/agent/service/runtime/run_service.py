@@ -527,7 +527,11 @@ class AgentRunService:
             if handle is not None and handle.trace_id
             else self.session.exec(select(AgentRunTrace).where(AgentRunTrace.error == f"token:{trace_token}")).first()
         )
-        if trace is not None and trace.user_id != current_user.id and not getattr(current_user, "is_super_admin", False):
+        if (
+            trace is not None
+            and trace.user_id != current_user.id
+            and not getattr(current_user, "is_super_admin", False)
+        ):
             raise HTTPException(status_code=403, detail="仅可停止本人发起的运行")
         # 鉴权通过后才写取消令牌（P0-8 跨进程取消语义保留：Redis 令牌是任意进程执行侧
         # 唯一的取消信号；令牌值 128 位随机 hex 仅 run 发起者可见）
@@ -714,6 +718,7 @@ class AgentRunService:
                         or handle.deadline.expired()
                         or not owns_run_lock(session_row.id, handle.trace_token)  # 锁所有权丢失自停（P0-3）
                     )
+
                 # E17 编排模式分流：绑定工作流实例化执行（不经 graph/工具链；E1 流式/审批/预算不涉及）。
                 # 锁释放必须随行（graph 分支在 finally 释放，一期锁残留缺陷的同构教训）——
                 # 分支提前 return 前自行释放，防进程内降级锁 TTL 残留锁死同会话后续 run。
