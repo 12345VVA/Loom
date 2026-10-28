@@ -224,26 +224,25 @@ class RunFlowTestCase(unittest.TestCase):
                 "description": "获取当前时间",
             }
         }
-        payload = {
-            "snapshot_tools": snapshot_tools,
-            "bound_names": ["current_time"],
-            "temperature": 0.5,
-            "max_tokens": 1000,
-            "max_tool_rounds": 3,
-            "timeout_seconds": 60,
-            "system_prompt": "你是测试智能体",
-            "context_token_budget": 0,
-            "context_window_min": None,
-            "enable_memory": False,
-        }
-        job = {
-            "trace_id": trace.id,
-            "session_id": 1,
-            "run_mode": "published",
-            "user": {"id": 1, "name": "u1", "is_super_admin": False},
-            "payload": payload,
-            "stream_answer": False,
-        }
+        payload = run_service_module.RunPayload(
+            snapshot_tools=snapshot_tools,
+            bound_names={"current_time"},
+            temperature=0.5,
+            max_tokens=1000,
+            max_tool_rounds=3,
+            timeout_seconds=60,
+            system_prompt="你是测试智能体",
+            context_token_budget=0,
+            context_window_min=None,
+            enable_memory=False,
+        )
+        job = run_service_module.RunJob(
+            trace_id=trace.id,
+            session_id=1,
+            run_mode="published",
+            user=run_service_module.RunUser(id=1, name="u1"),
+            payload=payload,
+        )
         budget = run_service_module.RunBudget(max_tool_rounds=3)
         bundle = run_service_module._build_runtime(
             db=self.session,
@@ -258,7 +257,7 @@ class RunFlowTestCase(unittest.TestCase):
             stream_answer=False,
         )
         # 绑定态：长度 == 绑定工具数；envelope 形态与内容逐字段来自快照
-        self.assertEqual(len(bundle.model._bound_schemas), len(payload["bound_names"]))
+        self.assertEqual(len(bundle.model._bound_schemas), len(payload.bound_names))
         schema = bundle.model._bound_schemas[0]
         self.assertEqual(schema["type"], "function")
         self.assertEqual(schema["function"]["name"], "current_time")
@@ -267,7 +266,7 @@ class RunFlowTestCase(unittest.TestCase):
         # 装配产物完整性
         self.assertIsNotNone(bundle.graph)
         self.assertIs(bundle.budget, budget)
-        self.assertIs(job["_budget"], budget)
+        self.assertIs(job.budget, budget)
         self.assertEqual(
             sorted(bundle.executor.bound_names),
             ["current_time"],

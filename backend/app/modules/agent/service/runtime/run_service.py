@@ -34,6 +34,7 @@ from app.modules.agent.service.runtime.budget import (  # noqa: F401 —— 再�
     fallback_reply,
 )
 from app.modules.agent.service.runtime.prompt_render import guardrails_version
+from app.modules.agent.service.runtime.run_job import RunJob, RunPayload, RunUser
 from app.modules.agent.service.runtime.timing import logger as timing_logger
 from app.modules.agent.service.runtime.timing import timed
 from app.modules.agent.service.runtime.tool_executor import ToolExecutor
@@ -211,7 +212,7 @@ class AgentRunService:
             raise HTTPException(status_code=400, detail="该智能体已被停用，无法发起对话")  # D14 实时控制
         return profile
 
-    def _load_payload(self, profile: Any, run_mode: str) -> dict:
+    def _load_payload(self, profile: Any, run_mode: str) -> RunPayload:
         """published=当前快照（D15 渠道动态依赖，每次 run 实时解析）；draft=最新草稿。"""
         from app.modules.agent.service.profile_service import build_draft_json
         from app.modules.agent.service.tool_registry import get_tool
@@ -243,21 +244,21 @@ class AgentRunService:
             if tool is None:
                 raise HTTPException(status_code=400, detail=f"调试台：工具 {name} 未注册")
             snapshot_tools[name] = {"level": tool.level, "parameters": tool.parameters, "description": tool.description}
-        return {
-            "model_profile_code": profile.model_profile_code,
-            "system_prompt": profile_fields.get("systemPrompt"),
-            "snapshot_tools": snapshot_tools,
-            "bound_names": set(draft_json["tools"]),
-            "max_tokens": profile_fields.get("maxTokens", 4000),
-            "context_window_min": chain_min,
-            "context_token_budget": _context_token_budget(chain_min, int(profile_fields.get("maxTokens") or 0)),
-            "temperature": profile_fields.get("temperature", 0.5),
-            "max_tool_rounds": profile_fields.get("maxToolRounds", 12),
-            "timeout_seconds": profile_fields.get("timeoutSeconds", 60),
-            "enable_memory": profile_fields.get("enableMemory", True),
-        }
+        return RunPayload(
+            model_profile_code=profile.model_profile_code,
+            system_prompt=profile_fields.get("systemPrompt"),
+            snapshot_tools=snapshot_tools,
+            bound_names=set(draft_json["tools"]),
+            max_tokens=profile_fields.get("maxTokens", 4000),
+            context_window_min=chain_min,
+            context_token_budget=_context_token_budget(chain_min, int(profile_fields.get("maxTokens") or 0)),
+            temperature=profile_fields.get("temperature", 0.5),
+            max_tool_rounds=profile_fields.get("maxToolRounds", 12),
+            timeout_seconds=profile_fields.get("timeoutSeconds", 60),
+            enable_memory=profile_fields.get("enableMemory", True),
+        )
 
-    def _payload_from_snapshot(self, profile: Any, payload: dict) -> dict:
+    def _payload_from_snapshot(self, profile: Any, payload: dict) -> RunPayload:
         """快照载荷展开（published run 与 E4 恢复共用；恢复传挂起时快照而非 current，D13）。"""
         from app.modules.agent.service.profile_service import assert_window_for_budget
 
@@ -282,21 +283,21 @@ class AgentRunService:
         chain_min: int | None = None
         if execution_mode != AGENT_EXECUTION_MODE_WORKFLOW:
             chain_min = assert_window_for_budget(self.session, model_profile_code, max_tokens)
-        return {
-            "model_profile_code": model_profile_code,
-            "system_prompt": (payload.get("profile") or {}).get("systemPrompt"),
-            "snapshot_tools": snapshot_tools,
-            "bound_names": set(payload.get("tools") or []),
-            "max_tokens": max_tokens,
-            "context_window_min": chain_min,
-            "context_token_budget": _context_token_budget(chain_min, max_tokens) if chain_min else None,
-            "temperature": (payload.get("profile") or {}).get("temperature", 0.5),
-            "max_tool_rounds": (payload.get("profile") or {}).get("maxToolRounds", 12),
-            "timeout_seconds": (payload.get("profile") or {}).get("timeoutSeconds", 60),
-            "enable_memory": (payload.get("profile") or {}).get("enableMemory", True),
-            "execution_mode": execution_mode,
-            "workflow_definition_id": execution.get("workflowDefinitionId"),
-        }
+        return RunPayload(
+            model_profile_code=model_profile_code,
+            system_prompt=(payload.get("profile") or {}).get("systemPrompt"),
+            snapshot_tools=snapshot_tools,
+            bound_names=set(payload.get("tools") or []),
+            max_tokens=max_tokens,
+            context_window_min=chain_min,
+            context_token_budget=_context_token_budget(chain_min, max_tokens) if chain_min else None,
+            temperature=(payload.get("profile") or {}).get("temperature", 0.5),
+            max_tool_rounds=(payload.get("profile") or {}).get("maxToolRounds", 12),
+            timeout_seconds=(payload.get("profile") or {}).get("timeoutSeconds", 60),
+            enable_memory=(payload.get("profile") or {}).get("enableMemory", True),
+            execution_mode=execution_mode,
+            workflow_definition_id=execution.get("workflowDefinitionId"),
+        )
 
     def _resolve_session(
         self, *, profile: Any, session_id: int | None, question: str, run_mode: str, current_user: Any
@@ -589,7 +590,7 @@ class AgentRunService:
         handle: RunHandle,
         attachments: list[int] | None = None,
         stream_answer: bool = False,  # E1：SSE 会话启用最终答案 token 流式；invoke 保持整段
-    ) -> dict:
+    ) -> RunJob:
         """请求线程收尾：校验链（载荷/窗口/附件）→ trace 落库 + 用户消息 → 工作线程任务包。"""
         # E4 会话阻塞：存在待审批调用 → 拒绝新 run（审批人权限不授予请求者；解锁=组终局）
         from app.modules.agent.service.approval_service import has_pending as approval_pending
@@ -611,7 +612,7 @@ class AgentRunService:
             # D16：trace 记录本次 run 实际使用的护栏版本（安全策略实时生效可追溯）；
             # 编排型（E17）不经 LLM 护栏，记 None。
             guardrails_version=(
-                None if payload.get("execution_mode") == AGENT_EXECUTION_MODE_WORKFLOW else guardrails_version()
+                None if payload.execution_mode == AGENT_EXECUTION_MODE_WORKFLOW else guardrails_version()
             ),
             status=AGENT_RUN_RUNNING,
             error=f"token:{handle.trace_token}",  # trace_token 随 trace 落库（stopStream 按 token 定位）
@@ -630,31 +631,29 @@ class AgentRunService:
         # refresh 并重新 checkout 连接，使 agent SSE 流式期间 DB 连接悬挂回归
         # （异步审查 P0-2；expire_on_commit=True 实测见报告 v3）——改这里前先读此注释
         handle.trace_id = trace.id
-        return {
-            "trace_id": trace.id,
-            "session_id": session_row.id,
-            "question": question,
-            "attachment_metas": attachment_metas,
-            "run_mode": run_mode,
-            "stream_answer": stream_answer,
-            "engine": self.session.get_bind(),  # 请求线程的引擎（工作线程自建 Session 用；非 Session）
-            "user": {
-                "id": current_user.id,
-                "name": getattr(current_user, "name", "") or "",
-                "is_super_admin": bool(getattr(current_user, "is_super_admin", False)),
-            },
-            "payload": payload,
-            "handle": handle,
-        }
+        return RunJob(
+            trace_id=trace.id,
+            session_id=session_row.id,
+            question=question,
+            attachment_metas=attachment_metas,
+            run_mode=run_mode,
+            stream_answer=stream_answer,
+            engine=self.session.get_bind(),  # 请求线程的引擎（工作线程自建 Session 用；非 Session）
+            user=RunUser(
+                id=current_user.id,
+                name=getattr(current_user, "name", "") or "",
+                is_super_admin=bool(getattr(current_user, "is_super_admin", False)),
+            ),
+            payload=payload,
+            handle=handle,
+        )
 
-    def _assert_write_tools_ack(self, profile: Any, payload: dict) -> None:
+    def _assert_write_tools_ack(self, profile: Any, payload: RunPayload) -> None:
         """E3 实时校验：载荷含可逆写工具 → write_tools_ack 必须在案（发布是第一道，发起是实时道；
         恢复路径不重校——挂起发起时已过，执行时刻另有整链校验）。"""
         from app.modules.agent.model.agent import AGENT_TOOL_LEVEL_REVERSIBLE_WRITE
 
-        has_write = any(
-            t.get("level") == AGENT_TOOL_LEVEL_REVERSIBLE_WRITE for t in (payload.get("snapshot_tools") or {}).values()
-        )
+        has_write = any(t.get("level") == AGENT_TOOL_LEVEL_REVERSIBLE_WRITE for t in payload.snapshot_tools.values())
         if has_write and not getattr(profile, "write_tools_ack", False):
             raise HTTPException(
                 status_code=400,
@@ -676,15 +675,15 @@ class AgentRunService:
 
     # --- 工作线程执行（自建独立 Session，评审 P0-2）---
 
-    def _execute_run(self, job: dict) -> None:
+    def _execute_run(self, job: RunJob) -> None:
         from sqlmodel import Session as SqlSession
 
         from app.core.database import engine as app_engine
         from app.modules.agent.service.runtime.graph import ApprovalSuspension
         from app.modules.agent.service.runtime.memory_service import ContextBudgetError
 
-        handle: RunHandle = job["handle"]
-        payload = job["payload"]
+        handle: RunHandle = job.handle  # type: ignore[assignment] —— _build_job 已装配
+        payload = job.payload
         started = time.monotonic()
 
         def should_cancel() -> bool:
@@ -698,21 +697,21 @@ class AgentRunService:
         # BaseException 不被内层 except Exception 覆盖——三类路径统一收口，保证
         # handle.close 必达（generator 否则无限心跳、前端永等终态）+ 锁必释放。
         try:
-            run_engine = job.get("engine") or app_engine  # 引擎注入（请求线程 bind；非 Session——纪律 P0-2）
+            run_engine = job.engine or app_engine  # 引擎注入（请求线程 bind；非 Session——纪律 P0-2）
             with (
                 timed("worker.db_setup", trace_token=handle.trace_token),
                 SqlSession(run_engine) as db,
             ):  # 工作线程自建独立 Session
-                trace: AgentRunTrace = db.get(AgentRunTrace, job["trace_id"])
-                session_row: AgentSession = db.get(AgentSession, job["session_id"])
+                trace: AgentRunTrace = db.get(AgentRunTrace, job.trace_id)
+                session_row: AgentSession = db.get(AgentSession, job.session_id)
                 # E17 编排模式分流：绑定工作流实例化执行（不经 graph/工具链；E1 流式/审批/预算不涉及）。
                 # 锁释放必须随行（graph 分支在 finally 释放，一期锁残留缺陷的同构教训）——
                 # 分支提前 return 前自行释放，防进程内降级锁 TTL 残留锁死同会话后续 run。
-                if payload.get("execution_mode") == AGENT_EXECUTION_MODE_WORKFLOW:
+                if payload.execution_mode == AGENT_EXECUTION_MODE_WORKFLOW:
                     try:
                         self._execute_workflow_run(db, job, trace, session_row, handle, payload, started)
                     finally:
-                        release_run_lock(job["session_id"], handle.trace_token)
+                        release_run_lock(job.session_id, handle.trace_token)
                     return
                 try:
                     bundle = _build_runtime(
@@ -721,11 +720,11 @@ class AgentRunService:
                         payload=payload,
                         trace=trace,
                         handle=handle,
-                        budget=RunBudget(max_tool_rounds=int(payload["max_tool_rounds"])),
+                        budget=RunBudget(max_tool_rounds=payload.max_tool_rounds),
                         should_cancel=should_cancel,
                         model_profile_code=_profile_code_of(job),
-                        render_user_name=job["user"].get("name") or "",
-                        stream_answer=bool(job.get("stream_answer")),  # E1：仅 SSE 会话启用
+                        render_user_name=job.user.name,
+                        stream_answer=job.stream_answer,  # E1：仅 SSE 会话启用
                     )
                     graph = bundle.graph
                     with timed(
@@ -737,7 +736,7 @@ class AgentRunService:
                     ):
                         # 附件 parts 在 worker 线程组装（请求线程只校验引用，文件读取不占请求线程）
                         initial_content = _build_initial_content(
-                            job["question"], _build_attachment_parts(job.get("attachment_metas") or [])
+                            job.question, _build_attachment_parts(job.attachment_metas)
                         )
                         state = graph.invoke(
                             {"messages": [_HumanMessage(content=initial_content)], "model_calls": 0, "tool_rounds": 0}
@@ -772,11 +771,11 @@ class AgentRunService:
                         self._finish_run(db, job, None, AGENT_RUN_FAILED, started, str(exc))
                         handle.close("error", {"message": str(exc)[:300]})
                 finally:
-                    release_run_lock(job["session_id"], handle.trace_token)
+                    release_run_lock(job.session_id, handle.trace_token)
         except BaseException as exc:  # noqa: BLE001 —— worker 线程兜底（close 幂等，主路径已 close 时为 no-op）
-            logger.exception("agent run 兜底终态 trace=%s token=%s", job.get("trace_id"), handle.trace_token)
+            logger.exception("agent run 兜底终态 trace=%s token=%s", job.trace_id, handle.trace_token)
             try:
-                release_run_lock(job["session_id"], handle.trace_token)
+                release_run_lock(job.session_id, handle.trace_token)
             except Exception:  # noqa: BLE001 —— Redis 挂时不掩盖兜底主语义
                 logger.exception("agent run 锁兜底释放失败 token=%s", handle.trace_token)
             handle.close("error", {"message": f"运行异常终止：{str(exc)[:200]}"})
@@ -786,11 +785,11 @@ class AgentRunService:
     def _execute_workflow_run(
         self,
         db: Any,
-        job: dict,
+        job: RunJob,
         trace: AgentRunTrace,
         session_row: AgentSession,
         handle: RunHandle,
-        payload: dict,
+        payload: RunPayload,
         started: float,
     ) -> None:
         """编排模式执行分支（E17）：快照绑定的工作流实例化执行，输出回写会话。
@@ -806,9 +805,9 @@ class AgentRunService:
         from app.modules.workflow.model.workflow import WorkflowDefinition, WorkflowInstance
         from app.modules.workflow.service.workflow_service import WorkflowInstanceService
 
-        caller = _SimpleUser(job["user"])
+        caller = _SimpleUser(job.user)
         try:
-            definition = db.get(WorkflowDefinition, payload.get("workflow_definition_id") or 0)
+            definition = db.get(WorkflowDefinition, payload.workflow_definition_id or 0)
             if (
                 definition is None
                 or definition.delete_time is not None
@@ -818,7 +817,7 @@ class AgentRunService:
                 raise RuntimeError("绑定的工作流不存在、已停用或未发布（实时校验，D14）")
 
             service = WorkflowInstanceService(db)
-            instance = service.start_instance(definition.id, {"question": job["question"]}, current_user=caller)
+            instance = service.start_instance(definition.id, {"question": job.question}, current_user=caller)
             trace.workflow_instance_id = instance.id
             db.add(trace)
             db.commit()
@@ -928,7 +927,7 @@ class AgentRunService:
             "worker.finish_commit",
             level=logging.INFO,
             slow="phase",
-            trace_token=job["handle"].trace_token,
+            trace_token=job.handle.trace_token,
             message="agent 编排终态落库耗时",
         ):
             self._finish_workflow_run_inner(db, job, trace, session_row, started, status, error)
@@ -957,7 +956,7 @@ class AgentRunService:
     def _suspend_run(
         self,
         db: Any,
-        job: dict,
+        job: RunJob,
         trace: AgentRunTrace,
         session_row: AgentSession,
         handle: RunHandle,
@@ -992,7 +991,7 @@ class AgentRunService:
             tool_round=tool_round,
             ai_message=ai_message,
             snapshot_id=trace.snapshot_id,
-            requested_by=job["user"]["id"],
+            requested_by=job.user.id,
         )
         db.add(
             AgentMessage(
@@ -1074,20 +1073,20 @@ class AgentRunService:
             self._revert_claim(trace_id)
             raise HTTPException(status_code=404, detail="智能体不存在")
         payload = self._load_resume_payload(profile, trace)
-        if not acquire_run_lock(trace.session_id, trace_token, int(payload.get("timeout_seconds") or 60)):
+        if not acquire_run_lock(trace.session_id, trace_token, payload.timeout_seconds):
             # 锁被持有 = 有活 run 在执行（崩溃恢复路径的存活仲裁）；回滚 claim 保持可重试
             self._revert_claim(trace_id)
             return {"resumed": False, "reason": "该会话有运行正在执行，稍后重试"}
-        job = {
-            "trace_id": trace_id,
-            "session_id": trace.session_id,
-            "group_id": group_id,
-            "run_mode": trace.run_mode,
-            "engine": self.session.get_bind(),
-            "user": {"id": trace.user_id, "name": "", "is_super_admin": False},
-            "payload": payload,
-            "trace_token": trace_token,
-        }
+        job = RunJob(
+            trace_id=trace_id,
+            session_id=trace.session_id,
+            group_id=group_id,
+            run_mode=trace.run_mode,
+            engine=self.session.get_bind(),
+            user=RunUser(id=trace.user_id),
+            payload=payload,
+            trace_token=trace_token,
+        )
         worker = _threading.Thread(
             target=self._execute_resume, args=(job,), name=f"agent-resume-{trace_token[:8]}", daemon=True
         )
@@ -1105,7 +1104,7 @@ class AgentRunService:
         )
         self.session.commit()
 
-    def _load_resume_payload(self, profile: Any, trace: AgentRunTrace) -> dict:
+    def _load_resume_payload(self, profile: Any, trace: AgentRunTrace) -> RunPayload:
         """恢复载荷：published 用挂起时快照 id（非 current，D13）；draft 用当前草稿（调试语义）。"""
         if trace.run_mode != AGENT_RUN_MODE_PUBLISHED:
             return self._load_payload(profile, AGENT_RUN_MODE_DRAFT)
@@ -1114,7 +1113,7 @@ class AgentRunService:
             raise HTTPException(status_code=409, detail="挂起时的发布快照已不存在，无法恢复执行")
         return self._payload_from_snapshot(profile, json.loads(snapshot.snapshot_json or "{}"))
 
-    def _execute_resume(self, job: dict) -> None:
+    def _execute_resume(self, job: RunJob) -> None:
         """恢复线程：按终局处置审批组 → graph 从工具结果段续跑 → 原终态机收尾。
 
         逐 call 处置（二批 3.5 整组恢复门槛）：
@@ -1133,26 +1132,26 @@ class AgentRunService:
         from app.modules.agent.service.runtime.memory_service import ContextBudgetError, truncate_tool_result
 
         handle = RunHandle(
-            trace_id=job["trace_id"],
-            trace_token=job["trace_token"],
-            session_id=job["session_id"],
-            deadline=RunDeadline(int(job["payload"].get("timeout_seconds") or 60)),
+            trace_id=job.trace_id,
+            trace_token=job.trace_token,
+            session_id=job.session_id,
+            deadline=RunDeadline(job.payload.timeout_seconds),
         )
         _register_handle(handle)
-        job["handle"] = handle  # _finish_run_inner 消费 job["handle"]（trace_token 语义借用注释统一）
-        payload = job["payload"]
+        job.handle = handle  # 恢复轮 handle 构造后入包（RunJob 正式字段）
+        payload = job.payload
         started = time.monotonic()
 
         def should_cancel() -> bool:
             return is_cancel_requested(handle.trace_token, handle) or handle.deadline.expired()
 
         try:
-            run_engine = job.get("engine") or app_engine
+            run_engine = job.engine or app_engine
             with SqlSession(run_engine) as db:
-                trace: AgentRunTrace = db.get(AgentRunTrace, job["trace_id"])
-                session_row: AgentSession = db.get(AgentSession, job["session_id"])
+                trace: AgentRunTrace = db.get(AgentRunTrace, job.trace_id)
+                session_row: AgentSession = db.get(AgentSession, job.session_id)
                 try:
-                    budget = RunBudget(max_tool_rounds=int(payload["max_tool_rounds"]))
+                    budget = RunBudget(max_tool_rounds=payload.max_tool_rounds)
                     budget.model_calls = 1  # 挂起前产生 tool_calls 的那次模型调用已消耗
                     budget.tool_rounds = 0  # 挂起轮未执行（预检先于计数）；组处置随本轮执行计
                     bundle = _build_runtime(
@@ -1163,14 +1162,14 @@ class AgentRunService:
                         handle=handle,
                         budget=budget,
                         should_cancel=should_cancel,
-                        model_profile_code=payload.get("model_profile_code") or "",
+                        model_profile_code=payload.model_profile_code or "",
                         render_user_name="",  # 恢复轮非交互上下文（历史口径）
                         stream_answer=False,  # 恢复轮非 SSE 直连，最终答案整段下发
                     )
                     executor = bundle.executor
                     graph = bundle.graph
 
-                    group_id = job["group_id"]
+                    group_id = job.group_id
                     rows = {r.tool_call_id: r for r in approval_service.group_rows(db, trace.id, group_id)}
                     ai_row, calls = _suspended_ai_of(db, session_row.id, group_id)
                     if ai_row is None:
@@ -1194,7 +1193,7 @@ class AgentRunService:
                             if not approval_service.claim_for_execution(db, approval_id=row.id):
                                 tool_msgs.append(_tool_msg(cid, name, "该审批已被其他流程处理"))
                                 continue
-                            outcome = executor._execute_single(cid, name, args)  # noqa: SLF001 —— 审批执行链复用
+                            outcome = executor.execute_one(cid, name, args)  # E4 审批执行链复用（公开接口）
                             approval_service.finish_execution(
                                 db,
                                 approval_id=row.id,
@@ -1217,7 +1216,7 @@ class AgentRunService:
                         if blocker:  # 普通 call：组内有拒绝/过期 → 一律不执行（保守，模型决定后续）
                             tool_msgs.append(_tool_msg(cid, name, "因审批组挂起未执行（组内存在被拒绝/过期的审批）"))
                             continue
-                        outcome = executor._execute_single(cid, name, args)  # noqa: SLF001
+                        outcome = executor.execute_one(cid, name, args)
                         tool_msgs.append(_tool_msg(cid, name, outcome.content))
 
                     # 组处置不占 execute_tools 轮额度（非节点路径；恢复后新轮由节点正常累计）
@@ -1244,7 +1243,7 @@ class AgentRunService:
                     self._finish_resume(db, job, None, AGENT_RUN_FAILED, started, f"上下文预算：{exc}")
                     handle.close("error", {"message": str(exc)})
                 except Exception as exc:  # noqa: BLE001
-                    logger.exception("agent 恢复执行失败 trace=%s", job["trace_id"])
+                    logger.exception("agent 恢复执行失败 trace=%s", job.trace_id)
                     if is_cancel_requested(handle.trace_token, handle):
                         self._finish_resume(db, job, None, AGENT_RUN_CANCELLED, started, "已请求取消")
                         handle.close("cancelled", {"message": "运行已取消"})
@@ -1252,17 +1251,17 @@ class AgentRunService:
                         self._finish_resume(db, job, None, AGENT_RUN_FAILED, started, str(exc))
                         handle.close("error", {"message": str(exc)[:300]})
                 finally:
-                    release_run_lock(job["session_id"], handle.trace_token)
+                    release_run_lock(job.session_id, handle.trace_token)
         except BaseException as exc:  # noqa: BLE001
-            logger.exception("agent 恢复执行兜底 trace=%s", job.get("trace_id"))
+            logger.exception("agent 恢复执行兜底 trace=%s", job.trace_id)
             try:
-                release_run_lock(job["session_id"], handle.trace_token)
+                release_run_lock(job.session_id, handle.trace_token)
             except Exception:  # noqa: BLE001
                 logger.exception("agent 恢复锁兜底释放失败 token=%s", handle.trace_token)
             handle.close("error", {"message": f"恢复执行异常终止：{str(exc)[:200]}"})
 
     def _finish_resume(
-        self, db: Any, job: dict, state: dict | None, status: str, started: float, error: str | None
+        self, db: Any, job: RunJob, state: dict | None, status: str, started: float, error: str | None
     ) -> None:
         """恢复终态：复用 _finish_run_inner + duration = execution_ms + 恢复段。
 
@@ -1275,24 +1274,24 @@ class AgentRunService:
         self._finish_run_inner(db, job, state, status, started, error)
 
     def _finish_run(
-        self, db: Any, job: dict, state: dict | None, status: str, started: float, error: str | None
+        self, db: Any, job: RunJob, state: dict | None, status: str, started: float, error: str | None
     ) -> None:
         """终态落库：trace 计数/状态 + assistant/tool 消息入库 + ⑦ 同构处置兜底。"""
         with timed(
             "worker.finish_commit",
             level=logging.INFO,
             slow="phase",
-            trace_token=job["handle"].trace_token,
+            trace_token=job.handle.trace_token,
             message="agent 终态落库耗时",
         ):
             self._finish_run_inner(db, job, state, status, started, error)
 
     def _finish_run_inner(
-        self, db: Any, job: dict, state: dict | None, status: str, started: float, error: str | None
+        self, db: Any, job: RunJob, state: dict | None, status: str, started: float, error: str | None
     ) -> None:
-        trace: AgentRunTrace = db.get(AgentRunTrace, job["trace_id"])
-        session_row: AgentSession = db.get(AgentSession, job["session_id"])
-        handle: RunHandle = job["handle"]
+        trace: AgentRunTrace = db.get(AgentRunTrace, job.trace_id)
+        session_row: AgentSession = db.get(AgentSession, job.session_id)
+        handle: RunHandle = job.handle
         if state is not None:
             messages = list(state.get("messages") or [])
             for m in messages:
@@ -1312,7 +1311,7 @@ class AgentRunService:
                         tool_call_id=getattr(m, "tool_call_id", None),
                     )
                 )
-            budget: RunBudget = _budget_of(job)
+            budget: RunBudget = job.budget or RunBudget(max_tool_rounds=1)
             trace.model_calls = int(state.get("model_calls") or 0)
             trace.tool_rounds = int(state.get("tool_rounds") or 0)
             trace.tool_calls = budget.tool_calls
@@ -1487,22 +1486,24 @@ def _find_token_in_trace(error: str | None) -> str | None:
     return None
 
 
-def _profile_code_of(job: dict) -> str:
-    """渠道 profile code：published 从快照载荷取（D15 渠道标识入快照），draft 从活表。"""
-    payload = job["payload"]
-    code = payload.get("model_profile_code")
-    if code:
-        return code
-    return job["profile"].model_profile_code if hasattr(job.get("profile"), "model_profile_code") else ""
+def _profile_code_of(job: RunJob) -> str:
+    """渠道 profile code：published 从快照载荷取（D15 渠道标识入快照），draft 构造时同样
+    写入 payload（_load_payload 单点填充）——历史 job["profile"] 幽灵键随 RunJob 移除。"""
+    return job.payload.model_profile_code or ""
 
 
 class _SimpleUser:
     """工作线程内的最小调用者形态（ai 审计归因用；不携带 ORM 实体跨线程）。"""
 
-    def __init__(self, info: dict):
-        self.id = info["id"]
-        self.name = info.get("name", "")
-        self.is_super_admin = bool(info.get("is_super_admin"))
+    def __init__(self, info: RunUser | dict):
+        if isinstance(info, dict):  # 兼容测试直构
+            self.id = info["id"]
+            self.name = info.get("name", "")
+            self.is_super_admin = bool(info.get("is_super_admin"))
+        else:
+            self.id = info.id
+            self.name = info.name
+            self.is_super_admin = info.is_super_admin
 
 
 # ToolContext 的运行时最小实现（agent_tools.ToolContext 的鸭子类型同构；避免循环导入）
@@ -1528,19 +1529,14 @@ _run_handles: dict[str, RunHandle] = {}
 _handles_guard = threading.Lock()
 
 
-def _budget_of(job: dict) -> RunBudget:
-    budget = job.get("_budget")
-    return budget if isinstance(budget, RunBudget) else RunBudget(max_tool_rounds=1)
-
-
 # --- E4 恢复辅助 ---
 
 
-def _estimate_schema_tokens(payload: dict) -> int:
+def _estimate_schema_tokens(payload: RunPayload) -> int:
     """工具 schema token 估算（_execute_run / _execute_resume 共用口径）。"""
     from app.modules.agent.service.runtime.memory_service import estimate_tokens
 
-    return estimate_tokens(json.dumps(list(payload["snapshot_tools"].values()), ensure_ascii=False))
+    return estimate_tokens(json.dumps(list(payload.snapshot_tools.values()), ensure_ascii=False))
 
 
 @dataclass
@@ -1556,8 +1552,8 @@ class RuntimeBundle:
 def _build_runtime(
     *,
     db: Any,
-    job: dict,
-    payload: dict,
+    job: RunJob,
+    payload: RunPayload,
     trace: AgentRunTrace,
     handle: RunHandle,
     budget: RunBudget,
@@ -1582,17 +1578,17 @@ def _build_runtime(
 
     with timed("worker.wiring", trace_token=handle.trace_token):
         runtime = AiModelRuntimeService(db)
-        job["_budget"] = budget  # 终态落库读 tool_calls 累计
+        job.budget = budget  # 终态落库读 tool_calls 累计（RunJob 正式字段）
         model = LoomChatModel(
             model_profile_code=model_profile_code,
-            temperature=payload["temperature"],
-            max_tokens=payload["max_tokens"],
-            profile_source=job["run_mode"],
-            timeout_seconds=handle.deadline.per_request_timeout(payload["timeout_seconds"]),
-            min_context_window=payload.get("context_window_min"),  # E15：回退路径窗口约束
+            temperature=payload.temperature,
+            max_tokens=payload.max_tokens,
+            profile_source=job.run_mode,
+            timeout_seconds=handle.deadline.per_request_timeout(payload.timeout_seconds),
+            min_context_window=payload.context_window_min,  # E15：回退路径窗口约束
         )
         model._runtime_service = runtime  # noqa: SLF001 —— 单 run 装配（实例纪律）
-        model._caller = _SimpleUser(job["user"])  # noqa: SLF001
+        model._caller = _SimpleUser(job.user)  # noqa: SLF001
         model._task_id = trace.id  # noqa: SLF001 —— R5 task_id 审计通道
         bound_schemas = [
             {
@@ -1603,17 +1599,17 @@ def _build_runtime(
                     "parameters": t.get("parameters") or {"type": "object", "properties": {}},
                 },
             }
-            for name, t in payload["snapshot_tools"].items()
+            for name, t in payload.snapshot_tools.items()
         ]
         model.bind_tools(bound_schemas)
 
         tool_ctx = _ToolCtx(
             db=db,
-            user_id=job["user"]["id"],
-            user_name=job["user"].get("name") or "",
-            is_super_admin=bool(job["user"].get("is_super_admin")),
+            user_id=job.user.id,
+            user_name=job.user.name,
+            is_super_admin=job.user.is_super_admin,
             trace_id=trace.id,
-            run_mode=job["run_mode"],
+            run_mode=job.run_mode,
         )
 
         def log_tool_call(**kwargs):
@@ -1621,15 +1617,15 @@ def _build_runtime(
             db.commit()
 
         executor = ToolExecutor(
-            snapshot_tools=payload["snapshot_tools"],
-            bound_names=payload["bound_names"],
+            snapshot_tools=payload.snapshot_tools,
+            bound_names=payload.bound_names,
             context=tool_ctx,
             should_cancel=should_cancel,
             log_tool_call=log_tool_call,
             on_event=handle.emit,
         )
     with timed("worker.prompt_render", trace_token=handle.trace_token):
-        system_message = prompt_render.render(payload["system_prompt"], {"user_name": render_user_name})
+        system_message = prompt_render.render(payload.system_prompt, {"user_name": render_user_name})
 
     def validate_guardrails(messages):
         from langchain_core.messages import SystemMessage as _Sys
@@ -1648,8 +1644,8 @@ def _build_runtime(
             budget=budget,
             system_message=system_message,
             tool_schema_tokens=_estimate_schema_tokens(payload),
-            max_tool_rounds=int(payload["max_tool_rounds"]),
-            context_token_budget=int(payload.get("context_token_budget") or 0) or None,  # E15 动态输入预算
+            max_tool_rounds=payload.max_tool_rounds,
+            context_token_budget=payload.context_token_budget,  # E15 动态输入预算（None 走常数下限）
             stream_answer=stream_answer,
             guardrails_validator=validate_guardrails,
             on_event=handle.emit,

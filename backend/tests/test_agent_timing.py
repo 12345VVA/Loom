@@ -78,16 +78,19 @@ class TerminalGuaranteeTests(unittest.TestCase):
         )
 
     def test_precondition_failure_still_closes_with_error(self) -> None:
+        from app.modules.agent.service.runtime.run_job import RunJob, RunPayload, RunUser
+
         service = AgentRunService.__new__(AgentRunService)  # 不触发基类构造（测试只走 _execute_run）
         handle = self._make_handle()
-        job = {
-            "handle": handle,
-            "engine": self.engine,  # 工作线程注入引擎
-            "trace_id": 999,  # 不存在 → trace=None → wiring 段 AttributeError
-            "session_id": 1,
-            "payload": {"execution_mode": "chat"},
-            "user": {"id": 1, "name": "tester", "is_super_admin": True},
-        }
+        job = RunJob(
+            trace_id=999,  # 不存在 → trace=None → wiring 段 AttributeError
+            session_id=1,
+            run_mode="published",
+            user=RunUser(id=1, name="tester", is_super_admin=True),
+            payload=RunPayload(execution_mode="chat"),
+            engine=self.engine,  # 工作线程注入引擎
+            handle=handle,
+        )
 
         with self.assertLogs("agent.run_service", level="ERROR"):
             service._execute_run(job)

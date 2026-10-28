@@ -90,6 +90,11 @@ class ToolExecutor:
 
     # --- 单工具执行链（设计 3.3 两套判定 → 中间件 → 参数校验 → 执行 → 计时）---
 
+    def execute_one(self, call_id: str, name: str, args: dict) -> ToolCallOutcome:
+        """公开的单工具执行接口（架构审查 P1-1）：E4 恢复轮等外部执行链统一入口，
+        完整走 _precheck 校验链；_execute_single 保留为内部实现名。"""
+        return self._execute_single(call_id, name, args)
+
     def _execute_single(self, call_id: str, name: str, args: dict) -> ToolCallOutcome:
         started = time.monotonic()
         # E3：写工具经 ctx.audit_target_ref 上报目标引用——执行前清除防上一工具残留污染
