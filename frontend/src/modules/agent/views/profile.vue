@@ -14,6 +14,19 @@
 
 		<cl-row>
 			<cl-table ref="Table">
+				<!-- 状态 + 脏标记（发布与版本分析 P1-1：编辑已发布智能体后未再发布时可见） -->
+				<template #column-status="{ scope }">
+					<el-tag
+						:type="scope.row.status === 'published' ? 'success' : 'info'"
+						effect="light"
+						class="status-tag"
+					>
+						{{ statusOptions.find((o) => o.value === scope.row.status)?.label || scope.row.status }}
+					</el-tag>
+					<el-tag v-if="scope.row.hasPendingChanges" type="warning" effect="light" class="status-tag">
+						{{ t('agent.profile.pendingChanges') }}
+					</el-tag>
+				</template>
 				<!-- 名称 + 描述合并（描述灰色副文本，省一列） -->
 				<template #column-name="{ scope }">
 					<div class="name-cell">
@@ -139,7 +152,14 @@
 		<!-- 版本列表 drawer -->
 		<el-drawer v-model="versionVisible" :title="t('agent.version.title')" size="45%" destroy-on-close>
 			<el-table :data="versions" size="small">
-				<el-table-column prop="version" :label="t('agent.version.no')" width="70" />
+				<el-table-column prop="version" :label="t('agent.version.no')" width="150">
+					<template #default="{ row }">
+						<span>v{{ row.version }}</span>
+						<el-tag v-if="row.isCurrent" type="success" size="small" effect="light" class="status-tag">
+							{{ t('agent.version.current') }}
+						</el-tag>
+					</template>
+				</el-table-column>
 				<el-table-column prop="createTime" :label="t('agent.version.time')" width="170">
 					<template #default="{ row }">
 						<cl-date-text :model-value="row.createTime" />
@@ -156,6 +176,7 @@
 							v-permission="serviceAgent.permission?.rollback"
 							link
 							type="primary"
+							:disabled="row.isCurrent"
 							size="small"
 							@click="onRollback(row)"
 						>
@@ -241,6 +262,7 @@ type ProfileRow = {
 	description?: string;
 	modelProfileCode?: string;
 	tools?: string[];
+	hasPendingChanges?: boolean;
 };
 
 function channelLabelOf(code?: string) {
@@ -476,7 +498,7 @@ async function openVersions(row: any) {
 }
 
 async function onRollback(row: any) {
-	await ElMessageBox.confirm(t('agent.version.rollbackConfirm'), t('agent.version.title'), {
+	await ElMessageBox.confirm(t('agent.version.rollbackConfirm', { version: row.version }), t('agent.version.title'), {
 		type: 'warning'
 	});
 	if (!versionProfileId.value) return;
@@ -509,6 +531,10 @@ async function onToggle(row: any) {
 .hash-text {
 	font-family: monospace;
 	font-size: 12px;
+}
+
+.status-tag + .status-tag {
+	margin-left: 6px;
 }
 
 .name-cell {

@@ -221,7 +221,38 @@ class AgentProfileService(BaseAdminCrudService):
             elif isinstance(item, dict) and item.get("tools") is None:
                 # 存量 NULL 行兜底（空工具历史写入形态），Read 契约 tools: list[str] 不接受 None
                 item["tools"] = []
+            # 脏标记（发布与版本分析 P1-1）：全行显式填充——draft 无「已发布」基线，helper 内短路 False。
+            # session.get 命中 identity map（page 主查询已加载），零额外 SQL
+            if isinstance(item, dict) and item.get("id") is not None:
+                entity = self.session.get(self.model, item["id"])
+                item["has_pending_changes"] = bool(entity is not None and self._has_pending_changes(entity))
         return super()._finalize_data(data)
+
+    def _has_pending_changes(self, profile: Any) -> bool:
+        """「有未发布修改」：当前草稿的发布 hash ≠ 生效快照 hash（与 publish 幂等判定同口径）。
+        草稿组装/校验失败视为有修改——线上是旧的，且草稿当前不可直接发布。"""
+        record = self._current_record(profile.id)
+        if record is None:
+            return False
+        snapshot = self.session.get(AgentProfileSnapshot, record.snapshot_id)
+        if snapshot is None:
+            return False
+        try:
+            workflow_summary = (
+                self._validate_workflow_binding(profile)
+                if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW
+                else None
+            )
+            payload = self._build_publish_payload(profile, workflow_summary=workflow_summary)
+        except HTTPException:
+            return True
+        digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+        return digest != snapshot.snapshot_hash
+
+    def current_snapshot_id(self, profile_id: int) -> int | None:
+        """当前生效快照 id（versions 端点标 isCurrent；无发布记录返回 None）。"""
+        record = self._current_record(profile_id)
+        return record.snapshot_id if record is not None else None
 
     # --- code 唯一性 ---
 

@@ -66,12 +66,15 @@ class ProfileToggleResponse(BaseModel):
 
 
 class SnapshotVersionResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    # alias 出口（created_at→createTime/is_current→isCurrent）：前端抽屉此前取 camelCase
+    # 键，本模型无 alias 时时间/哈希两列实为真空列（发布与版本分析顺带修复）
+    model_config = ConfigDict(populate_by_name=True, alias_generator=resolve_alias)
 
     id: int
     version: int
     snapshot_hash: str
     created_at: Any = None
+    is_current: bool = False
 
 
 @CoolController(
@@ -142,9 +145,17 @@ class AgentProfileController(BaseController):
         _current_user: User = Depends(get_current_user),
         session: Session = Depends(get_session),
     ) -> list[SnapshotVersionResponse]:
-        rows = AgentProfileService(session).list_snapshots(id)
+        service = AgentProfileService(session)
+        rows = service.list_snapshots(id)
+        current_id = service.current_snapshot_id(id)
         return [
-            SnapshotVersionResponse(id=s.id, version=s.version, snapshot_hash=s.snapshot_hash, created_at=s.created_at)
+            SnapshotVersionResponse(
+                id=s.id,
+                version=s.version,
+                snapshot_hash=s.snapshot_hash,
+                created_at=s.created_at,
+                is_current=(s.id == current_id),
+            )
             for s in rows
         ]
 

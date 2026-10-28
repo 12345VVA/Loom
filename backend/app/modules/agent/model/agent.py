@@ -433,6 +433,9 @@ class AgentProfileRead(BaseModel):
     enabled: bool
     write_tools_ack: bool = False
     status: str
+    # 「有未发布修改」（脏标记）：仅发布行有意义——当前草稿的发布 hash ≠ 生效快照 hash；
+    # 由 service._finalize_data 出口计算（Read 默认 False，draft 行恒 False）
+    has_pending_changes: bool = False
     created_by: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

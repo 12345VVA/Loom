@@ -195,6 +195,11 @@ declare namespace Eps {
 		status?: string;
 
 		/**
+		 * has_pending_changes
+		 */
+		hasPendingChanges?: boolean;
+
+		/**
 		 * created_by
 		 */
 		createdBy?: number;
@@ -3296,6 +3301,7 @@ declare namespace Eps {
 		/** enabled */ enabled: boolean;
 		/** writeToolsAck */ writeToolsAck?: boolean;
 		/** status */ status: string;
+		/** hasPendingChanges */ hasPendingChanges?: boolean;
 		/** createdBy */ createdBy?: number | null;
 		/** createTime */ createTime?: string | null;
 		/** updateTime */ updateTime?: string | null;
@@ -3341,6 +3347,7 @@ declare namespace Eps {
 		/** enabled */ enabled: boolean;
 		/** writeToolsAck */ writeToolsAck?: boolean;
 		/** status */ status: string;
+		/** hasPendingChanges */ hasPendingChanges?: boolean;
 		/** createdBy */ createdBy?: number | null;
 		/** createTime */ createTime?: string | null;
 		/** updateTime */ updateTime?: string | null;
@@ -5051,8 +5058,9 @@ declare namespace Eps {
 			{
 				/** id */ id: number;
 				/** version */ version: number;
-				/** snapshot_hash */ snapshot_hash: string;
-				/** created_at */ created_at?: any;
+				/** snapshotHash */ snapshotHash: string;
+				/** createTime */ createTime?: any;
+				/** isCurrent */ isCurrent?: boolean;
 			}[]
 		>;
 

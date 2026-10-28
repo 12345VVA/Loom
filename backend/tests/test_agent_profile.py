@@ -167,6 +167,43 @@ class PublishProfileTestCase(unittest.TestCase):
         current = self.service.get_current_snapshot(self.profile.id)
         self.assertEqual(current["profile"]["name"], "第二版")
 
+    def _page_rows(self, *ids: int) -> list[dict]:
+        """走列表出口（_finalize_data，含 camelCase 转换）取行 dict。"""
+        rows = []
+        for pid in ids:
+            entity = self.session.get(AgentProfile, pid)
+            rows.append(self.service._row_to_dict(entity))
+        return self.service._finalize_data(rows)
+
+    def test_has_pending_changes_marks_draft_edits(self):
+        """脏标记（发布与版本分析 P1-1）：draft 行恒 False；发布行草稿变更 → True；再发布 → False。"""
+        # draft 态：无「已发布」基线，恒 False
+        self.assertFalse(self._page_rows(self.profile.id)[0]["hasPendingChanges"])
+        self.service.publish(self.profile.id, current_user=self.owner)
+        self.assertFalse(self._page_rows(self.profile.id)[0]["hasPendingChanges"])
+        # 草稿变更（未发布）→ True
+        self.service.update(
+            AgentProfileUpdateRequest(id=self.profile.id, name="第二版", model_profile_code="deepseek-chat"),
+            current_user=self.owner,
+        )
+        self.assertTrue(self._page_rows(self.profile.id)[0]["hasPendingChanges"])
+        # 再发布 → 回到干净态
+        self.service.publish(self.profile.id, current_user=self.owner)
+        self.assertFalse(self._page_rows(self.profile.id)[0]["hasPendingChanges"])
+
+    def test_current_snapshot_id_follows_publish_and_rollback(self):
+        """current_snapshot_id（versions 端点 isCurrent 数据源）：随发布前进、随回滚切换。"""
+        v1 = self.service.publish(self.profile.id, current_user=self.owner)
+        self.assertEqual(self.service.current_snapshot_id(self.profile.id), v1.id)
+        self.service.update(
+            AgentProfileUpdateRequest(id=self.profile.id, name="第二版", model_profile_code="deepseek-chat"),
+            current_user=self.owner,
+        )
+        v2 = self.service.publish(self.profile.id, current_user=self.owner)
+        self.assertEqual(self.service.current_snapshot_id(self.profile.id), v2.id)
+        self.service.rollback(self.profile.id, v1.id, current_user=self.owner)
+        self.assertEqual(self.service.current_snapshot_id(self.profile.id), v1.id)
+
     def test_publish_rejects_empty_tools(self):
         self.service.update(
             AgentProfileUpdateRequest(id=self.profile.id, name="n", model_profile_code="deepseek-chat", tools=[]),

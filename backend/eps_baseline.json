@@ -2131,6 +2131,11 @@
                           "title": "Executionmode",
                           "type": "string"
                         },
+                        "hasPendingChanges": {
+                          "default": false,
+                          "title": "Haspendingchanges",
+                          "type": "boolean"
+                        },
                         "id": {
                           "title": "Id",
                           "type": "number"
@@ -2571,6 +2576,11 @@
                           "title": "Executionmode",
                           "type": "string"
                         },
+                        "hasPendingChanges": {
+                          "default": false,
+                          "title": "Haspendingchanges",
+                          "type": "boolean"
+                        },
                         "id": {
                           "title": "Id",
                           "type": "number"
@@ -2856,6 +2866,11 @@
                             "default": "chat",
                             "title": "Executionmode",
                             "type": "string"
+                          },
+                          "hasPendingChanges": {
+                            "default": false,
+                            "title": "Haspendingchanges",
+                            "type": "boolean"
                           },
                           "id": {
                             "title": "Id",
@@ -3171,6 +3186,11 @@
                                 "default": "chat",
                                 "title": "Executionmode",
                                 "type": "string"
+                              },
+                              "hasPendingChanges": {
+                                "default": false,
+                                "title": "Haspendingchanges",
+                                "type": "boolean"
                               },
                               "id": {
                                 "title": "Id",
@@ -3768,6 +3788,11 @@
                           "title": "Executionmode",
                           "type": "string"
                         },
+                        "hasPendingChanges": {
+                          "default": false,
+                          "title": "Haspendingchanges",
+                          "type": "boolean"
+                        },
                         "id": {
                           "title": "Id",
                           "type": "number"
@@ -3954,15 +3979,20 @@
                     "schema": {
                       "items": {
                         "properties": {
-                          "created_at": {
-                            "title": "Created At"
+                          "createTime": {
+                            "title": "Createtime"
                           },
                           "id": {
                             "title": "Id",
                             "type": "number"
                           },
-                          "snapshot_hash": {
-                            "title": "Snapshot Hash",
+                          "isCurrent": {
+                            "default": false,
+                            "title": "Iscurrent",
+                            "type": "boolean"
+                          },
+                          "snapshotHash": {
+                            "title": "Snapshothash",
                             "type": "string"
                           },
                           "version": {
@@ -3973,7 +4003,7 @@
                         "required": [
                           "id",
                           "version",
-                          "snapshot_hash"
+                          "snapshotHash"
                         ],
                         "title": "SnapshotVersionResponse",
                         "type": "object"
@@ -4270,6 +4300,18 @@
           "validate": null
         },
         {
+          "comment": "has_pending_changes",
+          "dict": null,
+          "label": "hasPendingChanges",
+          "nullable": true,
+          "prop": "hasPendingChanges",
+          "propertyName": "hasPendingChanges",
+          "required": false,
+          "source": "has_pending_changes",
+          "type": "boolean",
+          "validate": null
+        },
+        {
           "comment": "created_by",
           "dict": null,
           "label": "createdBy",
@@ -4524,6 +4566,18 @@
           },
           "source": "status",
           "type": "string",
+          "validate": null
+        },
+        {
+          "comment": "has_pending_changes",
+          "dict": null,
+          "label": "hasPendingChanges",
+          "nullable": true,
+          "prop": "hasPendingChanges",
+          "propertyName": "hasPendingChanges",
+          "required": false,
+          "source": "has_pending_changes",
+          "type": "boolean",
           "validate": null
         },
         {
