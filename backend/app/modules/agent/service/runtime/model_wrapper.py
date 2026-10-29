@@ -141,6 +141,16 @@ class LoomChatModel(BaseChatModel):
             },
         )
 
+    def generate_raw(self, messages: list[BaseMessage]) -> ChatResult:
+        """sync 单轮直取（调用追踪审计：sync 通道 usage 断链修复）。
+
+        BaseChatModel.generate 的 langchain 包装会**重建 LLMResult 且不透传 _generate
+        的 llm_output**（实测 llm_output={}）——usage/budget 计数随之中断。本方法绕过
+        包装直调 _generate：messages 为平铺 list[BaseMessage]，返回 ChatResult 含
+        llm_output.usage。测试桩须实现同名方法（生产装配无条件调用）。
+        """
+        return self._generate(messages)
+
     def generate_streaming(self, messages: list[BaseMessage], on_delta) -> ChatResult:
         """E1 最终答案候选轮流式：经 ai ``chat_iter`` 管线（task_id 审计通道 + 窗口约束），
         content 增量实时回调 ``on_delta(text)``；返回 ChatResult（tool_calls 归一化、

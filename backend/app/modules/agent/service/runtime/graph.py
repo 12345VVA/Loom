@@ -177,8 +177,12 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
         if deps.stream_answer and deps.on_event is not None:
             response, raw_usage = _call_model_streaming(deps, assembled)
         else:
-            llm_result = deps.model.generate([assembled])  # LLMResult：message + llm_output.usage（预算 token 计数）
-            response = llm_result.generations[0][0].message
+            llm_result = deps.model.generate_raw(
+                assembled
+            )  # ChatResult 直取（langchain generate 包装不透传 llm_output.usage）
+            generations = llm_result.generations
+            first = generations[0][0] if isinstance(generations[0], list) else generations[0]
+            response = first.message
             raw_usage = (llm_result.llm_output or {}).get("usage") or {}
         usage = _normalize_usage(raw_usage)
         bag.update(prompt_tokens=usage.get("prompt_tokens"), total_tokens=usage.get("total_tokens"))

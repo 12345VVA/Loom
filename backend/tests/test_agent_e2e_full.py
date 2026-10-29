@@ -62,6 +62,10 @@ class _FakeChatModel:
     def bind_tools(self, tools, **kwargs):
         return self
 
+    # 生产装配 sync 轮已切 generate_raw（usage 断链修复）——桩委托对齐
+    def generate_raw(self, messages, **kwargs):
+        return self.generate(messages, **kwargs)
+
     def generate(self, messages, **kwargs):
         msgs = messages[0] if messages and isinstance(messages[0], list) else messages
         last = msgs[-1] if msgs else None

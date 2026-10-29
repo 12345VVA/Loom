@@ -77,6 +77,10 @@ class _ScriptedChatModel:
         # 生产装配无条件接线（工具 schema 下发）；桩无需绑定状态，适配为透传
         return self
 
+    # 生产装配 sync 轮已切 generate_raw（usage 断链修复）——桩委托对齐
+    def generate_raw(self, messages, **kwargs):
+        return self.generate(messages, **kwargs)
+
     def generate(self, messages, **kwargs):
         msgs = messages[0] if messages and isinstance(messages[0], list) else messages
         last = msgs[-1] if msgs else None
@@ -353,6 +357,8 @@ class ApprovalFlowTestCase(unittest.TestCase):
 
         # 同轮两个调用：fake_write（需审批）+ current_time（readonly 普通调用，注册在案）
         class _TwoCallsModel(_ScriptedChatModel):
+            # 生产装配 sync 轮已切 generate_raw（usage 断链修复）——继承 _ScriptedChatModel 的委托即可
+
             def generate(self, messages, **kwargs):
                 msgs = messages[0] if messages and isinstance(messages[0], list) else messages
                 if isinstance(msgs[-1], ToolMessage):

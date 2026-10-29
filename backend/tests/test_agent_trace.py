@@ -67,6 +67,10 @@ class _FakeChatModel:
         # 生产装配无条件接线（工具 schema 下发）；桩无需绑定状态，适配为透传
         return self
 
+    # 生产装配 sync 轮已切 generate_raw（usage 断链修复）——桩委托对齐
+    def generate_raw(self, messages, **kwargs):
+        return self.generate(messages, **kwargs)
+
     def generate(self, messages, **kwargs):
         return LLMResult(
             generations=[[ChatGeneration(message=AIMessage(content="已查询"))]],
@@ -173,9 +177,9 @@ class ObservationChainTestCase(unittest.TestCase):
             original = model.generate
 
             def scripted(messages, **kw):
-                # 首轮要求调用工具，次轮收尾（脚本桩）
-                has_tool_result = any(getattr(m, "tool_call_id", None) for m in messages[0])
-                if not has_tool_result and len(messages[0]) == 2:  # system + 当前输入
+                # 首轮要求调用工具，次轮收尾（脚本桩；generate_raw 平铺语义——messages 即组装 list）
+                has_tool_result = any(getattr(m, "tool_call_id", None) for m in messages)
+                if not has_tool_result and len(messages) == 2:  # system + 当前输入
                     from langchain_core.messages import AIMessage as _AI
 
                     return LLMResult(
