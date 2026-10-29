@@ -103,6 +103,8 @@ def _collect_generated_media_ids(db: Any, prompt: str, user_id: int, assets: lis
     ids: list[int] = []
     for row in assets:
         try:
+            if row.status != "success":
+                continue  # 转存失败行（status=failed）：不计入产物，全失败时上层走 B2 软失败
             media_id = int(row.id)
         except Exception:
             existing = db.exec(
