@@ -237,6 +237,43 @@ class ObservationChainTestCase(unittest.TestCase):
         self.assertEqual(len(tool_messages), 1)
         self.assertEqual(tool_messages[0].tool_call_id, "call_9")
 
+    def test_tool_logs_read_dto_keeps_skipped_reason(self):
+        """复核 2026-10-29：出口 DTO 必须透出 skippedReason——此前 Read 未声明该字段，
+        Pydantic 出口静默丢弃，前端「取消/拒绝原因」标签永不生效。controller 的
+        list[AgentToolCallLogRead] 签名保证出口必经，断 DTO 即断出口。"""
+        from sqlalchemy import update as _sa_update
+
+        from app.modules.agent.model.agent import AgentToolCallLogRead
+
+        normal = AgentToolCallLog(
+            trace_id=1, tool_name="current_time", args_summary="{}", result_summary="ok", duration_ms=1, success=True
+        )
+        cancelled = AgentToolCallLog(
+            trace_id=1,
+            tool_name="list_workflow_definitions",
+            args_summary="{}",
+            result_summary="",
+            success=False,
+            skipped_reason="cancelled",
+        )
+        self.session.add(normal)
+        self.session.add(cancelled)
+        self.session.commit()
+
+        dumped = AgentToolCallLogRead.model_validate(normal).model_dump(by_alias=True)
+        self.assertIn("skippedReason", dumped)  # 键必须存在（此前整键丢失）
+        self.assertIsNone(dumped["skippedReason"])
+        dumped_cancelled = AgentToolCallLogRead.model_validate(cancelled).model_dump(by_alias=True)
+        self.assertEqual(dumped_cancelled["skippedReason"], "cancelled")
+
+        # 兜底：该字段未来若改名/删除，历史行序列化仍须带出（防回归静默）
+        self.session.execute(
+            _sa_update(AgentToolCallLog).where(AgentToolCallLog.id == normal.id).values(skipped_reason="soft_failure")
+        )
+        self.session.expire_all()
+        refreshed = AgentToolCallLogRead.model_validate(self.session.get(AgentToolCallLog, normal.id))
+        self.assertEqual(refreshed.model_dump(by_alias=True)["skippedReason"], "soft_failure")
+
     def test_trace_page_and_toollogs_owner_only(self):
         """验收 21：trace 管理面仅本人；toolLogs 越权 403。"""
         service = AgentRunService(self.session)

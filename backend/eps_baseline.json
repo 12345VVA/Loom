@@ -8207,6 +8207,17 @@
                             ],
                             "title": "Resultsummary"
                           },
+                          "skippedReason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Skippedreason"
+                          },
                           "success": {
                             "anyOf": [
                               {

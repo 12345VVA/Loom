@@ -484,6 +484,9 @@ class AgentToolCallLogRead(BaseModel):
     duration_ms: int | None = None
     success: bool | None = None
     error: str | None = None
+    # 未执行原因（cancelled/soft_failure/invalid_args/...；NULL=正常执行）——复核 2026-10-29：
+    # Read DTO 未声明该字段时 Pydantic 出口静默丢弃，前端「取消/拒绝原因」标签永不生效
+    skipped_reason: str | None = None
     created_at: datetime | None = None
 
 

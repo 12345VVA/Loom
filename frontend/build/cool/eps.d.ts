@@ -5268,6 +5268,7 @@ declare namespace Eps {
 				/** durationMs */ durationMs?: number | null;
 				/** success */ success?: boolean | null;
 				/** error */ error?: string | null;
+				/** skippedReason */ skippedReason?: string | null;
 				/** createTime */ createTime?: string | null;
 			}[]
 		>;
