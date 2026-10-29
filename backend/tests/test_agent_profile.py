@@ -191,6 +191,42 @@ class PublishProfileTestCase(unittest.TestCase):
         self.service.publish(self.profile.id, current_user=self.owner)
         self.assertFalse(self._page_rows(self.profile.id)[0]["hasPendingChanges"])
 
+    def test_pending_changes_batch_prefetch_bounds_queries(self):
+        """复核 2026-10-29 问题②：列表脏标记 record/snapshot 批量预取——3 行列表走
+        _finalize_data 的 SELECT 有上界（此前每行 2 条点查 N+1，现收敛 2 条 in 查询），
+        行为不变（发布未改 False / 草稿变更 True / draft 无基线 False）。"""
+        from sqlalchemy import event
+
+        self.service.publish(self.profile.id, current_user=self.owner)
+        self.service.update(
+            AgentProfileUpdateRequest(id=self.profile.id, name="第二版", model_profile_code="deepseek-chat"),
+            current_user=self.owner,
+        )
+        p2 = self._create(name="智能体乙")
+        p3 = self._create(name="智能体丙")
+        rows = [
+            self.service._row_to_dict(self.session.get(AgentProfile, pid)) for pid in (self.profile.id, p2.id, p3.id)
+        ]
+
+        statements: list[str] = []
+
+        def _count(_conn, _cursor, statement, _parameters, _context, _executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        event.listen(self.engine, "before_cursor_execute", _count)
+        try:
+            out = self.service._finalize_data(rows)
+        finally:
+            event.remove(self.engine, "before_cursor_execute", _count)
+
+        self.assertEqual(len(out), 3)
+        # 构成：record/snapshot/resource 三表预取各 1（与行数无关）+ 每行 1 次实体 get
+        # （expire_on_commit 过期刷新，既有行为）。修复前同场景 ≈14 条（2N 点查 ×
+        # 外层 + 基类逐元素递归重入两层）
+        self.assertLessEqual(len(statements), 7)
+        self.assertEqual([r["hasPendingChanges"] for r in out], [True, False, False])
+
     def test_current_snapshot_id_follows_publish_and_rollback(self):
         """current_snapshot_id（versions 端点 isCurrent 数据源）：随发布前进、随回滚切换。"""
         v1 = self.service.publish(self.profile.id, current_user=self.owner)

@@ -27,6 +27,7 @@ from app.modules.agent.model.agent import (
     AgentProfileDraft,
     AgentProfilePublishRecord,
     AgentProfileSnapshot,
+    AgentToolResource,
 )
 from app.modules.base.model.auth import User
 from app.modules.base.service.admin_service import BaseAdminCrudService
@@ -221,21 +222,46 @@ class AgentProfileService(BaseAdminCrudService):
             elif isinstance(item, dict) and item.get("tools") is None:
                 # 存量 NULL 行兜底（空工具历史写入形态），Read 契约 tools: list[str] 不接受 None
                 item["tools"] = []
-            # 脏标记（发布与版本分析 P1-1）：全行显式填充——draft 无「已发布」基线，helper 内短路 False。
-            # session.get 命中 identity map（page 主查询已加载），零额外 SQL
-            if isinstance(item, dict) and item.get("id") is not None:
+        # 脏标记（发布与版本分析 P1-1；复核 2026-10-29 问题②）：列表场景 record/snapshot/
+        # resource 三表预取收敛——此前每行实时点查（且基类 list 出口逐元素递归回本函数，
+        # 单实体分支重复点查，实际 4N），现 page/list 全量各 1 条 in 查询；组装/哈希仍逐行
+        # （CPU）。session.get 命中 identity map（page 主查询已加载），零额外 SQL。
+        # has_pending_changes 键 = 递归重入哨兵（super 的逐元素转换会二次进入本函数）
+        if isinstance(data, list):
+            dict_rows = [item for item in rows if isinstance(item, dict) and isinstance(item.get("id"), int)]
+            ids = [item["id"] for item in dict_rows]
+            record_by_pid = self._current_records_by_profile(ids) if ids else {}
+            snap_ids = [r.snapshot_id for r in record_by_pid.values() if r.snapshot_id is not None]
+            snapshot_by_id = (
+                {
+                    s.id: s
+                    for s in self.session.exec(
+                        select(AgentProfileSnapshot).where(AgentProfileSnapshot.id.in_(snap_ids))  # type: ignore[attr-defined]
+                    ).all()
+                }
+                if snap_ids
+                else {}
+            )
+            tool_names = sorted({n for item in dict_rows for n in (item.get("tools") or []) if isinstance(n, str)})
+            resource_by_name = self._resources_by_name(tool_names) if tool_names else {}
+            for item in dict_rows:
                 entity = self.session.get(self.model, item["id"])
-                item["has_pending_changes"] = bool(entity is not None and self._has_pending_changes(entity))
+                record = record_by_pid.get(item["id"])
+                snapshot = snapshot_by_id.get(record.snapshot_id) if record is not None else None
+                item["has_pending_changes"] = bool(
+                    entity is not None and self._pending_digest(entity, record, snapshot, resource_by_name)
+                )
+        elif isinstance(rows[0], dict) and rows[0].get("id") is not None and "has_pending_changes" not in rows[0]:
+            entity = self.session.get(self.model, rows[0]["id"])
+            rows[0]["has_pending_changes"] = bool(entity is not None and self._has_pending_changes(entity))
         return super()._finalize_data(data)
 
-    def _has_pending_changes(self, profile: Any) -> bool:
-        """「有未发布修改」：当前草稿的发布 hash ≠ 生效快照 hash（与 publish 幂等判定同口径）。
+    def _pending_digest(
+        self, profile: Any, record: Any, snapshot: Any, resource_map: dict[str, Any] | None = None
+    ) -> bool:
+        """「有未发布修改」纯计算：当前草稿的发布 hash ≠ 生效快照 hash（与 publish 幂等判定同口径）。
         草稿组装/校验失败视为有修改——线上是旧的，且草稿当前不可直接发布。"""
-        record = self._current_record(profile.id)
-        if record is None:
-            return False
-        snapshot = self.session.get(AgentProfileSnapshot, record.snapshot_id)
-        if snapshot is None:
+        if record is None or snapshot is None:
             return False
         try:
             workflow_summary = (
@@ -243,11 +269,38 @@ class AgentProfileService(BaseAdminCrudService):
                 if getattr(profile, "execution_mode", "chat") == AGENT_EXECUTION_MODE_WORKFLOW
                 else None
             )
-            payload = self._build_publish_payload(profile, workflow_summary=workflow_summary)
+            payload = self._build_publish_payload(profile, workflow_summary=workflow_summary, resource_map=resource_map)
         except HTTPException:
             return True
         digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
         return digest != snapshot.snapshot_hash
+
+    def _has_pending_changes(self, profile: Any) -> bool:
+        """单实体入口（publish/info 直调）：实时点查 record/snapshot 后走 _pending_digest。"""
+        record = self._current_record(profile.id)
+        snapshot = self.session.get(AgentProfileSnapshot, record.snapshot_id) if record is not None else None
+        return self._pending_digest(profile, record, snapshot)
+
+    def _resources_by_name(self, tool_names: list[str]) -> dict[str, Any]:
+        """资源层记录批量预取（列表脏标记 N+1 治理；软删过滤同 _build_publish_payload 点查口径）。"""
+        rows = self.session.exec(
+            select(AgentToolResource).where(
+                AgentToolResource.tool_name.in_(tool_names),  # type: ignore[attr-defined]
+                AgentToolResource.delete_time == None,  # noqa: E711
+            )
+        ).all()
+        return {r.tool_name: r for r in rows}
+
+    def _current_records_by_profile(self, profile_ids: list[int]) -> dict[int, AgentProfilePublishRecord]:
+        """isCurrent record 批量预取（列表脏标记 N+1 治理；判定口径同 _current_record）。"""
+        rows = self.session.exec(
+            select(AgentProfilePublishRecord).where(
+                AgentProfilePublishRecord.profile_id.in_(profile_ids),  # type: ignore[attr-defined]
+                AgentProfilePublishRecord.is_current == True,  # noqa: E712
+                AgentProfilePublishRecord.delete_time == None,  # noqa: E711
+            )
+        ).all()
+        return {r.profile_id: r for r in rows}
 
     def current_snapshot_id(self, profile_id: int) -> int | None:
         """当前生效快照 id（versions 端点标 isCurrent；无发布记录返回 None）。"""
@@ -308,11 +361,14 @@ class AgentProfileService(BaseAdminCrudService):
         if entity.created_by != current_user.id and not _is_super_admin(current_user):
             raise HTTPException(status_code=403, detail=f"仅创建者或管理员可{action}")
 
-    def _build_publish_payload(self, profile: Any, workflow_summary: dict | None = None) -> dict:
+    def _build_publish_payload(
+        self, profile: Any, workflow_summary: dict | None = None, resource_map: dict[str, Any] | None = None
+    ) -> dict:
         """组装发布载荷（评审 P0-6 最小权限边界）：以草稿 tools 名单为起点，逐工具过
         允许列表 + 已注册 + 资源层启用；toolResourceSnapshots 仅含绑定工具。
-        E17：execution 段承载编排模式与工作流绑定摘要（引用式绑定，D13 冻结边界）。"""
-        from app.modules.agent.model.agent import AgentToolResource
+        E17：execution 段承载编排模式与工作流绑定摘要（引用式绑定，D13 冻结边界）。
+        resource_map（列表脏标记预取注入）：提供时资源层记录直取不再逐工具点查；
+        None（publish 主链）保持实时点查语义。"""
         from app.modules.agent.service.runtime import prompt_render
         from app.modules.agent.service.tool_registry import RUNTIME_ALLOWED_TOOLS, get_tool, get_tool_safety
 
@@ -326,12 +382,15 @@ class AgentProfileService(BaseAdminCrudService):
             tool = get_tool(name)
             if tool is None:
                 raise HTTPException(status_code=400, detail=f"发布校验失败：工具 {name} 未注册（可能已下线）")
-            row = self.session.exec(
-                select(AgentToolResource).where(
-                    AgentToolResource.tool_name == name,
-                    AgentToolResource.delete_time == None,  # noqa: E711
-                )
-            ).first()
+            if resource_map is not None:
+                row = resource_map.get(name)
+            else:
+                row = self.session.exec(
+                    select(AgentToolResource).where(
+                        AgentToolResource.tool_name == name,
+                        AgentToolResource.delete_time == None,  # noqa: E711
+                    )
+                ).first()
             if row is None:
                 raise HTTPException(status_code=400, detail=f"发布校验失败：工具 {name} 缺少资源层记录，请先刷新工具")
             if not row.status:
