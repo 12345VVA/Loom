@@ -199,6 +199,23 @@ class BootstrapDegradedTestCase(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
 
+class WorkerBootstrapRegistriesTestCase(unittest.TestCase):
+    """P1-6（复核 2026-10-29 问题④）：celery worker 子进程引导补 agent 工具注册表
+    ——审批恢复链（resume_trace → graph → executor）在 worker 内执行，注册表为空时
+    E4 解冻即失效。独立小函数使测试不触碰 configure_logging/anyio 副作用。"""
+
+    def tearDown(self):
+        bootstrap_registry()  # 还原真实注册表，避免污染其他用例
+
+    def test_worker_bootstrap_builds_usable_registry(self):
+        from app.celery_app import _bootstrap_worker_registries
+
+        tool_registry._registry.clear()  # 模拟 worker 子进程冷启动（不跑 web lifespan）
+        _bootstrap_worker_registries()
+        self.assertFalse(tool_registry.degraded_error())
+        self.assertIn("current_time", tool_registry.get_registry())
+
+
 class ResourceSyncTestCase(unittest.TestCase):
     """资源层同步：只更新系统维护字段，绝不触碰 status（验收 17 前置）。"""
 

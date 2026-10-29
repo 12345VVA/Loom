@@ -126,9 +126,21 @@ def _clear_log_context(task=None, **kwargs):
             var.reset(token)
 
 
+def _bootstrap_worker_registries() -> None:
+    """worker 子进程模块引导（P1-6，复核 2026-10-29 问题④）：celery 不跑 web lifespan，
+    需要启动期构建的进程内注册表在此补齐。当前唯一消费者：agent 工具注册表——审批
+    恢复链（approval_tasks → resume_trace → graph → executor）在 worker 内执行，注册表
+    为空时 E4 解冻即失效。收集失败内部 degraded 标记不抛（对齐 agent config.py 姿态）；
+    资源层 sync 不做——执行链的工具启停是 DB 实时校验，不依赖内存 sync。"""
+    from app.modules.agent.service import tool_registry
+
+    tool_registry.bootstrap_registry()
+
+
 @worker_process_init.connect
 def _worker_process_bootstrap(**_kwargs):
-    """worker 子进程引导：日志重建（评审 F3）+ anyio 线程池上限（异步审查 P0-5）。
+    """worker 子进程引导：日志重建（评审 F3）+ anyio 线程池上限（异步审查 P0-5）
+    + 模块注册表（P1-6，见 _bootstrap_worker_registries）。
 
     prefork 下 setup_logging 在 fork 前的父进程触发，父进程启动的 QueueListener
     线程不会被子进程继承——子进程只剩无消费者的队列，塞满后 worker 日志静默丢失。
@@ -147,6 +159,7 @@ def _worker_process_bootstrap(**_kwargs):
         file_prefix="celery",
     )
     anyio.to_thread.current_default_thread_limiter().total_tokens = settings.WORKER_THREAD_POOL_SIZE
+    _bootstrap_worker_registries()
 
 
 celery_app = Celery(
