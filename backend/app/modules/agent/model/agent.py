@@ -46,6 +46,10 @@ AGENT_RUN_TIMED_OUT = "timed_out"
 AGENT_RUN_NON_TERMINAL_STATUSES = {AGENT_RUN_RUNNING, AGENT_RUN_WAITING_APPROVAL}
 AGENT_RUN_TERMINAL_STATUSES = {AGENT_RUN_COMPLETED, AGENT_RUN_FAILED, AGENT_RUN_CANCELLED, AGENT_RUN_TIMED_OUT}
 
+# 生图工具（generate_image）最低 run 时限：adapter 单次生图默认 ≤60s + 至少一轮 LLM——
+# 低于此值发布与发起都拒绝（发布是第一道，发起实时道复查防发布后调低），否则计费生成被 run 超时作废
+AGENT_IMAGE_TOOL_MIN_TIMEOUT = 120
+
 # 工具三级风险分级（需求 D11）：首版封闭清单全部 readonly
 AGENT_TOOL_LEVEL_READONLY = "readonly"
 AGENT_TOOL_LEVEL_REVERSIBLE_WRITE = "reversible_write"

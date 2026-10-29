@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 
 from app.modules.agent.model.agent import (
     AGENT_EXECUTION_MODE_WORKFLOW,
+    AGENT_IMAGE_TOOL_MIN_TIMEOUT,
     AGENT_PUBLISH_ACTION_PUBLISH,
     AGENT_PUBLISH_ACTION_ROLLBACK,
     AGENT_STATUS_DRAFT,
@@ -400,6 +401,19 @@ class AgentProfileService(BaseAdminCrudService):
                 raise HTTPException(
                     status_code=400,
                     detail=f"发布校验失败：高风险写工具不可发布（D11），{name} 须单独定义授权与恢复机制",
+                )
+            if (
+                name == "generate_image"
+                and int(getattr(profile, "timeout_seconds", 0) or 0) < AGENT_IMAGE_TOOL_MIN_TIMEOUT
+            ):
+                # 生图工具耗时长（adapter 单次 ≤60s + 至少一轮 LLM）：run 时限不足会使
+                # 计费生成被超时作废——发布是第一道，发起实时道复查见 run_service
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"发布校验失败：生图工具 {name} 耗时长，运行时限需不低于 "
+                        f"{AGENT_IMAGE_TOOL_MIN_TIMEOUT} 秒（当前 {getattr(profile, 'timeout_seconds', None)}）"
+                    ),
                 )
             if tool.level == AGENT_TOOL_LEVEL_REVERSIBLE_WRITE:
                 # E3：可逆写可发布——知情确认 + 安全机制表在案（逐项防线，替代人工审批）

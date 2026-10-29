@@ -157,6 +157,7 @@ class AgentE2EFullTestCase(unittest.TestCase):
                 "create_asset_draft",
                 "update_asset_draft",
                 "list_workflow_definitions",
+                "generate_image",
             }
         )
         bootstrap_registry()

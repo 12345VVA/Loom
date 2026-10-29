@@ -83,6 +83,95 @@ class TagMediaArgs(BaseModel):
     expected_updated_at: str = Field(min_length=10, description="读取媒体时拿到的 updatedAt（乐观比对）")
 
 
+class GenerateImageArgs(BaseModel):
+    """按提示词生成一张图片（文生图）。"""
+
+    prompt: str = Field(min_length=1, max_length=2000, description="图片描述提示词")
+
+
+# agent 生图专用渠道 scenario：管理员在 ai 管理页为该 scenario 建默认 image 渠道即可切换；
+# 不暴露给 LLM 参数面（registry_service 按 scenario+is_default+is_active 解析，找不到 404）
+AGENT_IMAGE_SCENARIO = "agent_image"
+
+
+def _collect_generated_media_ids(db: Any, prompt: str, user_id: int, assets: list[MediaAsset]) -> list[int]:
+    """安全收集本轮入库资产的 id（mediaId 列表按首个 success 为主图）。
+
+    _transfer_artifact 命中 md5 去重时原实例已被删除合并（其 docstring 明示调用方不得
+    再访问），id 经「同 prompt+属主+本轮 source_type 的最新 success 行」回查补齐。
+    """
+    ids: list[int] = []
+    for row in assets:
+        try:
+            media_id = int(row.id)
+        except Exception:
+            existing = db.exec(
+                select(MediaAsset.id).where(
+                    MediaAsset.created_by == user_id,
+                    MediaAsset.source_type == "ai_sync",
+                    MediaAsset.prompt == prompt,
+                    MediaAsset.status == "success",
+                    MediaAsset.delete_time == None,  # noqa: E711
+                )
+            ).first()
+            if existing is not None and int(existing) not in ids:
+                ids.append(int(existing))
+            continue
+        if media_id not in ids:
+            ids.append(media_id)
+    return ids
+
+
+def generate_image(args: GenerateImageArgs, ctx: Any) -> str:
+    """文生图：按 agent_image 专用渠道生成图片并落媒体库（属主=调用者）。
+
+    产物入库复用 media 既有管线 create_from_ai_result（SSRF 校验下载 / b64 解码 /
+    md5 去重 / 宽高探测 / 镜像派发 / provider 三码回填全内置），与 aiapi 同步生图
+    端点同一暴露面。生图调用与入库共享 worker 线程 Session（ctx.db）——入库提交
+    在生图成功之后，生图异常路径的 rollback 不波及。多张结果全量入库（上游已按
+    n 计费），mediaId 取首个成功行。生图计费走 ai 治理规则管控（不进 run 级 token
+    预算）；task_id 经 R5 通道关联 run trace（AiModelCallLog 审计归因）。
+    """
+    from types import SimpleNamespace
+
+    from app.modules.ai.model.ai import AiImageRequest
+    from app.modules.ai.service.runtime_service import AiModelRuntimeService
+    from app.modules.media.service.media_service import MediaAssetService
+
+    result = AiModelRuntimeService(ctx.db).image(
+        AiImageRequest(scenario=AGENT_IMAGE_SCENARIO, prompt=args.prompt),
+        current_user=SimpleNamespace(id=ctx.user_id),  # 治理链全程只读 .id
+        task_id=ctx.trace_id,
+    )
+    # 渠道未配置/上游失败：AiInvocationError（HTTPException 子类）冒泡——
+    # 执行器归类 skipped_reason=http_error 失败 ToolMessage，模型可据此调整
+    assets = MediaAssetService(ctx.db).create_from_ai_result(
+        task_type="image",
+        result=result,
+        request_payload={"prompt": args.prompt},
+        source_type="ai_sync",
+        created_by=ctx.user_id,
+    )
+    media_ids = _collect_generated_media_ids(ctx.db, args.prompt, ctx.user_id, assets)
+    if not media_ids:
+        # 单张转存失败不抛异常（落 failed 行继续）——全失败按 B2 软失败契约返回
+        return json.dumps({"ok": False, "error": "图片已生成但全部转存失败，请稍后重试"}, ensure_ascii=False)
+    primary = ctx.db.get(MediaAsset, media_ids[0])
+    ctx.audit_target_ref = f"media:{media_ids[0]}"  # E3 审计：写操作目标引用
+    return json.dumps(
+        {
+            "mediaId": media_ids[0],
+            "mediaIds": media_ids,
+            "url": primary.storage_url if primary else None,
+            "width": primary.width if primary else None,
+            "height": primary.height if primary else None,
+            "prompt": args.prompt,
+            "note": "图片已保存到媒体库，可用 search_media 检索、rename_media/tag_media 加工",
+        },
+        ensure_ascii=False,
+    )
+
+
 def _load_owned_media(ctx: Any, media_id: int) -> tuple[MediaAsset | None, str | None]:
     row = ctx.db.get(MediaAsset, media_id)
     if row is None or row.delete_time is not None:
@@ -164,6 +253,23 @@ def get_agent_tools() -> list[dict]:
             "level": "readonly",
             "args_model": SearchMediaArgs,
             "func": search_media,
+        },
+        {
+            "name": "generate_image",
+            "display_name": "生成图片",
+            "description": (
+                "按提示词生成一张图片并保存到媒体库，返回媒体 ID 与访问地址。"
+                "生成约需 10-60 秒，绑定此工具的智能体运行时限需不低于 120 秒。"
+                "生成后可用 search_media 检索、rename_media/tag_media 加工。"
+            ),
+            "level": "reversible_write",
+            "args_model": GenerateImageArgs,
+            "func": generate_image,
+            "safety": {
+                "reversible_how": "产物为媒体库新建行（source_type=ai_sync），可软删回退；不修改任何既有资产",
+                "concurrency": "仅新建行无并发覆盖面；外部计费管控走 ai 治理规则（per-user/profile 上限），不进 run 级 token 预算",
+                "audit_ref": "返回并记录 media:{id}",
+            },
         },
         {
             "name": "rename_media",

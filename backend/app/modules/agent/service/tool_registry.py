@@ -59,6 +59,7 @@ RUNTIME_ALLOWED_TOOLS = {
     "update_asset_draft",  # asset：编辑本人 draft 态资产字段（published 拒绝）
     "rename_media",  # media：重命名媒体文件（expected_updated_at 乐观比对）
     "tag_media",  # media：追加媒体标签（追加去重，expected_updated_at 乐观比对）
+    "generate_image",  # media：文生图落媒体库（agent_image 专用渠道；发布/发起双道校验 run 时限 ≥120s）
 }
 
 # 工具声明结构校验必需键（module 由收集器注入，声明方可不写）

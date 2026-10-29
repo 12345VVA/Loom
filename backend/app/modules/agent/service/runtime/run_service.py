@@ -613,6 +613,7 @@ class AgentRunService:
             raise HTTPException(status_code=409, detail="该会话存在待审批的工具调用，审批完成前不能发起新对话")
         payload = self._load_payload(profile, run_mode)
         self._assert_write_tools_ack(profile, payload)
+        self._assert_image_tool_timeout(profile, payload)
         # 附件发起线程同步校验（SSE 建流前 400/403/404，好于流中 error 帧）
         attachment_metas = _validate_attachments(self.session, attachments or [], current_user)
         trace = AgentRunTrace(
@@ -672,6 +673,23 @@ class AgentRunService:
             raise HTTPException(
                 status_code=400,
                 detail="该智能体绑定了写工具但未确认写工具知情声明（writeToolsAck），无法发起对话",
+            )
+
+    def _assert_image_tool_timeout(self, profile: Any, payload: RunPayload) -> None:
+        """生图工具实时复查（发布是第一道）：run deadline 读的是活行 timeout_seconds，
+        发布后管理员调低会使计费生成被 run 超时作废——发起时刻再拦一次；恢复路径不重校（与 ack 同口径）。"""
+        from app.modules.agent.model.agent import AGENT_IMAGE_TOOL_MIN_TIMEOUT
+
+        if (
+            "generate_image" in payload.snapshot_tools
+            and int(getattr(profile, "timeout_seconds", 0) or 0) < AGENT_IMAGE_TOOL_MIN_TIMEOUT
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"该智能体绑定了生图工具，运行时限需不低于 {AGENT_IMAGE_TOOL_MIN_TIMEOUT} 秒"
+                    f"（当前 {getattr(profile, 'timeout_seconds', None)}），无法发起对话"
+                ),
             )
 
     def _current_snapshot_id(self, profile_id: int, run_mode: str) -> int | None:
