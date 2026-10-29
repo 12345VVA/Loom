@@ -6,23 +6,17 @@
 				v-for="(block, index) in blocks"
 				:key="block.toolCallId || index"
 				:type="timelineType(block.status)"
-				:timestamp="block.timestamp"
+				:timestamp="block.timestamp ? formatDateTime(block.timestamp) : undefined"
 			>
-				<div class="trace-line">
-					<el-tooltip v-if="block.argsSummary || block.resultSummary" placement="top" effect="dark">
-						<template #content>
-							<div class="tip-content">
-								<div v-if="block.argsSummary" class="tip-line">
-									{{ t('agent.toolTrace.args') }}: {{ block.argsSummary }}
-								</div>
-								<div v-if="block.resultSummary" class="tip-line">
-									{{ t('agent.toolTrace.result') }}: {{ block.resultSummary }}
-								</div>
-							</div>
-						</template>
-						<span class="tool-name">{{ block.toolName }}</span>
-					</el-tooltip>
-					<span v-else class="tool-name">{{ block.toolName }}</span>
+				<div
+					class="trace-line"
+					:class="{ 'is-clickable': hasDetail(block) }"
+					@click="toggleExpand(block)"
+				>
+					<el-icon v-if="hasDetail(block)" class="expand-icon" :class="{ 'is-rotated': isExpanded(block) }">
+						<arrow-right />
+					</el-icon>
+					<span class="tool-name">{{ block.toolName }}</span>
 					<el-tag size="small" :type="tagType(block.status)">{{ statusText(block.status) }}</el-tag>
 					<el-tag
 						v-if="block.skippedReason && block.skippedReason !== 'error'"
@@ -32,8 +26,23 @@
 					>
 						{{ reasonText(block.skippedReason) }}
 					</el-tag>
-					<span v-if="block.duration" class="duration">{{ block.duration }}ms</span>
+					<!-- E3：写操作目标引用（"asset:3"）——审计可追溯；只读工具恒空 -->
+					<el-tag v-if="block.targetRef" size="small" type="info" effect="plain">{{ block.targetRef }}</el-tag>
+					<span v-if="block.duration != null" class="duration">{{ humanizeDuration(block.duration) }}</span>
 				</div>
+				<!-- 参数/结果摘要可展开（此前只藏 hover tooltip，不可发现） -->
+				<el-collapse-transition>
+					<div v-if="isExpanded(block)" class="detail-body">
+						<div v-if="block.argsSummary" class="detail-row">
+							<span class="detail-label">{{ t('agent.toolTrace.args') }}</span>
+							<pre class="detail-content">{{ block.argsSummary }}</pre>
+						</div>
+						<div v-if="block.resultSummary" class="detail-row">
+							<span class="detail-label">{{ t('agent.toolTrace.result') }}</span>
+							<pre class="detail-content">{{ block.resultSummary }}</pre>
+						</div>
+					</div>
+				</el-collapse-transition>
 				<div v-if="block.error" class="error-line">{{ block.error }}</div>
 			</el-timeline-item>
 		</el-timeline>
@@ -41,8 +50,10 @@
 </template>
 
 <script lang="ts" setup name="agent-tool-trace-panel">
-import { computed } from 'vue';
+import { computed, reactive } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { ArrowRight } from '@element-plus/icons-vue';
+import { formatDateTime, humanizeDuration } from '../utils/trace-format';
 
 export interface TraceBlock {
 	toolCallId?: string;
@@ -52,6 +63,8 @@ export interface TraceBlock {
 	timestamp?: string;
 	/** 审计增强（调用追踪 A3/P3）：拒绝原因结构化列 + 参数/结果摘要 + 错误文本 */
 	skippedReason?: string;
+	/** E3 写操作目标引用（"asset:3" / "media:7"） */
+	targetRef?: string;
 	argsSummary?: string;
 	resultSummary?: string;
 	error?: string;
@@ -65,6 +78,30 @@ const props = defineProps<{
 const { t } = useI18n();
 
 const blocks = computed(() => props.logs || []);
+
+/** 展开态（reactive Set 保响应；key 用 toolCallId） */
+const expandedIds = reactive(new Set<string>());
+
+function expandKey(block: TraceBlock) {
+	return block.toolCallId || block.toolName;
+}
+
+function hasDetail(block: TraceBlock) {
+	return Boolean(block.argsSummary || block.resultSummary);
+}
+
+function isExpanded(block: TraceBlock) {
+	return expandedIds.has(expandKey(block));
+}
+
+function toggleExpand(block: TraceBlock) {
+	const key = expandKey(block);
+	if (expandedIds.has(key)) {
+		expandedIds.delete(key);
+	} else {
+		expandedIds.add(key);
+	}
+}
 
 function timelineType(status: TraceBlock['status']) {
 	if (status === 'done') return 'success';
@@ -121,6 +158,21 @@ function reasonText(reason: string) {
 		align-items: center;
 		gap: 8px;
 
+		&.is-clickable {
+			cursor: pointer;
+			user-select: none;
+		}
+
+		.expand-icon {
+			font-size: 12px;
+			color: var(--el-text-color-secondary);
+			transition: transform 0.2s;
+
+			&.is-rotated {
+				transform: rotate(90deg);
+			}
+		}
+
 		.tool-name {
 			font-weight: 500;
 			cursor: default;
@@ -132,20 +184,42 @@ function reasonText(reason: string) {
 		}
 	}
 
+	.detail-body {
+		margin-top: 6px;
+		padding: 8px 10px;
+		border-radius: 6px;
+		background: var(--el-fill-color-lighter);
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+
+		.detail-row {
+			display: flex;
+			gap: 8px;
+			font-size: 12px;
+
+			.detail-label {
+				flex-shrink: 0;
+				color: var(--el-text-color-secondary);
+				line-height: 20px;
+			}
+
+			.detail-content {
+				margin: 0;
+				flex: 1;
+				white-space: pre-wrap;
+				word-break: break-all;
+				font-family: var(--el-font-family, monospace);
+				line-height: 20px;
+			}
+		}
+	}
+
 	.error-line {
 		margin-top: 4px;
 		font-size: 12px;
 		color: var(--el-color-danger);
 		word-break: break-all;
-	}
-}
-
-.tip-content {
-	max-width: 360px;
-	word-break: break-all;
-
-	.tip-line {
-		line-height: 18px;
 	}
 }
 </style>
