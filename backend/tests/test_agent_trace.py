@@ -8,14 +8,16 @@
 from __future__ import annotations
 
 import unittest
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from helpers import make_test_engine, seed_chat_channel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
+from sqlalchemy import update as sa_update
 from sqlmodel import Session, select
 
+from app.modules.agent.controller.admin.trace import AgentTraceController
 from app.modules.agent.model.agent import (
     AgentMessage,
     AgentProfile,
@@ -35,6 +37,7 @@ from app.modules.agent.service.runtime import model_wrapper as model_wrapper_mod
 from app.modules.agent.service.runtime.prompt_render import GUARDRAILS_VERSION
 from app.modules.agent.service.runtime.run_service import AgentRunService
 from app.modules.agent.service.tool_registry import bootstrap_registry, sync_resources
+from app.modules.agent.service.trace_service import AgentRunTraceService
 from app.modules.ai.model.ai import AiModel, AiModelProfile, AiProvider
 from app.modules.asset.model.asset import AssetCharacter
 from app.modules.base.model.auth import Role, UserRoleLink
@@ -313,6 +316,71 @@ class ObservationChainTestCase(unittest.TestCase):
         self.assertEqual([r["id"] for r in rows], [trace.id])
         other_rows = AgentRunTraceServiceProxy(self.session).list(current_user=_FakeUser(2))
         self.assertEqual(other_rows, [])
+
+
+class TracePageQueryTestCase(unittest.TestCase):
+    """调用追踪列表查询接线：关键词搜索（此前未配置即死筛选）+ 创建时间范围 + duration 排序白名单。"""
+
+    def setUp(self):
+        # Role/UserRoleLink：service.page → resolve_data_scope 需要角色表
+        self.engine = make_test_engine(tables=[AgentRunTrace.__table__, Role.__table__, UserRoleLink.__table__])
+        self.session = Session(self.engine)
+        base = datetime(2026, 10, 29, 8, 0, 0, tzinfo=UTC)
+        names = ("走查测试智能体", "评测智能体", "兜底智能体")
+        for i, name in enumerate(names):
+            self.session.add(
+                AgentRunTrace(
+                    profile_id=1,
+                    run_mode="published",
+                    agent_code=f"agent-{i}",
+                    agent_name=name,
+                    user_id=1,
+                    session_id=1,
+                    model_calls=1,
+                    tool_rounds=0,
+                    tool_calls=0,
+                    duration_ms=(i + 1) * 1000,
+                    status="completed",
+                )
+            )
+        self.session.commit()
+        # created_at/updated_at 有 default_factory（显式传值会被覆盖）——沿用 Core UPDATE 回拨惯例
+        for i in range(3):
+            self.session.execute(
+                sa_update(AgentRunTrace).where(AgentRunTrace.id == i + 1).values(created_at=base + timedelta(hours=i))
+            )
+        self.session.commit()
+
+    def tearDown(self):
+        self.session.close()
+        self.engine.dispose()
+
+    def _page(self, **query_kwargs):
+        """经真实控制器 QueryConfig + _build_crud_query + service.page 全链（配置摘除即测试红）。"""
+        from app.framework.controller_meta import _build_crud_query
+
+        config = AgentTraceController.meta.page_query
+        query = _build_crud_query(request=None, config=config, **query_kwargs)
+        page = AgentRunTraceService(self.session).page(query, current_user=_FakeUser(1))
+        return [row["agentName"] for row in page.items]
+
+    def test_keyword_search_matches_agent_name(self):
+        """关键词走 agent_name contains（配置缺 keyword_like_fields 时搜索框静默无效）。"""
+        self.assertEqual(self._page(keyword="走查"), ["走查测试智能体"])
+        # 无命中返回空列表而非全量（=未过滤）
+        self.assertEqual(self._page(keyword="不存在关键词"), [])
+
+    def test_created_at_range_filter(self):
+        """created_atStartTime/EndTime 走 apply_ranges（前端 cl-date-picker prop=created_at 对接形态）。"""
+        names = self._page(
+            body_params={"created_atStartTime": "2026-10-29 08:30:00", "created_atEndTime": "2026-10-29 09:30:00"}
+        )
+        self.assertEqual(names, ["评测智能体"])
+
+    def test_duration_order_whitelisted(self):
+        """durationMs 表头排序：camelCase 归一 duration_ms 命中白名单，升序生效。"""
+        names = self._page(order="durationMs", sort="asc")
+        self.assertEqual(names, ["走查测试智能体", "评测智能体", "兜底智能体"])
 
 
 class AgentRunTraceServiceProxy:

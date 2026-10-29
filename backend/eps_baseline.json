@@ -8406,6 +8406,9 @@
           "prop": "agentName",
           "propertyName": "agentName",
           "required": true,
+          "search": {
+            "value": true
+          },
           "source": "agent_name",
           "type": "string",
           "validate": null
@@ -8648,6 +8651,9 @@
           "prop": "agentName",
           "propertyName": "agentName",
           "required": true,
+          "search": {
+            "value": true
+          },
           "source": "agent_name",
           "type": "string",
           "validate": null
@@ -8819,7 +8825,9 @@
           "status"
         ],
         "fieldLike": [],
-        "keyWordLikeFields": []
+        "keyWordLikeFields": [
+          "agent_name"
+        ]
       },
       "prefix": "/admin/agent/trace"
     }

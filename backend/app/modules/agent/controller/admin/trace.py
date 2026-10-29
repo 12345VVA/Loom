@@ -41,7 +41,10 @@ from app.modules.base.service.security_service import get_current_user
                 QueryFieldConfig("run_mode", "runMode"),
                 QueryFieldConfig("status", "status"),
             ),
-            order_fields=("created_at",),
+            # 关键词搜索接线（此前未配置——前端搜索框发 keyword 但 QueryBuilder 无字段可查，静默无效）
+            keyword_like_fields=("agent_name",),
+            # created_at 默认倒序 + duration_ms 列排序（前端表头点击，_normalize_order_param 归一 camelCase）
+            order_fields=("created_at", "duration_ms"),
             add_order_by=(OrderByConfig("created_at", "desc"),),
         ),
     )
