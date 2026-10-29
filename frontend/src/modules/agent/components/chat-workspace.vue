@@ -369,6 +369,7 @@
 
 <script lang="ts" setup name="agent-workspace">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useCool } from '/@/cool';
 import {
@@ -412,6 +413,7 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const { service } = useCool();
+const route = useRoute();
 
 const { t } = useI18n();
 
@@ -746,7 +748,23 @@ watch(
 	}
 );
 
-onMounted(refresh);
+onMounted(async () => {
+	await refresh();
+	await openFromQuery();
+});
+
+/** 深链定位（调用追踪「查看会话」跳转）：?sessionId= 直开对应会话；失败保持默认初始化 */
+async function openFromQuery() {
+	const sessionId = Number(route.query.sessionId);
+	if (!sessionId || isDraft) return;
+	try {
+		const row = (await service.agent.session.info({ id: sessionId })) as AgentSessionRow;
+		await openSession(row);
+	} catch {
+		// 会话不存在/无权限——静默落回默认会话
+	}
+}
+
 defineExpose({ refresh });
 </script>
 

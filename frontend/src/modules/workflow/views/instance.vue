@@ -174,6 +174,7 @@ defineOptions({
 import { useCrud, useTable } from '@cool-vue/crud';
 import { useCool } from '/@/cool';
 import { ref, reactive, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
 import LogDrawer from '../components/log-drawer.vue';
@@ -183,6 +184,7 @@ import { formatVersionNo } from '../utils';
 import { buildStartInputsTemplate } from '../utils/start-inputs';
 
 const { service, router } = useCool();
+const route = useRoute();
 const { t } = useI18n();
 
 function getDefinitionName(row: any): string {
@@ -423,9 +425,22 @@ const Crud = useCrud(
 	}
 );
 
-onMounted(() => {
+onMounted(async () => {
 	fetchDefinitions();
+	await openFromQuery();
 });
+
+/** 深链定位（智能体调用追踪「查看实例」跳转）：?instanceId= 直开执行日志抽屉 */
+async function openFromQuery() {
+	const instanceId = Number(route.query.instanceId);
+	if (!instanceId) return;
+	try {
+		const row = (await service.workflow.instance.info({ id: instanceId })) as unknown as WorkflowInstance;
+		viewExecutionLogs(row);
+	} catch {
+		// 实例不存在/无权限——静默落回列表
+	}
+}
 
 async function fetchDefinitions() {
 	try {
