@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy import asc, desc, or_
@@ -121,9 +122,25 @@ class QueryBuilder:
 
             if field_name and hasattr(self.model, field_name):
                 col = getattr(self.model, field_name)
-                statement = statement.where(col >= value if op == ">=" else col <= value)
+                statement = statement.where(
+                    col >= self._parse_range_value(col, value)
+                    if op == ">="
+                    else col <= self._parse_range_value(col, value)
+                )
 
         return statement
+
+    @staticmethod
+    def _parse_range_value(col: Any, value: Any) -> Any:
+        """范围值类型对齐（CI PG 实证）：timestamptz 列与 varchar 比较直接 UndefinedFunction，
+        前端 cl-date-picker 发 "YYYY-MM-DD HH:mm:ss" 字符串——解析为 datetime 后绑定
+        （naive 按数据库会话时区解释，与展示口径一致）；非法字符串原样返回交由绑定期报错。"""
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return value
+        return value
 
     def apply_where(self, statement):
         if not self.query or not self.query.where_handler:

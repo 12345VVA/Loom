@@ -50,6 +50,7 @@ import TraceDetailDrawer from '../components/trace-detail-drawer.vue';
 import {
 	TRACE_MODE_OPTIONS,
 	TRACE_STATUS_OPTIONS,
+	type TraceRow,
 	formatTokens,
 	humanizeDuration
 } from '../utils/trace-format';
@@ -102,7 +103,7 @@ const Table = useTable({
 			label: t('agent.trace.tokens'),
 			width: 120,
 			flex: false,
-			formatter: (row: any) => formatTokens(row.promptTokens, row.completionTokens)
+			formatter: (row: TraceRow) => formatTokens(row.promptTokens, row.completionTokens)
 		},
 		{
 			prop: 'durationMs',
@@ -110,7 +111,7 @@ const Table = useTable({
 			width: 100,
 			flex: false,
 			sortable: 'custom',
-			formatter: (row: any) => humanizeDuration(row.durationMs)
+			formatter: (row: TraceRow) => humanizeDuration(row.durationMs)
 		},
 		{ prop: 'createTime', label: t('agent.profile.createTime'), width: 165, flex: false, sortable: 'desc', component: { name: 'cl-date-text' } },
 		{
@@ -123,7 +124,7 @@ const Table = useTable({
 	contextMenu: ['refresh']
 });
 
-function openDetail(row: any) {
+function openDetail(row: TraceRow) {
 	DetailDrawer.value?.open(row);
 }
 </script>

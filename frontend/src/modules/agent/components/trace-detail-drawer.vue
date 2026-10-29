@@ -70,6 +70,9 @@ import ToolTracePanel, { type TraceBlock } from './tool-trace-panel.vue';
 import TraceMessages from './trace-messages.vue';
 import {
 	TRACE_TERMINAL_STATUSES,
+	type ToolLogRow,
+	type TraceMessageRow,
+	type TraceRow,
 	formatDateTime,
 	formatTokens,
 	humanizeDuration,
@@ -81,16 +84,16 @@ const { t } = useI18n();
 
 const visible = ref(false);
 const loadingInfo = ref(false);
-const detail = ref<any>({});
+const detail = ref<TraceRow>({});
 const toolBlocks = ref<TraceBlock[]>([]);
-const detailMessages = ref<any[]>([]);
+const detailMessages = ref<TraceMessageRow[]>([]);
 const messagesInaccessible = ref(false);
 
 /** 非终态轮询（running/waiting_approval 行自动刷新，终态/关闭即停） */
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 const POLL_INTERVAL_MS = 10_000;
 
-function open(row: any) {
+function open(row: TraceRow) {
 	visible.value = true;
 	detail.value = { ...row };
 	toolBlocks.value = [];
@@ -109,7 +112,7 @@ async function refreshInfo() {
 	if (!detail.value.id) return;
 	loadingInfo.value = true;
 	try {
-		detail.value = await service.agent.trace.info({ id: detail.value.id });
+		detail.value = (await service.agent.trace.info({ id: detail.value.id })) as TraceRow;
 	} catch {
 		// 保留列表行数据兜底
 	} finally {
@@ -119,8 +122,8 @@ async function refreshInfo() {
 
 async function refreshToolLogs() {
 	try {
-		const logs = await service.agent.trace.toolLogs({ trace_id: detail.value.id });
-		toolBlocks.value = ((logs || []) as any[]).map((log: any) => ({
+		const logs = await service.agent.trace.toolLogs({ trace_id: Number(detail.value.id ?? 0) });
+		toolBlocks.value = ((logs || []) as ToolLogRow[]).map((log: ToolLogRow) => ({
 			toolCallId: String(log.id),
 			toolName: log.toolName,
 			// skipped（cancelled 等 success=NULL 但有原因）与 failed（success=false）分开展示
@@ -140,8 +143,8 @@ async function refreshToolLogs() {
 
 async function refreshMessages() {
 	try {
-		const messages = await service.agent.session.messages({ session_id: detail.value.sessionId });
-		detailMessages.value = (messages || []) as any[];
+		const messages = await service.agent.session.messages({ session_id: Number(detail.value.sessionId ?? 0) });
+		detailMessages.value = (messages || []) as TraceMessageRow[];
 		messagesInaccessible.value = false;
 	} catch {
 		detailMessages.value = []; // 他人会话（管理员查看 trace）消息不可见——显式提示而非静默空白
@@ -151,11 +154,15 @@ async function refreshMessages() {
 
 function schedulePolling() {
 	stopPolling();
-	if (TRACE_TERMINAL_STATUSES.has(detail.value?.status)) return;
+	if (isTerminal(detail.value)) return;
 	pollTimer = setInterval(async () => {
 		await Promise.all([refreshInfo(), refreshToolLogs()]);
-		if (TRACE_TERMINAL_STATUSES.has(detail.value?.status)) stopPolling();
+		if (isTerminal(detail.value)) stopPolling();
 	}, POLL_INTERVAL_MS);
+}
+
+function isTerminal(row: TraceRow | null): boolean {
+	return TRACE_TERMINAL_STATUSES.has(String(row?.status ?? ''));
 }
 
 function stopPolling() {

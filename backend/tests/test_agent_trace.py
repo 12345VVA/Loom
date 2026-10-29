@@ -382,6 +382,19 @@ class TracePageQueryTestCase(unittest.TestCase):
         names = self._page(order="durationMs", sort="asc")
         self.assertEqual(names, ["走查测试智能体", "评测智能体", "兜底智能体"])
 
+    def test_range_value_parses_iso_datetime(self):
+        """apply_ranges 值解析：ISO 字符串 → datetime（PG timestamptz 不收 varchar，CI 实证）。"""
+        from app.framework.router.query_builder import QueryBuilder
+
+        col = AgentRunTrace.created_at
+        parsed = QueryBuilder._parse_range_value(col, "2026-10-29 08:30:00")
+        self.assertIsInstance(parsed, datetime)
+        self.assertEqual((parsed.year, parsed.hour, parsed.minute), (2026, 8, 30))
+        # 非法字符串原样返回（交由绑定期报错，不在此处吞）；已解析值直通
+        self.assertEqual(QueryBuilder._parse_range_value(col, "not-a-date"), "not-a-date")
+        aware = datetime(2026, 10, 29, 8, 0, tzinfo=UTC)
+        self.assertIs(QueryBuilder._parse_range_value(col, aware), aware)
+
 
 class AgentRunTraceServiceProxy:
     """test_agent_module 可见性用例的同款服务直调（避免 HTTP 依赖）。"""

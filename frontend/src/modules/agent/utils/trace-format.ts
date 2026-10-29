@@ -5,6 +5,51 @@
 
 export type TraceStatus = 'running' | 'waiting_approval' | 'completed' | 'failed' | 'cancelled' | 'timed_out';
 
+/** trace 列表行（AgentRunTraceRead camelCase 子集；EPS 行类型失真，按需声明） */
+export interface TraceRow {
+	id?: number;
+	agentName?: string;
+	runMode?: string;
+	status?: string;
+	durationMs?: number | null;
+	createTime?: string | null;
+	promptTokens?: number | null;
+	completionTokens?: number | null;
+	modelCalls?: number;
+	toolRounds?: number;
+	toolCalls?: number;
+	guardrailsVersion?: string | null;
+	sessionId?: number;
+	workflowInstanceId?: number | null;
+	error?: string | null;
+	[index: string]: unknown;
+}
+
+/** 会话消息行（AgentMessageRead camelCase 子集；role 后端恒有值；可选形态对齐 chat-message props） */
+export interface TraceMessageRow {
+	id?: number;
+	role: string;
+	content?: string;
+	name?: string;
+	toolCallId?: string;
+	createTime?: string;
+	meta?: string | null;
+}
+
+/** 工具调用明细行（AgentToolCallLogRead camelCase 子集） */
+export interface ToolLogRow {
+	id: number;
+	toolName: string;
+	success?: boolean | null;
+	skippedReason?: string | null;
+	durationMs?: number | null;
+	createTime?: string | null;
+	targetRef?: string | null;
+	argsSummary?: string | null;
+	resultSummary?: string | null;
+	error?: string | null;
+}
+
 export interface TraceStatusItem {
 	/** i18n key（消费侧经 t() 翻译） */
 	label: string;
@@ -74,9 +119,9 @@ const RUN_WINDOW_SLACK_MS = 5000;
  * 消息轨迹按 run 过滤：时间窗 [创建-5s, 创建+耗时+5s]（running 无耗时则到当前）。
  * messages 按会话全量返回（session.messages 无 run 维度），此处以时间窗收敛到单次 run。
  */
-export function filterRunMessages<T extends { createTime?: string }>(
+export function filterRunMessages<T extends { createTime?: string | null }>(
 	messages: T[],
-	trace: { createTime?: string; durationMs?: number | null } | null
+	trace: { createTime?: string | null; durationMs?: number | null } | null
 ): T[] {
 	if (!trace?.createTime) return messages;
 	const startMs = new Date(trace.createTime).getTime();
@@ -92,16 +137,23 @@ export function filterRunMessages<T extends { createTime?: string }>(
 }
 
 /** 助手工具决策轮：无文本但 meta.tool_calls 携带本轮调用清单（run_service A2 落库形态） */
-export function parseToolCallTurn(message: any): Array<{ id?: string; name?: string }> {
+export interface ToolCallTurnItem {
+	id?: string;
+	name?: string;
+}
+
+export function parseToolCallTurn(message?: { meta?: string | null } | null): ToolCallTurnItem[] {
 	if (!message?.meta) return [];
 	try {
-		const calls = JSON.parse(message.meta)?.tool_calls;
+		const calls = (JSON.parse(message.meta) as { tool_calls?: ToolCallTurnItem[] })?.tool_calls;
 		return Array.isArray(calls) ? calls : [];
 	} catch {
 		return [];
 	}
 }
 
-export function isToolCallTurn(message: any): boolean {
-	return message?.role === 'assistant' && !String(message?.content || '').trim() && parseToolCallTurn(message).length > 0;
+export function isToolCallTurn(message?: { role?: string; content?: string | null; meta?: string | null } | null): boolean {
+	return (
+		message?.role === 'assistant' && !String(message?.content || '').trim() && parseToolCallTurn(message).length > 0
+	);
 }

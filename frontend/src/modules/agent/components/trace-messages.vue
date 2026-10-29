@@ -37,13 +37,13 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { SetUp } from '@element-plus/icons-vue';
 import ChatMessage from './chat-message.vue';
-import { filterRunMessages, isToolCallTurn, parseToolCallTurn } from '../utils/trace-format';
+import { type TraceMessageRow, type TraceRow, filterRunMessages, isToolCallTurn, parseToolCallTurn } from '../utils/trace-format';
 
 const props = defineProps<{
 	/** 会话全量消息（session.messages 无 run 维度） */
-	messages: any[];
+	messages: TraceMessageRow[];
 	/** trace 行（createTime/durationMs 构成时间窗） */
-	trace: any;
+	trace: TraceRow | null;
 	/** 消息接口 403（非本人会话） */
 	inaccessible?: boolean;
 }>();
