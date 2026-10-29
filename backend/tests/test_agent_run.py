@@ -457,14 +457,14 @@ class StreamingRunTestCase(unittest.TestCase):
 
 
 class ContextTokenBudgetTestCase(unittest.TestCase):
-    """E15 动态输入预算公式（2026-10-28 调参后口径）：常数上限 16000，
+    """E15 动态输入预算公式（2026-10-28 调参后口径）：常数上限 24000，
     小窗口按「窗口−输出」自动收紧，下限 1000 防异常小窗口挤负。"""
 
     def test_budget_formula(self):
         from app.modules.agent.service.runtime.run_service import _context_token_budget
 
-        self.assertEqual(_context_token_budget(None, 4000), 16000)  # None 理论不可达兜底 = 常数上限
-        self.assertEqual(_context_token_budget(128000, 4000), 16000)  # 大窗口 → 常数上限
+        self.assertEqual(_context_token_budget(None, 4000), 24000)  # None 理论不可达兜底 = 常数上限
+        self.assertEqual(_context_token_budget(128000, 4000), 24000)  # 大窗口 → 常数上限
         self.assertEqual(_context_token_budget(8000, 1000), 7000)  # 小窗口 → 自动收紧
         self.assertEqual(_context_token_budget(1200, 4000), 1000)  # 极小窗口 → 下限保护
 

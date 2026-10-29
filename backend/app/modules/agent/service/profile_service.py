@@ -40,7 +40,7 @@ SNAPSHOT_CACHE_PREFIX = "agent:snap:"
 
 # 模型窗口严格模式（评审 P1-2 / D15；E15 动态化）：输入预算 + 输出预算 ≤ 解析链最小窗口。
 # 一期常数 32000 下限已废弃（非未知模型推导下界）；存量渠道窗口由迁移 0028 数据兜底。
-_INPUT_TOKEN_BUDGET = 16000  # 与 memory_service.AGENT_CONTEXT_TOKEN_BUDGET 同源常量（避免循环导入）——2026-10-28 随运行时 6000→16000 联动，保持发布窗口校验与实际预算同口径
+_INPUT_TOKEN_BUDGET = 24000  # 与 memory_service.AGENT_CONTEXT_TOKEN_BUDGET 同源常量（避免循环导入）——2026-10-28 随运行时 6000→24000 两轮联动，保持发布窗口校验与实际预算同口径
 
 
 def _canonical_json(payload: dict) -> str:

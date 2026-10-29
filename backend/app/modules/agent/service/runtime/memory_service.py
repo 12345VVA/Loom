@@ -20,12 +20,15 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 # 2026-10-28 调参（6000/30000 → 16000/60000）：6000 是「无图、工具返回几十字」时代的
 # 保守初值，被附件多模态（图片 800 token/张）、会话记忆注入与长描述列表工具
 # （单条结果 ~2500 字）逐步压穿——工具结果在组装层被截断导致模型读不全（真机走查实锤）。
-# 16000 对已知场景留 ~2.6 倍余量、对 64k+ 窗口渠道仍 <25%；E15 公式对小窗口渠道
+# 24000 为「现有渠道窗口配置（32k）− 输出上限」下可设的最大安全值；注意 estimate_tokens
+# 对中文高估 ~3 倍（2500 字估 5000，真实 ~1500）——常数是估算口径，有效容量约为字面 1/3
+# （真机实测：16000 下 2500 字工具结果仍被剩余预算截断）；E15 公式对小窗口渠道
 # 自动收紧（min(常数, 链窗口−输出)），上限放宽不引入爆窗风险。两常数须联动：
 # 工具循环两轮的输入即可顶到 run 上限，单次上限翻倍则累计护栏同步翻倍。
-AGENT_CONTEXT_TOKEN_BUDGET = 16000  # 单次输入上下文预算
-AGENT_RUN_TOKEN_BUDGET = 60000  # 整次运行累计 token 预算
-TOOL_RESULT_INJECT_LIMIT = 200  # 工具结果注入历史前截断字数
+AGENT_CONTEXT_TOKEN_BUDGET = 24000  # 单次输入上下文预算
+AGENT_RUN_TOKEN_BUDGET = 80000  # 整次运行累计 token 预算
+TOOL_RESULT_INJECT_LIMIT = 200  # （保留兼容引用）工具结果摘要截断字数
+TOOL_RESULT_HISTORY_LIMIT = 4000  # 历史组装时工具结果截断字数（对齐 state 回填口径，2026-10-28 由 200 修正）
 
 # 保底：即使超预算也至少保留的最近原子单元数（超长按单条截断处理而非丢弃）
 MIN_KEEP_UNITS = 2
@@ -199,14 +202,16 @@ def build_model_messages(
             remaining -= estimate_tokens(injection)
 
     # ④ 历史按原子单元从新到旧装填，保底 MIN_KEEP_UNITS
-    # 工具结果先截 200 字（设计 3.4.5：完整结果仅存 agent_message 与 tool_call_log，
-    # 不修改原对象——新建截断版 ToolMessage 保持 tool_call_id 配对）
+    # 工具结果截 4000 字（对齐 state 回填口径）：此前无条件截 200 字——列表型工具
+    # （工作流列表/媒体搜索）模型永远只见首条前缀，「返回结果被截断」真机实锤的
+    # 真凶在这是组装层无条件截断、与预算无关（预算裁剪只兜超限尾部）。不修改原
+    # 对象——新建截断版 ToolMessage 保持 tool_call_id 配对；超预算仍由 _trim_unit 兜底
     trimmed_history: list[BaseMessage] = []
     for message in history:
-        if isinstance(message, ToolMessage) and len(str(message.content)) > TOOL_RESULT_INJECT_LIMIT:
+        if isinstance(message, ToolMessage) and len(str(message.content)) > TOOL_RESULT_HISTORY_LIMIT:
             trimmed_history.append(
                 ToolMessage(
-                    content=truncate_tool_result(str(message.content)),
+                    content=truncate_tool_result(str(message.content), limit=TOOL_RESULT_HISTORY_LIMIT),
                     tool_call_id=message.tool_call_id or "",
                     name=message.name,
                 )
