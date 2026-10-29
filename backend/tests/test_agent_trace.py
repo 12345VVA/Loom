@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import UTC
 from unittest.mock import patch
 
 from helpers import make_test_engine, seed_chat_channel
@@ -273,6 +274,27 @@ class ObservationChainTestCase(unittest.TestCase):
         self.session.expire_all()
         refreshed = AgentToolCallLogRead.model_validate(self.session.get(AgentToolCallLog, normal.id))
         self.assertEqual(refreshed.model_dump(by_alias=True)["skippedReason"], "soft_failure")
+
+    def test_run_heartbeat_refreshes_trace_updated_at(self):
+        """复核 2026-10-29 问题③：模型/工具轮出口经 heartbeat 刷新 updated_at——假死
+        sweep 的「无活动」判据（BaseEntity 无 onupdate，不显式写则恒停 INSERT 时刻）。"""
+        with patch.object(model_wrapper_module, "LoomChatModel", _FakeChatModel):
+            AgentRunService(self.session).invoke_run(
+                profile_id=self.profile.id,
+                session_id=None,
+                question="你好",
+                run_mode="published",
+                current_user=self.owner,
+            )
+        self.session.expire_all()
+        trace = self.session.exec(select(AgentRunTrace)).first()
+        self.assertEqual(trace.status, "completed")
+        created, updated = trace.created_at, trace.updated_at
+        if created.tzinfo is None:  # SQLite 读回 naive——按 UTC 归一（sweep 内同款防御）
+            created = created.replace(tzinfo=UTC)
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=UTC)
+        self.assertGreater(updated, created)  # 心跳晚于 INSERT（模型轮完成后）
 
     def test_trace_page_and_toollogs_owner_only(self):
         """验收 21：trace 管理面仅本人；toolLogs 越权 403。"""

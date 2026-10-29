@@ -1656,6 +1656,15 @@ def _build_runtime(
             db.add(AgentToolCallLog(trace_id=trace.id, **kwargs))
             db.commit()
 
+        def heartbeat() -> None:
+            """轮间心跳（复核 2026-10-29 问题③）：graph 模型/工具节点出口刷新 updated_at，
+            假死 sweep 的「无活动宽限」据此判定。BaseEntity 无 onupdate，UPDATE 不显式写
+            该列则恒停 INSERT 时刻。与 log_tool_call 同级别的中途回 commit（先例安全）。"""
+            from sqlalchemy import update as _update
+
+            db.execute(_update(AgentRunTrace).where(AgentRunTrace.id == trace.id).values(updated_at=_dt.now(UTC)))
+            db.commit()
+
         executor = ToolExecutor(
             snapshot_tools=payload.snapshot_tools,
             bound_names=payload.bound_names,
@@ -1703,6 +1712,7 @@ def _build_runtime(
             on_event=handle.emit,
             should_cancel=should_cancel,
             trace_token=handle.trace_token,
+            heartbeat=heartbeat,
         )
         graph = build_agent_graph(deps)
     return RuntimeBundle(model=model, executor=executor, budget=budget, graph=graph)

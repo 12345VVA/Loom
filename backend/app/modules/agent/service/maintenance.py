@@ -3,8 +3,13 @@
 语义：只扫 running（waiting_approval 是合法长等态，E4 解冻后审批可等数日）；条件更新
 幂等（仅 running 可流转——并发 sweep/人工 stop 谁先谁赢）；终态化 failed + error 标注 +
 duration 按 created_at 补算。宽限期由调用方传入（SysParam agentStuckTraceGraceMinutes，
-默认 30 分钟，须大于单 run 最长合法时长：timeoutSeconds 上限 600s × 工具轮耗时余量 +
-调度延迟，防误杀慢 run）。
+默认 30 分钟）。
+
+updated_at 判据（复核 2026-10-29 问题③修正）：graph 模型/工具节点出口经 heartbeat
+闭包显式刷新 updated_at（BaseEntity 无 onupdate，运行中不写则恒停 INSERT 时刻）——
+本函数的「updated_at < cutoff」自心跳接入起才真正表达「最后活动后 grace 分钟仍无
+推进」；历史行/未接线路径退化为「启动后 grace 分钟」硬上限（偏保守，不漏杀，可能
+暂态误标——worker 真完成时 _finish_run 会覆写回 completed，审计终值最终一致）。
 """
 
 from __future__ import annotations

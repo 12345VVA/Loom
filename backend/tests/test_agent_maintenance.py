@@ -77,6 +77,28 @@ class SweepStuckTracesTestCase(unittest.TestCase):
         self.assertEqual(swept, [])
         self.assertEqual(self.session.get(AgentRunTrace, fresh.id).status, "running")
 
+    def test_recent_heartbeat_revives_stale_trace(self):
+        """复核 2026-10-29 问题③：启动时刻过期 ≠ 假死——graph 心跳刷新 updated_at 后
+        不回收。心跳接入前 updated_at 恒停 INSERT 时刻，「无活动宽限」退化为「启动后
+        grace 分钟」硬上限，合法长 run 会被误标。"""
+        revived = _trace()
+        self.session.add(revived)
+        self.session.commit()
+        _backdate(self.session, revived.id, minutes=45)  # created_at/updated_at 均拨到 45 分钟前
+        from sqlalchemy import update
+
+        self.session.execute(  # 模拟 5 分钟前的心跳：仅 updated_at 拉回，created_at 保持
+            update(AgentRunTrace)
+            .where(AgentRunTrace.id == revived.id)
+            .values(updated_at=datetime.now(UTC) - timedelta(minutes=5))
+        )
+        self.session.commit()
+
+        swept = sweep_stuck_traces(self.session, grace_minutes=30)
+
+        self.assertEqual(swept, [])
+        self.assertEqual(self.session.get(AgentRunTrace, revived.id).status, "running")
+
     def test_waiting_approval_not_swept(self):
         """waiting_approval 不扫——E4 解冻后审批是合法长等态（可等数日）。"""
         waiting = _trace(status="waiting_approval")

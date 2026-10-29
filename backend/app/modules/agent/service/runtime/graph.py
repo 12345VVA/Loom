@@ -90,8 +90,10 @@ class GraphDeps:
         should_stop_scheduling: Callable[[], bool] | None = None,  # 锁所有权校验（P5 注入）
         on_final: Callable[[AgentState], None] | None = None,
         trace_token: str | None = None,  # 耗时打点关联（agent.timing 日志字段）
+        heartbeat: Callable[[], None] | None = None,  # 轮间心跳（复核问题③）：假死 sweep 的「无活动」判据
     ):
         self.trace_token = trace_token
+        self.heartbeat = heartbeat
         self.model = model
         self.tool_executor = tool_executor
         self.budget = budget
@@ -187,6 +189,8 @@ def _call_model(state: AgentState, deps: GraphDeps) -> dict:
         usage = _normalize_usage(raw_usage)
         bag.update(prompt_tokens=usage.get("prompt_tokens"), total_tokens=usage.get("total_tokens"))
     deps.budget.on_model_call(usage)
+    if deps.heartbeat is not None:
+        deps.heartbeat()  # 模型响应完成即活动——BaseEntity 无 onupdate，updated_at 不会自动刷新
     if deps.on_event is not None:
         deps.on_event(
             "model_finished",
@@ -272,6 +276,8 @@ def _execute_tools(state: AgentState, deps: GraphDeps) -> dict:
                     name=item["toolName"],
                 )
             )
+    if deps.heartbeat is not None:
+        deps.heartbeat()  # 工具轮完成即活动（多轮长 run 的主要心跳源）
     return {"messages": tool_messages, "tool_rounds": int(state.get("tool_rounds") or 0) + 1}
 
 
