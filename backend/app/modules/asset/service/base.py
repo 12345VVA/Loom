@@ -84,6 +84,12 @@ class AssetCrudServiceBase(BaseAdminCrudService):
         data.pop("status", None)  # 双保险：状态只经 transition_status 迁移
         if "code" in data:
             self._assert_code_available(data.get("code"), exclude_id=id_val)
+        if (
+            "appearance_prompt" in data
+            and entity.status == ASSET_STATUS_PUBLISHED
+            and self._prompt_blank(data.get("appearance_prompt"))
+        ):
+            raise HTTPException(status_code=400, detail="已发布资产不可清空提示词；如需重写请先复制副本编辑")
         return super().update(data)
 
     def delete(
@@ -165,7 +171,7 @@ class AssetCrudServiceBase(BaseAdminCrudService):
     # --- 状态机（设计 3.3：独立迁移方法，不经 _before_update 的状态剔除）---
 
     def transition_status(self, asset_id: int, target: str, current_user: User | None = None) -> Any:
-        """publish/archive/restore 共用迁移：创建者+管理员；非法迁移 400。"""
+        """publish/archive/restore 共用迁移：创建者+管理员；非法迁移 400；进入 published 校验内容完备。"""
         entity = self.session.get(self.model, asset_id)
         if entity is None:
             raise HTTPException(status_code=404, detail="资产不存在")
@@ -173,6 +179,8 @@ class AssetCrudServiceBase(BaseAdminCrudService):
         allowed = ASSET_STATUS_TRANSITIONS.get(entity.status, set())
         if target not in allowed:
             raise HTTPException(status_code=400, detail=f"非法状态迁移：{entity.status} → {target}")
+        if target == ASSET_STATUS_PUBLISHED:
+            self._assert_publishable(entity)
         entity.status = target
         self.session.add(entity)
         self.session.commit()
@@ -180,6 +188,16 @@ class AssetCrudServiceBase(BaseAdminCrudService):
         return entity
 
     # --- 权限断言 ---
+
+    @staticmethod
+    def _prompt_blank(value: str | None) -> bool:
+        return not (value or "").strip()
+
+    def _assert_publishable(self, entity: Any) -> None:
+        """进入 published 态的内容完备性：外貌/画面描述提示词必填（空 prompt 资产会劣化
+        agent 组合生图与 composer 拼接，实测 2026-10-30）。"""
+        if self._prompt_blank(getattr(entity, "appearance_prompt", None)):
+            raise HTTPException(status_code=400, detail="发布前请补全外貌/画面描述提示词（appearancePrompt）")
 
     def _assert_editable(self, entity: Any, current_user: User | None) -> None:
         """编辑权限（矩阵「编辑」行）：archived 锁死；draft 仅创建者；published 创建者+管理员。"""

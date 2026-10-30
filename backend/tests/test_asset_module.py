@@ -21,7 +21,9 @@ from app.modules.asset.model.asset import (
     AssetCharacterCreateRequest,
     AssetCharacterUpdateRequest,
     AssetScene,
+    AssetSceneCreateRequest,
     AssetStyle,
+    AssetStyleCreateRequest,
 )
 from app.modules.asset.service.character_service import AssetCharacterService
 from app.modules.asset.service.reference import (
@@ -29,6 +31,8 @@ from app.modules.asset.service.reference import (
     order_entries_by_role,
     parse_ref_entries,
 )
+from app.modules.asset.service.scene_service import AssetSceneService
+from app.modules.asset.service.style_service import AssetStyleService
 from app.modules.base.model.auth import Role, UserRoleLink
 from app.modules.base.model.sys import SysLog
 from app.modules.media.model.media import MediaAsset
@@ -68,6 +72,9 @@ class AssetCrudTestCase(unittest.TestCase):
         self.engine.dispose()
 
     def _create(self, code: str = "hero", current_user=None, **kwargs) -> AssetCharacter:
+        # 默认带提示词：发布校验（进入 published 必填 appearancePrompt）使无 prompt 行无法过迁移，
+        # 需要「空 prompt」场景的用例显式传 appearance_prompt=None
+        kwargs.setdefault("appearance_prompt", "默认外貌描述")
         payload = AssetCharacterCreateRequest(code=code, name=kwargs.pop("name", code), **kwargs)
         return self.service.add(payload, current_user=current_user or self.owner)
 
@@ -250,6 +257,74 @@ class AssetCrudTestCase(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             self.service.transition_status(entity.id, ASSET_STATUS_ARCHIVED, self.other)
         self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_publish_requires_prompt(self):
+        """发布内容完备性：空 appearancePrompt 的 draft 无法发布（实测 2026-10-30 缺口）；补全后可发。"""
+        entity = self._create(appearance_prompt=None)
+        with self.assertRaises(HTTPException) as ctx:
+            self.service.transition_status(entity.id, ASSET_STATUS_PUBLISHED, self.owner)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("appearancePrompt", ctx.exception.detail)
+
+        self.service.update(
+            AssetCharacterUpdateRequest(id=entity.id, name=entity.name, appearance_prompt="银发少女"),
+            current_user=self.owner,
+        )
+        self.assertEqual(
+            self.service.transition_status(entity.id, ASSET_STATUS_PUBLISHED, self.owner).status,
+            ASSET_STATUS_PUBLISHED,
+        )
+
+    def test_restore_rejects_empty_prompt(self):
+        """restore 防御断言：直插空 prompt 的 archived 脏数据（绕过 publish）→ 恢复被拦。"""
+        entity = self._create(appearance_prompt=None)
+        entity.status = ASSET_STATUS_ARCHIVED
+        self.session.add(entity)
+        self.session.commit()
+        with self.assertRaises(HTTPException) as ctx:
+            self.service.transition_status(entity.id, ASSET_STATUS_PUBLISHED, self.owner)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_update_published_cannot_clear_prompt(self):
+        """published 行显式清空 appearancePrompt → 400；不带该键的正常编辑放行；draft 行可清空。"""
+        entity = self._create()
+        entity.status = ASSET_STATUS_PUBLISHED
+        self.session.add(entity)
+        self.session.commit()
+
+        for blank in (None, "   "):
+            with self.assertRaises(HTTPException) as ctx:
+                self.service.update(
+                    AssetCharacterUpdateRequest(id=entity.id, name=entity.name, appearance_prompt=blank),
+                    current_user=self.owner,
+                )
+            self.assertEqual(ctx.exception.status_code, 400)
+            self.assertIn("清空", ctx.exception.detail)
+
+        self.service.update(
+            AssetCharacterUpdateRequest(id=entity.id, name="只改名不带提示词键"), current_user=self.owner
+        )
+
+        draft = self._create(code="hero-draft")
+        self.service.update(
+            AssetCharacterUpdateRequest(id=draft.id, name=draft.name, appearance_prompt=None), current_user=self.owner
+        )
+
+    def test_publish_gate_covers_all_three_tables(self):
+        """共享基类一处生效三表：character/scene/style 空 prompt 发布均 400。"""
+        cases = (
+            ("character", AssetCharacterService, AssetCharacterCreateRequest),
+            ("scene", AssetSceneService, AssetSceneCreateRequest),
+            ("style", AssetStyleService, AssetStyleCreateRequest),
+        )
+        for resource, service_cls, request_cls in cases:
+            with self.subTest(resource=resource):
+                service = service_cls(self.session)
+                payload = request_cls(name=f"无提示词{resource}")  # code 留空自动生成
+                entity = service.add(payload, current_user=self.owner)
+                with self.assertRaises(HTTPException) as ctx:
+                    service.transition_status(entity.id, ASSET_STATUS_PUBLISHED, self.owner)
+                self.assertEqual(ctx.exception.status_code, 400)
 
     def test_delete_creator_or_admin_only(self):
         """软删：创建者+管理员；第三方 403。"""
